@@ -10,6 +10,7 @@ const {
   getModelPriceSyncStatus,
   getModelPriceEntry,
   upsertModelPrice,
+  previewVideoPrice,
   showError,
 } = vi.hoisted(() => ({
   listModelPrices: vi.fn(),
@@ -17,6 +18,7 @@ const {
   getModelPriceSyncStatus: vi.fn(),
   getModelPriceEntry: vi.fn(),
   upsertModelPrice: vi.fn(),
+  previewVideoPrice: vi.fn(),
   showError: vi.fn(),
 }))
 
@@ -29,6 +31,7 @@ vi.mock('@/api/admin/modelPrices', async () => {
     getModelPriceSyncStatus,
     getModelPriceEntry,
     syncModelPrices: vi.fn(),
+    previewVideoPrice,
     upsertModelPrice,
     deleteModelPrice: vi.fn(),
   }
@@ -107,6 +110,7 @@ describe('ModelPricesView', () => {
     getModelPriceSyncStatus.mockReset()
     getModelPriceEntry.mockReset()
     upsertModelPrice.mockReset()
+    previewVideoPrice.mockReset()
     showError.mockReset()
     listModelPricePlatforms.mockResolvedValue(['*', 'anthropic', 'deepseek'])
     getModelPriceSyncStatus.mockResolvedValue({ catalog_model_count: 2, override_count: 1 })
@@ -142,6 +146,16 @@ describe('ModelPricesView', () => {
       override_platform: '*',
     })
     upsertModelPrice.mockResolvedValue({})
+    previewVideoPrice.mockResolvedValue({
+      matched: true,
+      rule_key: 'default',
+      billing_unit: 'second',
+      estimated_units: 5,
+      maximum_units: 5,
+      estimated_cost: 0,
+      normalized_attributes: { input_has_video: false },
+      rejected_rules: [],
+    })
   })
 
   it('keeps wildcard out of the platform filter and edits the row platform', async () => {
@@ -169,6 +183,171 @@ describe('ModelPricesView', () => {
     expect(upsertModelPrice).toHaveBeenCalledWith(expect.objectContaining({
       platform: 'anthropic',
       model: 'openai/gpt-5.4',
+    }))
+  })
+
+  it('edits structured video pricing in the existing model price dialog', async () => {
+    const videoPricing = {
+      version: 1 as const,
+      enabled: true,
+      currency: 'USD' as const,
+      defaults: { resolution: '480p', request_mode: 'standard' as const, inference_mode: 'online' as const },
+      resolutions: { '480p': { sizes: ['864x480', '480x864'] } },
+      estimators: {
+        output: { type: 'pixel_frame' as const, token_scope: 'output_only' as const, fps: 24, divisor: 1024 },
+      },
+      rules: [{
+        key: '480p-text', billing_unit: 'video_token' as const, unit_price_usd: 1e-6,
+        estimator: 'output', conditions: { resolutions: ['480p'], input_has_video: false },
+      }],
+    }
+    listModelPrices.mockResolvedValue({
+      items: [{
+        platform: 'openai', model: 'doubao-seedance-2.0-mini-480p', source: 'override', currency: 'USD',
+        token_pricing_absent: true, has_image_pricing: false, has_video_pricing: true,
+        video_pricing_valid: true, video_rule_count: 1, video_billing_units: ['video_token'], video_resolutions: ['480p'],
+        sync_invalidated: false, redundant: false, effective: { video_pricing: videoPricing },
+        overridden_fields: ['video_pricing'], override_platform: 'openai', enabled: true,
+      }],
+      total: 1,
+    })
+    getModelPriceEntry.mockResolvedValue({
+      platform: 'openai', model: 'doubao-seedance-2.0-mini-480p', currency: 'USD',
+      catalog: {}, override: { video_pricing: videoPricing }, effective: { video_pricing: videoPricing },
+      enabled: true, token_pricing_absent: true, has_image_pricing: false, has_video_pricing: true,
+      video_pricing_valid: true, video_rule_count: 1, video_billing_units: ['video_token'], video_resolutions: ['480p'],
+      sync_invalidated: false, redundant: false, override_platform: 'openai',
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.find('button.action-btn').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="video-pricing-editor"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('admin.modelPrices.video.resolutions')
+    expect(wrapper.findAll('input').some((input) => input.element.value === '480p-text')).toBe(true)
+
+    const saveButton = wrapper.findAll('button').find((button) => button.text() === 'admin.modelPrices.save')
+    await saveButton!.trigger('click')
+    await flushPromises()
+
+    expect(upsertModelPrice).toHaveBeenCalledWith(expect.objectContaining({
+      platform: 'openai',
+      model: 'doubao-seedance-2.0-mini-480p',
+      currency: 'USD',
+      payload: expect.objectContaining({ video_pricing: videoPricing }),
+    }))
+  })
+
+  it('creates a valid simple per-second video price', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.find('button.action-btn').trigger('click')
+    await flushPromises()
+
+    const videoTab = wrapper.findAll('button').find((button) => button.text() === 'admin.modelPrices.tabs.video')
+    await videoTab!.trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-test="video-mode-enabled"]').trigger('click')
+    await flushPromises()
+
+    const saveButton = wrapper.findAll('button').find((button) => button.text() === 'admin.modelPrices.save')
+    await saveButton!.trigger('click')
+    await flushPromises()
+    expect(upsertModelPrice).toHaveBeenLastCalledWith(expect.objectContaining({
+      payload: expect.objectContaining({
+        video_pricing: expect.objectContaining({
+          enabled: true,
+          rules: [{ key: 'default', billing_unit: 'second', unit_price_usd: 0 }],
+        }),
+      }),
+    }))
+  })
+
+  it('reopens a canonical simple video profile in simple mode and preserves it on save', async () => {
+    const videoPricing = {
+      version: 1 as const,
+      enabled: true,
+      currency: 'USD' as const,
+      defaults: { request_mode: 'standard' as const, inference_mode: 'online' as const, generate_audio: false },
+      estimators: { default: { type: 'fixed_tokens_per_second' as const, tokens_per_second: 48_600 } },
+      rules: [{
+        key: 'reference-video', billing_unit: 'video_token' as const, unit_price_usd: 23.25e-6,
+        estimator: 'default', conditions: {
+          operations: ['generate'], input_has_video: true,
+          request_modes: ['standard' as const], inference_modes: ['online' as const],
+        },
+      }],
+    }
+    listModelPrices.mockResolvedValue({
+      items: [{
+        platform: 'openai', model: 'doubao-seedance-2.0-pro-1080p', source: 'override', currency: 'USD',
+        token_pricing_absent: true, has_image_pricing: false, has_video_pricing: true,
+        video_pricing_valid: true, video_rule_count: 1, video_billing_units: ['video_token'], video_resolutions: [],
+        sync_invalidated: false, redundant: false, effective: { video_pricing: videoPricing },
+        overridden_fields: ['video_pricing'], override_platform: 'openai', enabled: true,
+      }],
+      total: 1,
+    })
+    getModelPriceEntry.mockResolvedValue({
+      platform: 'openai', model: 'doubao-seedance-2.0-pro-1080p', currency: 'USD', catalog: {},
+      override: { video_pricing: videoPricing }, effective: { video_pricing: videoPricing }, enabled: true,
+      token_pricing_absent: true, has_image_pricing: false, has_video_pricing: true,
+      video_pricing_valid: true, video_rule_count: 1, video_billing_units: ['video_token'], video_resolutions: [],
+      sync_invalidated: false, redundant: false, override_platform: 'openai',
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.find('button.action-btn').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="video-simple-editor"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="video-editor-simple"]').classes()).toContain('experience-tab-active')
+
+    const saveButton = wrapper.findAll('button').find((button) => button.text() === 'admin.modelPrices.save')
+    await saveButton!.trigger('click')
+    await flushPromises()
+
+    expect(upsertModelPrice).toHaveBeenCalledWith(expect.objectContaining({
+      payload: { video_pricing: videoPricing },
+    }))
+  })
+
+  it('blocks an incomplete token estimator and saves after the required value is entered', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.find('button.action-btn').trigger('click')
+    await flushPromises()
+
+    const videoTab = wrapper.findAll('button').find((button) => button.text() === 'admin.modelPrices.tabs.video')
+    await videoTab!.trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-test="video-mode-enabled"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.find('[data-test="video-simple-billing-unit"]').setValue('video_token')
+    await flushPromises()
+    const saveButton = wrapper.findAll('button').find((button) => button.text() === 'admin.modelPrices.save')
+    await saveButton!.trigger('click')
+    await flushPromises()
+    expect(upsertModelPrice).not.toHaveBeenCalled()
+    expect(showError).toHaveBeenCalledWith('admin.modelPrices.video.validationEstimatorConfig')
+
+    await wrapper.find('[data-test="video-simple-tokens-per-second"]').setValue('9720')
+    await flushPromises()
+    await saveButton!.trigger('click')
+    await flushPromises()
+    expect(upsertModelPrice).toHaveBeenCalledWith(expect.objectContaining({
+      payload: expect.objectContaining({
+        video_pricing: expect.objectContaining({
+          estimators: expect.objectContaining({
+            default: { type: 'fixed_tokens_per_second', tokens_per_second: 9720 },
+          }),
+          rules: expect.arrayContaining([expect.objectContaining({ billing_unit: 'video_token', estimator: 'default' })]),
+        }),
+      }),
     }))
   })
 

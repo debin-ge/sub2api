@@ -216,6 +216,10 @@ func provideCleanup(
 	idempotencyCleanup *service.IdempotencyCleanupService,
 	batchImageCleanup *service.BatchImageCleanupService,
 	batchImageWorker *service.BatchImageWorkerRuntime,
+	videoSpoolRuntime *service.VideoSpoolRuntime,
+	videoTaskRuntime *service.VideoTaskRuntime,
+	videoCallbackRuntime *service.VideoCallbackRuntime,
+	videoCapabilityProbeRuntime *service.VideoCapabilityProbeRuntime,
 	pricing *service.PricingService,
 	emailQueue *service.EmailQueueService,
 	billingCache *service.BillingCacheService,
@@ -274,6 +278,10 @@ func provideCleanup(
 			idempotencyCleanup,
 			batchImageCleanup,
 			batchImageWorker,
+			videoSpoolRuntime,
+			videoTaskRuntime,
+			videoCallbackRuntime,
+			videoCapabilityProbeRuntime,
 			pricing,
 			emailQueue,
 			billingCache,
@@ -335,6 +343,10 @@ func provideFinalCleanup(
 	idempotencyCleanup *service.IdempotencyCleanupService,
 	batchImageCleanup *service.BatchImageCleanupService,
 	batchImageWorker *service.BatchImageWorkerRuntime,
+	videoSpoolRuntime *service.VideoSpoolRuntime,
+	videoTaskRuntime *service.VideoTaskRuntime,
+	videoCallbackRuntime *service.VideoCallbackRuntime,
+	videoCapabilityProbeRuntime *service.VideoCapabilityProbeRuntime,
 	pricing *service.PricingService,
 	emailQueue *service.EmailQueueService,
 	billingCache *service.BillingCacheService,
@@ -501,6 +513,30 @@ func provideFinalCleanup(
 			{"BatchImageWorkerRuntime", func() error {
 				if batchImageWorker != nil {
 					batchImageWorker.Stop()
+				}
+				return nil
+			}},
+			{"VideoSpoolRuntime", func() error {
+				if videoSpoolRuntime != nil {
+					videoSpoolRuntime.Stop()
+				}
+				return nil
+			}},
+			{"VideoTaskRuntime", func() error {
+				if videoTaskRuntime != nil {
+					videoTaskRuntime.Stop()
+				}
+				return nil
+			}},
+			{"VideoCallbackRuntime", func() error {
+				if videoCallbackRuntime != nil {
+					videoCallbackRuntime.Stop()
+				}
+				return nil
+			}},
+			{"VideoCapabilityProbeRuntime", func() error {
+				if videoCapabilityProbeRuntime != nil {
+					videoCapabilityProbeRuntime.Stop()
 				}
 				return nil
 			}},

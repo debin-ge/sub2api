@@ -146,8 +146,15 @@
         </template>
 
         <template #cell-tokens="{ row }">
+			<div v-if="isVideoUsage(row)" data-testid="video-usage-cell" class="flex min-w-[150px] items-center gap-2">
+				<Icon name="play" size="sm" class="shrink-0 text-rose-500" />
+				<div class="min-w-0 text-sm">
+					<div class="font-medium text-gray-900 dark:text-white">{{ formatVideoUsage(row) }}</div>
+					<div class="text-xs text-gray-400">{{ formatVideoMetadata(row) }}</div>
+				</div>
+			</div>
           <!-- 图片生成请求（仅按次计费时显示图片格式） -->
-          <div v-if="isImageUsage(row)" class="flex items-center gap-1.5">
+			<div v-else-if="isImageUsage(row)" class="flex items-center gap-1.5">
             <svg class="h-4 w-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
@@ -408,7 +415,7 @@
               <span class="text-gray-400">{{ t('usage.imageInputCost') }}</span>
               <span class="font-medium text-fuchsia-300">${{ tooltipData.image_input_cost.toFixed(6) }}</span>
             </div>
-            <div v-if="tooltipData && tooltipData.output_cost > 0" class="flex items-center justify-between gap-4">
+			<div v-if="tooltipData && tooltipData.output_cost > 0 && !isVideoUsage(tooltipData)" class="flex items-center justify-between gap-4">
               <span class="text-gray-400">{{ t('admin.usage.outputCost') }}</span>
               <span class="font-medium text-white">${{ tooltipData.output_cost.toFixed(6) }}</span>
             </div>
@@ -416,8 +423,34 @@
               <span class="text-gray-400">{{ t('usage.imageOutputCost') }}</span>
               <span class="font-medium text-pink-300">${{ tooltipData.image_output_cost.toFixed(6) }}</span>
             </div>
-            <!-- Token billing: show unit prices per 1M tokens -->
-            <template v-if="tooltipData && !isImageUsage(tooltipData) && (!tooltipData.billing_mode || tooltipData.billing_mode === BILLING_MODE_TOKEN)">
+			<template v-if="tooltipData && isVideoUsage(tooltipData)">
+				<div class="flex items-center justify-between gap-4">
+					<span class="text-gray-400">{{ t('usage.videoResolution') }}</span>
+					<span class="font-medium text-white">{{ tooltipData.video_resolution || '-' }}</span>
+				</div>
+				<div class="flex items-center justify-between gap-4">
+					<span class="text-gray-400">{{ t('usage.videoDuration') }}</span>
+					<span class="font-medium text-white">{{ formatVideoDuration(tooltipData.video_duration_seconds) }}</span>
+				</div>
+				<div class="flex items-center justify-between gap-4">
+					<span class="text-gray-400">{{ t('usage.videoBillingUnit') }}</span>
+					<span class="font-medium text-white">{{ videoBillingUnitLabel(tooltipData) }}</span>
+				</div>
+				<div class="flex items-center justify-between gap-4">
+					<span class="text-gray-400">{{ t('usage.videoUnits') }}</span>
+					<span class="font-medium text-white">{{ getVideoUsageUnits(tooltipData).toLocaleString() }}</span>
+				</div>
+				<div class="flex items-center justify-between gap-4">
+					<span class="text-gray-400">{{ t('usage.videoUnitPrice') }}</span>
+					<span class="font-medium text-sky-300">{{ formatVideoUnitPrice(tooltipData) }}</span>
+				</div>
+				<div class="flex items-center justify-between gap-4">
+					<span class="text-gray-400">{{ t('usage.videoBaseCost') }}</span>
+					<span class="font-medium text-white">${{ tooltipData.total_cost?.toFixed(6) || '0.000000' }}</span>
+				</div>
+			</template>
+			<!-- Token billing: show unit prices per 1M tokens -->
+			<template v-else-if="tooltipData && !isImageUsage(tooltipData) && (!tooltipData.billing_mode || tooltipData.billing_mode === BILLING_MODE_TOKEN)">
               <div v-if="tooltipData && textInputTokens(tooltipData) > 0" class="flex items-center justify-between gap-4">
                 <span class="text-gray-400">{{ t('usage.inputTokenPrice') }}</span>
                 <span class="font-medium text-sky-300">{{ formatTokenPricePerMillion(tooltipData.input_cost, textInputTokens(tooltipData)) }} {{ t('usage.perMillionTokens') }}</span>
@@ -489,7 +522,7 @@
           </div>
           <div class="flex items-center justify-between gap-6">
             <span class="text-gray-400">{{ t('usage.rate') }}</span>
-            <span class="font-semibold text-blue-400">{{ formatMultiplier(tooltipData?.rate_multiplier || 1) }}x</span>
+			<span class="font-semibold text-blue-400">{{ formatMultiplier(tooltipData?.rate_multiplier ?? 1) }}x</span>
           </div>
           <div class="flex items-center justify-between gap-6">
             <span class="text-gray-400">{{ t('usage.original') }}</span>
@@ -542,9 +575,13 @@ import {
 } from '@/utils/latencyHealth'
 import {
   BILLING_MODE_TOKEN,
+	getVideoBillingUnit,
+	getVideoUnitPrice,
+	getVideoUsageUnits,
   getBillingModeLabel,
   getBillingModeBadgeClass,
   isImageUsage,
+	isVideoUsage,
   getDisplayBillingMode,
   imageUnitPrice,
 } from '@/utils/billingMode'
@@ -600,6 +637,34 @@ const props = withDefaults(defineProps<Props>(), {
   showUpstreamEndpoint: true,
   flat: false
 })
+
+function videoBillingUnitLabel(row: AdminUsageLog): string {
+	switch (getVideoBillingUnit(row)) {
+		case 'video_token': return t('usage.videoTokenUnit')
+		case 'second': return t('usage.videoSecondUnit')
+		default: return t('usage.videoRequestUnit')
+	}
+}
+
+function formatVideoUsage(row: AdminUsageLog): string {
+	return `${getVideoUsageUnits(row).toLocaleString()} ${videoBillingUnitLabel(row)}`
+}
+
+function formatVideoDuration(seconds: number | null | undefined): string {
+	return seconds == null ? '-' : `${seconds.toLocaleString()} ${t('usage.secondsShort')}`
+}
+
+function formatVideoMetadata(row: AdminUsageLog): string {
+	return [row.video_resolution || '', row.video_duration_seconds == null ? '' : formatVideoDuration(row.video_duration_seconds)].filter(Boolean).join(' / ') || '-'
+}
+
+function formatVideoUnitPrice(row: AdminUsageLog): string {
+	const price = getVideoUnitPrice(row)
+	if (getVideoBillingUnit(row) === 'video_token') {
+		return `$${(price * 1_000_000).toFixed(6)} ${t('usage.perMillionVideoTokens')}`
+	}
+	return `$${price.toFixed(6)} / ${videoBillingUnitLabel(row)}`
+}
 const emit = defineEmits<{
   userClick: [userID: number, email?: string]
   sort: [key: string, order: 'asc' | 'desc']

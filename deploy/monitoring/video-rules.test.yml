@@ -1,0 +1,153 @@
+rule_files:
+  - video-alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'video_platform_submission_unknown_hold_amount{job="sub2api"}'
+        values: '10x30'
+      - series: 'video_platform_oldest_settlement_pending_age_seconds{job="sub2api"}'
+        values: '600x30'
+      - series: 'video_platform_spool_utilization_ratio{job="sub2api"}'
+        values: '0.9x30'
+      - series: 'video_platform_spool_cleanup_total{job="sub2api",kind="session",result="error"}'
+        values: '0+1x30'
+      - series: 'video_platform_webhooks_total{job="sub2api",provider="openai",result="unmatched"}'
+        values: '0+1x30'
+      - series: 'video_platform_callbacks_total{job="sub2api",result="quarantined"}'
+        values: '0+1x30'
+      - series: 'video_platform_task_state_oldest_age_seconds{job="sub2api",state="in_progress"}'
+        values: '3600x30'
+      - series: 'video_platform_oldest_delete_pending_age_seconds{job="sub2api"}'
+        values: '600x30'
+      - series: 'video_platform_content_requests_total{job="sub2api",variant="video",status="5xx"}'
+        values: '0+1x30'
+      - series: 'video_platform_capability_probes_total{job="sub2api",provider="openai",status="unsupported"}'
+        values: '0+1x30'
+      - series: 'video_platform_access_disclosures_total{job="sub2api",kind="dedicated_credential",policy="dedicated_credentials"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: VideoSubmissionUnknownFrozenAmount
+        exp_alerts:
+          - exp_labels: {job: sub2api, severity: critical}
+            exp_annotations:
+              summary: "Video submissions have an unknown outcome with frozen balance"
+              runbook: "deploy/monitoring/video-runbook.md#videosubmissionunknownfrozenamount"
+      - eval_time: 20m
+        alertname: VideoSettlementPendingTooOld
+        exp_alerts:
+          - exp_labels: {job: sub2api, severity: critical}
+            exp_annotations:
+              summary: "A video balance settlement has remained pending for more than five minutes"
+              runbook: "deploy/monitoring/video-runbook.md#videosettlementpendingtooold"
+      - eval_time: 20m
+        alertname: VideoSpoolCleanupFailure
+        exp_alerts:
+          - exp_labels: {job: sub2api, severity: critical}
+            exp_annotations:
+              summary: "Encrypted video submission spool cleanup is failing"
+              runbook: "deploy/monitoring/video-runbook.md#videospoolcleanupfailure"
+      - eval_time: 20m
+        alertname: VideoSpoolDiskHigh
+        exp_alerts:
+          - exp_labels: {job: sub2api, severity: warning}
+            exp_annotations:
+              summary: "Encrypted video submission spool utilization exceeds 80%"
+              runbook: "deploy/monitoring/video-runbook.md#videospooldiskhigh"
+      - eval_time: 20m
+        alertname: VideoPollPendingTooOld
+        exp_alerts:
+          - exp_labels: {job: sub2api, severity: warning}
+            exp_annotations:
+              summary: "A video generation has remained active for more than thirty minutes"
+              runbook: "deploy/monitoring/video-runbook.md#videopollpendingtooold"
+      - eval_time: 20m
+        alertname: VideoDeletePendingTooOld
+        exp_alerts:
+          - exp_labels: {job: sub2api, severity: warning}
+            exp_annotations:
+              summary: "A video content deletion has remained pending for more than five minutes"
+              runbook: "deploy/monitoring/video-runbook.md#videodeletependingtooold"
+      - eval_time: 20m
+        alertname: VideoCallbackQuarantined
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: VideoWebhookUnmatched
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: VideoContentProxy5xx
+        exp_alerts:
+          - exp_labels: {job: sub2api, severity: warning}
+            exp_annotations:
+              summary: "Video content proxy is returning 5xx responses"
+              runbook: "deploy/monitoring/video-runbook.md#videocontentproxy5xx"
+      - eval_time: 20m
+        alertname: VideoCapabilityProbeFailures
+        exp_alerts:
+          - exp_labels: {job: sub2api, severity: warning}
+            exp_annotations:
+              summary: "Multiple OpenAI video accounts became unsupported"
+              runbook: "deploy/monitoring/video-runbook.md#videocapabilityprobefailures"
+      - eval_time: 20m
+        alertname: VideoDedicatedCredentialDisclosure
+        exp_alerts:
+          - exp_labels: {job: sub2api, severity: warning}
+            exp_annotations:
+              summary: "A dedicated Provider credential was disclosed through the video API"
+              runbook: "deploy/monitoring/video-runbook.md#videodedicatedcredentialdisclosure"
+
+  - interval: 1m
+    input_series:
+      - series: 'video_platform_submission_unknown_hold_amount{job="sub2api"}'
+        values: '0x30'
+      - series: 'video_platform_oldest_settlement_pending_age_seconds{job="sub2api"}'
+        values: '30x30'
+      - series: 'video_platform_spool_utilization_ratio{job="sub2api"}'
+        values: '0.2x30'
+      - series: 'video_platform_spool_cleanup_total{job="sub2api",kind="session",result="error"}'
+        values: '0x30'
+      - series: 'video_platform_webhooks_total{job="sub2api",provider="openai",result="unmatched"}'
+        values: '0x30'
+      - series: 'video_platform_callbacks_total{job="sub2api",result="quarantined"}'
+        values: '0x30'
+      - series: 'video_platform_task_state_oldest_age_seconds{job="sub2api",state="in_progress"}'
+        values: '30x30'
+      - series: 'video_platform_oldest_delete_pending_age_seconds{job="sub2api"}'
+        values: '0x30'
+      - series: 'video_platform_content_requests_total{job="sub2api",variant="video",status="5xx"}'
+        values: '0x30'
+      - series: 'video_platform_capability_probes_total{job="sub2api",provider="openai",status="unsupported"}'
+        values: '0+0x30'
+      - series: 'video_platform_access_disclosures_total{job="sub2api",kind="dedicated_credential",policy="dedicated_credentials"}'
+        values: '0x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: VideoSubmissionUnknownFrozenAmount
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: VideoSettlementPendingTooOld
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: VideoSpoolCleanupFailure
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: VideoSpoolDiskHigh
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: VideoPollPendingTooOld
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: VideoDeletePendingTooOld
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: VideoContentProxy5xx
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: VideoCapabilityProbeFailures
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: VideoDedicatedCredentialDisclosure
+        exp_alerts: []

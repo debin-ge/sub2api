@@ -225,6 +225,11 @@ func VideoPrice1080p(v float64) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldVideoPrice1080p, v))
 }
 
+// VideoDisclosurePolicy applies equality check predicate on the "video_disclosure_policy" field. It's identical to VideoDisclosurePolicyEQ.
+func VideoDisclosurePolicy(v string) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldVideoDisclosurePolicy, v))
+}
+
 // WebSearchPricePerCall applies equality check predicate on the "web_search_price_per_call" field. It's identical to WebSearchPricePerCallEQ.
 func WebSearchPricePerCall(v float64) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldWebSearchPricePerCall, v))
@@ -1828,6 +1833,81 @@ func VideoModelPricesIsNil() predicate.Group {
 // VideoModelPricesNotNil applies the NotNil predicate on the "video_model_prices" field.
 func VideoModelPricesNotNil() predicate.Group {
 	return predicate.Group(sql.FieldNotNull(FieldVideoModelPrices))
+}
+
+// VideoDisclosurePolicyEQ applies the EQ predicate on the "video_disclosure_policy" field.
+func VideoDisclosurePolicyEQ(v string) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldVideoDisclosurePolicy, v))
+}
+
+// VideoDisclosurePolicyNEQ applies the NEQ predicate on the "video_disclosure_policy" field.
+func VideoDisclosurePolicyNEQ(v string) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldVideoDisclosurePolicy, v))
+}
+
+// VideoDisclosurePolicyIn applies the In predicate on the "video_disclosure_policy" field.
+func VideoDisclosurePolicyIn(vs ...string) predicate.Group {
+	return predicate.Group(sql.FieldIn(FieldVideoDisclosurePolicy, vs...))
+}
+
+// VideoDisclosurePolicyNotIn applies the NotIn predicate on the "video_disclosure_policy" field.
+func VideoDisclosurePolicyNotIn(vs ...string) predicate.Group {
+	return predicate.Group(sql.FieldNotIn(FieldVideoDisclosurePolicy, vs...))
+}
+
+// VideoDisclosurePolicyGT applies the GT predicate on the "video_disclosure_policy" field.
+func VideoDisclosurePolicyGT(v string) predicate.Group {
+	return predicate.Group(sql.FieldGT(FieldVideoDisclosurePolicy, v))
+}
+
+// VideoDisclosurePolicyGTE applies the GTE predicate on the "video_disclosure_policy" field.
+func VideoDisclosurePolicyGTE(v string) predicate.Group {
+	return predicate.Group(sql.FieldGTE(FieldVideoDisclosurePolicy, v))
+}
+
+// VideoDisclosurePolicyLT applies the LT predicate on the "video_disclosure_policy" field.
+func VideoDisclosurePolicyLT(v string) predicate.Group {
+	return predicate.Group(sql.FieldLT(FieldVideoDisclosurePolicy, v))
+}
+
+// VideoDisclosurePolicyLTE applies the LTE predicate on the "video_disclosure_policy" field.
+func VideoDisclosurePolicyLTE(v string) predicate.Group {
+	return predicate.Group(sql.FieldLTE(FieldVideoDisclosurePolicy, v))
+}
+
+// VideoDisclosurePolicyContains applies the Contains predicate on the "video_disclosure_policy" field.
+func VideoDisclosurePolicyContains(v string) predicate.Group {
+	return predicate.Group(sql.FieldContains(FieldVideoDisclosurePolicy, v))
+}
+
+// VideoDisclosurePolicyHasPrefix applies the HasPrefix predicate on the "video_disclosure_policy" field.
+func VideoDisclosurePolicyHasPrefix(v string) predicate.Group {
+	return predicate.Group(sql.FieldHasPrefix(FieldVideoDisclosurePolicy, v))
+}
+
+// VideoDisclosurePolicyHasSuffix applies the HasSuffix predicate on the "video_disclosure_policy" field.
+func VideoDisclosurePolicyHasSuffix(v string) predicate.Group {
+	return predicate.Group(sql.FieldHasSuffix(FieldVideoDisclosurePolicy, v))
+}
+
+// VideoDisclosurePolicyIsNil applies the IsNil predicate on the "video_disclosure_policy" field.
+func VideoDisclosurePolicyIsNil() predicate.Group {
+	return predicate.Group(sql.FieldIsNull(FieldVideoDisclosurePolicy))
+}
+
+// VideoDisclosurePolicyNotNil applies the NotNil predicate on the "video_disclosure_policy" field.
+func VideoDisclosurePolicyNotNil() predicate.Group {
+	return predicate.Group(sql.FieldNotNull(FieldVideoDisclosurePolicy))
+}
+
+// VideoDisclosurePolicyEqualFold applies the EqualFold predicate on the "video_disclosure_policy" field.
+func VideoDisclosurePolicyEqualFold(v string) predicate.Group {
+	return predicate.Group(sql.FieldEqualFold(FieldVideoDisclosurePolicy, v))
+}
+
+// VideoDisclosurePolicyContainsFold applies the ContainsFold predicate on the "video_disclosure_policy" field.
+func VideoDisclosurePolicyContainsFold(v string) predicate.Group {
+	return predicate.Group(sql.FieldContainsFold(FieldVideoDisclosurePolicy, v))
 }
 
 // WebSearchPricePerCallEQ applies the EQ predicate on the "web_search_price_per_call" field.

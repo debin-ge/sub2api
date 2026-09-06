@@ -21,6 +21,11 @@ import (
 	"github.com/tidwall/sjson"
 )
 
+const (
+	compositeVideoJSONBodyLimit = int64(1 << 20)
+	videoWebhookBodyLimit       = int64(1 << 20)
+)
+
 // RegisterGatewayRoutes 注册 API 网关路由（Claude/OpenAI/Gemini 兼容）
 func RegisterGatewayRoutes(
 	r *gin.Engine,
@@ -43,7 +48,8 @@ func RegisterGatewayRoutes(
 	clientRequestID := middleware.ClientRequestID()
 	opsErrorLogger := handler.OpsErrorLoggerMiddleware(opsService)
 	endpointNorm := handler.InboundEndpointMiddleware()
-	compositeTarget := compositeTargetPlatformMiddleware(compositeResolver)
+	compositeTarget := compositeTargetPlatformMiddleware(compositeResolver, h.Video)
+	videoCreateIntent := gin.HandlerFunc(h.Video.CreateIntentMiddleware)
 	compositeGeminiTarget := compositeGeminiTargetPlatformMiddleware(compositeResolver)
 
 	// 未分组 Key 拦截中间件（按协议格式区分错误响应）
@@ -115,69 +121,145 @@ func RegisterGatewayRoutes(
 			})
 		}
 	}
-	videoGenerationHandler := func(c *gin.Context) {
-		// Video status/content lookups already allow Composite groups; keep task
-		// creation aligned so composite keys can route to Grok accounts.
+	videoUnsupported := func(c *gin.Context) {
+		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": gin.H{
+				"type":    "not_found_error",
+				"message": "Videos API is not supported for this platform",
+			},
+		})
+	}
+	videoCreateHandler := func(c *gin.Context) {
+		switch getGroupPlatform(c) {
+		case service.PlatformGrok:
+			h.CompatibleGateway.GrokVideoGeneration(c)
+		case service.PlatformOpenAI, service.PlatformComposite:
+			if h.Video == nil {
+				videoUnsupported(c)
+				return
+			}
+			h.Video.Create(c)
+		default:
+			videoUnsupported(c)
+		}
+	}
+	legacyVideoGenerationHandler := func(c *gin.Context) {
 		if platform := getGroupPlatform(c); platform == service.PlatformGrok || platform == service.PlatformComposite {
 			h.CompatibleGateway.GrokVideoGeneration(c)
 			return
 		}
-		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": gin.H{
-				"type":    "not_found_error",
-				"message": "Videos API is not supported for this platform",
-			},
-		})
+		videoUnsupported(c)
 	}
-	videoStatusHandler := func(c *gin.Context) {
-		// Video status requests do not carry a model, so composite groups cannot
-		// be resolved by compositeTargetPlatformMiddleware. Route them through
-		// the Grok handler and let scheduler/account selection enforce capacity.
-		if getGroupPlatform(c) == service.PlatformGrok || getGroupPlatform(c) == service.PlatformComposite {
+	videoRetrieveHandler := func(c *gin.Context) {
+		platform := getGroupPlatform(c)
+		if platform == service.PlatformGrok || (platform == service.PlatformComposite && !service.IsValidVideoTaskID(c.Param("request_id"))) {
 			h.CompatibleGateway.GrokVideoStatus(c)
 			return
 		}
-		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": gin.H{
-				"type":    "not_found_error",
-				"message": "Videos API is not supported for this platform",
-			},
-		})
+		if platform != service.PlatformOpenAI && platform != service.PlatformComposite || h.Video == nil {
+			videoUnsupported(c)
+			return
+		}
+		h.Video.Retrieve(c)
 	}
 	videoContentHandler := func(c *gin.Context) {
-		// Video content requests do not carry a model, so composite groups cannot
-		// be resolved by compositeTargetPlatformMiddleware. Route them through
-		// the Grok handler just like video status lookups.
-		if getGroupPlatform(c) == service.PlatformGrok || getGroupPlatform(c) == service.PlatformComposite {
+		platform := getGroupPlatform(c)
+		if platform == service.PlatformGrok || (platform == service.PlatformComposite && !service.IsValidVideoTaskID(c.Param("request_id"))) {
 			h.CompatibleGateway.GrokVideoContent(c)
 			return
 		}
-		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": gin.H{
-				"type":    "not_found_error",
-				"message": "Videos API is not supported for this platform",
-			},
-		})
+		if platform != service.PlatformOpenAI && platform != service.PlatformComposite || h.Video == nil {
+			videoUnsupported(c)
+			return
+		}
+		h.Video.Content(c)
+	}
+	legacyVideoStatusHandler := func(c *gin.Context) {
+		if platform := getGroupPlatform(c); platform == service.PlatformGrok || platform == service.PlatformComposite {
+			h.CompatibleGateway.GrokVideoStatus(c)
+			return
+		}
+		videoUnsupported(c)
+	}
+	legacyVideoContentHandler := func(c *gin.Context) {
+		if platform := getGroupPlatform(c); platform == service.PlatformGrok || platform == service.PlatformComposite {
+			h.CompatibleGateway.GrokVideoContent(c)
+			return
+		}
+		videoUnsupported(c)
 	}
 	videoEditHandler := func(c *gin.Context) {
-		if getGroupPlatform(c) == service.PlatformGrok {
+		switch getGroupPlatform(c) {
+		case service.PlatformGrok:
 			h.CompatibleGateway.GrokVideoEdit(c)
-			return
+		case service.PlatformOpenAI, service.PlatformComposite:
+			if h.Video == nil {
+				videoUnsupported(c)
+				return
+			}
+			h.Video.Edit(c)
+		default:
+			videoUnsupported(c)
 		}
-		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
-		c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Videos API is not supported for this platform"}})
 	}
 	videoExtensionHandler := func(c *gin.Context) {
-		if getGroupPlatform(c) == service.PlatformGrok {
+		switch getGroupPlatform(c) {
+		case service.PlatformGrok:
 			h.CompatibleGateway.GrokVideoExtension(c)
+		case service.PlatformOpenAI, service.PlatformComposite:
+			if h.Video == nil {
+				videoUnsupported(c)
+				return
+			}
+			h.Video.Extend(c)
+		default:
+			videoUnsupported(c)
+		}
+	}
+	videoListHandler := func(c *gin.Context) {
+		if (getGroupPlatform(c) == service.PlatformOpenAI || getGroupPlatform(c) == service.PlatformComposite) && h.Video != nil {
+			h.Video.List(c)
 			return
 		}
-		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
-		c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Videos API is not supported for this platform"}})
+		videoUnsupported(c)
 	}
+	videoDeleteHandler := func(c *gin.Context) {
+		if (getGroupPlatform(c) == service.PlatformOpenAI || getGroupPlatform(c) == service.PlatformComposite) && h.Video != nil {
+			h.Video.Delete(c)
+			return
+		}
+		videoUnsupported(c)
+	}
+	videoCharacterCreateHandler := func(c *gin.Context) {
+		if (getGroupPlatform(c) == service.PlatformOpenAI || getGroupPlatform(c) == service.PlatformComposite) && h.Video != nil {
+			h.Video.CreateCharacter(c)
+			return
+		}
+		videoUnsupported(c)
+	}
+	videoCharacterGetHandler := func(c *gin.Context) {
+		if (getGroupPlatform(c) == service.PlatformOpenAI || getGroupPlatform(c) == service.PlatformComposite) && h.Video != nil {
+			h.Video.GetCharacter(c)
+			return
+		}
+		videoUnsupported(c)
+	}
+	videoCharacterDeleteHandler := func(c *gin.Context) {
+		if (getGroupPlatform(c) == service.PlatformOpenAI || getGroupPlatform(c) == service.PlatformComposite) && h.Video != nil {
+			h.Video.DeleteCharacter(c)
+			return
+		}
+		videoUnsupported(c)
+	}
+	videoProviderWebhookHandler := func(c *gin.Context) {
+		if h == nil || h.Video == nil {
+			videoUnsupported(c)
+			return
+		}
+		h.Video.ProviderWebhook(c)
+	}
+	r.POST("/webhooks/videos/:provider/:account_id", middleware.RequestBodyLimit(videoWebhookBodyLimit), clientRequestID, opsErrorLogger, videoProviderWebhookHandler)
 	// /responses/*subpath 的子路径会被转发到上游同名端点之后，因此在入口就拒掉
 	// 不可转发的子路径，不让它进入调度与转发流程。可转发的判定见
 	// service.IsForwardableOpenAIResponsesRequestPath 及 upstream_path_guard.go。
@@ -210,6 +292,7 @@ func RegisterGatewayRoutes(
 	gateway.Use(gin.HandlerFunc(apiKeyAuth))
 	gateway.GET("/sub2api/billing", h.Gateway.KeyBillingInfo)
 	gateway.Use(compositeTarget)
+	gateway.Use(videoCreateIntent)
 	gateway.Use(requireGroupAnthropic)
 	{
 		// /v1/messages: auto-route based on group platform
@@ -362,18 +445,24 @@ func RegisterGatewayRoutes(
 		gateway.DELETE("/images/batches/:id/outputs", h.BatchImage.DeleteOutputs)
 		// OpenAI-compatible clients may create through /videos; xAI receives the
 		// canonical /videos/generations route inside the Grok media forwarder.
-		gateway.POST("/videos", videoGenerationHandler)
-		gateway.POST("/videos/generations", videoGenerationHandler)
+		gateway.POST("/videos", videoCreateHandler)
+		gateway.GET("/videos", videoListHandler)
+		gateway.POST("/videos/generations", legacyVideoGenerationHandler)
 		gateway.POST("/videos/edits", videoEditHandler)
 		gateway.POST("/videos/extensions", videoExtensionHandler)
-		gateway.GET("/videos/generations/:request_id/content", videoContentHandler)
-		gateway.GET("/videos/edits/:request_id/content", videoContentHandler)
-		gateway.GET("/videos/extensions/:request_id/content", videoContentHandler)
-		gateway.GET("/videos/generations/:request_id", videoStatusHandler)
-		gateway.GET("/videos/edits/:request_id", videoStatusHandler)
-		gateway.GET("/videos/extensions/:request_id", videoStatusHandler)
-		gateway.GET("/videos/:request_id", videoStatusHandler)
+		gateway.POST("/videos/characters", videoCharacterCreateHandler)
+		gateway.GET("/videos/characters/:character_id", videoCharacterGetHandler)
+		gateway.DELETE("/videos/characters/:character_id", videoCharacterDeleteHandler)
+		gateway.GET("/videos/generations/:request_id/content", legacyVideoContentHandler)
+		gateway.GET("/videos/edits/:request_id/content", legacyVideoContentHandler)
+		gateway.GET("/videos/extensions/:request_id/content", legacyVideoContentHandler)
+		gateway.GET("/videos/generations/:request_id", legacyVideoStatusHandler)
+		gateway.GET("/videos/edits/:request_id", legacyVideoStatusHandler)
+		gateway.GET("/videos/extensions/:request_id", legacyVideoStatusHandler)
+		gateway.GET("/videos/:request_id", videoRetrieveHandler)
+		gateway.DELETE("/videos/:request_id", videoDeleteHandler)
 		gateway.GET("/videos/:request_id/content", videoContentHandler)
+		gateway.HEAD("/videos/:request_id/content", videoContentHandler)
 
 		// xAI Voice APIs (Grok platform only): HTTP TTS/STT + Realtime WS.
 		// Not part of the creation-center product surface — gateway relay only.
@@ -561,18 +650,24 @@ func RegisterGatewayRoutes(
 	r.POST("/images/generations/async", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, h.AsyncImage.Submit)
 	r.POST("/images/edits/async", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, h.AsyncImage.Submit)
 	r.GET("/images/tasks/:task_id", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, h.AsyncImage.Get)
-	r.POST("/videos", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, videoGenerationHandler)
-	r.POST("/videos/generations", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, videoGenerationHandler)
-	r.POST("/videos/edits", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, videoEditHandler)
-	r.POST("/videos/extensions", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, videoExtensionHandler)
-	r.GET("/videos/generations/:request_id/content", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, videoContentHandler)
-	r.GET("/videos/edits/:request_id/content", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, videoContentHandler)
-	r.GET("/videos/extensions/:request_id/content", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, videoContentHandler)
-	r.GET("/videos/generations/:request_id", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, videoStatusHandler)
-	r.GET("/videos/edits/:request_id", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, videoStatusHandler)
-	r.GET("/videos/extensions/:request_id", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, videoStatusHandler)
-	r.GET("/videos/:request_id", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, videoStatusHandler)
+	r.POST("/videos", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, videoCreateIntent, requireGroupAnthropic, videoCreateHandler)
+	r.GET("/videos", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, videoListHandler)
+	r.POST("/videos/generations", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, videoCreateIntent, requireGroupAnthropic, legacyVideoGenerationHandler)
+	r.POST("/videos/edits", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, videoCreateIntent, requireGroupAnthropic, videoEditHandler)
+	r.POST("/videos/extensions", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, videoCreateIntent, requireGroupAnthropic, videoExtensionHandler)
+	r.POST("/videos/characters", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, videoCreateIntent, requireGroupAnthropic, videoCharacterCreateHandler)
+	r.GET("/videos/characters/:character_id", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, videoCharacterGetHandler)
+	r.DELETE("/videos/characters/:character_id", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, videoCharacterDeleteHandler)
+	r.GET("/videos/generations/:request_id/content", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, legacyVideoContentHandler)
+	r.GET("/videos/edits/:request_id/content", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, legacyVideoContentHandler)
+	r.GET("/videos/extensions/:request_id/content", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, legacyVideoContentHandler)
+	r.GET("/videos/generations/:request_id", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, legacyVideoStatusHandler)
+	r.GET("/videos/edits/:request_id", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, legacyVideoStatusHandler)
+	r.GET("/videos/extensions/:request_id", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, legacyVideoStatusHandler)
+	r.GET("/videos/:request_id", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, videoRetrieveHandler)
+	r.DELETE("/videos/:request_id", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, videoDeleteHandler)
 	r.GET("/videos/:request_id/content", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, videoContentHandler)
+	r.HEAD("/videos/:request_id/content", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, videoContentHandler)
 
 	rootVoiceHandler := func(endpoint string) gin.HandlerFunc {
 		return func(c *gin.Context) {
@@ -822,7 +917,7 @@ func writeOpenCodeModels(c *gin.Context, h *handler.Handlers) {
 	})
 }
 
-func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver) gin.HandlerFunc {
+func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver, videoHandlers ...*handler.VideoHandler) gin.HandlerFunc {
 	if resolver == nil {
 		resolver = service.NewCompositeRouteResolver(nil)
 	}
@@ -835,6 +930,32 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver)
 		if c.Request == nil || c.Request.Method == http.MethodGet {
 			c.Next()
 			return
+		}
+		endpoint := compositeRouteEndpointForPath(c.Request.URL.Path)
+		if isCompositeVideoEndpoint(endpoint) {
+			mediaType, _, _ := mime.ParseMediaType(strings.TrimSpace(c.GetHeader("Content-Type")))
+			if strings.EqualFold(mediaType, "multipart/form-data") {
+				// The VideoHandler streams file parts into the encrypted submission
+				// spool and resolves the composite route after parsing all scalar
+				// fields. Buffering here would materialize the media in memory.
+				c.Next()
+				return
+			}
+			if _, managed := service.ManagedVideoOperationForPath(c.Request.URL.Path); managed && c.Request.Method == http.MethodPost {
+				if len(videoHandlers) > 0 && videoHandlers[0] != nil {
+					videoHandlers[0].PrepareCompositeVideoRoute(c)
+					if !c.IsAborted() {
+						c.Next()
+					}
+					return
+				}
+				if strings.TrimSpace(c.GetHeader("Idempotency-Key")) != "" {
+					c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{"type": "server_error", "message": "Video replay routing is unavailable"}})
+					c.Abort()
+					return
+				}
+			}
+			c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, compositeVideoJSONBodyLimit)
 		}
 
 		body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
@@ -853,7 +974,7 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver)
 
 		model := compositeRequestModelFromBody(c.GetHeader("Content-Type"), body)
 		if model != "" {
-			decision, err := resolver.Resolve(c.Request.Context(), apiKey.Group.ID, model, compositeRouteEndpointForPath(c.Request.URL.Path))
+			decision, err := resolver.Resolve(c.Request.Context(), apiKey.Group.ID, model, endpoint)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": gin.H{"type": "server_error", "message": "Failed to resolve composite model route"}})
 				c.Abort()
@@ -861,7 +982,9 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver)
 			}
 			if decision.Matched {
 				c.Request = c.Request.WithContext(service.WithCompositeRouteDecision(c.Request.Context(), decision))
-				if upstreamModel := strings.TrimSpace(decision.UpstreamModel); upstreamModel != "" && upstreamModel != model && gjson.ValidBytes(body) {
+				_, managedVideo := service.ManagedVideoOperationForPath(c.Request.URL.Path)
+				preserveVideoModel := managedVideo && decision.TargetPlatform == service.PlatformOpenAI
+				if upstreamModel := strings.TrimSpace(decision.UpstreamModel); !preserveVideoModel && upstreamModel != "" && upstreamModel != model && gjson.ValidBytes(body) {
 					if _, modelPath := compositeJSONRequestModel(body); modelPath != "" {
 						if rewritten, rewriteErr := sjson.SetBytes(body, modelPath, upstreamModel); rewriteErr == nil {
 							body = rewritten
@@ -872,6 +995,18 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver)
 		}
 		resetRequestBody(c, body)
 		c.Next()
+	}
+}
+
+func isCompositeVideoEndpoint(endpoint string) bool {
+	switch endpoint {
+	case service.CompositeRouteEndpointVideos,
+		service.CompositeRouteEndpointVideoCharacters,
+		service.CompositeRouteEndpointVideoEdits,
+		service.CompositeRouteEndpointVideoExtensions:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -1015,6 +1150,14 @@ func compositeRouteEndpointForPath(path string) string {
 		return service.CompositeRouteEndpointEmbeddings
 	case strings.Contains(path, "/images/"):
 		return service.CompositeRouteEndpointImages
+	case strings.Contains(path, "/videos/characters"):
+		return service.CompositeRouteEndpointVideoCharacters
+	case strings.Contains(path, "/videos/edits"):
+		return service.CompositeRouteEndpointVideoEdits
+	case strings.Contains(path, "/videos/extensions"):
+		return service.CompositeRouteEndpointVideoExtensions
+	case strings.Contains(path, "/videos"):
+		return service.CompositeRouteEndpointVideos
 	case strings.Contains(path, "/v1beta/"):
 		return service.CompositeRouteEndpointGemini
 	default:

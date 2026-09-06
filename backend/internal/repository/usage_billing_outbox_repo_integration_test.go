@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
@@ -608,9 +609,9 @@ func TestUsageBillingOutbox_LegacyDedupWithoutLogRepairsAfterRestartWithoutRecha
 	require.False(t, replayed.Applied)
 	require.True(t, replayed.ProjectionRepairRequired)
 
-	postEffects := service.NewUsageBillingPostEffectsService(
-		nil, nil, nil, nil, nil, nil, nil, nil,
-	)
+	billingCache := service.NewBillingCacheService(NewBillingCache(testRedis(t)), nil, nil, nil, nil, nil, &config.Config{}, nil)
+	t.Cleanup(billingCache.Stop)
+	postEffects := service.NewUsageBillingPostEffectsService(billingCache, nil, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, postEffects.Finalize(ctx, events[0].Command, replayed))
 	require.NoError(t, restartedRepo.AcknowledgeUsageBillingOutbox(
 		ctx,

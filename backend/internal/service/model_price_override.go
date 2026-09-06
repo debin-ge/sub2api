@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -86,9 +87,10 @@ type ModelPriceOverridePayload struct {
 	LongContextInputCostMultiplier  *float64 `json:"long_context_input_cost_multiplier,omitempty"`
 	LongContextOutputCostMultiplier *float64 `json:"long_context_output_cost_multiplier,omitempty"`
 
-	OutputCostPerImage      *float64 `json:"output_cost_per_image,omitempty"`
-	OutputCostPerImageToken *float64 `json:"output_cost_per_image_token,omitempty"`
-	InputCostPerImageToken  *float64 `json:"input_cost_per_image_token,omitempty"`
+	OutputCostPerImage      *float64            `json:"output_cost_per_image,omitempty"`
+	OutputCostPerImageToken *float64            `json:"output_cost_per_image_token,omitempty"`
+	InputCostPerImageToken  *float64            `json:"input_cost_per_image_token,omitempty"`
+	VideoPricing            *VideoPricingConfig `json:"video_pricing,omitempty"`
 
 	SupportsServiceTier    *bool   `json:"supports_service_tier,omitempty"`
 	SupportsPromptCaching  *bool   `json:"supports_prompt_caching,omitempty"`
@@ -162,6 +164,12 @@ type ModelPriceListItem struct {
 	OverrideCurrency   string                  `json:"override_currency,omitempty"`
 	TokenPricingAbsent bool                    `json:"token_pricing_absent"`
 	HasImagePricing    bool                    `json:"has_image_pricing"`
+	HasVideoPricing    bool                    `json:"has_video_pricing"`
+	VideoPricingValid  bool                    `json:"video_pricing_valid"`
+	VideoRuleCount     int                     `json:"video_rule_count"`
+	VideoBillingUnits  []string                `json:"video_billing_units"`
+	VideoResolutions   []string                `json:"video_resolutions"`
+	VideoPricingError  string                  `json:"video_pricing_error,omitempty"`
 	SyncInvalidated    bool                    `json:"sync_invalidated"`
 	Redundant          bool                    `json:"redundant"`
 	Effective          map[string]any          `json:"effective"`
@@ -191,6 +199,12 @@ type ModelPriceDetail struct {
 	Enabled            bool                       `json:"enabled"`
 	TokenPricingAbsent bool                       `json:"token_pricing_absent"`
 	HasImagePricing    bool                       `json:"has_image_pricing"`
+	HasVideoPricing    bool                       `json:"has_video_pricing"`
+	VideoPricingValid  bool                       `json:"video_pricing_valid"`
+	VideoRuleCount     int                        `json:"video_rule_count"`
+	VideoBillingUnits  []string                   `json:"video_billing_units"`
+	VideoResolutions   []string                   `json:"video_resolutions"`
+	VideoPricingError  string                     `json:"video_pricing_error,omitempty"`
 	SyncInvalidated    bool                       `json:"sync_invalidated"`
 	Redundant          bool                       `json:"redundant"`
 	OverridePlatform   string                     `json:"override_platform,omitempty"`
@@ -282,8 +296,8 @@ func DecodeModelPriceOverridePayload(raw json.RawMessage) (ModelPriceOverridePay
 	if err := decoder.Decode(&payload); err != nil {
 		return ModelPriceOverridePayload{}, infraerrors.BadRequest("INVALID_PAYLOAD", "invalid model price payload").WithCause(err)
 	}
-	if decoder.More() {
-		return ModelPriceOverridePayload{}, infraerrors.BadRequest("INVALID_PAYLOAD", "invalid trailing JSON")
+	if err := ensureSingleJSONValue(decoder); err != nil {
+		return ModelPriceOverridePayload{}, infraerrors.BadRequest("INVALID_PAYLOAD", "invalid trailing JSON").WithCause(err)
 	}
 	return payload, nil
 }
@@ -351,6 +365,7 @@ func rawOf(entry *ModelPriceEntry) *RawModelPriceEntry {
 	if entry.ImageInputPriceExplicit || (!entry.PricePresenceKnown && entry.InputCostPerImageToken != 0) {
 		raw.InputCostPerImageToken = catalogPriceFloat64(entry.InputCostPerImageToken)
 	}
+	raw.VideoPricing = cloneVideoPricingConfig(entry.VideoPricing)
 	raw.SupportsServiceTier = entry.SupportsServiceTier
 	raw.SupportsPromptCaching = entry.SupportsPromptCaching
 	raw.PricingCatalogProvider = entry.PricingCatalogProvider
@@ -377,6 +392,7 @@ func mergeRawPriceEntry(base *RawModelPriceEntry, patch *ModelPriceOverridePaylo
 		out.OutputCostPerImage = cloneFloat(base.OutputCostPerImage)
 		out.OutputCostPerImageToken = cloneFloat(base.OutputCostPerImageToken)
 		out.InputCostPerImageToken = cloneFloat(base.InputCostPerImageToken)
+		out.VideoPricing = cloneVideoPricingConfig(base.VideoPricing)
 	}
 	if patch == nil {
 		return out
@@ -426,6 +442,9 @@ func mergeRawPriceEntry(base *RawModelPriceEntry, patch *ModelPriceOverridePaylo
 	if patch.InputCostPerImageToken != nil {
 		out.InputCostPerImageToken = cloneFloat(patch.InputCostPerImageToken)
 	}
+	if patch.VideoPricing != nil {
+		out.VideoPricing = cloneVideoPricingConfig(patch.VideoPricing)
+	}
 	if patch.SupportsServiceTier != nil {
 		out.SupportsServiceTier = *patch.SupportsServiceTier
 	}
@@ -460,6 +479,7 @@ func buildOverrideModelPriceEntry(model string, base *ModelPriceEntry, row *Mode
 	raw.Currency = currency
 	entry := buildModelPriceEntry(model, raw)
 	entry.OperatorOverride = true
+	entry.VideoPricingOperatorOverride = row.Payload.VideoPricing != nil || (base != nil && base.VideoPricingOperatorOverride)
 	return entry
 }
 
@@ -491,6 +511,7 @@ func buildModelPriceEntry(model string, raw *RawModelPriceEntry) *ModelPriceEntr
 			raw.LongContextInputCostMultiplier != nil ||
 			raw.LongContextOutputCostMultiplier != nil,
 	}
+	entry.VideoPricing = cloneVideoPricingConfig(raw.VideoPricing)
 	if raw.InputCostPerToken != nil {
 		entry.InputCostPerToken = *raw.InputCostPerToken
 	}
@@ -547,6 +568,7 @@ func cloneCatalog(catalog map[string]*ModelPriceEntry) map[string]*ModelPriceEnt
 		}
 		cp := *entry
 		cp.Currency = modelPriceEntryCurrency(entry)
+		cp.VideoPricing = cloneVideoPricingConfig(entry.VideoPricing)
 		out[normalizePricingModelKey(model)] = &cp
 	}
 	return out
@@ -584,6 +606,19 @@ func validatePayloadNumbers(payload *ModelPriceOverridePayload) error {
 	if payload != nil && payload.LongContextInputTokenThreshold != nil && *payload.LongContextInputTokenThreshold <= 0 {
 		return infraerrors.BadRequest("INVALID_PAYLOAD", "long_context_input_token_threshold must be positive").
 			WithMetadata(map[string]string{"field": "long_context_input_token_threshold"})
+	}
+	if payload != nil && payload.VideoPricing != nil {
+		if err := ValidateVideoPricingConfig(payload.VideoPricing); err != nil {
+			metadata := map[string]string{"detail": err.Error()}
+			var validationErr *videoPricingValidationError
+			if errors.As(err, &validationErr) {
+				metadata["field"] = validationErr.field
+				metadata["detail"] = validationErr.detail
+			}
+			return infraerrors.BadRequest("INVALID_VIDEO_PRICING", "invalid video pricing configuration").
+				WithMetadata(metadata).
+				WithCause(err)
+		}
 	}
 	return nil
 }
@@ -683,10 +718,11 @@ func (s *PricingService) validateOverrideWrite(platform, model, currency string,
 	}
 	raw := mergeRawPriceEntry(overrideBaseRaw(catalog, currency), payload)
 	hasImage := raw.OutputCostPerImage != nil || raw.OutputCostPerImageToken != nil || raw.InputCostPerImageToken != nil
-	if raw.InputCostPerToken == nil && raw.OutputCostPerToken == nil && !hasImage {
-		return nil, infraerrors.BadRequest("EMPTY_PRICING", "at least one token or image price is required")
+	hasVideo := raw.VideoPricing != nil
+	if raw.InputCostPerToken == nil && raw.OutputCostPerToken == nil && !hasImage && !hasVideo {
+		return nil, infraerrors.BadRequest("EMPTY_PRICING", "at least one token, image, or video price is required")
 	}
-	if raw.InputCostPerToken == nil && raw.OutputCostPerToken == nil && hasImage {
+	if raw.InputCostPerToken == nil && raw.OutputCostPerToken == nil && (hasImage || hasVideo) {
 		return warnings, nil
 	}
 	if rawModelTokenPricingIncomplete(model, raw) {
@@ -754,7 +790,7 @@ func catalogHasUsablePrice(entry *ModelPriceEntry) bool {
 	if entry == nil {
 		return false
 	}
-	return !entry.TokenPricingAbsent || hasImagePricing(entry)
+	return !entry.TokenPricingAbsent || hasImagePricing(entry) || hasVideoPricing(entry)
 }
 
 func catalogPriceFloat64(v float64) *float64 { return &v }
@@ -1012,6 +1048,7 @@ func (s *PricingService) buildListItemLocked(
 			item.Currency = ModelPriceCurrencyUSD
 		}
 	}
+	applyVideoPricingSummaryToList(&item, effective)
 	if row != nil {
 		item.OverrideCurrency = modelPriceCurrencyOrUSD(row.Currency)
 		item.OverridePlatform = row.Platform
@@ -1030,7 +1067,7 @@ func listStatusMatch(status string, item ModelPriceListItem) bool {
 	case "overridden":
 		return item.Source == ModelPriceSourceOverride || item.Source == ModelPriceSourceMerged
 	case "missing":
-		return item.TokenPricingAbsent && !item.HasImagePricing
+		return item.TokenPricingAbsent && !item.HasImagePricing && !item.HasVideoPricing
 	case "sync_invalidated":
 		return item.SyncInvalidated
 	case "disabled":
@@ -1185,8 +1222,9 @@ func (s *PricingService) GetPriceDetailWithOfficial(platform, model string, offi
 		SyncInvalidated:    s.isInvalidatedLocked(platform, model),
 		TimeSchedule:       deepSeekOfficialPriceTimeSchedule(platform, model, baseIsOffPeak),
 	}
+	applyVideoPricingSummaryToDetail(detail, effective)
 	if row != nil {
-		payload := row.Payload
+		payload := cloneModelPriceOverridePayload(row.Payload)
 		detail.Override = &payload
 		detail.OverrideCurrency = modelPriceCurrencyOrUSD(row.Currency)
 		detail.OverridePlatform = row.Platform
@@ -1234,6 +1272,9 @@ func overriddenFields(payload *ModelPriceOverridePayload) []string {
 	if payload.Mode != nil {
 		fields = append(fields, "mode")
 	}
+	if payload.VideoPricing != nil {
+		fields = append(fields, "video_pricing")
+	}
 	sort.Strings(fields)
 	return fields
 }
@@ -1244,6 +1285,60 @@ func hasImagePricing(entry *ModelPriceEntry) bool {
 	}
 	return entry.OutputCostPerImageExplicit || entry.ImageOutputPriceExplicit || entry.ImageInputPriceExplicit ||
 		entry.OutputCostPerImage != 0 || entry.OutputCostPerImageToken != 0 || entry.InputCostPerImageToken != 0
+}
+
+func hasVideoPricing(entry *ModelPriceEntry) bool {
+	return entry != nil && entry.VideoPricing != nil && entry.VideoPricing.Enabled && ValidateVideoPricingConfig(entry.VideoPricing) == nil
+}
+
+func videoPricingSummary(entry *ModelPriceEntry) (has, valid bool, ruleCount int, units, resolutions []string, errorMessage string) {
+	if entry == nil || entry.VideoPricing == nil {
+		return false, false, 0, []string{}, []string{}, ""
+	}
+	config := entry.VideoPricing
+	err := ValidateVideoPricingConfig(config)
+	valid = err == nil
+	has = valid && config.Enabled
+	ruleCount = len(config.Rules)
+	unitSet := make(map[string]struct{})
+	for _, rule := range config.Rules {
+		unit := strings.ToLower(strings.TrimSpace(rule.BillingUnit))
+		if unit != "" {
+			unitSet[unit] = struct{}{}
+		}
+	}
+	for unit := range unitSet {
+		units = append(units, unit)
+	}
+	for resolution := range config.Resolutions {
+		resolutions = append(resolutions, resolution)
+	}
+	sort.Strings(units)
+	sort.Strings(resolutions)
+	if err != nil {
+		errorMessage = err.Error()
+	}
+	return
+}
+
+func applyVideoPricingSummaryToList(item *ModelPriceListItem, entry *ModelPriceEntry) {
+	if item == nil {
+		return
+	}
+	item.HasVideoPricing, item.VideoPricingValid, item.VideoRuleCount, item.VideoBillingUnits, item.VideoResolutions, item.VideoPricingError = videoPricingSummary(entry)
+}
+
+func applyVideoPricingSummaryToDetail(detail *ModelPriceDetail, entry *ModelPriceEntry) {
+	if detail == nil {
+		return
+	}
+	detail.HasVideoPricing, detail.VideoPricingValid, detail.VideoRuleCount, detail.VideoBillingUnits, detail.VideoResolutions, detail.VideoPricingError = videoPricingSummary(entry)
+}
+
+func cloneModelPriceOverridePayload(payload ModelPriceOverridePayload) ModelPriceOverridePayload {
+	clone := payload
+	clone.VideoPricing = cloneVideoPricingConfig(payload.VideoPricing)
+	return clone
 }
 
 func modelPriceEntryToMap(entry *ModelPriceEntry) map[string]any {
@@ -1285,6 +1380,9 @@ func modelPriceEntryToMap(entry *ModelPriceEntry) map[string]any {
 	if entry.Mode != "" {
 		out["mode"] = entry.Mode
 	}
+	if entry.VideoPricing != nil {
+		out["video_pricing"] = cloneVideoPricingConfig(entry.VideoPricing)
+	}
 	return out
 }
 
@@ -1301,7 +1399,9 @@ func isRedundantPayload(catalog *ModelPriceEntry, currency string, payload *Mode
 		return false
 	}
 	for key, value := range patchMap {
-		if fmt.Sprint(catalogMap[key]) != fmt.Sprint(value) {
+		catalogValue, catalogErr := json.Marshal(catalogMap[key])
+		patchValue, patchErr := json.Marshal(value)
+		if catalogErr != nil || patchErr != nil || !bytes.Equal(catalogValue, patchValue) {
 			return false
 		}
 	}

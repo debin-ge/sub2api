@@ -141,6 +141,35 @@ describe('validateIntervals', () => {
       expect(validateIntervals(intervals, 'image', t)).toContain('maxGreaterThanMin')
     })
   })
+
+  describe('video mode', () => {
+    it('round-trips conditional billing fields', () => {
+      const form = apiIntervalsToForm([{
+        min_tokens: 0, max_tokens: null, tier_label: 'sora-2-720p',
+        input_price: null, output_price: null, cache_write_price: null,
+        cache_read_price: null, input_multiplier: null, output_multiplier: null,
+        cache_write_multiplier: null, cache_read_multiplier: null,
+        per_request_price: 0.1, conditions: { operations: ['generate'], seconds: [8] },
+        billing_unit: 'second', priority: 10,
+        valid_from: '2026-09-03T00:00:00Z', valid_until: '2026-10-03T00:00:00Z', sort_order: 0,
+      }])
+
+      expect(form[0].conditions_json).toContain('operations')
+      expect(formIntervalsToAPI(form)[0]).toMatchObject({
+        conditions: { operations: ['generate'], seconds: [8] },
+        billing_unit: 'second', priority: 10,
+        valid_from: '2026-09-03T00:00:00.000Z', valid_until: '2026-10-03T00:00:00.000Z',
+      })
+    })
+
+    it('rejects malformed, incomplete, and duplicate selectors', () => {
+      const valid = makeInterval({ tier_label: 'rule-a', per_request_price: 0.1, billing_unit: 'second', conditions_json: '{"operations":["generate"]}' })
+      expect(validateIntervals([valid], 'video', t)).toBeNull()
+      expect(validateIntervals([{ ...valid, conditions_json: '{bad' }], 'video', t)).toContain('conditions')
+      expect(validateIntervals([{ ...valid, billing_unit: null }], 'video', t)).toContain('billingUnit')
+      expect(validateIntervals([valid, { ...valid, tier_label: 'rule-b' }], 'video', t)).toContain('duplicateSelector')
+    })
+  })
 })
 
 describe('time pricing', () => {

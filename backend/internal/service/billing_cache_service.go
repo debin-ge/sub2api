@@ -1006,6 +1006,13 @@ func (s *BillingCacheService) CheckBillingEligibility(ctx context.Context, user 
 
 	// 判断计费模式
 	isSubscriptionMode := group != nil && group.IsSubscriptionType() && subscription != nil
+	budgetPlatform := platform
+	if isSubscriptionMode {
+		budgetPlatform = ""
+	}
+	if err := s.checkVideoBudgetProjection(ctx, user.ID, apiKey, budgetPlatform); err != nil {
+		return err
+	}
 
 	if isSubscriptionMode {
 		if err := s.checkSubscriptionEligibility(ctx, user.ID, group, subscription); err != nil {

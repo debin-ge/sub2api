@@ -303,6 +303,10 @@ func cleanupWithRadarTestDependencies(rdb *redis.Client, radarRunner *service.Ra
 		nil, // idempotencyCleanup
 		nil, // batchImageCleanup
 		nil, // batchImageWorker
+		nil, // videoSpoolRuntime
+		nil, // videoTaskRuntime
+		nil, // videoCallbackRuntime
+		nil, // videoCapabilityProbeRuntime
 		service.NewPricingService(cfg, nil),
 		service.NewEmailQueueService(nil, 1),
 		service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil),
@@ -359,6 +363,16 @@ func TestGeneratedWireDefersRadarQuotaAggregatorConstructionToLifecycleSeam(t *t
 	injector, _, found := strings.Cut(generatedSource, "\n// wire.go:")
 	require.True(t, found)
 	require.NotContains(t, injector, "service.ProvideRadarQuotaAggregator(")
+}
+
+func TestGeneratedWireDoesNotStartGrokVideoJobs(t *testing.T) {
+	generated, err := os.ReadFile("wire_gen.go")
+	require.NoError(t, err)
+	source := string(generated)
+	require.NotContains(t, source, "GrokVideoRecoveryWorker")
+	require.NotContains(t, source, "GrokVideoBillingCorrectionOutboxWorker")
+	require.Contains(t, source, "ProvideGrokOAuthService", "the original Grok account integration must remain")
+	require.Contains(t, source, "ProvideVideoTaskRuntime", "the native video worker must remain")
 }
 
 func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
@@ -442,6 +456,10 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		idempotencyCleanupSvc,
 		&service.BatchImageCleanupService{},
 		nil, // batchImageWorker
+		nil, // videoSpoolRuntime
+		nil, // videoTaskRuntime
+		nil, // videoCallbackRuntime
+		nil, // videoCapabilityProbeRuntime
 		pricingSvc,
 		emailQueueSvc,
 		billingCacheSvc,

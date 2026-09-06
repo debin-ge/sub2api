@@ -84,6 +84,15 @@ export default {
           perRequestPrice: '单次价格'
         }
       },
+      videoPricingValidation: {
+        label: '视频规则 #{index}：必须填写规则名称',
+        duplicateLabel: '视频规则 #{index}：规则名称不能重复',
+        billingUnit: '视频规则 #{index}：请选择计费单位',
+        price: '视频规则 #{index}：必须填写单位价格',
+        conditions: '视频规则 #{index}：conditions 必须是仅含受支持字段的 JSON 对象',
+        validity: '视频规则 #{index}：结束时间必须晚于开始时间',
+        duplicateSelector: '视频规则 #{index}：priority 和 conditions 与其他规则重复',
+      },
       timePricingValidation: {
         timezone: '请选择有效的 IANA 时区',
         format: '开始时间和结束时间必须使用 HH:mm:ss 格式',
@@ -105,7 +114,7 @@ export default {
         token: 'Token',
         perRequest: '按次',
         image: '图片（按次）',
-        video: '视频（按秒）'
+        video: '视频（条件定价）'
       },
       form: {
         name: '名称',
@@ -162,11 +171,25 @@ export default {
         requestTiers: '按次计费层级',
         imageTiers: '图片计费层级（按次）',
         videoTiers: '视频分辨率层级（按秒）',
+        videoRules: '视频条件定价规则',
+        addRule: '添加规则',
         addTier: '添加层级',
         noTiersYet: '暂无层级，点击添加配置按次计费价格',
         noPricingRules: '暂无定价规则，点击"添加"创建',
         perRequestPrice: '单次价格',
         perRequestPriceRequired: '按次/图片计费模式必须设置默认价格或至少一个计费层级',
+        videoRuleRequired: '视频计费至少需要一条条件定价规则。',
+        ruleLabel: '规则名称',
+        billingUnit: '计费单位',
+        billingUnitRequest: '按请求',
+        billingUnitSecond: '按秒',
+        billingUnitVideoToken: '按 Video Token',
+        unitPrice: '单位价格',
+        priority: '优先级',
+        validFrom: '生效时间',
+        validUntil: '失效时间',
+        conditions: '匹配条件（JSON）',
+        conditionsHint: '支持 providers、operations、sizes、seconds、input_types、audio_enabled、qualities、service_tiers。',
         tierLabel: '层级',
         resolution: '分辨率',
         modelMapping: '模型映射',
@@ -205,7 +228,6 @@ export default {
         applyPricingToAccountStats: '应用模型定价到账号统计',
         applyPricingToAccountStatsDesc: '启用后，未被自定义规则匹配的请求将使用模型定价文件中的标准价格计算账号统计费用',
         accountStatsPricingRules: '自定义账号统计定价规则',
-        addRule: '添加规则',
         noRulesConfigured: '未配置自定义规则，将使用上方的模型定价。',
         ruleName: '规则名称（可选）',
         ruleGroups: '分组',

@@ -56,6 +56,11 @@ type upsertModelPriceRequest struct {
 	Note     *string         `json:"note"`
 }
 
+type previewVideoPriceRequest struct {
+	VideoPricing service.VideoPricingConfig            `json:"video_pricing" binding:"required"`
+	Attributes   service.VideoPricingPreviewAttributes `json:"attributes" binding:"required"`
+}
+
 func (h *ModelPriceHandler) List(c *gin.Context) {
 	if h == nil || h.pricingService == nil {
 		response.Paginated(c, []service.ModelPriceListItem{}, 0, 1, 50)
@@ -127,6 +132,20 @@ func (h *ModelPriceHandler) Upsert(c *gin.Context) {
 	})
 	if err != nil {
 		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
+func (h *ModelPriceHandler) PreviewVideo(c *gin.Context) {
+	var req previewVideoPriceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.ErrorFrom(c, infraerrors.BadRequest("INVALID_PAYLOAD", err.Error()))
+		return
+	}
+	result, err := service.PreviewVideoPricingConfig(&req.VideoPricing, req.Attributes)
+	if err != nil {
+		response.ErrorFrom(c, infraerrors.BadRequest("INVALID_VIDEO_PRICING", "invalid video pricing configuration").WithCause(err))
 		return
 	}
 	response.Success(c, result)

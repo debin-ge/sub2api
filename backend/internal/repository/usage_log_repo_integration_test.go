@@ -693,6 +693,10 @@ func (s *UsageLogRepoSuite) TestListWithFilters() {
 func (s *UsageLogRepoSuite) TestDashboardStats_TodayTotalsAndPerformance() {
 	now := time.Now().UTC()
 	todayStart := truncateToDayUTC(now)
+	aggRepo := newDashboardAggregationRepositoryWithSQL(s.tx)
+	aggStart := todayStart.Add(-2 * time.Hour)
+	aggEnd := now.Add(2 * time.Minute)
+	s.Require().NoError(aggRepo.AggregateRange(s.ctx, aggStart, aggEnd), "AggregateRange baseline")
 	baseStats, err := s.repo.GetDashboardStats(s.ctx)
 	s.Require().NoError(err, "GetDashboardStats base")
 
@@ -766,9 +770,6 @@ func (s *UsageLogRepoSuite) TestDashboardStats_TodayTotalsAndPerformance() {
 	_, err = s.repo.Create(s.ctx, logPerf)
 	s.Require().NoError(err, "Create logPerf")
 
-	aggRepo := newDashboardAggregationRepositoryWithSQL(s.tx)
-	aggStart := todayStart.Add(-2 * time.Hour)
-	aggEnd := now.Add(2 * time.Minute)
 	s.Require().NoError(aggRepo.AggregateRange(s.ctx, aggStart, aggEnd), "AggregateRange")
 
 	stats, err := s.repo.GetDashboardStats(s.ctx)
@@ -790,10 +791,10 @@ func (s *UsageLogRepoSuite) TestDashboardStats_TodayTotalsAndPerformance() {
 	s.Require().Equal(baseStats.TotalCacheCreationTokens+int64(3), stats.TotalCacheCreationTokens, "TotalCacheCreationTokens mismatch")
 	s.Require().Equal(baseStats.TotalCacheReadTokens+int64(4), stats.TotalCacheReadTokens, "TotalCacheReadTokens mismatch")
 	s.Require().Equal(baseStats.TotalTokens+int64(51), stats.TotalTokens, "TotalTokens mismatch")
-	s.Require().Equal(baseStats.TotalCost+2.3, stats.TotalCost, "TotalCost mismatch")
-	s.Require().Equal(baseStats.TotalActualCost+2.0, stats.TotalActualCost, "TotalActualCost mismatch")
+	s.Require().InDelta(baseStats.TotalCost+2.3, stats.TotalCost, 1e-9, "TotalCost mismatch")
+	s.Require().InDelta(baseStats.TotalActualCost+2.0, stats.TotalActualCost, 1e-9, "TotalActualCost mismatch")
 	// account_cost falls back to total_cost when account_stats_cost is NULL
-	s.Require().Equal(baseStats.TotalAccountCost+2.3, stats.TotalAccountCost, "TotalAccountCost mismatch")
+	s.Require().InDelta(baseStats.TotalAccountCost+2.3, stats.TotalAccountCost, 1e-9, "TotalAccountCost mismatch")
 	s.Require().GreaterOrEqual(stats.TodayRequests, int64(1), "expected TodayRequests >= 1")
 	s.Require().GreaterOrEqual(stats.TodayCost, 0.0, "expected TodayCost >= 0")
 	s.Require().GreaterOrEqual(stats.TodayAccountCost, 0.0, "expected TodayAccountCost >= 0")
@@ -806,9 +807,8 @@ func (s *UsageLogRepoSuite) TestDashboardStats_TodayTotalsAndPerformance() {
 
 func (s *UsageLogRepoSuite) TestDashboardStatsWithRange_Fallback() {
 	now := time.Now().UTC()
-	todayStart := truncateToDayUTC(now)
-	rangeStart := todayStart.Add(-24 * time.Hour)
-	rangeEnd := now.Add(1 * time.Second)
+	rangeStart := now.Add(24 * time.Hour).Truncate(time.Minute)
+	rangeEnd := rangeStart.Add(4 * time.Hour)
 
 	user1 := mustCreateUser(s.T(), s.client, &service.User{Email: "range-u1@test.com"})
 	user2 := mustCreateUser(s.T(), s.client, &service.User{Email: "range-u2@test.com"})
@@ -860,7 +860,7 @@ func (s *UsageLogRepoSuite) TestDashboardStatsWithRange_Fallback() {
 		TotalCost:       0.5,
 		ActualCost:      0.5,
 		DurationMs:      &d2,
-		CreatedAt:       now,
+		CreatedAt:       rangeStart.Add(3 * time.Hour),
 	}
 	_, err = s.repo.Create(s.ctx, logToday)
 	s.Require().NoError(err)

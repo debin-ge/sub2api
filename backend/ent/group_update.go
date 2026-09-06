@@ -667,6 +667,26 @@ func (_u *GroupUpdate) ClearVideoModelPrices() *GroupUpdate {
 	return _u
 }
 
+// SetVideoDisclosurePolicy sets the "video_disclosure_policy" field.
+func (_u *GroupUpdate) SetVideoDisclosurePolicy(v string) *GroupUpdate {
+	_u.mutation.SetVideoDisclosurePolicy(v)
+	return _u
+}
+
+// SetNillableVideoDisclosurePolicy sets the "video_disclosure_policy" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableVideoDisclosurePolicy(v *string) *GroupUpdate {
+	if v != nil {
+		_u.SetVideoDisclosurePolicy(*v)
+	}
+	return _u
+}
+
+// ClearVideoDisclosurePolicy clears the value of the "video_disclosure_policy" field.
+func (_u *GroupUpdate) ClearVideoDisclosurePolicy() *GroupUpdate {
+	_u.mutation.ClearVideoDisclosurePolicy()
+	return _u
+}
+
 // SetWebSearchPricePerCall sets the "web_search_price_per_call" field.
 func (_u *GroupUpdate) SetWebSearchPricePerCall(v float64) *GroupUpdate {
 	_u.mutation.ResetWebSearchPricePerCall()
@@ -1513,6 +1533,11 @@ func (_u *GroupUpdate) check() error {
 			return &ValidationError{Name: "subscription_type", err: fmt.Errorf(`ent: validator failed for field "Group.subscription_type": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.VideoDisclosurePolicy(); ok {
+		if err := group.VideoDisclosurePolicyValidator(v); err != nil {
+			return &ValidationError{Name: "video_disclosure_policy", err: fmt.Errorf(`ent: validator failed for field "Group.video_disclosure_policy": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.SearchPricePer1k(); ok {
 		if err := group.SearchPricePer1kValidator(v); err != nil {
 			return &ValidationError{Name: "search_price_per_1k", err: fmt.Errorf(`ent: validator failed for field "Group.search_price_per_1k": %w`, err)}
@@ -1748,6 +1773,12 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.VideoModelPricesCleared() {
 		_spec.ClearField(group.FieldVideoModelPrices, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.VideoDisclosurePolicy(); ok {
+		_spec.SetField(group.FieldVideoDisclosurePolicy, field.TypeString, value)
+	}
+	if _u.mutation.VideoDisclosurePolicyCleared() {
+		_spec.ClearField(group.FieldVideoDisclosurePolicy, field.TypeString)
 	}
 	if value, ok := _u.mutation.WebSearchPricePerCall(); ok {
 		_spec.SetField(group.FieldWebSearchPricePerCall, field.TypeFloat64, value)
@@ -2861,6 +2892,26 @@ func (_u *GroupUpdateOne) ClearVideoModelPrices() *GroupUpdateOne {
 	return _u
 }
 
+// SetVideoDisclosurePolicy sets the "video_disclosure_policy" field.
+func (_u *GroupUpdateOne) SetVideoDisclosurePolicy(v string) *GroupUpdateOne {
+	_u.mutation.SetVideoDisclosurePolicy(v)
+	return _u
+}
+
+// SetNillableVideoDisclosurePolicy sets the "video_disclosure_policy" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableVideoDisclosurePolicy(v *string) *GroupUpdateOne {
+	if v != nil {
+		_u.SetVideoDisclosurePolicy(*v)
+	}
+	return _u
+}
+
+// ClearVideoDisclosurePolicy clears the value of the "video_disclosure_policy" field.
+func (_u *GroupUpdateOne) ClearVideoDisclosurePolicy() *GroupUpdateOne {
+	_u.mutation.ClearVideoDisclosurePolicy()
+	return _u
+}
+
 // SetWebSearchPricePerCall sets the "web_search_price_per_call" field.
 func (_u *GroupUpdateOne) SetWebSearchPricePerCall(v float64) *GroupUpdateOne {
 	_u.mutation.ResetWebSearchPricePerCall()
@@ -3720,6 +3771,11 @@ func (_u *GroupUpdateOne) check() error {
 			return &ValidationError{Name: "subscription_type", err: fmt.Errorf(`ent: validator failed for field "Group.subscription_type": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.VideoDisclosurePolicy(); ok {
+		if err := group.VideoDisclosurePolicyValidator(v); err != nil {
+			return &ValidationError{Name: "video_disclosure_policy", err: fmt.Errorf(`ent: validator failed for field "Group.video_disclosure_policy": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.SearchPricePer1k(); ok {
 		if err := group.SearchPricePer1kValidator(v); err != nil {
 			return &ValidationError{Name: "search_price_per_1k", err: fmt.Errorf(`ent: validator failed for field "Group.search_price_per_1k": %w`, err)}
@@ -3972,6 +4028,12 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	}
 	if _u.mutation.VideoModelPricesCleared() {
 		_spec.ClearField(group.FieldVideoModelPrices, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.VideoDisclosurePolicy(); ok {
+		_spec.SetField(group.FieldVideoDisclosurePolicy, field.TypeString, value)
+	}
+	if _u.mutation.VideoDisclosurePolicyCleared() {
+		_spec.ClearField(group.FieldVideoDisclosurePolicy, field.TypeString)
 	}
 	if value, ok := _u.mutation.WebSearchPricePerCall(); ok {
 		_spec.SetField(group.FieldWebSearchPricePerCall, field.TypeFloat64, value)

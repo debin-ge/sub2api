@@ -10,8 +10,8 @@
 #   3. CONCURRENTLY 语句必须放在 *_notx.sql 文件（迁移 runner 的非事务执行路径），
 #      普通 *.sql 会被事务包裹、PostgreSQL 直接报错，不可用标签豁免。
 #
-# 用法：check-migration-gate.sh <base-ref> [--allow-breaking]
-# 本地自查：backend/scripts/check-migration-gate.sh origin/main
+# 用法：check-migration-gate.sh <base-ref> [--worktree] [--allow-breaking]
+# 本地自查：backend/scripts/check-migration-gate.sh origin/main --worktree
 #
 # 退出码：0 通过；1 存在违规；2 参数错误。
 
@@ -21,14 +21,16 @@ MIGRATIONS_DIR="backend/migrations"
 CONTRACT_DOC="backend/migrations/README.md"
 
 usage() {
-    echo "usage: $(basename "$0") <base-ref> [--allow-breaking]"
+    echo "usage: $(basename "$0") <base-ref> [--worktree] [--allow-breaking]"
 }
 
 BASE=""
 ALLOW_BREAKING=false
+WORKTREE=false
 for arg in "$@"; do
     case "$arg" in
         --allow-breaking) ALLOW_BREAKING=true ;;
+        --worktree) WORKTREE=true ;;
         -h|--help) usage; exit 0 ;;
         -*) echo "unknown flag: $arg" >&2; usage >&2; exit 2 ;;
         *)
@@ -51,7 +53,11 @@ MERGE_BASE=$(git merge-base "$BASE" HEAD)
 
 # 每个新增 SQL 文件经注释剥离后做全文匹配（多行语句安全），输出命中的 token。
 scan_sql() {
-    git show "HEAD:$1" | perl -0777 -ne '
+    if [ "$WORKTREE" = true ]; then
+        sed -n '1,$p' "$1"
+    else
+        git show "HEAD:$1"
+    fi | perl -0777 -ne '
         s{/\*.*?\*/}{ }gs;
         s{--[^\n]*}{}g;
         print "DROP_COLUMN\n"      if /\bDROP\s+COLUMN\b/is;
@@ -62,10 +68,21 @@ scan_sql() {
     '
 }
 
+changed_migrations() {
+    if [ "$WORKTREE" = true ]; then
+        git diff --name-status --no-renames -z "$MERGE_BASE" -- "$MIGRATIONS_DIR"
+        while IFS= read -r -d '' path; do
+            printf 'A\0%s\0' "$path"
+        done < <(git ls-files --others --exclude-standard -z -- "$MIGRATIONS_DIR")
+    else
+        git diff --name-status --no-renames -z "$MERGE_BASE" HEAD -- "$MIGRATIONS_DIR"
+    fi
+}
+
 violations=0
 breaking_files=""
 
-while IFS=$'\t' read -r status path; do
+while IFS= read -r -d '' status && IFS= read -r -d '' path; do
     [ -n "${status:-}" ] || continue
     case "$path" in
         "$MIGRATIONS_DIR"/*.sql) ;;
@@ -101,7 +118,7 @@ while IFS=$'\t' read -r status path; do
         breaking_files="${breaking_files}  ${path}: $(printf '%s' "$breaking" | tr '\n' ' ')
 "
     fi
-done < <(git diff --name-status --no-renames "$MERGE_BASE" HEAD -- "$MIGRATIONS_DIR")
+done < <(changed_migrations)
 
 if [ -n "$breaking_files" ]; then
     if [ "$ALLOW_BREAKING" = true ]; then

@@ -34,6 +34,22 @@ const (
 	FieldCredentials = "credentials"
 	// FieldExtra holds the string denoting the extra field in the database.
 	FieldExtra = "extra"
+	// FieldOwnershipMode holds the string denoting the ownership_mode field in the database.
+	FieldOwnershipMode = "ownership_mode"
+	// FieldOwnerUserID holds the string denoting the owner_user_id field in the database.
+	FieldOwnerUserID = "owner_user_id"
+	// FieldIsolationState holds the string denoting the isolation_state field in the database.
+	FieldIsolationState = "isolation_state"
+	// FieldProviderIdentityVersion holds the string denoting the provider_identity_version field in the database.
+	FieldProviderIdentityVersion = "provider_identity_version"
+	// FieldIsolationVerifiedVersion holds the string denoting the isolation_verified_version field in the database.
+	FieldIsolationVerifiedVersion = "isolation_verified_version"
+	// FieldProviderPrincipalBindingID holds the string denoting the provider_principal_binding_id field in the database.
+	FieldProviderPrincipalBindingID = "provider_principal_binding_id"
+	// FieldVideoOwnerUserID holds the string denoting the video_owner_user_id field in the database.
+	FieldVideoOwnerUserID = "video_owner_user_id"
+	// FieldVideoDisclosurePolicy holds the string denoting the video_disclosure_policy field in the database.
+	FieldVideoDisclosurePolicy = "video_disclosure_policy"
 	// FieldProxyID holds the string denoting the proxy_id field in the database.
 	FieldProxyID = "proxy_id"
 	// FieldProxyFallbackOriginID holds the string denoting the proxy_fallback_origin_id field in the database.
@@ -140,6 +156,14 @@ var Columns = []string{
 	FieldType,
 	FieldCredentials,
 	FieldExtra,
+	FieldOwnershipMode,
+	FieldOwnerUserID,
+	FieldIsolationState,
+	FieldProviderIdentityVersion,
+	FieldIsolationVerifiedVersion,
+	FieldProviderPrincipalBindingID,
+	FieldVideoOwnerUserID,
+	FieldVideoDisclosurePolicy,
 	FieldProxyID,
 	FieldProxyFallbackOriginID,
 	FieldConcurrency,
@@ -204,6 +228,20 @@ var (
 	DefaultCredentials func() map[string]interface{}
 	// DefaultExtra holds the default value on creation for the "extra" field.
 	DefaultExtra func() map[string]interface{}
+	// DefaultOwnershipMode holds the default value on creation for the "ownership_mode" field.
+	DefaultOwnershipMode string
+	// OwnershipModeValidator is a validator for the "ownership_mode" field. It is called by the builders before save.
+	OwnershipModeValidator func(string) error
+	// DefaultIsolationState holds the default value on creation for the "isolation_state" field.
+	DefaultIsolationState string
+	// IsolationStateValidator is a validator for the "isolation_state" field. It is called by the builders before save.
+	IsolationStateValidator func(string) error
+	// DefaultProviderIdentityVersion holds the default value on creation for the "provider_identity_version" field.
+	DefaultProviderIdentityVersion int64
+	// DefaultIsolationVerifiedVersion holds the default value on creation for the "isolation_verified_version" field.
+	DefaultIsolationVerifiedVersion int64
+	// VideoDisclosurePolicyValidator is a validator for the "video_disclosure_policy" field. It is called by the builders before save.
+	VideoDisclosurePolicyValidator func(string) error
 	// DefaultConcurrency holds the default value on creation for the "concurrency" field.
 	DefaultConcurrency int
 	// DefaultPriority holds the default value on creation for the "priority" field.
@@ -289,6 +327,46 @@ func ByPlatform(opts ...sql.OrderTermOption) OrderOption {
 // ByType orders the results by the type field.
 func ByType(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldType, opts...).ToFunc()
+}
+
+// ByOwnershipMode orders the results by the ownership_mode field.
+func ByOwnershipMode(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldOwnershipMode, opts...).ToFunc()
+}
+
+// ByOwnerUserID orders the results by the owner_user_id field.
+func ByOwnerUserID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldOwnerUserID, opts...).ToFunc()
+}
+
+// ByIsolationState orders the results by the isolation_state field.
+func ByIsolationState(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldIsolationState, opts...).ToFunc()
+}
+
+// ByProviderIdentityVersion orders the results by the provider_identity_version field.
+func ByProviderIdentityVersion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldProviderIdentityVersion, opts...).ToFunc()
+}
+
+// ByIsolationVerifiedVersion orders the results by the isolation_verified_version field.
+func ByIsolationVerifiedVersion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldIsolationVerifiedVersion, opts...).ToFunc()
+}
+
+// ByProviderPrincipalBindingID orders the results by the provider_principal_binding_id field.
+func ByProviderPrincipalBindingID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldProviderPrincipalBindingID, opts...).ToFunc()
+}
+
+// ByVideoOwnerUserID orders the results by the video_owner_user_id field.
+func ByVideoOwnerUserID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldVideoOwnerUserID, opts...).ToFunc()
+}
+
+// ByVideoDisclosurePolicy orders the results by the video_disclosure_policy field.
+func ByVideoDisclosurePolicy(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldVideoDisclosurePolicy, opts...).ToFunc()
 }
 
 // ByProxyID orders the results by the proxy_id field.

@@ -358,6 +358,16 @@ func TestNewConfiguredCodexModelDescriptorUsesProviderMetadataAndSafeFallback(t 
 	require.NotNil(t, gpt55.DefaultVerbosity)
 	require.Equal(t, "low", *gpt55.DefaultVerbosity)
 
+	gpt6Astra := newConfiguredCodexModelDescriptor("gpt-6-astra")
+	require.Equal(t, "gpt-6-astra", gpt6Astra.DisplayName)
+	require.NotNil(t, gpt6Astra.DefaultReasoningLevel)
+	require.Equal(t, "low", *gpt6Astra.DefaultReasoningLevel)
+	require.Equal(t, []string{"low", "medium", "high", "xhigh", "max"}, effortsFromConfiguredCodexLevels(gpt6Astra.SupportedReasoningLevels))
+	require.NotContains(t, gpt6Astra.SupportedReasoningLevels, configuredCodexReasoningLevel{Effort: "none"})
+	require.True(t, gpt6Astra.SupportsParallelToolCalls)
+	require.True(t, gpt6Astra.SupportVerbosity)
+	require.Equal(t, int64(872_000), gpt6Astra.MaxContextWindow)
+
 	gpt4o := newConfiguredCodexModelDescriptor("gpt-4o")
 	require.Equal(t, "gpt-4o", gpt4o.DisplayName)
 	require.NotNil(t, gpt4o.DefaultReasoningLevel)
@@ -427,6 +437,18 @@ func TestBuildCodexModelsManifestKeepsKnownReasoningChoices(t *testing.T) {
 	require.NotEqual(t, "none", firstLevel["effort"])
 }
 
+// Scenario: GPT-6 models must not be advertised with the non-reasoning placeholder.
+func TestBuildCodexModelsManifestAdvertisesGPT6ReasoningChoices(t *testing.T) {
+	t.Parallel()
+
+	body, err := BuildCodexModelsManifest([]string{"gpt-6-astra"})
+	require.NoError(t, err)
+	models := decodeCodexManifestModels(t, body)
+	require.Len(t, models, 1)
+	require.Equal(t, "low", models[0]["default_reasoning_level"])
+	require.Equal(t, []string{"low", "medium", "high", "xhigh", "max"}, effortsFromManifestModel(t, models[0]))
+}
+
 // Scenario: 支持 Fast 的 GPT 型号在目录中声明 priority service tier。
 func TestBuildCodexModelsManifestAdvertisesPriorityServiceTierForFastGPTModels(t *testing.T) {
 	t.Parallel()
@@ -435,10 +457,11 @@ func TestBuildCodexModelsManifestAdvertisesPriorityServiceTierForFastGPTModels(t
 		"gpt-5.4-mini",
 		"gpt-5.5",
 		"gpt-5.6-sol",
+		"gpt-6-astra",
 	})
 	require.NoError(t, err)
 	models := decodeCodexManifestModels(t, body)
-	require.Len(t, models, 3)
+	require.Len(t, models, 4)
 
 	for _, model := range models {
 		require.Equal(t, []any{

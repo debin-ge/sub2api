@@ -942,16 +942,21 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 			apiKey.ChangeNotifyEnabled = false
 			apiKey.RotateOnExpiry = false
 			fields.NotificationSettings = true
-		} else if apiKey.NotificationEmail == nil || !strings.EqualFold(*apiKey.NotificationEmail, normalized) {
-			if s.emailVerification == nil {
-				return nil, ErrAPIKeyNotificationUnverified
+		} else {
+			if apiKey.NotificationEmail == nil || !strings.EqualFold(*apiKey.NotificationEmail, normalized) {
+				apiKey.NotificationEmail = &normalized
+				apiKey.NotificationEmailVerifiedAt = nil
 			}
-			verifiedAt, err := s.emailVerification.ValidateProof(ctx, userID, normalized, req.NotificationEmailVerification)
-			if err != nil {
-				return nil, err
+			if strings.TrimSpace(req.NotificationEmailVerification) != "" {
+				if s.emailVerification == nil {
+					return nil, ErrAPIKeyNotificationUnverified
+				}
+				verifiedAt, err := s.emailVerification.ValidateProof(ctx, userID, normalized, req.NotificationEmailVerification)
+				if err != nil {
+					return nil, err
+				}
+				apiKey.NotificationEmailVerifiedAt = &verifiedAt
 			}
-			apiKey.NotificationEmail = &normalized
-			apiKey.NotificationEmailVerifiedAt = &verifiedAt
 		}
 		fields.NotificationEmail = true
 	}
@@ -1014,7 +1019,7 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 	}
 
 	changeSummary := APIKeyConfigurationChangeSummary(beforeUpdate, apiKey)
-	shouldNotify := apiKey.ChangeNotifyEnabled && apiKey.NotificationEmail != nil && apiKey.NotificationEmailVerifiedAt != nil && changeSummary != ""
+	shouldNotify := apiKeyChangeNotificationEnabled(apiKey) && changeSummary != ""
 	if shouldNotify {
 		if s.entClient == nil || s.notificationOutbox == nil {
 			return nil, fmt.Errorf("update api key notification transaction is not configured")
@@ -1052,7 +1057,7 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 func (s *APIKeyService) resolveCreatedNotificationEmail(ctx context.Context, userID int64, req CreateAPIKeyRequest) (*string, *time.Time, error) {
 	if req.NotificationEmail == nil {
 		if req.ChangeNotifyEnabled || req.RotateOnExpiry {
-			return nil, nil, ErrAPIKeyNotificationUnverified
+			return nil, nil, ErrAPIKeyNotificationEmailInvalid
 		}
 		return nil, nil, nil
 	}
@@ -1062,9 +1067,12 @@ func (s *APIKeyService) resolveCreatedNotificationEmail(ctx context.Context, use
 	}
 	if email == "" {
 		if req.ChangeNotifyEnabled || req.RotateOnExpiry {
-			return nil, nil, ErrAPIKeyNotificationUnverified
+			return nil, nil, ErrAPIKeyNotificationEmailInvalid
 		}
 		return nil, nil, nil
+	}
+	if strings.TrimSpace(req.NotificationEmailVerification) == "" {
+		return &email, nil, nil
 	}
 	if s.emailVerification == nil {
 		return nil, nil, ErrAPIKeyNotificationUnverified
@@ -1081,8 +1089,12 @@ func validateAPIKeyNotificationState(apiKey *APIKey, now time.Time) error {
 		return nil
 	}
 	if apiKey.ChangeNotifyEnabled || apiKey.RotateOnExpiry {
-		if apiKey.NotificationEmail == nil || strings.TrimSpace(*apiKey.NotificationEmail) == "" || apiKey.NotificationEmailVerifiedAt == nil {
-			return ErrAPIKeyNotificationUnverified
+		if apiKey.NotificationEmail == nil {
+			return ErrAPIKeyNotificationEmailInvalid
+		}
+		email, err := NormalizeAPIKeyNotificationEmail(*apiKey.NotificationEmail)
+		if err != nil || email == "" {
+			return ErrAPIKeyNotificationEmailInvalid
 		}
 	}
 	if apiKey.RotateOnExpiry {

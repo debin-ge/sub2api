@@ -50,6 +50,7 @@ func ProvideAdminHandlers(
 	complianceHandler *admin.ComplianceHandler,
 	radarAdminHandler *admin.RadarHandler,
 	auditLogHandler *admin.AuditLogHandler,
+	videoAdminHandler *admin.VideoHandler,
 	upstreamBillingProbe *service.UpstreamBillingProbeService,
 	ollamaCloudUsage *service.OllamaCloudUsageService,
 ) *AdminHandlers {
@@ -95,6 +96,7 @@ func ProvideAdminHandlers(
 		Compliance:             complianceHandler,
 		Radar:                  radarAdminHandler,
 		AuditLog:               auditLogHandler,
+		Video:                  videoAdminHandler,
 	}
 }
 
@@ -237,10 +239,14 @@ func ProvideHandlers(
 	radarHandler *RadarHandler,
 	asyncImageHandler *AsyncImageHandler,
 	batchImageHandler *BatchImageHandler,
+	videoHandler *VideoHandler,
 	buildInfo BuildInfo,
 	_ *service.IdempotencyCoordinator,
 	_ *service.IdempotencyCleanupService,
 	_ *service.OpenAIQuotaAutoResetService,
+	_ *service.VideoSpoolRuntime,
+	_ *service.VideoTaskRuntime,
+	_ *service.VideoCallbackRuntime,
 ) *Handlers {
 	return &Handlers{
 		BuildInfo:         buildInfo,
@@ -270,6 +276,7 @@ func ProvideHandlers(
 		Radar:             radarHandler,
 		AsyncImage:        asyncImageHandler,
 		BatchImage:        batchImageHandler,
+		Video:             videoHandler,
 	}
 }
 
@@ -304,6 +311,7 @@ var ProviderSet = wire.NewSet(
 	NewRadarHandler,
 	NewAsyncImageHandler,
 	ProvideBatchImageHandler,
+	NewVideoHandler,
 
 	// Admin handlers
 	admin.NewDashboardHandler,
@@ -344,6 +352,7 @@ var ProviderSet = wire.NewSet(
 	admin.NewComplianceHandler,
 	admin.NewRadarHandler,
 	admin.NewAuditLogHandler,
+	admin.NewVideoHandler,
 
 	// AdminHandlers and Handlers constructors
 	ProvideAdminHandlers,

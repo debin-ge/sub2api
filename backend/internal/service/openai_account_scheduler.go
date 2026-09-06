@@ -1439,7 +1439,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 				continue
 			}
 		}
-		if !account.IsSchedulable() {
+		if !account.CanScheduleForUser(accountSchedulingUserID(ctx)) || !account.IsSchedulable() {
 			filterStats.exclude("not_schedulable")
 			continue
 		}

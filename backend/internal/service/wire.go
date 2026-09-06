@@ -202,6 +202,16 @@ func ProvideBatchImageCleanupService(repo BatchImageRepository, accountRepo Acco
 	return svc
 }
 
+func ProvideVideoProviderRegistry(openAI *OpenAIVideoProvider) *VideoProviderRegistry {
+	return NewVideoProviderRegistry(openAI)
+}
+
+func ProvideOpenAIVideoProvider(httpUpstream HTTPUpstream, tlsProfiles *TLSFingerprintProfileService, catalog *VideoCapabilityCatalog) *OpenAIVideoProvider {
+	provider := NewOpenAIVideoProvider(httpUpstream, tlsProfiles)
+	provider.catalog = catalog
+	return provider
+}
+
 // ProvideOpenAIOAuthService creates OpenAIOAuthService with privacy/account enrichment support.
 func ProvideOpenAIOAuthService(
 	proxyRepo ProxyRepository,
@@ -356,6 +366,7 @@ func ProvideAccountTestService(
 	settingService *SettingService,
 	modelDiscoverer *UpstreamModelDiscoverer,
 	pluginManager *PluginManager,
+	videoCapabilityProbe *VideoCapabilityProbeService,
 ) *AccountTestService {
 	service := NewAccountTestService(
 		accountRepo,
@@ -371,6 +382,7 @@ func ProvideAccountTestService(
 	service.agentIdentityWS = openAIGatewayService
 	service.SetSettingService(settingService)
 	service.SetPluginManager(pluginManager)
+	service.SetVideoCapabilityProbe(videoCapabilityProbe)
 	return service
 }
 
@@ -1027,6 +1039,21 @@ var ProviderSet = wire.NewSet(
 	NewBatchImageDownloadService,
 	ProvideBatchImageCleanupService,
 	ProvideBatchImageWorkerRuntime,
+	NewVideoSubmissionSpool,
+	ProvideVideoSpoolRuntime,
+	NewVideoCapabilityCatalog,
+	ProvideOpenAIVideoProvider,
+	ProvideVideoProviderRegistry,
+	NewVideoCapabilityProbeService,
+	ProvideVideoCapabilityProbeRuntime,
+	NewVideoPricingResolver,
+	NewVideoTaskService,
+	NewVideoWebhookService,
+	NewVideoTaskWorker,
+	ProvideVideoTaskRuntime,
+	NewVideoCallbackWorker,
+	ProvideVideoCallbackRuntime,
+	NewVideoAdminService,
 	wire.Bind(new(AccountRuntimeBlocker), new(*OpenAIGatewayService)),
 	NewOAuthService,
 	ProvideOpenAIOAuthService,

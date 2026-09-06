@@ -11,7 +11,7 @@ import (
 // - 影子账号：通过 repo 取母账号，校验母账号存在且为 OpenAI OAuth 类型，否则返回错误。
 // 设计为包级函数（非任何 service 的方法），以便 OpenAIGatewayService / OpenAIQuotaService /
 // AccountUsageService 等不同接收者共享同一实现。
-func resolveCredentialAccount(ctx context.Context, repo AccountRepository, account *Account) (*Account, error) {
+func resolveCredentialAccount(ctx context.Context, repo accountLookupRepository, account *Account) (*Account, error) {
 	if account == nil || !account.IsShadow() {
 		return account, nil
 	}
@@ -36,7 +36,7 @@ func resolveCredentialAccount(ctx context.Context, repo AccountRepository, accou
 	return parent, nil
 }
 
-func isNilAccountRepository(repo AccountRepository) bool {
+func isNilAccountRepository(repo any) bool {
 	if repo == nil {
 		return true
 	}

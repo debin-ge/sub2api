@@ -64,6 +64,51 @@
       </div>
     </template>
 
+    <!-- Video mode: conditional rule + billing unit + validity window -->
+    <template v-else-if="mode === 'video'">
+      <div class="grid min-w-0 flex-1 grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-6">
+        <div>
+          <label class="text-xs text-gray-400">{{ t('admin.channels.form.ruleLabel') }}</label>
+          <input :value="interval.tier_label" @input="emitField('tier_label', ($event.target as HTMLInputElement).value)"
+            type="text" class="input mt-0.5 text-xs" placeholder="sora-2-720p" />
+        </div>
+        <div>
+          <label class="text-xs text-gray-400">{{ t('admin.channels.form.billingUnit') }}</label>
+          <select :value="interval.billing_unit || 'second'" class="input mt-0.5 text-xs" @change="emitField('billing_unit', ($event.target as HTMLSelectElement).value)">
+            <option value="request">{{ t('admin.channels.form.billingUnitRequest') }}</option>
+            <option value="second">{{ t('admin.channels.form.billingUnitSecond') }}</option>
+            <option value="video_token">{{ t('admin.channels.form.billingUnitVideoToken') }}</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-xs text-gray-400">{{ t('admin.channels.form.unitPrice') }} <span class="text-gray-300">$</span></label>
+          <input :value="interval.per_request_price" @input="emitField('per_request_price', ($event.target as HTMLInputElement).value)"
+            type="number" step="any" min="0" class="input mt-0.5 text-xs" />
+        </div>
+        <div>
+          <label class="text-xs text-gray-400">{{ t('admin.channels.form.priority') }}</label>
+          <input :value="interval.priority || 0" @input="emitField('priority', toInt(($event.target as HTMLInputElement).value))"
+            type="number" step="1" class="input mt-0.5 text-xs" />
+        </div>
+        <div>
+          <label class="text-xs text-gray-400">{{ t('admin.channels.form.validFrom') }}</label>
+          <input :value="interval.valid_from || ''" @input="emitField('valid_from', ($event.target as HTMLInputElement).value)"
+            type="datetime-local" class="input mt-0.5 text-xs" />
+        </div>
+        <div>
+          <label class="text-xs text-gray-400">{{ t('admin.channels.form.validUntil') }}</label>
+          <input :value="interval.valid_until || ''" @input="emitField('valid_until', ($event.target as HTMLInputElement).value)"
+            type="datetime-local" class="input mt-0.5 text-xs" />
+        </div>
+        <div class="md:col-span-2 xl:col-span-6">
+          <label class="text-xs text-gray-400">{{ t('admin.channels.form.conditions') }}</label>
+          <textarea :value="interval.conditions_json || '{}'" @input="emitField('conditions_json', ($event.target as HTMLTextAreaElement).value)"
+            rows="3" spellcheck="false" class="input mt-0.5 min-h-20 w-full resize-y font-mono text-xs" placeholder='{"operations":["generate"],"sizes":["1280x720"],"seconds":[8]}'></textarea>
+          <p class="mt-1 text-xs text-gray-400">{{ t('admin.channels.form.conditionsHint') }}</p>
+        </div>
+      </div>
+    </template>
+
     <!-- Per-request / Image mode: tier label + context range + price -->
     <template v-else>
       <div class="w-24">

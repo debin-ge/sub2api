@@ -111,6 +111,118 @@ func (_c *AccountCreate) SetExtra(v map[string]interface{}) *AccountCreate {
 	return _c
 }
 
+// SetOwnershipMode sets the "ownership_mode" field.
+func (_c *AccountCreate) SetOwnershipMode(v string) *AccountCreate {
+	_c.mutation.SetOwnershipMode(v)
+	return _c
+}
+
+// SetNillableOwnershipMode sets the "ownership_mode" field if the given value is not nil.
+func (_c *AccountCreate) SetNillableOwnershipMode(v *string) *AccountCreate {
+	if v != nil {
+		_c.SetOwnershipMode(*v)
+	}
+	return _c
+}
+
+// SetOwnerUserID sets the "owner_user_id" field.
+func (_c *AccountCreate) SetOwnerUserID(v int64) *AccountCreate {
+	_c.mutation.SetOwnerUserID(v)
+	return _c
+}
+
+// SetNillableOwnerUserID sets the "owner_user_id" field if the given value is not nil.
+func (_c *AccountCreate) SetNillableOwnerUserID(v *int64) *AccountCreate {
+	if v != nil {
+		_c.SetOwnerUserID(*v)
+	}
+	return _c
+}
+
+// SetIsolationState sets the "isolation_state" field.
+func (_c *AccountCreate) SetIsolationState(v string) *AccountCreate {
+	_c.mutation.SetIsolationState(v)
+	return _c
+}
+
+// SetNillableIsolationState sets the "isolation_state" field if the given value is not nil.
+func (_c *AccountCreate) SetNillableIsolationState(v *string) *AccountCreate {
+	if v != nil {
+		_c.SetIsolationState(*v)
+	}
+	return _c
+}
+
+// SetProviderIdentityVersion sets the "provider_identity_version" field.
+func (_c *AccountCreate) SetProviderIdentityVersion(v int64) *AccountCreate {
+	_c.mutation.SetProviderIdentityVersion(v)
+	return _c
+}
+
+// SetNillableProviderIdentityVersion sets the "provider_identity_version" field if the given value is not nil.
+func (_c *AccountCreate) SetNillableProviderIdentityVersion(v *int64) *AccountCreate {
+	if v != nil {
+		_c.SetProviderIdentityVersion(*v)
+	}
+	return _c
+}
+
+// SetIsolationVerifiedVersion sets the "isolation_verified_version" field.
+func (_c *AccountCreate) SetIsolationVerifiedVersion(v int64) *AccountCreate {
+	_c.mutation.SetIsolationVerifiedVersion(v)
+	return _c
+}
+
+// SetNillableIsolationVerifiedVersion sets the "isolation_verified_version" field if the given value is not nil.
+func (_c *AccountCreate) SetNillableIsolationVerifiedVersion(v *int64) *AccountCreate {
+	if v != nil {
+		_c.SetIsolationVerifiedVersion(*v)
+	}
+	return _c
+}
+
+// SetProviderPrincipalBindingID sets the "provider_principal_binding_id" field.
+func (_c *AccountCreate) SetProviderPrincipalBindingID(v int64) *AccountCreate {
+	_c.mutation.SetProviderPrincipalBindingID(v)
+	return _c
+}
+
+// SetNillableProviderPrincipalBindingID sets the "provider_principal_binding_id" field if the given value is not nil.
+func (_c *AccountCreate) SetNillableProviderPrincipalBindingID(v *int64) *AccountCreate {
+	if v != nil {
+		_c.SetProviderPrincipalBindingID(*v)
+	}
+	return _c
+}
+
+// SetVideoOwnerUserID sets the "video_owner_user_id" field.
+func (_c *AccountCreate) SetVideoOwnerUserID(v int64) *AccountCreate {
+	_c.mutation.SetVideoOwnerUserID(v)
+	return _c
+}
+
+// SetNillableVideoOwnerUserID sets the "video_owner_user_id" field if the given value is not nil.
+func (_c *AccountCreate) SetNillableVideoOwnerUserID(v *int64) *AccountCreate {
+	if v != nil {
+		_c.SetVideoOwnerUserID(*v)
+	}
+	return _c
+}
+
+// SetVideoDisclosurePolicy sets the "video_disclosure_policy" field.
+func (_c *AccountCreate) SetVideoDisclosurePolicy(v string) *AccountCreate {
+	_c.mutation.SetVideoDisclosurePolicy(v)
+	return _c
+}
+
+// SetNillableVideoDisclosurePolicy sets the "video_disclosure_policy" field if the given value is not nil.
+func (_c *AccountCreate) SetNillableVideoDisclosurePolicy(v *string) *AccountCreate {
+	if v != nil {
+		_c.SetVideoDisclosurePolicy(*v)
+	}
+	return _c
+}
+
 // SetProxyID sets the "proxy_id" field.
 func (_c *AccountCreate) SetProxyID(v int64) *AccountCreate {
 	_c.mutation.SetProxyID(v)
@@ -553,6 +665,22 @@ func (_c *AccountCreate) defaults() error {
 		v := account.DefaultExtra()
 		_c.mutation.SetExtra(v)
 	}
+	if _, ok := _c.mutation.OwnershipMode(); !ok {
+		v := account.DefaultOwnershipMode
+		_c.mutation.SetOwnershipMode(v)
+	}
+	if _, ok := _c.mutation.IsolationState(); !ok {
+		v := account.DefaultIsolationState
+		_c.mutation.SetIsolationState(v)
+	}
+	if _, ok := _c.mutation.ProviderIdentityVersion(); !ok {
+		v := account.DefaultProviderIdentityVersion
+		_c.mutation.SetProviderIdentityVersion(v)
+	}
+	if _, ok := _c.mutation.IsolationVerifiedVersion(); !ok {
+		v := account.DefaultIsolationVerifiedVersion
+		_c.mutation.SetIsolationVerifiedVersion(v)
+	}
 	if _, ok := _c.mutation.Concurrency(); !ok {
 		v := account.DefaultConcurrency
 		_c.mutation.SetConcurrency(v)
@@ -621,6 +749,33 @@ func (_c *AccountCreate) check() error {
 	}
 	if _, ok := _c.mutation.Extra(); !ok {
 		return &ValidationError{Name: "extra", err: errors.New(`ent: missing required field "Account.extra"`)}
+	}
+	if _, ok := _c.mutation.OwnershipMode(); !ok {
+		return &ValidationError{Name: "ownership_mode", err: errors.New(`ent: missing required field "Account.ownership_mode"`)}
+	}
+	if v, ok := _c.mutation.OwnershipMode(); ok {
+		if err := account.OwnershipModeValidator(v); err != nil {
+			return &ValidationError{Name: "ownership_mode", err: fmt.Errorf(`ent: validator failed for field "Account.ownership_mode": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.IsolationState(); !ok {
+		return &ValidationError{Name: "isolation_state", err: errors.New(`ent: missing required field "Account.isolation_state"`)}
+	}
+	if v, ok := _c.mutation.IsolationState(); ok {
+		if err := account.IsolationStateValidator(v); err != nil {
+			return &ValidationError{Name: "isolation_state", err: fmt.Errorf(`ent: validator failed for field "Account.isolation_state": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.ProviderIdentityVersion(); !ok {
+		return &ValidationError{Name: "provider_identity_version", err: errors.New(`ent: missing required field "Account.provider_identity_version"`)}
+	}
+	if _, ok := _c.mutation.IsolationVerifiedVersion(); !ok {
+		return &ValidationError{Name: "isolation_verified_version", err: errors.New(`ent: missing required field "Account.isolation_verified_version"`)}
+	}
+	if v, ok := _c.mutation.VideoDisclosurePolicy(); ok {
+		if err := account.VideoDisclosurePolicyValidator(v); err != nil {
+			return &ValidationError{Name: "video_disclosure_policy", err: fmt.Errorf(`ent: validator failed for field "Account.video_disclosure_policy": %w`, err)}
+		}
 	}
 	if _, ok := _c.mutation.Concurrency(); !ok {
 		return &ValidationError{Name: "concurrency", err: errors.New(`ent: missing required field "Account.concurrency"`)}
@@ -720,6 +875,38 @@ func (_c *AccountCreate) createSpec() (*Account, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Extra(); ok {
 		_spec.SetField(account.FieldExtra, field.TypeJSON, value)
 		_node.Extra = value
+	}
+	if value, ok := _c.mutation.OwnershipMode(); ok {
+		_spec.SetField(account.FieldOwnershipMode, field.TypeString, value)
+		_node.OwnershipMode = value
+	}
+	if value, ok := _c.mutation.OwnerUserID(); ok {
+		_spec.SetField(account.FieldOwnerUserID, field.TypeInt64, value)
+		_node.OwnerUserID = &value
+	}
+	if value, ok := _c.mutation.IsolationState(); ok {
+		_spec.SetField(account.FieldIsolationState, field.TypeString, value)
+		_node.IsolationState = value
+	}
+	if value, ok := _c.mutation.ProviderIdentityVersion(); ok {
+		_spec.SetField(account.FieldProviderIdentityVersion, field.TypeInt64, value)
+		_node.ProviderIdentityVersion = value
+	}
+	if value, ok := _c.mutation.IsolationVerifiedVersion(); ok {
+		_spec.SetField(account.FieldIsolationVerifiedVersion, field.TypeInt64, value)
+		_node.IsolationVerifiedVersion = value
+	}
+	if value, ok := _c.mutation.ProviderPrincipalBindingID(); ok {
+		_spec.SetField(account.FieldProviderPrincipalBindingID, field.TypeInt64, value)
+		_node.ProviderPrincipalBindingID = &value
+	}
+	if value, ok := _c.mutation.VideoOwnerUserID(); ok {
+		_spec.SetField(account.FieldVideoOwnerUserID, field.TypeInt64, value)
+		_node.VideoOwnerUserID = &value
+	}
+	if value, ok := _c.mutation.VideoDisclosurePolicy(); ok {
+		_spec.SetField(account.FieldVideoDisclosurePolicy, field.TypeString, value)
+		_node.VideoDisclosurePolicy = &value
 	}
 	if value, ok := _c.mutation.ProxyFallbackOriginID(); ok {
 		_spec.SetField(account.FieldProxyFallbackOriginID, field.TypeInt64, value)
@@ -1044,6 +1231,156 @@ func (u *AccountUpsert) SetExtra(v map[string]interface{}) *AccountUpsert {
 // UpdateExtra sets the "extra" field to the value that was provided on create.
 func (u *AccountUpsert) UpdateExtra() *AccountUpsert {
 	u.SetExcluded(account.FieldExtra)
+	return u
+}
+
+// SetOwnershipMode sets the "ownership_mode" field.
+func (u *AccountUpsert) SetOwnershipMode(v string) *AccountUpsert {
+	u.Set(account.FieldOwnershipMode, v)
+	return u
+}
+
+// UpdateOwnershipMode sets the "ownership_mode" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateOwnershipMode() *AccountUpsert {
+	u.SetExcluded(account.FieldOwnershipMode)
+	return u
+}
+
+// SetOwnerUserID sets the "owner_user_id" field.
+func (u *AccountUpsert) SetOwnerUserID(v int64) *AccountUpsert {
+	u.Set(account.FieldOwnerUserID, v)
+	return u
+}
+
+// UpdateOwnerUserID sets the "owner_user_id" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateOwnerUserID() *AccountUpsert {
+	u.SetExcluded(account.FieldOwnerUserID)
+	return u
+}
+
+// AddOwnerUserID adds v to the "owner_user_id" field.
+func (u *AccountUpsert) AddOwnerUserID(v int64) *AccountUpsert {
+	u.Add(account.FieldOwnerUserID, v)
+	return u
+}
+
+// ClearOwnerUserID clears the value of the "owner_user_id" field.
+func (u *AccountUpsert) ClearOwnerUserID() *AccountUpsert {
+	u.SetNull(account.FieldOwnerUserID)
+	return u
+}
+
+// SetIsolationState sets the "isolation_state" field.
+func (u *AccountUpsert) SetIsolationState(v string) *AccountUpsert {
+	u.Set(account.FieldIsolationState, v)
+	return u
+}
+
+// UpdateIsolationState sets the "isolation_state" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateIsolationState() *AccountUpsert {
+	u.SetExcluded(account.FieldIsolationState)
+	return u
+}
+
+// SetProviderIdentityVersion sets the "provider_identity_version" field.
+func (u *AccountUpsert) SetProviderIdentityVersion(v int64) *AccountUpsert {
+	u.Set(account.FieldProviderIdentityVersion, v)
+	return u
+}
+
+// UpdateProviderIdentityVersion sets the "provider_identity_version" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateProviderIdentityVersion() *AccountUpsert {
+	u.SetExcluded(account.FieldProviderIdentityVersion)
+	return u
+}
+
+// AddProviderIdentityVersion adds v to the "provider_identity_version" field.
+func (u *AccountUpsert) AddProviderIdentityVersion(v int64) *AccountUpsert {
+	u.Add(account.FieldProviderIdentityVersion, v)
+	return u
+}
+
+// SetIsolationVerifiedVersion sets the "isolation_verified_version" field.
+func (u *AccountUpsert) SetIsolationVerifiedVersion(v int64) *AccountUpsert {
+	u.Set(account.FieldIsolationVerifiedVersion, v)
+	return u
+}
+
+// UpdateIsolationVerifiedVersion sets the "isolation_verified_version" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateIsolationVerifiedVersion() *AccountUpsert {
+	u.SetExcluded(account.FieldIsolationVerifiedVersion)
+	return u
+}
+
+// AddIsolationVerifiedVersion adds v to the "isolation_verified_version" field.
+func (u *AccountUpsert) AddIsolationVerifiedVersion(v int64) *AccountUpsert {
+	u.Add(account.FieldIsolationVerifiedVersion, v)
+	return u
+}
+
+// SetProviderPrincipalBindingID sets the "provider_principal_binding_id" field.
+func (u *AccountUpsert) SetProviderPrincipalBindingID(v int64) *AccountUpsert {
+	u.Set(account.FieldProviderPrincipalBindingID, v)
+	return u
+}
+
+// UpdateProviderPrincipalBindingID sets the "provider_principal_binding_id" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateProviderPrincipalBindingID() *AccountUpsert {
+	u.SetExcluded(account.FieldProviderPrincipalBindingID)
+	return u
+}
+
+// AddProviderPrincipalBindingID adds v to the "provider_principal_binding_id" field.
+func (u *AccountUpsert) AddProviderPrincipalBindingID(v int64) *AccountUpsert {
+	u.Add(account.FieldProviderPrincipalBindingID, v)
+	return u
+}
+
+// ClearProviderPrincipalBindingID clears the value of the "provider_principal_binding_id" field.
+func (u *AccountUpsert) ClearProviderPrincipalBindingID() *AccountUpsert {
+	u.SetNull(account.FieldProviderPrincipalBindingID)
+	return u
+}
+
+// SetVideoOwnerUserID sets the "video_owner_user_id" field.
+func (u *AccountUpsert) SetVideoOwnerUserID(v int64) *AccountUpsert {
+	u.Set(account.FieldVideoOwnerUserID, v)
+	return u
+}
+
+// UpdateVideoOwnerUserID sets the "video_owner_user_id" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateVideoOwnerUserID() *AccountUpsert {
+	u.SetExcluded(account.FieldVideoOwnerUserID)
+	return u
+}
+
+// AddVideoOwnerUserID adds v to the "video_owner_user_id" field.
+func (u *AccountUpsert) AddVideoOwnerUserID(v int64) *AccountUpsert {
+	u.Add(account.FieldVideoOwnerUserID, v)
+	return u
+}
+
+// ClearVideoOwnerUserID clears the value of the "video_owner_user_id" field.
+func (u *AccountUpsert) ClearVideoOwnerUserID() *AccountUpsert {
+	u.SetNull(account.FieldVideoOwnerUserID)
+	return u
+}
+
+// SetVideoDisclosurePolicy sets the "video_disclosure_policy" field.
+func (u *AccountUpsert) SetVideoDisclosurePolicy(v string) *AccountUpsert {
+	u.Set(account.FieldVideoDisclosurePolicy, v)
+	return u
+}
+
+// UpdateVideoDisclosurePolicy sets the "video_disclosure_policy" field to the value that was provided on create.
+func (u *AccountUpsert) UpdateVideoDisclosurePolicy() *AccountUpsert {
+	u.SetExcluded(account.FieldVideoDisclosurePolicy)
+	return u
+}
+
+// ClearVideoDisclosurePolicy clears the value of the "video_disclosure_policy" field.
+func (u *AccountUpsert) ClearVideoDisclosurePolicy() *AccountUpsert {
+	u.SetNull(account.FieldVideoDisclosurePolicy)
 	return u
 }
 
@@ -1599,6 +1936,181 @@ func (u *AccountUpsertOne) SetExtra(v map[string]interface{}) *AccountUpsertOne 
 func (u *AccountUpsertOne) UpdateExtra() *AccountUpsertOne {
 	return u.Update(func(s *AccountUpsert) {
 		s.UpdateExtra()
+	})
+}
+
+// SetOwnershipMode sets the "ownership_mode" field.
+func (u *AccountUpsertOne) SetOwnershipMode(v string) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetOwnershipMode(v)
+	})
+}
+
+// UpdateOwnershipMode sets the "ownership_mode" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateOwnershipMode() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateOwnershipMode()
+	})
+}
+
+// SetOwnerUserID sets the "owner_user_id" field.
+func (u *AccountUpsertOne) SetOwnerUserID(v int64) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetOwnerUserID(v)
+	})
+}
+
+// AddOwnerUserID adds v to the "owner_user_id" field.
+func (u *AccountUpsertOne) AddOwnerUserID(v int64) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.AddOwnerUserID(v)
+	})
+}
+
+// UpdateOwnerUserID sets the "owner_user_id" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateOwnerUserID() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateOwnerUserID()
+	})
+}
+
+// ClearOwnerUserID clears the value of the "owner_user_id" field.
+func (u *AccountUpsertOne) ClearOwnerUserID() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearOwnerUserID()
+	})
+}
+
+// SetIsolationState sets the "isolation_state" field.
+func (u *AccountUpsertOne) SetIsolationState(v string) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetIsolationState(v)
+	})
+}
+
+// UpdateIsolationState sets the "isolation_state" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateIsolationState() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateIsolationState()
+	})
+}
+
+// SetProviderIdentityVersion sets the "provider_identity_version" field.
+func (u *AccountUpsertOne) SetProviderIdentityVersion(v int64) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetProviderIdentityVersion(v)
+	})
+}
+
+// AddProviderIdentityVersion adds v to the "provider_identity_version" field.
+func (u *AccountUpsertOne) AddProviderIdentityVersion(v int64) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.AddProviderIdentityVersion(v)
+	})
+}
+
+// UpdateProviderIdentityVersion sets the "provider_identity_version" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateProviderIdentityVersion() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateProviderIdentityVersion()
+	})
+}
+
+// SetIsolationVerifiedVersion sets the "isolation_verified_version" field.
+func (u *AccountUpsertOne) SetIsolationVerifiedVersion(v int64) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetIsolationVerifiedVersion(v)
+	})
+}
+
+// AddIsolationVerifiedVersion adds v to the "isolation_verified_version" field.
+func (u *AccountUpsertOne) AddIsolationVerifiedVersion(v int64) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.AddIsolationVerifiedVersion(v)
+	})
+}
+
+// UpdateIsolationVerifiedVersion sets the "isolation_verified_version" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateIsolationVerifiedVersion() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateIsolationVerifiedVersion()
+	})
+}
+
+// SetProviderPrincipalBindingID sets the "provider_principal_binding_id" field.
+func (u *AccountUpsertOne) SetProviderPrincipalBindingID(v int64) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetProviderPrincipalBindingID(v)
+	})
+}
+
+// AddProviderPrincipalBindingID adds v to the "provider_principal_binding_id" field.
+func (u *AccountUpsertOne) AddProviderPrincipalBindingID(v int64) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.AddProviderPrincipalBindingID(v)
+	})
+}
+
+// UpdateProviderPrincipalBindingID sets the "provider_principal_binding_id" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateProviderPrincipalBindingID() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateProviderPrincipalBindingID()
+	})
+}
+
+// ClearProviderPrincipalBindingID clears the value of the "provider_principal_binding_id" field.
+func (u *AccountUpsertOne) ClearProviderPrincipalBindingID() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearProviderPrincipalBindingID()
+	})
+}
+
+// SetVideoOwnerUserID sets the "video_owner_user_id" field.
+func (u *AccountUpsertOne) SetVideoOwnerUserID(v int64) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetVideoOwnerUserID(v)
+	})
+}
+
+// AddVideoOwnerUserID adds v to the "video_owner_user_id" field.
+func (u *AccountUpsertOne) AddVideoOwnerUserID(v int64) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.AddVideoOwnerUserID(v)
+	})
+}
+
+// UpdateVideoOwnerUserID sets the "video_owner_user_id" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateVideoOwnerUserID() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateVideoOwnerUserID()
+	})
+}
+
+// ClearVideoOwnerUserID clears the value of the "video_owner_user_id" field.
+func (u *AccountUpsertOne) ClearVideoOwnerUserID() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearVideoOwnerUserID()
+	})
+}
+
+// SetVideoDisclosurePolicy sets the "video_disclosure_policy" field.
+func (u *AccountUpsertOne) SetVideoDisclosurePolicy(v string) *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetVideoDisclosurePolicy(v)
+	})
+}
+
+// UpdateVideoDisclosurePolicy sets the "video_disclosure_policy" field to the value that was provided on create.
+func (u *AccountUpsertOne) UpdateVideoDisclosurePolicy() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateVideoDisclosurePolicy()
+	})
+}
+
+// ClearVideoDisclosurePolicy clears the value of the "video_disclosure_policy" field.
+func (u *AccountUpsertOne) ClearVideoDisclosurePolicy() *AccountUpsertOne {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearVideoDisclosurePolicy()
 	})
 }
 
@@ -2384,6 +2896,181 @@ func (u *AccountUpsertBulk) SetExtra(v map[string]interface{}) *AccountUpsertBul
 func (u *AccountUpsertBulk) UpdateExtra() *AccountUpsertBulk {
 	return u.Update(func(s *AccountUpsert) {
 		s.UpdateExtra()
+	})
+}
+
+// SetOwnershipMode sets the "ownership_mode" field.
+func (u *AccountUpsertBulk) SetOwnershipMode(v string) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetOwnershipMode(v)
+	})
+}
+
+// UpdateOwnershipMode sets the "ownership_mode" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateOwnershipMode() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateOwnershipMode()
+	})
+}
+
+// SetOwnerUserID sets the "owner_user_id" field.
+func (u *AccountUpsertBulk) SetOwnerUserID(v int64) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetOwnerUserID(v)
+	})
+}
+
+// AddOwnerUserID adds v to the "owner_user_id" field.
+func (u *AccountUpsertBulk) AddOwnerUserID(v int64) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.AddOwnerUserID(v)
+	})
+}
+
+// UpdateOwnerUserID sets the "owner_user_id" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateOwnerUserID() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateOwnerUserID()
+	})
+}
+
+// ClearOwnerUserID clears the value of the "owner_user_id" field.
+func (u *AccountUpsertBulk) ClearOwnerUserID() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearOwnerUserID()
+	})
+}
+
+// SetIsolationState sets the "isolation_state" field.
+func (u *AccountUpsertBulk) SetIsolationState(v string) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetIsolationState(v)
+	})
+}
+
+// UpdateIsolationState sets the "isolation_state" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateIsolationState() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateIsolationState()
+	})
+}
+
+// SetProviderIdentityVersion sets the "provider_identity_version" field.
+func (u *AccountUpsertBulk) SetProviderIdentityVersion(v int64) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetProviderIdentityVersion(v)
+	})
+}
+
+// AddProviderIdentityVersion adds v to the "provider_identity_version" field.
+func (u *AccountUpsertBulk) AddProviderIdentityVersion(v int64) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.AddProviderIdentityVersion(v)
+	})
+}
+
+// UpdateProviderIdentityVersion sets the "provider_identity_version" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateProviderIdentityVersion() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateProviderIdentityVersion()
+	})
+}
+
+// SetIsolationVerifiedVersion sets the "isolation_verified_version" field.
+func (u *AccountUpsertBulk) SetIsolationVerifiedVersion(v int64) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetIsolationVerifiedVersion(v)
+	})
+}
+
+// AddIsolationVerifiedVersion adds v to the "isolation_verified_version" field.
+func (u *AccountUpsertBulk) AddIsolationVerifiedVersion(v int64) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.AddIsolationVerifiedVersion(v)
+	})
+}
+
+// UpdateIsolationVerifiedVersion sets the "isolation_verified_version" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateIsolationVerifiedVersion() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateIsolationVerifiedVersion()
+	})
+}
+
+// SetProviderPrincipalBindingID sets the "provider_principal_binding_id" field.
+func (u *AccountUpsertBulk) SetProviderPrincipalBindingID(v int64) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetProviderPrincipalBindingID(v)
+	})
+}
+
+// AddProviderPrincipalBindingID adds v to the "provider_principal_binding_id" field.
+func (u *AccountUpsertBulk) AddProviderPrincipalBindingID(v int64) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.AddProviderPrincipalBindingID(v)
+	})
+}
+
+// UpdateProviderPrincipalBindingID sets the "provider_principal_binding_id" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateProviderPrincipalBindingID() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateProviderPrincipalBindingID()
+	})
+}
+
+// ClearProviderPrincipalBindingID clears the value of the "provider_principal_binding_id" field.
+func (u *AccountUpsertBulk) ClearProviderPrincipalBindingID() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearProviderPrincipalBindingID()
+	})
+}
+
+// SetVideoOwnerUserID sets the "video_owner_user_id" field.
+func (u *AccountUpsertBulk) SetVideoOwnerUserID(v int64) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetVideoOwnerUserID(v)
+	})
+}
+
+// AddVideoOwnerUserID adds v to the "video_owner_user_id" field.
+func (u *AccountUpsertBulk) AddVideoOwnerUserID(v int64) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.AddVideoOwnerUserID(v)
+	})
+}
+
+// UpdateVideoOwnerUserID sets the "video_owner_user_id" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateVideoOwnerUserID() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateVideoOwnerUserID()
+	})
+}
+
+// ClearVideoOwnerUserID clears the value of the "video_owner_user_id" field.
+func (u *AccountUpsertBulk) ClearVideoOwnerUserID() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearVideoOwnerUserID()
+	})
+}
+
+// SetVideoDisclosurePolicy sets the "video_disclosure_policy" field.
+func (u *AccountUpsertBulk) SetVideoDisclosurePolicy(v string) *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.SetVideoDisclosurePolicy(v)
+	})
+}
+
+// UpdateVideoDisclosurePolicy sets the "video_disclosure_policy" field to the value that was provided on create.
+func (u *AccountUpsertBulk) UpdateVideoDisclosurePolicy() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.UpdateVideoDisclosurePolicy()
+	})
+}
+
+// ClearVideoDisclosurePolicy clears the value of the "video_disclosure_policy" field.
+func (u *AccountUpsertBulk) ClearVideoDisclosurePolicy() *AccountUpsertBulk {
+	return u.Update(func(s *AccountUpsert) {
+		s.ClearVideoDisclosurePolicy()
 	})
 }
 

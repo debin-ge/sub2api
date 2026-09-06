@@ -46,6 +46,7 @@ type AdminHandlers struct {
 	Compliance             *admin.ComplianceHandler
 	Radar                  *admin.RadarHandler
 	AuditLog               *admin.AuditLogHandler
+	Video                  *admin.VideoHandler
 }
 
 // Handlers contains all HTTP handlers
@@ -82,6 +83,7 @@ type Handlers struct {
 	Radar            *RadarHandler
 	AsyncImage       *AsyncImageHandler
 	BatchImage       *BatchImageHandler
+	Video            *VideoHandler
 }
 
 // BuildInfo contains build-time information

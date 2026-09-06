@@ -36,6 +36,8 @@ func RegisterAdminRoutes(
 
 		registerAdminRadarRoutes(admin, h)
 
+		registerAdminVideoRoutes(admin, h)
+
 		// 仪表盘
 		registerDashboardRoutes(admin, h)
 
@@ -138,6 +140,40 @@ func RegisterAdminRoutes(
 
 		// 操作审计日志
 		registerAuditLogRoutes(admin, h, stepUpAuth)
+	}
+}
+
+func registerAdminVideoRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	videos := admin.Group("/videos")
+	{
+		videos.GET("/overview", h.Admin.Video.Overview)
+		videos.GET("/capabilities", h.Admin.Video.GetCapabilityCatalog)
+		videos.PUT("/capabilities", h.Admin.Video.UpdateCapabilityCatalog)
+		videos.GET("/accounts/:id/capability", h.Admin.Video.GetAccountCapability)
+		videos.POST("/accounts/:id/capability/probe", h.Admin.Video.ProbeAccountCapability)
+		videos.GET("/tasks", h.Admin.Video.ListTasks)
+		videos.GET("/tasks/unknown", h.Admin.Video.ListUnknown)
+		videos.GET("/tasks/:id", h.Admin.Video.GetTask)
+		videos.GET("/tasks/:id/events", h.Admin.Video.ListEvents)
+		videos.POST("/tasks/:id/resolve-not-created", h.Admin.Video.ResolveNotCreated)
+		videos.POST("/tasks/:id/resolve-created", h.Admin.Video.ResolveCreated)
+		videos.POST("/tasks/:id/retry-character-resource", h.Admin.Video.RetryCharacterResource)
+		videos.GET("/tasks/:id/submission-reviews", h.Admin.Video.ListSubmissionReviews)
+		videos.POST("/tasks/:id/submission-reviews/:review_id/approve", h.Admin.Video.ApproveSubmissionReview)
+		videos.POST("/tasks/:id/submission-reviews/:review_id/reject", h.Admin.Video.RejectSubmissionReview)
+		videos.POST("/tasks/:id/retry-get", h.Admin.Video.RetryProviderGet)
+		videos.POST("/tasks/:id/retry-settlement", h.Admin.Video.RetrySettlement)
+		videos.POST("/tasks/:id/resolve-billing-capture", h.Admin.Video.ResolveBillingCapture)
+		videos.POST("/tasks/:id/resolve-billing-release", h.Admin.Video.ResolveBillingRelease)
+		videos.GET("/tasks/:id/billing-reviews", h.Admin.Video.ListBillingReviews)
+		videos.POST("/tasks/:id/billing-reviews/:review_id/approve", h.Admin.Video.ApproveBillingReview)
+		videos.POST("/tasks/:id/billing-reviews/:review_id/reject", h.Admin.Video.RejectBillingReview)
+		videos.POST("/tasks/:id/retry-delete", h.Admin.Video.RetryDelete)
+		videos.GET("/resources", h.Admin.Video.ListResources)
+		videos.GET("/resources/:id", h.Admin.Video.GetResource)
+		videos.GET("/webhooks/unmatched", h.Admin.Video.ListUnmatchedEvents)
+		videos.GET("/callbacks", h.Admin.Video.ListCallbacks)
+		videos.POST("/callbacks/:id/retry", h.Admin.Video.RetryCallback)
 	}
 }
 
@@ -397,6 +433,11 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.GET("/ollama-cloud-usage/settings", h.Admin.Account.GetOllamaCloudUsageSettings)
 		accounts.PUT("/ollama-cloud-usage/settings", h.Admin.Account.UpdateOllamaCloudUsageSettings)
 		accounts.GET("/:id", h.Admin.Account.GetByID)
+		accounts.GET("/:id/provider-identity", h.Admin.Account.GetProviderIdentity)
+		accounts.POST("/:id/provider-identity/reviews", gin.HandlerFunc(stepUpAuth), h.Admin.Account.ProposeProviderIdentity)
+		accounts.POST("/:id/provider-identity/reviews/:review_id/approve", gin.HandlerFunc(stepUpAuth), h.Admin.Account.ApproveProviderIdentity)
+		accounts.POST("/:id/provider-identity/reviews/:review_id/reject", gin.HandlerFunc(stepUpAuth), h.Admin.Account.RejectProviderIdentity)
+		accounts.POST("/:id/provider-identity/revoke", gin.HandlerFunc(stepUpAuth), h.Admin.Account.RevokeProviderIdentity)
 		accounts.POST("", h.Admin.Account.Create)
 		accounts.POST("/:id/duplicate", h.Admin.Account.Duplicate)
 		accounts.POST("/check-mixed-channel", h.Admin.Account.CheckMixedChannel)
@@ -817,6 +858,7 @@ func registerModelPriceRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepU
 		prices.GET("/platforms", h.Admin.ModelPrice.ListPlatforms)
 		prices.GET("/entry", h.Admin.ModelPrice.Detail)
 		prices.GET("/sync-status", h.Admin.ModelPrice.SyncStatus)
+		prices.POST("/video-preview", h.Admin.ModelPrice.PreviewVideo)
 		prices.POST("/sync", h.Admin.ModelPrice.Sync)
 		prices.PUT("/entry", gin.HandlerFunc(stepUpAuth), h.Admin.ModelPrice.Upsert)
 		prices.DELETE("/entry", gin.HandlerFunc(stepUpAuth), h.Admin.ModelPrice.Delete)

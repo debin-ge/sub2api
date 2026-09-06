@@ -236,7 +236,8 @@ func (s *UsageBillingPostEffectsService) finalize(
 	}
 
 	var projectionErrors []error
-	cacheProjectionRequired := cmd.BalanceCost > 0 ||
+	holdBalanceProjection := result.FrozenBalance != nil && strings.EqualFold(strings.TrimSpace(cmd.MediaType), "video")
+	cacheProjectionRequired := cmd.BalanceCost > 0 || holdBalanceProjection ||
 		(cmd.SubscriptionCost > 0 && cmd.GroupID != nil) ||
 		cmd.APIKeyRateLimitCost > 0 ||
 		(cmd.PlatformQuotaCost > 0 && strings.TrimSpace(cmd.Platform) != "")
@@ -244,7 +245,7 @@ func (s *UsageBillingPostEffectsService) finalize(
 		projectionErrors = append(projectionErrors,
 			errors.New("usage billing cache projection service is not configured"))
 	} else if s.billingCacheService != nil {
-		if cmd.BalanceCost > 0 {
+		if cmd.BalanceCost > 0 || holdBalanceProjection {
 			if err := s.billingCacheService.InvalidateUserBalance(ctx, cmd.UserID); err != nil {
 				projectionErrors = append(projectionErrors, err)
 			}
@@ -272,7 +273,7 @@ func (s *UsageBillingPostEffectsService) finalize(
 	if authInvalidator == nil {
 		authInvalidator = s.authCacheInvalidator
 	}
-	authInvalidationRequired := result.APIKeyQuotaExhausted ||
+	authInvalidationRequired := result.APIKeyQuotaExhausted || result.BalanceOverdrafted ||
 		(projectionRepairOnly && cmd.APIKeyQuotaCost > 0)
 	if authInvalidationRequired && authInvalidator == nil {
 		return errors.New("usage billing auth cache invalidator is not configured")

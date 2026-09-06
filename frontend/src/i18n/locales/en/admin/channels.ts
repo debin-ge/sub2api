@@ -84,6 +84,15 @@ export default {
           perRequestPrice: 'per-request price'
         }
       },
+      videoPricingValidation: {
+        label: 'Video rule #{index}: rule label is required',
+        duplicateLabel: 'Video rule #{index}: rule label must be unique',
+        billingUnit: 'Video rule #{index}: select a billing unit',
+        price: 'Video rule #{index}: unit price is required',
+        conditions: 'Video rule #{index}: conditions must be a JSON object with supported keys',
+        validity: 'Video rule #{index}: valid-until must be later than valid-from',
+        duplicateSelector: 'Video rule #{index}: priority and conditions duplicate another rule',
+      },
       timePricingValidation: {
         timezone: 'Select a valid IANA time zone',
         format: 'Start and end times must use HH:mm:ss format',
@@ -105,7 +114,7 @@ export default {
         token: 'Token',
         perRequest: 'Per Request',
         image: 'Image (Per Request)',
-        video: 'Video (Per Second)'
+        video: 'Video (Conditional)'
       },
       form: {
         name: 'Name',
@@ -162,11 +171,25 @@ export default {
         requestTiers: 'Request Tiers',
         imageTiers: 'Image Tiers (Per Request)',
         videoTiers: 'Video Resolution Tiers (Per Second)',
+        videoRules: 'Video pricing rules',
+        addRule: 'Add rule',
         addTier: 'Add Tier',
         noTiersYet: 'No tiers yet. Click add to configure per-request pricing.',
         noPricingRules: 'No pricing rules yet. Click "Add" to create one.',
         perRequestPrice: 'Price per Request',
         perRequestPriceRequired: 'Per-request price or billing tiers required for per-request/image billing mode',
+        videoRuleRequired: 'Video billing requires at least one conditional pricing rule.',
+        ruleLabel: 'Rule label',
+        billingUnit: 'Billing unit',
+        billingUnitRequest: 'Per request',
+        billingUnitSecond: 'Per second',
+        billingUnitVideoToken: 'Per video token',
+        unitPrice: 'Unit price',
+        priority: 'Priority',
+        validFrom: 'Valid from',
+        validUntil: 'Valid until',
+        conditions: 'Conditions (JSON)',
+        conditionsHint: 'Supported keys: providers, operations, sizes, seconds, input_types, audio_enabled, qualities, service_tiers.',
         tierLabel: 'Tier',
         resolution: 'Resolution',
         modelMapping: 'Model Mapping',
@@ -205,7 +228,6 @@ export default {
         applyPricingToAccountStats: 'Apply Pricing to Account Stats',
         applyPricingToAccountStatsDesc: 'When enabled, requests not matched by custom rules will use standard model pricing for account stats calculation',
         accountStatsPricingRules: 'Custom Account Stats Pricing Rules',
-        addRule: 'Add Rule',
         noRulesConfigured: 'No custom rules configured. Channel model pricing above will be used.',
         ruleName: 'Rule name (optional)',
         ruleGroups: 'Groups',

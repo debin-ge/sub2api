@@ -570,6 +570,11 @@ func TestDecodeOverridePayloadRejectsUnknownFields(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestDecodeOverridePayloadRejectsTrailingJSONValue(t *testing.T) {
+	_, err := DecodeModelPriceOverridePayload(json.RawMessage(`{} {}`))
+	require.Error(t, err)
+}
+
 func TestModelPriceCurrencyDefaultsAndCatalogParsing(t *testing.T) {
 	require.Equal(t, ModelPriceCurrencyUSD, modelPriceCurrencyOrUSD(""))
 	require.Equal(t, ModelPriceCurrencyCNY, modelPriceCurrencyOrUSD(" cny "))

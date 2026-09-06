@@ -83,12 +83,15 @@ const (
 	contentModerationKeyHTTPErrorFreezeDuration  = 10 * time.Second
 	maxContentModerationInputImages              = 1
 	maxContentModerationTestImages               = maxContentModerationInputImages
-	maxContentModerationTestImageBytes           = 8 * 1024 * 1024
+	maxContentModerationImageBytes               = 8 * 1024 * 1024
+	maxContentModerationTestImageBytes           = maxContentModerationImageBytes
 	maxContentModerationTestImageDataURLBytes    = 12 * 1024 * 1024
-	maxContentModerationBlockedKeywords          = 10000
-	maxContentModerationBlockedKeywordRunes      = 200
-	maxContentModerationModelFilterModels        = 1000
-	maxContentModerationModelFilterRunes         = 200
+	// MaxContentModerationImageBytes bounds in-memory image audit payloads.
+	MaxContentModerationImageBytes          = maxContentModerationImageBytes
+	maxContentModerationBlockedKeywords     = 10000
+	maxContentModerationBlockedKeywordRunes = 200
+	maxContentModerationModelFilterModels   = 1000
+	maxContentModerationModelFilterRunes    = 200
 
 	contentModerationCleanupInterval = 24 * time.Hour
 	contentModerationCleanupTimeout  = 30 * time.Minute

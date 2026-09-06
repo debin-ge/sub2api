@@ -144,9 +144,9 @@ type UsageLog struct {
 	ChannelID *int64
 	// ModelMappingChain 模型映射链，如 "a→b→c"
 	ModelMappingChain *string
-	// BillingTier 计费层级标签（per_request/image 模式）
+	// BillingTier 计费层级标签（per_request/image/video 模式）
 	BillingTier *string
-	// BillingMode 计费模式：token/image
+	// BillingMode 计费模式：token/image/video
 	BillingMode *string
 	// ServiceTier records the billable request tier, e.g. OpenAI "priority" / "flex"
 	// or Anthropic "fast".

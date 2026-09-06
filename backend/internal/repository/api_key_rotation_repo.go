@@ -29,7 +29,6 @@ func (r *apiKeyRotationRepository) ListDue(ctx context.Context, now time.Time, l
 		WHERE k.rotate_on_expiry = TRUE
 		  AND k.expires_at <= $1
 		  AND k.notification_email IS NOT NULL
-		  AND k.notification_email_verified_at IS NOT NULL
 		  AND k.validity_duration_seconds > 0
 		  AND k.status IN ('active', 'quota_exhausted', 'expired')
 		  AND k.deleted_at IS NULL
@@ -80,7 +79,6 @@ func (r *apiKeyRotationRepository) RotateIfDue(ctx context.Context, candidate se
 			  AND expires_at <= $3
 			  AND rotate_on_expiry = TRUE
 			  AND notification_email IS NOT NULL
-			  AND notification_email_verified_at IS NOT NULL
 			  AND validity_duration_seconds > 0
 			  AND status IN ('active', 'quota_exhausted', 'expired')
 			  AND deleted_at IS NULL

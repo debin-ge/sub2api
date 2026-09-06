@@ -1,9 +1,11 @@
 package admin
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -59,7 +61,7 @@ type updateChannelRequest struct {
 type channelModelPricingRequest struct {
 	Platform          string                     `json:"platform" binding:"omitempty,max=50"`
 	Models            []string                   `json:"models" binding:"required,min=1,max=100"`
-	BillingMode       string                     `json:"billing_mode" binding:"omitempty,oneof=token per_request image"`
+	BillingMode       string                     `json:"billing_mode" binding:"omitempty,oneof=token per_request image video"`
 	InputPrice        *float64                   `json:"input_price" binding:"omitempty,min=0"`
 	OutputPrice       *float64                   `json:"output_price" binding:"omitempty,min=0"`
 	CacheWritePrice   *float64                   `json:"cache_write_price" binding:"omitempty,min=0"`
@@ -87,20 +89,25 @@ type channelTimePricingPeriodRequest struct {
 }
 
 type pricingIntervalRequest struct {
-	MinTokens            int      `json:"min_tokens"`
-	MaxTokens            *int     `json:"max_tokens"`
-	TierLabel            string   `json:"tier_label"`
-	InputPrice           *float64 `json:"input_price"`
-	OutputPrice          *float64 `json:"output_price"`
-	CacheWritePrice      *float64 `json:"cache_write_price"`
-	CacheWrite1hPrice    *float64 `json:"cache_write_1h_price"`
-	CacheReadPrice       *float64 `json:"cache_read_price"`
-	InputMultiplier      *float64 `json:"input_multiplier" binding:"omitempty,gt=0"`
-	OutputMultiplier     *float64 `json:"output_multiplier" binding:"omitempty,gt=0"`
-	CacheWriteMultiplier *float64 `json:"cache_write_multiplier" binding:"omitempty,gt=0"`
-	CacheReadMultiplier  *float64 `json:"cache_read_multiplier" binding:"omitempty,gt=0"`
-	PerRequestPrice      *float64 `json:"per_request_price"`
-	SortOrder            int      `json:"sort_order"`
+	MinTokens            int             `json:"min_tokens"`
+	MaxTokens            *int            `json:"max_tokens"`
+	TierLabel            string          `json:"tier_label"`
+	InputPrice           *float64        `json:"input_price"`
+	OutputPrice          *float64        `json:"output_price"`
+	CacheWritePrice      *float64        `json:"cache_write_price"`
+	CacheWrite1hPrice    *float64        `json:"cache_write_1h_price"`
+	CacheReadPrice       *float64        `json:"cache_read_price"`
+	InputMultiplier      *float64        `json:"input_multiplier" binding:"omitempty,gt=0"`
+	OutputMultiplier     *float64        `json:"output_multiplier" binding:"omitempty,gt=0"`
+	CacheWriteMultiplier *float64        `json:"cache_write_multiplier" binding:"omitempty,gt=0"`
+	CacheReadMultiplier  *float64        `json:"cache_read_multiplier" binding:"omitempty,gt=0"`
+	PerRequestPrice      *float64        `json:"per_request_price"`
+	Conditions           json.RawMessage `json:"conditions"`
+	BillingUnit          *string         `json:"billing_unit"`
+	Priority             int             `json:"priority"`
+	ValidFrom            *time.Time      `json:"valid_from"`
+	ValidUntil           *time.Time      `json:"valid_until"`
+	SortOrder            int             `json:"sort_order"`
 }
 
 type accountStatsPricingRuleRequest struct {
@@ -160,21 +167,26 @@ type channelTimePricingPeriodResponse struct {
 }
 
 type pricingIntervalResponse struct {
-	ID                   int64    `json:"id"`
-	MinTokens            int      `json:"min_tokens"`
-	MaxTokens            *int     `json:"max_tokens"`
-	TierLabel            string   `json:"tier_label,omitempty"`
-	InputPrice           *float64 `json:"input_price"`
-	OutputPrice          *float64 `json:"output_price"`
-	CacheWritePrice      *float64 `json:"cache_write_price"`
-	CacheWrite1hPrice    *float64 `json:"cache_write_1h_price"`
-	CacheReadPrice       *float64 `json:"cache_read_price"`
-	InputMultiplier      *float64 `json:"input_multiplier"`
-	OutputMultiplier     *float64 `json:"output_multiplier"`
-	CacheWriteMultiplier *float64 `json:"cache_write_multiplier"`
-	CacheReadMultiplier  *float64 `json:"cache_read_multiplier"`
-	PerRequestPrice      *float64 `json:"per_request_price"`
-	SortOrder            int      `json:"sort_order"`
+	ID                   int64           `json:"id"`
+	MinTokens            int             `json:"min_tokens"`
+	MaxTokens            *int            `json:"max_tokens"`
+	TierLabel            string          `json:"tier_label,omitempty"`
+	InputPrice           *float64        `json:"input_price"`
+	OutputPrice          *float64        `json:"output_price"`
+	CacheWritePrice      *float64        `json:"cache_write_price"`
+	CacheWrite1hPrice    *float64        `json:"cache_write_1h_price"`
+	CacheReadPrice       *float64        `json:"cache_read_price"`
+	InputMultiplier      *float64        `json:"input_multiplier"`
+	OutputMultiplier     *float64        `json:"output_multiplier"`
+	CacheWriteMultiplier *float64        `json:"cache_write_multiplier"`
+	CacheReadMultiplier  *float64        `json:"cache_read_multiplier"`
+	PerRequestPrice      *float64        `json:"per_request_price"`
+	Conditions           json.RawMessage `json:"conditions,omitempty"`
+	BillingUnit          *string         `json:"billing_unit,omitempty"`
+	Priority             int             `json:"priority"`
+	ValidFrom            *time.Time      `json:"valid_from,omitempty"`
+	ValidUntil           *time.Time      `json:"valid_until,omitempty"`
+	SortOrder            int             `json:"sort_order"`
 }
 
 type accountStatsPricingRuleResponse struct {
@@ -312,6 +324,11 @@ func intervalToResponse(iv service.PricingInterval) pricingIntervalResponse {
 		CacheWriteMultiplier: iv.CacheWriteMultiplier,
 		CacheReadMultiplier:  iv.CacheReadMultiplier,
 		PerRequestPrice:      iv.PerRequestPrice,
+		Conditions:           append(json.RawMessage(nil), iv.Conditions...),
+		BillingUnit:          iv.BillingUnit,
+		Priority:             iv.Priority,
+		ValidFrom:            iv.ValidFrom,
+		ValidUntil:           iv.ValidUntil,
 		SortOrder:            iv.SortOrder,
 	}
 }
@@ -347,6 +364,11 @@ func pricingRequestToService(reqs []channelModelPricingRequest, allowChannelMult
 				CacheWriteMultiplier: cacheWriteMultiplier,
 				CacheReadMultiplier:  cacheReadMultiplier,
 				PerRequestPrice:      iv.PerRequestPrice,
+				Conditions:           append(json.RawMessage(nil), iv.Conditions...),
+				BillingUnit:          iv.BillingUnit,
+				Priority:             iv.Priority,
+				ValidFrom:            iv.ValidFrom,
+				ValidUntil:           iv.ValidUntil,
 				SortOrder:            iv.SortOrder,
 			})
 		}

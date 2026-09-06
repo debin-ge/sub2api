@@ -57,6 +57,13 @@ type adminAntigravityOAuthService interface {
 	BuildAccountCredentials(*service.AntigravityTokenInfo) map[string]any
 }
 
+type adminAccountProviderIdentityService interface {
+	GetAccountProviderIdentity(context.Context, int64) (*service.AccountProviderIdentityState, error)
+	ProposeAccountProviderIdentity(context.Context, int64, service.AccountProviderIdentityProposal) (*service.AccountProviderIdentityResult, error)
+	DecideAccountProviderIdentity(context.Context, int64, int64, service.AccountProviderIdentityDecision) (*service.AccountProviderIdentityResult, error)
+	RevokeAccountProviderIdentity(context.Context, int64, service.AccountProviderIdentityRevocation) (*service.AccountProviderIdentityResult, error)
+}
+
 // AccountHandler handles admin account management
 type AccountHandler struct {
 	adminService            service.AdminService
@@ -194,6 +201,10 @@ type CreateAccountRequest struct {
 	Type                    string         `json:"type" binding:"required,oneof=oauth setup-token apikey upstream bedrock service_account"`
 	Credentials             map[string]any `json:"credentials" binding:"required"`
 	Extra                   map[string]any `json:"extra"`
+	VideoOwnerUserID        *int64         `json:"video_owner_user_id"`
+	VideoDisclosurePolicy   string         `json:"video_disclosure_policy" binding:"omitempty,oneof=none identity task_access dedicated_credentials"`
+	OwnershipMode           string         `json:"ownership_mode" binding:"omitempty,oneof=shared user_dedicated"`
+	OwnerUserID             *int64         `json:"owner_user_id"`
 	ProxyID                 *int64         `json:"proxy_id"`
 	Concurrency             int            `json:"concurrency"`
 	Priority                int            `json:"priority"`
@@ -214,6 +225,10 @@ type UpdateAccountRequest struct {
 	Type                    string         `json:"type" binding:"omitempty,oneof=oauth setup-token apikey upstream bedrock service_account"`
 	Credentials             map[string]any `json:"credentials"`
 	Extra                   map[string]any `json:"extra"`
+	VideoOwnerUserID        *int64         `json:"video_owner_user_id"`
+	VideoDisclosurePolicy   *string        `json:"video_disclosure_policy" binding:"omitempty,oneof='' none identity task_access dedicated_credentials"`
+	OwnershipMode           *string        `json:"ownership_mode" binding:"omitempty,oneof=shared user_dedicated"`
+	OwnerUserID             *int64         `json:"owner_user_id"`
 	ProxyID                 *int64         `json:"proxy_id"`
 	Concurrency             *int           `json:"concurrency"`
 	Priority                *int           `json:"priority"`
@@ -851,6 +866,170 @@ func (h *AccountHandler) GetByID(c *gin.Context) {
 	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
 }
 
+func accountProviderIdentityVersion(c *gin.Context) (int64, bool) {
+	value := strings.TrimSpace(c.GetHeader("If-Match"))
+	if value == "" {
+		response.Error(c, http.StatusPreconditionRequired, "If-Match with the current provider identity version is required")
+		return 0, false
+	}
+	if len(value) < 3 || value[0] != '"' || value[len(value)-1] != '"' {
+		response.BadRequest(c, "If-Match must be a quoted positive provider identity version")
+		return 0, false
+	}
+	version, err := strconv.ParseInt(value[1:len(value)-1], 10, 64)
+	if err != nil || version <= 0 {
+		response.BadRequest(c, "If-Match must be a quoted positive provider identity version")
+		return 0, false
+	}
+	return version, true
+}
+
+func accountProviderIdentityAccountID(c *gin.Context) (int64, bool) {
+	accountID, err := strconv.ParseInt(strings.TrimSpace(c.Param("id")), 10, 64)
+	if err != nil || accountID <= 0 || strconv.FormatInt(accountID, 10) != strings.TrimSpace(c.Param("id")) {
+		response.BadRequest(c, "Invalid account ID")
+		return 0, false
+	}
+	return accountID, true
+}
+
+func (h *AccountHandler) GetProviderIdentity(c *gin.Context) {
+	accountID, ok := accountProviderIdentityAccountID(c)
+	if !ok {
+		return
+	}
+	providerIdentity, ok := h.adminService.(adminAccountProviderIdentityService)
+	if !ok {
+		response.ErrorFrom(c, service.ErrAccountProviderIdentityInvalid)
+		return
+	}
+	state, err := providerIdentity.GetAccountProviderIdentity(c.Request.Context(), accountID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, state)
+}
+
+func (h *AccountHandler) ProposeProviderIdentity(c *gin.Context) {
+	accountID, ok := accountProviderIdentityAccountID(c)
+	if !ok {
+		return
+	}
+	version, ok := accountProviderIdentityVersion(c)
+	if !ok {
+		return
+	}
+	var request struct {
+		PrincipalKind string `json:"principal_kind"`
+		Principal     string `json:"principal"`
+		Reason        string `json:"reason"`
+		EvidenceRef   string `json:"evidence_ref"`
+	}
+	if err := decodeStrictVideoAdminJSON(c, &request); err != nil {
+		response.BadRequest(c, "provider identity principal and evidence are required")
+		return
+	}
+	providerIdentity, available := h.adminService.(adminAccountProviderIdentityService)
+	if !available {
+		response.ErrorFrom(c, service.ErrAccountProviderIdentityInvalid)
+		return
+	}
+	result, err := providerIdentity.ProposeAccountProviderIdentity(c.Request.Context(), accountID, service.AccountProviderIdentityProposal{
+		ActorID: getAdminIDFromContext(c), OperationKey: strings.TrimSpace(c.GetHeader("Idempotency-Key")),
+		ExpectedVersion: version, PrincipalKind: request.PrincipalKind, Principal: request.Principal,
+		Reason: request.Reason, EvidenceRef: request.EvidenceRef,
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if result.Replayed {
+		c.Header("X-Idempotency-Replayed", "true")
+	}
+	response.Success(c, result)
+}
+
+func (h *AccountHandler) ApproveProviderIdentity(c *gin.Context) {
+	h.decideProviderIdentity(c, true)
+}
+
+func (h *AccountHandler) RejectProviderIdentity(c *gin.Context) {
+	h.decideProviderIdentity(c, false)
+}
+
+func (h *AccountHandler) decideProviderIdentity(c *gin.Context, approve bool) {
+	accountID, ok := accountProviderIdentityAccountID(c)
+	if !ok {
+		return
+	}
+	reviewID, err := strconv.ParseInt(strings.TrimSpace(c.Param("review_id")), 10, 64)
+	if err != nil || reviewID <= 0 || strconv.FormatInt(reviewID, 10) != strings.TrimSpace(c.Param("review_id")) {
+		response.BadRequest(c, "Invalid provider identity review ID")
+		return
+	}
+	version, ok := accountProviderIdentityVersion(c)
+	if !ok {
+		return
+	}
+	var request struct {
+		Reason string `json:"reason"`
+	}
+	if err := decodeStrictVideoAdminJSON(c, &request); err != nil {
+		response.BadRequest(c, "decision reason is required")
+		return
+	}
+	providerIdentity, available := h.adminService.(adminAccountProviderIdentityService)
+	if !available {
+		response.ErrorFrom(c, service.ErrAccountProviderIdentityInvalid)
+		return
+	}
+	result, err := providerIdentity.DecideAccountProviderIdentity(c.Request.Context(), accountID, reviewID, service.AccountProviderIdentityDecision{
+		ActorID: getAdminIDFromContext(c), OperationKey: strings.TrimSpace(c.GetHeader("Idempotency-Key")),
+		ExpectedVersion: version, Approve: approve, Reason: request.Reason,
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if result.Replayed {
+		c.Header("X-Idempotency-Replayed", "true")
+	}
+	response.Success(c, result)
+}
+
+func (h *AccountHandler) RevokeProviderIdentity(c *gin.Context) {
+	accountID, ok := accountProviderIdentityAccountID(c)
+	if !ok {
+		return
+	}
+	var request struct {
+		Reason      string `json:"reason"`
+		EvidenceRef string `json:"evidence_ref"`
+	}
+	if err := decodeStrictVideoAdminJSON(c, &request); err != nil {
+		response.BadRequest(c, "revocation reason and evidence are required")
+		return
+	}
+	providerIdentity, available := h.adminService.(adminAccountProviderIdentityService)
+	if !available {
+		response.ErrorFrom(c, service.ErrAccountProviderIdentityInvalid)
+		return
+	}
+	result, err := providerIdentity.RevokeAccountProviderIdentity(c.Request.Context(), accountID, service.AccountProviderIdentityRevocation{
+		ActorID: getAdminIDFromContext(c), OperationKey: strings.TrimSpace(c.GetHeader("Idempotency-Key")),
+		Reason: request.Reason, EvidenceRef: request.EvidenceRef,
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if result.Replayed {
+		c.Header("X-Idempotency-Replayed", "true")
+	}
+	response.Success(c, result)
+}
+
 // CheckMixedChannel handles checking mixed channel risk for account-group binding.
 // POST /api/v1/admin/accounts/check-mixed-channel
 func (h *AccountHandler) CheckMixedChannel(c *gin.Context) {
@@ -933,6 +1112,10 @@ func (h *AccountHandler) Create(c *gin.Context) {
 			Type:                  req.Type,
 			Credentials:           req.Credentials,
 			Extra:                 req.Extra,
+			VideoOwnerUserID:      req.VideoOwnerUserID,
+			VideoDisclosurePolicy: req.VideoDisclosurePolicy,
+			OwnershipMode:         req.OwnershipMode,
+			OwnerUserID:           req.OwnerUserID,
 			ProxyID:               req.ProxyID,
 			Concurrency:           req.Concurrency,
 			Priority:              req.Priority,
@@ -1075,6 +1258,10 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		Type:                  req.Type,
 		Credentials:           req.Credentials,
 		Extra:                 req.Extra,
+		VideoOwnerUserID:      req.VideoOwnerUserID,
+		VideoDisclosurePolicy: req.VideoDisclosurePolicy,
+		OwnershipMode:         req.OwnershipMode,
+		OwnerUserID:           req.OwnerUserID,
 		ProxyID:               req.ProxyID,
 		Concurrency:           req.Concurrency, // 指针类型，nil 表示未提供
 		Priority:              req.Priority,    // 指针类型，nil 表示未提供
@@ -1198,6 +1385,7 @@ func (h *AccountHandler) scheduleOpenAIResponsesProbe(account *service.Account) 
 			}
 		}()
 		h.accountTestService.ProbeOpenAIAPIKeyResponsesSupport(context.Background(), accountID)
+		h.accountTestService.ProbeOpenAIVideosSupport(context.Background(), accountID)
 	}()
 }
 

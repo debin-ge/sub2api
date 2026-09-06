@@ -203,3 +203,29 @@ func TestModelPriceHandlerUpsertAllowsEmptyPayloadForInheritance(t *testing.T) {
 	require.Empty(t, store.row.Payload)
 	require.Contains(t, response.Body.String(), `"override"`)
 }
+
+func TestModelPriceHandlerPreviewVideoReturnsRuleMismatches(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := NewModelPriceHandler(nil, nil, nil)
+	router := gin.New()
+	router.POST("/video-preview", handler.PreviewVideo)
+
+	request := httptest.NewRequest(http.MethodPost, "/video-preview", strings.NewReader(`{
+		"video_pricing":{
+			"version":1,"enabled":true,"currency":"USD",
+			"estimators":{"default":{"type":"fixed_tokens_per_second","tokens_per_second":48600}},
+			"rules":[{
+				"key":"reference-video","billing_unit":"video_token","unit_price_usd":0.00002325,"estimator":"default",
+				"conditions":{"operations":["generate"],"input_has_video":true,"qualities":["standard"]}
+			}]
+		},
+		"attributes":{"operation":"generate","seconds":10,"input_type":"reference_video","input_has_video":true}
+	}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	require.Equal(t, http.StatusOK, response.Code)
+	require.Contains(t, response.Body.String(), `"error_code":"video_pricing_rule_missing"`)
+	require.Contains(t, response.Body.String(), `"field":"quality"`)
+}

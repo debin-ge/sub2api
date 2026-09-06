@@ -41,20 +41,22 @@ func TestEveryGatewayPOSTRouteIsClassifiedForPromptAuditCoverage(t *testing.T) {
 		"/images/generations/async": {"image_task_handler.go"},
 		"/images/edits/async":       {"image_task_handler.go"},
 		"/images/batches":           {"batch_image_handler.go"},
-		"/videos":                   {"grok_media.go"},
+		"/videos":                   {"grok_media.go", "video_handler.go"},
 		"/videos/generations":       {"grok_media.go"},
-		"/videos/edits":             {"grok_media.go"},
-		"/videos/extensions":        {"grok_media.go"},
+		"/videos/edits":             {"grok_media.go", "video_handler.go"},
+		"/videos/extensions":        {"grok_media.go", "video_handler.go"},
 		"/models/*modelAction":      {"gemini_v1beta_handler.go"},
 		"/tts":                      {"grok_audio.go"},
 		"/web_search":               {"gateway_web_search.go"},
 		"/x_search":                 {"gateway_web_search.go"},
 	}
 	excluded := map[string]string{
-		"/messages/count_tokens":     "tokenization only; it does not execute a model request",
-		"/images/batches/:id/cancel": "control-plane cancellation with no user prompt",
-		"/stt":                       "speech transcription is not a text-generation prompt",
-		"/custom-voices":             "voice profile management has no model prompt",
+		"/messages/count_tokens":                 "tokenization only; it does not execute a model request",
+		"/images/batches/:id/cancel":             "control-plane cancellation with no user prompt",
+		"/stt":                                   "speech transcription is not a text-generation prompt",
+		"/custom-voices":                         "voice profile management has no model prompt",
+		"/videos/characters":                     "character media registration has no generation prompt",
+		"/webhooks/videos/:provider/:account_id": "provider-signed control event with no user prompt",
 	}
 
 	unclassified := make([]string, 0)

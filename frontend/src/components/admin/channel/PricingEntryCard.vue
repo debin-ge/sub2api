@@ -227,11 +227,11 @@
         <!-- Image/video mode -->
         <div v-else-if="entry.billing_mode === 'image' || entry.billing_mode === 'video'">
           <!-- Default image price (per-request, same as per_request mode) -->
-          <label class="mt-3 block text-xs font-medium text-gray-500 dark:text-gray-400">
-            {{ entry.billing_mode === 'video' ? t('admin.channels.form.defaultVideoPrice') : t('admin.channels.form.defaultImagePrice') }}
+          <label v-if="entry.billing_mode === 'image'" class="mt-3 block text-xs font-medium text-gray-500 dark:text-gray-400">
+            {{ t('admin.channels.form.defaultImagePrice') }}
             <span class="ml-1 font-normal text-gray-400">$</span>
           </label>
-          <div class="mt-1 w-48">
+          <div v-if="entry.billing_mode === 'image'" class="mt-1 w-48">
             <input :value="entry.per_request_price" @input="emitField('per_request_price', ($event.target as HTMLInputElement).value)"
               type="number" step="any" min="0" class="input text-sm" :placeholder="t('admin.channels.form.pricePlaceholder')" />
           </div>
@@ -239,10 +239,10 @@
           <!-- Image tiers -->
           <div class="mt-3 flex items-center justify-between">
             <label class="text-xs font-medium text-gray-500 dark:text-gray-400">
-              {{ entry.billing_mode === 'video' ? t('admin.channels.form.videoTiers') : t('admin.channels.form.imageTiers') }}
+              {{ entry.billing_mode === 'video' ? t('admin.channels.form.videoRules') : t('admin.channels.form.imageTiers') }}
             </label>
             <button type="button" @click="addMediaTier" class="text-xs text-primary-600 hover:text-primary-700">
-              + {{ t('admin.channels.form.addTier') }}
+              + {{ entry.billing_mode === 'video' ? t('admin.channels.form.addRule') : t('admin.channels.form.addTier') }}
             </button>
           </div>
           <div v-if="entry.intervals && entry.intervals.length > 0" class="mt-2 space-y-2">
@@ -321,6 +321,8 @@ function addInterval() {
     cache_read_price: null, per_request_price: null,
     input_multiplier: null, output_multiplier: null,
     cache_write_multiplier: null, cache_read_multiplier: null,
+    conditions_json: '{}', billing_unit: null, priority: 0,
+    valid_from: null, valid_until: null,
     sort_order: intervals.length
   })
   emit('update', { ...props.entry, intervals })
@@ -328,16 +330,17 @@ function addInterval() {
 
 function addMediaTier() {
   const intervals = [...(props.entry.intervals || [])]
-  const labels = props.entry.billing_mode === 'video'
-    ? ['480p', '720p', '1080p']
-    : ['1K', '2K', '4K', 'HD']
+  const labels = ['1K', '2K', '4K', 'HD']
   intervals.push({
-    min_tokens: 0, max_tokens: null, tier_label: labels[intervals.length] || '',
+    min_tokens: 0, max_tokens: null,
+    tier_label: props.entry.billing_mode === 'video' ? `rule-${intervals.length + 1}` : labels[intervals.length] || '',
     input_price: null, output_price: null, cache_write_price: null,
     cache_write_1h_price: null,
     cache_read_price: null, per_request_price: null,
     input_multiplier: null, output_multiplier: null,
     cache_write_multiplier: null, cache_read_multiplier: null,
+    conditions_json: '{}', billing_unit: props.entry.billing_mode === 'video' ? 'second' : null,
+    priority: 0, valid_from: null, valid_until: null,
     sort_order: intervals.length
   })
   emit('update', { ...props.entry, intervals })

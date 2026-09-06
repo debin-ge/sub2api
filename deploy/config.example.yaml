@@ -254,6 +254,44 @@ security:
 # 网关配置
 # =============================================================================
 gateway:
+  # Provider-neutral asynchronous video task platform. Creation stays off
+  # until video pricing and at least one capable OpenAI API-key account exist.
+  video:
+    enabled: false
+    creation_enabled: false
+    submit_timeout_seconds: 180
+    # Fixed interval between upstream status checks. Environment variable:
+    # GATEWAY_VIDEO_POLL_INTERVAL_SECONDS
+    poll_interval_seconds: 10
+    lease_seconds: 90
+    worker_batch_size: 32
+    worker_concurrency: 4
+    worker_request_timeout_seconds: 30
+    manual_review_threshold_usd: 100
+    submission_unknown_quarantine_minutes: 60
+    disclosure_policy: identity # none | identity | task_access | dedicated_credentials
+    spool:
+      directory: data/video-spool
+      max_part_bytes: 104857600
+      max_request_bytes: 209715200
+      max_global_bytes: 2147483648
+      max_user_concurrency: 2
+      max_global_concurrency: 16
+      chunk_bytes: 65536
+      orphan_ttl_minutes: 30
+    content_proxy:
+      enabled: true
+      max_user_concurrency: 4
+      max_account_concurrency: 16
+      response_header_timeout_seconds: 30
+      idle_timeout_seconds: 60
+      total_timeout_seconds: 3600
+    callback:
+      # Opt-in client callbacks. Enabling requires VIDEO_CALLBACK_SIGNING_SECRET.
+      enabled: false
+      retry_hours: 24
+      request_timeout_seconds: 15
+      signing_secret: ${VIDEO_CALLBACK_SIGNING_SECRET:-}
   # Timeout for waiting upstream response headers (seconds)
   # 等待上游响应头超时时间（秒）
   response_header_timeout: 600
@@ -976,6 +1014,11 @@ totp:
   # 双因素认证登录）。
   # Generate with / 生成命令: openssl rand -hex 32
   encryption_key: ""
+  # During a controlled rotation, put the previous key(s) here so existing
+  # encrypted data remains readable. New data always uses encryption_key.
+  # Keep at most 4 entries and remove old keys after migration/retention ends.
+  # 受控轮换期间把旧密钥放在这里，仅用于解密；新数据始终使用 encryption_key。
+  legacy_encryption_keys: []
 
 # =============================================================================
 # LinuxDo Connect OAuth Login (SSO)

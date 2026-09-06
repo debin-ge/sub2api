@@ -38,6 +38,7 @@ import radarAdminAPI from './radar'
 import auditAPI from './audit'
 import * as modelPricesAPI from './modelPrices'
 import pluginsAPI from './plugins'
+import videosAdminAPI from './videos'
 
 /**
  * Unified admin API object for convenient access
@@ -78,6 +79,7 @@ export const adminAPI = {
   audit: auditAPI,
   modelPrices: modelPricesAPI,
   plugins: pluginsAPI,
+  videos: videosAdminAPI,
 }
 
 export {
@@ -116,6 +118,7 @@ export {
   auditAPI,
   modelPricesAPI,
   pluginsAPI,
+  videosAdminAPI,
 }
 
 export default adminAPI
@@ -127,6 +130,18 @@ export type { ErrorPassthroughRule, CreateRuleRequest, UpdateRuleRequest } from 
 export type { BackupAgentHealth, DataManagementConfig } from './dataManagement'
 export type { TLSFingerprintProfile, CreateProfileRequest, UpdateProfileRequest } from './tlsFingerprintProfile'
 export type { ContentModerationConfig, ContentModerationLog, ModerationMode } from './riskControl'
+export type {
+  VideoAccessMetadata,
+  VideoAdminCallback,
+  VideoAdminEvent,
+  VideoAdminOverview,
+  VideoAdminPage,
+  VideoAdminResource,
+  VideoAdminTask,
+  VideoCallbackQuery,
+  VideoResourceQuery,
+  VideoTaskQuery,
+} from './videos'
 export type {
   RadarAdminRefreshResult,
   RadarAdminSafeError,

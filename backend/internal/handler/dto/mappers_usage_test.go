@@ -342,6 +342,49 @@ func TestUsageLogFromService_PreservesHistoricalMissingImageSize(t *testing.T) {
 	require.NotContains(t, string(body), `"image_size":"2K"`)
 }
 
+func TestUsageLogFromService_IncludesVideoBillingMetadataForUserAndAdmin(t *testing.T) {
+	t.Parallel()
+
+	billingMode := string(service.BillingModeVideo)
+	billingUnit := service.VideoBillingUnitVideoToken
+	resolution := "864x480"
+	duration := 7
+	mediaType := "video"
+	log := &service.UsageLog{
+		RequestID: "video:capture:test", Model: "doubao-seedance-2.0-mini-480p",
+		BillingMode: &billingMode, BillingTier: &billingUnit, MediaType: &mediaType,
+		OutputTokens: 125_000, OutputCost: 0.25, TotalCost: 0.25, ActualCost: 0.375,
+		VideoCount: 1, VideoResolution: &resolution, VideoDurationSeconds: &duration,
+	}
+
+	userDTO := UsageLogFromService(log)
+	adminDTO := UsageLogFromServiceAdmin(log)
+	for _, got := range []*UsageLog{userDTO, &adminDTO.UsageLog} {
+		require.Equal(t, 1, got.VideoCount)
+		require.Equal(t, resolution, *got.VideoResolution)
+		require.Equal(t, duration, *got.VideoDurationSeconds)
+		require.Equal(t, service.VideoBillingUnitVideoToken, *got.VideoBillingUnit)
+		require.InDelta(t, 125_000, *got.VideoUnits, 1e-12)
+		require.InDelta(t, 0.000002, *got.VideoUnitPrice, 1e-12)
+	}
+}
+
+func TestUsageLogFromService_InfersHistoricalVideoBillingUnit(t *testing.T) {
+	t.Parallel()
+
+	billingMode := string(service.BillingModeVideo)
+	legacyResolutionTier := "720p"
+	duration := 8
+	dto := UsageLogFromService(&service.UsageLog{
+		BillingMode: &billingMode, BillingTier: &legacyResolutionTier,
+		VideoCount: 2, VideoDurationSeconds: &duration, TotalCost: 0.8,
+	})
+
+	require.Equal(t, service.VideoBillingUnitSecond, *dto.VideoBillingUnit)
+	require.InDelta(t, 16, *dto.VideoUnits, 1e-12)
+	require.InDelta(t, 0.05, *dto.VideoUnitPrice, 1e-12)
+}
+
 func f64Ptr(value float64) *float64 {
 	return &value
 }

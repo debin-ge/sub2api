@@ -1451,6 +1451,7 @@
             type="text"
             class="input"
             :placeholder="apiKeyBaseUrlPlaceholder"
+            @input="syncOpenAIVideoCapabilityForBaseURL"
           />
           <p v-if="baseUrlHint" class="input-hint">{{ baseUrlHint }}</p>
           <GrokBaseUrlPresets
@@ -3548,6 +3549,52 @@
         </div>
       </div>
 
+      <div
+        v-if="form.platform === 'openai' && form.type === 'apikey'"
+        class="space-y-4 border-t border-gray-200 pt-4 dark:border-dark-600"
+        data-testid="create-video-disclosure-section"
+      >
+        <div>
+          <label class="input-label mb-0">{{ t('admin.accounts.openai.videoDisclosureTitle') }}</label>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            {{ t('admin.accounts.openai.videoDisclosureDescription') }}
+          </p>
+        </div>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label class="input-label">{{ t('admin.accounts.openai.videoOwnerUserId') }}</label>
+            <input
+              v-model.number="form.video_owner_user_id"
+              type="number"
+              min="1"
+              step="1"
+              class="input"
+              data-testid="create-video-owner-user-id"
+              :placeholder="t('admin.accounts.openai.videoOwnerUserIdPlaceholder')"
+            />
+            <p class="input-hint">{{ t('admin.accounts.openai.videoOwnerUserIdHint') }}</p>
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.openai.videoDisclosurePolicy') }}</label>
+            <Select
+              v-model="form.video_disclosure_policy"
+              :options="videoDisclosurePolicyOptions"
+              data-testid="create-video-disclosure-policy"
+            />
+            <p class="input-hint">{{ t('admin.accounts.openai.videoDisclosurePolicyHint') }}</p>
+          </div>
+        </div>
+        <p
+          v-if="form.video_disclosure_policy === 'dedicated_credentials'"
+          class="text-xs text-amber-700 dark:text-amber-300"
+        >
+          {{ t('admin.accounts.openai.videoDedicatedCredentialsWarning') }}
+        </p>
+        <p v-if="form.video_owner_user_id" class="input-hint" data-testid="account-isolation-state">
+          {{ t('admin.accounts.openai.accountIsolationUnverified') }}
+        </p>
+      </div>
+
       <div>
         <div class="flex items-center justify-between">
           <div>
@@ -4033,7 +4080,8 @@ import type {
   CodexSessionImportMessage,
   OpenAICompactMode,
   OpenAIResponsesMode,
-  OpenAIEndpointCapability
+  OpenAIEndpointCapability,
+  VideoDisclosurePolicy
 } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -4512,6 +4560,7 @@ const openAILongContextBillingTouched = ref(false)
 const openAICompactMode = ref<OpenAICompactMode>('auto')
 const openAIResponsesMode = ref<OpenAIResponsesMode>('auto')
 const openAIEndpointCapabilities = ref<OpenAIEndpointCapability[]>(['chat_completions', 'embeddings'])
+const openAIEndpointCapabilitiesTouched = ref(false)
 const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const codexCLIOnlyEnabled = ref(false)
@@ -4604,19 +4653,35 @@ const openAITextEndpointCapabilityLabel = computed(() => {
 })
 const openAIEndpointCapabilityOptions = computed<{ value: OpenAIEndpointCapability; label: string }[]>(() => [
   { value: 'chat_completions', label: openAITextEndpointCapabilityLabel.value },
-  { value: 'embeddings', label: t('admin.accounts.openai.capabilityEmbeddings') }
+  { value: 'embeddings', label: t('admin.accounts.openai.capabilityEmbeddings') },
+  { value: 'videos', label: t('admin.accounts.openai.capabilityVideos') }
+])
+const videoDisclosurePolicyOptions = computed(() => [
+  { value: '', label: t('admin.accounts.openai.videoDisclosureInherit') },
+  { value: 'none', label: t('admin.accounts.openai.videoDisclosureNone') },
+  { value: 'identity', label: t('admin.accounts.openai.videoDisclosureIdentity') },
+  { value: 'task_access', label: t('admin.accounts.openai.videoDisclosureTaskAccess') },
+  { value: 'dedicated_credentials', label: t('admin.accounts.openai.videoDisclosureDedicatedCredentials') }
 ])
 const openAITextGenerationCapabilityEnabled = computed(() =>
   openAIEndpointCapabilities.value.includes('chat_completions')
 )
 
-const normalizeOpenAIEndpointCapabilities = (values: OpenAIEndpointCapability[]) => {
-  const allowed: OpenAIEndpointCapability[] = ['chat_completions', 'embeddings']
+const normalizeOpenAIEndpointCapabilities = (values: OpenAIEndpointCapability[]): OpenAIEndpointCapability[] => {
+  const allowed: OpenAIEndpointCapability[] = ['chat_completions', 'embeddings', 'videos']
   const selected = allowed.filter((value) => values.includes(value))
-  return selected.length > 0 ? selected : allowed
+  return selected.length > 0 ? selected : ['chat_completions', 'embeddings']
+}
+
+const syncOpenAIVideoCapabilityForBaseURL = () => {
+  if (form.platform !== 'openai' || form.type !== 'apikey') return
+  const withoutVideos = openAIEndpointCapabilities.value.filter((value) => value !== 'videos')
+	openAIEndpointCapabilities.value = normalizeOpenAIEndpointCapabilities(withoutVideos)
+	openAIEndpointCapabilitiesTouched.value = false
 }
 
 const toggleOpenAIEndpointCapability = (capability: OpenAIEndpointCapability, event?: Event) => {
+	openAIEndpointCapabilitiesTouched.value = true
   if (openAIEndpointCapabilities.value.includes(capability)) {
     if (openAIEndpointCapabilities.value.length <= 1) {
       const input = event?.target as HTMLInputElement | null
@@ -4638,9 +4703,9 @@ const toggleOpenAIEndpointCapability = (capability: OpenAIEndpointCapability, ev
 }
 
 const applyOpenAIEndpointCapabilities = (credentials: Record<string, unknown>) => {
-  const capabilities = normalizeOpenAIEndpointCapabilities(openAIEndpointCapabilities.value)
-  if (capabilities.length === 2) {
-    delete credentials.openai_capabilities
+	const capabilities = normalizeOpenAIEndpointCapabilities(openAIEndpointCapabilities.value)
+	if (!openAIEndpointCapabilitiesTouched.value) {
+		delete credentials.openai_capabilities
     return
   }
   credentials.openai_capabilities = capabilities
@@ -4818,6 +4883,8 @@ const form = reactive({
   platform: 'anthropic' as AccountPlatform,
   type: 'oauth' as AccountType, // Will be 'oauth', 'setup-token', or 'apikey'
   credentials: {} as Record<string, unknown>,
+  video_owner_user_id: null as number | null | '',
+  video_disclosure_policy: '' as VideoDisclosurePolicy | '',
   proxy_id: null as number | null,
   concurrency: 10,
   load_factor: null as number | null,
@@ -5048,7 +5115,8 @@ watch(
     if (newPlatform !== 'openai') {
       openaiPassthroughEnabled.value = false
       openaiFlattenNamespacesEnabled.value = false
-      openAIEndpointCapabilities.value = ['chat_completions', 'embeddings']
+		openAIEndpointCapabilities.value = ['chat_completions', 'embeddings']
+		openAIEndpointCapabilitiesTouched.value = false
       openaiOAuthResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
       openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
       codexCLIOnlyEnabled.value = false
@@ -5458,6 +5526,8 @@ const resetForm = () => {
   form.platform = 'anthropic'
   form.type = 'oauth'
   form.credentials = {}
+  form.video_owner_user_id = null
+  form.video_disclosure_policy = ''
   form.proxy_id = null
   form.concurrency = 10
   form.load_factor = null
@@ -5517,7 +5587,8 @@ const resetForm = () => {
   openAILongContextBillingTouched.value = false
   openAICompactMode.value = 'auto'
   openAIResponsesMode.value = 'auto'
-  openAIEndpointCapabilities.value = ['chat_completions', 'embeddings']
+	openAIEndpointCapabilities.value = ['chat_completions', 'embeddings']
+	openAIEndpointCapabilitiesTouched.value = false
   openaiOAuthResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
   openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
   codexCLIOnlyEnabled.value = false
@@ -5780,6 +5851,40 @@ const applyVertexServiceAccountJson = (value: string) => {
 }
 
 const parseVertexServiceAccountJson = () => applyVertexServiceAccountJson(vertexServiceAccountJson.value)
+
+type VideoDisclosureCreateFields = Pick<
+  CreateAccountRequest,
+  'video_owner_user_id' | 'video_disclosure_policy'
+>
+
+const buildVideoDisclosureCreateFields = (
+  platform: AccountPlatform,
+  type: AccountType
+): VideoDisclosureCreateFields | null => {
+  if (platform !== 'openai' || type !== 'apikey') {
+    return {}
+  }
+  const result: VideoDisclosureCreateFields = {
+    video_disclosure_policy: form.video_disclosure_policy
+  }
+  const rawOwnerID = form.video_owner_user_id
+  if (rawOwnerID !== null && rawOwnerID !== '') {
+    const parsedOwnerID = Number(rawOwnerID)
+    if (!Number.isSafeInteger(parsedOwnerID) || parsedOwnerID <= 0) {
+      appStore.showError(t('admin.accounts.openai.videoOwnerUserIdInvalid'))
+      return null
+    }
+    result.video_owner_user_id = parsedOwnerID
+  }
+  if (
+    result.video_disclosure_policy === 'dedicated_credentials' &&
+    result.video_owner_user_id === undefined
+  ) {
+    appStore.showError(t('admin.accounts.openai.videoDedicatedOwnerRequired'))
+    return null
+  }
+  return result
+}
 
 const handleVertexServiceAccountFile = async (event: Event) => {
   const input = event.target as HTMLInputElement
@@ -6068,9 +6173,19 @@ const handleSubmit = async () => {
 
   form.credentials = credentials
   const extra = buildProviderPassthroughExtra(buildAnthropicExtra(buildOpenAIExtra()))
+	const videoDisclosure = buildVideoDisclosureCreateFields(form.platform, form.type)
+	if (videoDisclosure === null) {
+		return
+	}
+	const {
+		video_owner_user_id: _videoOwnerUserID,
+		video_disclosure_policy: _videoDisclosurePolicy,
+		...baseForm
+	} = form
 
   await doCreateAccount({
-    ...form,
+		...baseForm,
+		...videoDisclosure,
     group_ids: form.group_ids,
     extra,
     upstream_billing_probe_enabled: upstreamBillingAutoProbeEnabled.value,
@@ -6131,6 +6246,10 @@ const createAccountAndFinish = async (
   credentials: Record<string, unknown>,
   extra?: Record<string, unknown>
 ) => {
+	const videoDisclosure = buildVideoDisclosureCreateFields(platform, type)
+	if (videoDisclosure === null) {
+		return
+	}
   if (!isFixedEndpointGatewayPlatformValue(platform) && !applyTempUnschedConfig(credentials)) {
     return
   }
@@ -6184,6 +6303,7 @@ const createAccountAndFinish = async (
     type,
     credentials,
     extra: finalExtra,
+		...videoDisclosure,
     proxy_id: form.proxy_id,
     concurrency: form.concurrency,
     load_factor: form.load_factor ?? undefined,

@@ -2,15 +2,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
 import { mount } from '@vue/test-utils'
 
-const { updateAccountMock, checkMixedChannelRiskMock, authIsSimpleMode } = vi.hoisted(() => ({
+const { updateAccountMock, checkMixedChannelRiskMock, showErrorMock, authIsSimpleMode } = vi.hoisted(() => ({
   updateAccountMock: vi.fn(),
   checkMixedChannelRiskMock: vi.fn(),
+  showErrorMock: vi.fn(),
   authIsSimpleMode: { value: true }
 }))
 
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
-    showError: vi.fn(),
+    showError: showErrorMock,
     showSuccess: vi.fn(),
     showInfo: vi.fn()
   })
@@ -359,6 +360,7 @@ function mountModal(account = buildAccount()) {
 describe('EditAccountModal', () => {
   beforeEach(() => {
     authIsSimpleMode.value = true
+    showErrorMock.mockReset()
   })
 
   it('passes the current MiniMax OpenAI endpoint to live model sync', async () => {
@@ -1205,9 +1207,14 @@ describe('EditAccountModal', () => {
     const embeddingsCheckbox = wrapper.get<HTMLInputElement>(
       '[data-testid="openai-endpoint-capability-embeddings"]'
     )
+    const videosCheckbox = wrapper.get<HTMLInputElement>(
+      '[data-testid="openai-endpoint-capability-videos"]'
+    )
 
     expect(chatCheckbox.element.checked).toBe(true)
     expect(embeddingsCheckbox.element.checked).toBe(true)
+		expect(videosCheckbox.element.checked).toBe(false)
+		await videosCheckbox.setValue(true)
 
     await embeddingsCheckbox.setValue(false)
 
@@ -1216,14 +1223,88 @@ describe('EditAccountModal', () => {
 
     await chatCheckbox.setValue(false)
 
-    expect(chatCheckbox.element.checked).toBe(true)
+    expect(chatCheckbox.element.checked).toBe(false)
     expect(embeddingsCheckbox.element.checked).toBe(false)
+		expect(videosCheckbox.element.checked).toBe(true)
 
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
 
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.openai_capabilities).toEqual([
-      'chat_completions'
+      'videos'
+    ])
+  })
+
+  it('preserves immutable ownership while changing disclosure policy', async () => {
+    const account = {
+      ...buildAccount(),
+      video_owner_user_id: 42,
+      video_disclosure_policy: 'dedicated_credentials'
+    }
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+    const wrapper = mountModal(account)
+
+    expect(wrapper.get<HTMLInputElement>('[data-testid="edit-video-owner-user-id"]').element.value).toBe('42')
+    expect(wrapper.get<HTMLSelectElement>('[data-testid="edit-video-disclosure-policy"]').element.value).toBe('dedicated_credentials')
+
+    expect(wrapper.get<HTMLInputElement>('[data-testid="edit-video-owner-user-id"]').element.disabled).toBe(true)
+    expect(wrapper.get('[data-testid="account-isolation-state"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="edit-video-disclosure-policy"]').setValue('task_access')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]).toEqual(expect.objectContaining({
+      video_owner_user_id: 42,
+      video_disclosure_policy: 'task_access'
+    }))
+  })
+
+  it('keeps ownership when disclosure inheritance is restored', async () => {
+    const account = {
+      ...buildAccount(),
+      video_owner_user_id: 42,
+      video_disclosure_policy: 'identity'
+    }
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+    const wrapper = mountModal(account)
+
+    expect(wrapper.get<HTMLInputElement>('[data-testid="edit-video-owner-user-id"]').element.disabled).toBe(true)
+    await wrapper.get('[data-testid="edit-video-disclosure-policy"]').setValue('')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]).toEqual(expect.objectContaining({
+      video_owner_user_id: 42,
+      video_disclosure_policy: ''
+    }))
+  })
+
+  it('requires an explicit Videos capability for a custom OpenAI base URL', async () => {
+    const account = buildAccount()
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    const videosCheckbox = wrapper.get<HTMLInputElement>(
+      '[data-testid="openai-endpoint-capability-videos"]'
+    )
+    expect(videosCheckbox.element.checked).toBe(false)
+
+    const baseURL = wrapper.get<HTMLInputElement>('input[placeholder="https://api.openai.com"]')
+    await baseURL.setValue('https://gateway.example.com')
+    expect(videosCheckbox.element.checked).toBe(false)
+
+    await videosCheckbox.setValue(true)
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.openai_capabilities).toEqual([
+      'chat_completions',
+      'embeddings',
+      'videos'
     ])
   })
 

@@ -2,6 +2,7 @@
 package dto
 
 import (
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -246,6 +247,7 @@ func groupFromServiceBase(g *service.Group) Group {
 		BatchImageHoldMultiplier:        g.BatchImageHoldMultiplier,
 		VideoRateIndependent:            g.VideoRateIndependent,
 		VideoRateMultiplier:             g.VideoRateMultiplier,
+		VideoDisclosurePolicy:           g.VideoDisclosurePolicy,
 		PeakRateEnabled:                 g.PeakRateEnabled,
 		PeakStart:                       g.PeakStart,
 		PeakEnd:                         g.PeakEnd,
@@ -289,41 +291,49 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 		ollamaCloudUsage = state
 	}
 	out := &Account{
-		ID:                      a.ID,
-		Name:                    a.Name,
-		Notes:                   a.Notes,
-		Platform:                a.Platform,
-		Type:                    a.Type,
-		Credentials:             redactedCreds,
-		CredentialsStatus:       credsStatus,
-		Extra:                   extra,
-		OllamaCloudUsage:        ollamaCloudUsage,
-		ProxyID:                 a.ProxyID,
-		ProxyFallbackOriginID:   a.ProxyFallbackOriginID,
-		ProxyFallbackOriginName: a.ProxyFallbackOriginName,
-		Concurrency:             a.Concurrency,
-		LoadFactor:              a.LoadFactor,
-		Priority:                a.Priority,
-		RateMultiplier:          a.BillingRateMultiplier(),
-		Status:                  a.Status,
-		ErrorMessage:            a.ErrorMessage,
-		LastUsedAt:              a.LastUsedAt,
-		ExpiresAt:               timeToUnixSeconds(a.ExpiresAt),
-		AutoPauseOnExpired:      a.AutoPauseOnExpired,
-		CreatedAt:               a.CreatedAt,
-		UpdatedAt:               a.UpdatedAt,
-		Schedulable:             a.Schedulable,
-		RateLimitedAt:           a.RateLimitedAt,
-		RateLimitResetAt:        a.RateLimitResetAt,
-		OverloadUntil:           a.OverloadUntil,
-		TempUnschedulableUntil:  a.TempUnschedulableUntil,
-		TempUnschedulableReason: a.TempUnschedulableReason,
-		SessionWindowStart:      a.SessionWindowStart,
-		SessionWindowEnd:        a.SessionWindowEnd,
-		SessionWindowStatus:     a.SessionWindowStatus,
-		GroupIDs:                a.GroupIDs,
-		ParentAccountID:         a.ParentAccountID,
-		QuotaDimension:          a.QuotaDimension,
+		ID:                         a.ID,
+		Name:                       a.Name,
+		Notes:                      a.Notes,
+		Platform:                   a.Platform,
+		Type:                       a.Type,
+		Credentials:                redactedCreds,
+		CredentialsStatus:          credsStatus,
+		Extra:                      extra,
+		VideoOwnerUserID:           a.VideoOwnerUserID,
+		OwnershipMode:              a.OwnershipMode,
+		OwnerUserID:                a.OwnerUserID,
+		IsolationState:             a.IsolationState,
+		ProviderIdentityVersion:    a.ProviderIdentityVersion,
+		IsolationVerifiedVersion:   a.IsolationVerifiedVersion,
+		ProviderPrincipalBindingID: a.ProviderPrincipalBindingID,
+		VideoDisclosurePolicy:      a.VideoDisclosurePolicy,
+		OllamaCloudUsage:           ollamaCloudUsage,
+		ProxyID:                    a.ProxyID,
+		ProxyFallbackOriginID:      a.ProxyFallbackOriginID,
+		ProxyFallbackOriginName:    a.ProxyFallbackOriginName,
+		Concurrency:                a.Concurrency,
+		LoadFactor:                 a.LoadFactor,
+		Priority:                   a.Priority,
+		RateMultiplier:             a.BillingRateMultiplier(),
+		Status:                     a.Status,
+		ErrorMessage:               a.ErrorMessage,
+		LastUsedAt:                 a.LastUsedAt,
+		ExpiresAt:                  timeToUnixSeconds(a.ExpiresAt),
+		AutoPauseOnExpired:         a.AutoPauseOnExpired,
+		CreatedAt:                  a.CreatedAt,
+		UpdatedAt:                  a.UpdatedAt,
+		Schedulable:                a.Schedulable,
+		RateLimitedAt:              a.RateLimitedAt,
+		RateLimitResetAt:           a.RateLimitResetAt,
+		OverloadUntil:              a.OverloadUntil,
+		TempUnschedulableUntil:     a.TempUnschedulableUntil,
+		TempUnschedulableReason:    a.TempUnschedulableReason,
+		SessionWindowStart:         a.SessionWindowStart,
+		SessionWindowEnd:           a.SessionWindowEnd,
+		SessionWindowStatus:        a.SessionWindowStatus,
+		GroupIDs:                   a.GroupIDs,
+		ParentAccountID:            a.ParentAccountID,
+		QuotaDimension:             a.QuotaDimension,
 	}
 
 	// 提取 5h 窗口费用控制和会话数量控制配置（仅 Anthropic OAuth/SetupToken 账号有效）
@@ -693,6 +703,7 @@ func usageLogFromServiceUser(l *service.UsageLog) UsageLog {
 	if isInternalRelay {
 		relayParentRequestIDPtr = &relayParentRequestID
 	}
+	videoBillingUnit, videoUnits, videoUnitPrice := usageVideoBillingMetadata(l)
 	return UsageLog{
 		ID:                        l.ID,
 		UserID:                    l.UserID,
@@ -739,6 +750,12 @@ func usageLogFromServiceUser(l *service.UsageLog) UsageLog {
 		ImageSizeSource:           l.ImageSizeSource,
 		ImageSizeBreakdown:        l.ImageSizeBreakdown,
 		MediaType:                 l.MediaType,
+		VideoCount:                l.VideoCount,
+		VideoResolution:           l.VideoResolution,
+		VideoDurationSeconds:      l.VideoDurationSeconds,
+		VideoBillingUnit:          videoBillingUnit,
+		VideoUnits:                videoUnits,
+		VideoUnitPrice:            videoUnitPrice,
 		UserAgent:                 l.UserAgent,
 		IPAddress:                 l.IPAddress,
 		SessionID:                 l.SessionID,
@@ -750,6 +767,60 @@ func usageLogFromServiceUser(l *service.UsageLog) UsageLog {
 		Group:                     GroupFromServiceShallow(l.Group),
 		Subscription:              UserSubscriptionFromService(l.Subscription),
 	}
+}
+
+func usageVideoBillingMetadata(l *service.UsageLog) (*string, *float64, *float64) {
+	if l == nil {
+		return nil, nil, nil
+	}
+	billingMode := strings.TrimSpace(derefString(l.BillingMode))
+	mediaType := strings.TrimSpace(derefString(l.MediaType))
+	if l.VideoCount <= 0 && billingMode != string(service.BillingModeVideo) && mediaType != "video" {
+		return nil, nil, nil
+	}
+
+	unit := strings.TrimSpace(derefString(l.BillingTier))
+	if unit != service.VideoBillingUnitRequest && unit != service.VideoBillingUnitSecond && unit != service.VideoBillingUnitVideoToken {
+		unit = ""
+	}
+	if unit == "" {
+		switch {
+		case l.OutputTokens > 0:
+			unit = service.VideoBillingUnitVideoToken
+		case l.VideoDurationSeconds != nil && *l.VideoDurationSeconds > 0:
+			unit = service.VideoBillingUnitSecond
+		default:
+			unit = service.VideoBillingUnitRequest
+		}
+	}
+
+	units := 0.0
+	switch unit {
+	case service.VideoBillingUnitVideoToken:
+		units = float64(l.OutputTokens)
+	case service.VideoBillingUnitSecond:
+		if l.VideoDurationSeconds != nil && *l.VideoDurationSeconds > 0 {
+			count := l.VideoCount
+			if count <= 0 {
+				count = 1
+			}
+			units = float64(*l.VideoDurationSeconds * count)
+		}
+	case service.VideoBillingUnitRequest:
+		units = float64(l.VideoCount)
+		if units <= 0 {
+			units = 1
+		}
+	}
+	unitCopy := unit
+	if units <= 0 || math.IsNaN(units) || math.IsInf(units, 0) {
+		return &unitCopy, nil, nil
+	}
+	unitPrice := l.TotalCost / units
+	if math.IsNaN(unitPrice) || math.IsInf(unitPrice, 0) {
+		return &unitCopy, &units, nil
+	}
+	return &unitCopy, &units, &unitPrice
 }
 
 // UsageLogFromService converts a service UsageLog to DTO for regular users.

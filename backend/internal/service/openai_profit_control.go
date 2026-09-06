@@ -334,6 +334,9 @@ func (s *OpenAIGatewayService) ProfitControlVetoLatest(ctx context.Context, sele
 	if s == nil {
 		return selected, false, ""
 	}
+	if selected != nil && !canScheduleAccountForUser(ctx, s.accountRepo, selected, accountSchedulingUserID(ctx)) {
+		return selected, true, "account_ownership_denied"
+	}
 	return profitControlVetoLatest(ctx, selected, s.schedulerSnapshot)
 }
 

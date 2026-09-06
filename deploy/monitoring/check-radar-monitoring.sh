@@ -49,5 +49,7 @@ fi
 
 cd "$SCRIPT_DIR"
 "$PROMTOOL" check rules radar-alerts.yml
+"$PROMTOOL" check rules video-alerts.yml
 "$PROMTOOL" check config --syntax-only prometheus-radar.yml
 "$PROMTOOL" test rules radar-rules.test.yml
+"$PROMTOOL" test rules video-rules.test.yml

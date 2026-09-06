@@ -23,6 +23,11 @@ export interface PricingInterval {
   cache_write_multiplier: number | null
   cache_read_multiplier: number | null
   per_request_price: number | null
+  conditions?: Record<string, unknown>
+  billing_unit?: 'request' | 'second' | 'video_token' | null
+  priority?: number
+  valid_from?: string | null
+  valid_until?: string | null
   sort_order: number
 }
 

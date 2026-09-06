@@ -130,6 +130,7 @@ code-reviews/
 AGENTS.md
 backend/cmd/server/server
 deploy/docker-compose.override.yml
+/deploy/*.mp4
 .gocache/
 vite.config.js
 docs/*
@@ -142,6 +143,14 @@ docs/*
 !docs/COMPOSITE_GROUPS.md
 !docs/PLUGIN_DEVELOPMENT.md
 !docs/channel-monitor-v2-safe-defaults.md
+!docs/通用视频任务平台需求设计.md
+!docs/通用视频任务平台实现方案.md
+!docs/通用视频任务平台实施计划.md
+!docs/通用视频任务平台运行手册.md
+!docs/通用视频任务平台验收记录.md
+!docs/原生视频首发实施与验收方案.md
+!docs/通用视频任务平台收口清单.md
+!docs/通用视频任务平台Grok剥离记录.md
 !docs/legal/
 !docs/legal/*.md
 !docs/screenshots/

@@ -31,6 +31,12 @@ func aesTestCfg(keyHex string) *config.Config {
 	}
 }
 
+func aesTestCfgWithLegacy(keyHex string, legacy ...string) *config.Config {
+	return &config.Config{
+		Totp: config.TotpConfig{EncryptionKey: keyHex, LegacyEncryptionKeys: legacy},
+	}
+}
+
 // aesEncryptor 创建一个持有合法 32 字节密钥的加密器，测试失败时立即终止。
 func aesEncryptor(t *testing.T) *AESEncryptor {
 	t.Helper()
@@ -88,6 +94,18 @@ func TestNewAESEncryptor_MissingOrInvalidConfig(t *testing.T) {
 			assert.Contains(t, err.Error(), tt.wantContain)
 		})
 	}
+}
+
+func TestNewAESEncryptorRejectsInvalidOrExcessiveLegacyKeys(t *testing.T) {
+	_, err := NewAESEncryptor(aesTestCfgWithLegacy(aesHexKey(32, 0x01), "not-hex"))
+	require.ErrorContains(t, err, "legacy encryption key 1")
+
+	legacy := make([]string, maxLegacyEncryptionKeys+1)
+	for index := range legacy {
+		legacy[index] = aesHexKey(32, byte(index+2))
+	}
+	_, err = NewAESEncryptor(aesTestCfgWithLegacy(aesHexKey(32, 0x01), legacy...))
+	require.ErrorContains(t, err, "exceed limit")
 }
 
 // ── 加解密往返（Roundtrip）───────────────────────────────────────────────────
@@ -216,4 +234,27 @@ func TestAESEncryptor_CrossInstance_DifferentKey_CannotDecrypt(t *testing.T) {
 
 	_, err = enc2.Decrypt(ct)
 	require.Error(t, err, "不同密钥的实例不应能解密对方的密文")
+}
+
+func TestAESEncryptor_KeyRotationReadsLegacyAndWritesPrimary(t *testing.T) {
+	oldKey := aesHexKey(32, 0xAA)
+	newKey := aesHexKey(32, 0xBB)
+	oldEncryptor, err := NewAESEncryptor(aesTestCfg(oldKey))
+	require.NoError(t, err)
+	rotated, err := NewAESEncryptor(aesTestCfgWithLegacy(newKey, oldKey, oldKey, newKey))
+	require.NoError(t, err)
+
+	oldCiphertext, err := oldEncryptor.Encrypt("old receipt")
+	require.NoError(t, err)
+	plaintext, err := rotated.Decrypt(oldCiphertext)
+	require.NoError(t, err)
+	require.Equal(t, "old receipt", plaintext)
+
+	newCiphertext, err := rotated.Encrypt("new receipt")
+	require.NoError(t, err)
+	_, err = oldEncryptor.Decrypt(newCiphertext)
+	require.Error(t, err, "new writes must use only the primary key")
+	plaintext, err = rotated.Decrypt(newCiphertext)
+	require.NoError(t, err)
+	require.Equal(t, "new receipt", plaintext)
 }

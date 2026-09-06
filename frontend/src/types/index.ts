@@ -675,6 +675,12 @@ export type GroupPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 
 
 export type VideoModelPrices = Record<string, Record<string, number>>
 
+export type VideoDisclosurePolicy =
+  | 'none'
+  | 'identity'
+  | 'task_access'
+  | 'dedicated_credentials'
+
 export type SubscriptionType = 'standard' | 'subscription'
 
 export interface OpenAIMessagesDispatchModelConfig {
@@ -732,6 +738,7 @@ export interface Group {
   image_price_4k: number | null
   video_rate_independent: boolean
   video_rate_multiplier: number
+  video_disclosure_policy?: VideoDisclosurePolicy
   video_price_480p: number | null
   video_price_720p: number | null
   video_price_1080p: number | null
@@ -973,6 +980,7 @@ export interface CreateGroupRequest {
   image_price_4k?: number | null
   video_rate_independent?: boolean
   video_rate_multiplier?: number
+  video_disclosure_policy?: VideoDisclosurePolicy | ''
   video_price_480p?: number | null
   video_price_720p?: number | null
   video_price_1080p?: number | null
@@ -1039,6 +1047,7 @@ export interface UpdateGroupRequest {
   image_price_4k?: number | null
   video_rate_independent?: boolean
   video_rate_multiplier?: number
+  video_disclosure_policy?: VideoDisclosurePolicy | ''
   video_price_480p?: number | null
   video_price_720p?: number | null
   video_price_1080p?: number | null
@@ -1328,6 +1337,14 @@ export interface Account {
   // 改为通过 credentials_status.has_<key> 暴露存在性。
   credentials?: Record<string, unknown>
   credentials_status?: Record<string, boolean>
+  video_owner_user_id?: number | null
+  ownership_mode?: 'shared' | 'user_dedicated'
+  owner_user_id?: number | null
+  isolation_state?: 'unverified' | 'verified' | 'revoked'
+  provider_identity_version?: number
+  isolation_verified_version?: number
+  provider_principal_binding_id?: number | null
+  video_disclosure_policy?: VideoDisclosurePolicy | ''
   ollama_cloud_usage?: OllamaCloudUsageState
   // Extra fields including Codex usage, OpenAI compact capability, and model-level rate limits.
   extra?: (CodexUsageSnapshot & OpenAICompactState & {
@@ -1614,7 +1631,7 @@ export interface CodexUsageSnapshot {
 
 export type OpenAICompactMode = 'auto' | 'force_on' | 'force_off'
 export type OpenAIResponsesMode = 'auto' | 'force_responses' | 'force_chat_completions'
-export type OpenAIEndpointCapability = 'chat_completions' | 'embeddings'
+export type OpenAIEndpointCapability = 'chat_completions' | 'embeddings' | 'videos'
 
 export interface OpenAICompactState {
   openai_compact_mode?: OpenAICompactMode
@@ -1636,6 +1653,10 @@ export interface CreateAccountRequest {
   type: AccountType
   credentials: Record<string, unknown>
   extra?: Record<string, unknown>
+  video_owner_user_id?: number
+  ownership_mode?: 'shared' | 'user_dedicated'
+  owner_user_id?: number
+  video_disclosure_policy?: VideoDisclosurePolicy | ''
   proxy_id?: number | null
   concurrency?: number
   load_factor?: number | null
@@ -1654,6 +1675,10 @@ export interface UpdateAccountRequest {
   type?: AccountType
   credentials?: Record<string, unknown>
   extra?: Record<string, unknown>
+  video_owner_user_id?: number
+  ownership_mode?: 'shared' | 'user_dedicated'
+  owner_user_id?: number
+  video_disclosure_policy?: VideoDisclosurePolicy | ''
   proxy_id?: number | null
   concurrency?: number
   load_factor?: number | null
@@ -1890,6 +1915,14 @@ export interface UsageLog {
   image_input_cost: number
   image_output_tokens: number
   image_output_cost: number
+
+  // 视频生成字段
+  video_count?: number
+  video_resolution?: string | null
+  video_duration_seconds?: number | null
+  video_billing_unit?: 'request' | 'second' | 'video_token' | null
+  video_units?: number | null
+  video_unit_price?: number | null
 
   // User-Agent
   user_agent: string | null

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"sort"
@@ -125,24 +126,29 @@ type ChannelTimePricingPeriod struct {
 
 // PricingInterval 定价区间（token 区间 / 按次分层 / 图片分辨率分层）
 type PricingInterval struct {
-	ID                   int64     `json:"id,omitempty"`
-	PricingID            int64     `json:"pricing_id,omitempty"`
-	MinTokens            int       `json:"min_tokens"`
-	MaxTokens            *int      `json:"max_tokens"`
-	TierLabel            string    `json:"tier_label"`
-	InputPrice           *float64  `json:"input_price"`
-	OutputPrice          *float64  `json:"output_price"`
-	CacheWritePrice      *float64  `json:"cache_write_price"`
-	CacheWrite1hPrice    *float64  `json:"cache_write_1h_price"`
-	CacheReadPrice       *float64  `json:"cache_read_price"`
-	InputMultiplier      *float64  `json:"input_multiplier"`
-	OutputMultiplier     *float64  `json:"output_multiplier"`
-	CacheWriteMultiplier *float64  `json:"cache_write_multiplier"`
-	CacheReadMultiplier  *float64  `json:"cache_read_multiplier"`
-	PerRequestPrice      *float64  `json:"per_request_price"`
-	SortOrder            int       `json:"sort_order"`
-	CreatedAt            time.Time `json:"created_at,omitempty"`
-	UpdatedAt            time.Time `json:"updated_at,omitempty"`
+	ID                   int64           `json:"id,omitempty"`
+	PricingID            int64           `json:"pricing_id,omitempty"`
+	MinTokens            int             `json:"min_tokens"`
+	MaxTokens            *int            `json:"max_tokens"`
+	TierLabel            string          `json:"tier_label"`
+	InputPrice           *float64        `json:"input_price"`
+	OutputPrice          *float64        `json:"output_price"`
+	CacheWritePrice      *float64        `json:"cache_write_price"`
+	CacheWrite1hPrice    *float64        `json:"cache_write_1h_price"`
+	CacheReadPrice       *float64        `json:"cache_read_price"`
+	InputMultiplier      *float64        `json:"input_multiplier"`
+	OutputMultiplier     *float64        `json:"output_multiplier"`
+	CacheWriteMultiplier *float64        `json:"cache_write_multiplier"`
+	CacheReadMultiplier  *float64        `json:"cache_read_multiplier"`
+	PerRequestPrice      *float64        `json:"per_request_price"`
+	Conditions           json.RawMessage `json:"conditions,omitempty"`
+	BillingUnit          *string         `json:"billing_unit,omitempty"`
+	Priority             int             `json:"priority"`
+	ValidFrom            *time.Time      `json:"valid_from,omitempty"`
+	ValidUntil           *time.Time      `json:"valid_until,omitempty"`
+	SortOrder            int             `json:"sort_order"`
+	CreatedAt            time.Time       `json:"created_at,omitempty"`
+	UpdatedAt            time.Time       `json:"updated_at,omitempty"`
 }
 
 // IsActive 判断渠道是否启用
@@ -218,6 +224,11 @@ func (p ChannelModelPricing) Clone() ChannelModelPricing {
 	if p.Intervals != nil {
 		cp.Intervals = make([]PricingInterval, len(p.Intervals))
 		copy(cp.Intervals, p.Intervals)
+		for i := range p.Intervals {
+			if p.Intervals[i].Conditions != nil {
+				cp.Intervals[i].Conditions = append(json.RawMessage(nil), p.Intervals[i].Conditions...)
+			}
+		}
 	}
 	if p.TimePricing != nil {
 		cp.TimePricing = &ChannelTimePricing{
@@ -326,6 +337,7 @@ func deepCopyFeaturesConfig(src map[string]any) map[string]any {
 //   - BillingModeToken（含空值）：区间是上下文 token 数分段 (min, max]，
 //     按 MinTokens 排序后无重叠，无界区间（MaxTokens=nil）必须是最后一个。
 //   - BillingModeImage：区间必须是唯一的非空 tier_label（1K/2K/4K 等）。
+//   - BillingModeVideo：区间以 conditions、billing_unit、priority 和有效期选择。
 //   - BillingModePerRequest：支持 tier_label 分层或无 label 的 context 分段，
 //     两种语义不能混用；context 分段沿用 token 模式的重叠校验。
 //
@@ -347,7 +359,43 @@ func ValidateIntervals(intervals []PricingInterval, mode BillingMode) error {
 		}
 	}
 
-	if mode == BillingModeImage || mode == BillingModeVideo {
+	if mode == BillingModeVideo {
+		conditions := make([]videoPricingConditions, len(sorted))
+		specificities := make([]int, len(sorted))
+		for i := range sorted {
+			iv := &sorted[i]
+			decoded, specificity, err := decodeVideoPricingConditions(iv.Conditions)
+			if err != nil {
+				return fmt.Errorf("interval #%d: invalid video conditions: %w", i+1, err)
+			}
+			if err := validateVideoPricingConditionValues(decoded, fmt.Sprintf("interval #%d conditions", i+1)); err != nil {
+				return err
+			}
+			conditions[i], specificities[i] = decoded, specificity
+			if iv.BillingUnit == nil || !isVideoBillingUnit(*iv.BillingUnit) {
+				return fmt.Errorf("interval #%d: invalid video billing_unit", i+1)
+			}
+			if iv.PerRequestPrice == nil {
+				return fmt.Errorf("interval #%d: per_request_price is required for video billing", i+1)
+			}
+			if iv.ValidFrom != nil && iv.ValidUntil != nil && !iv.ValidUntil.After(*iv.ValidFrom) {
+				return fmt.Errorf("interval #%d: valid_until must be after valid_from", i+1)
+			}
+		}
+		for i := 0; i < len(sorted); i++ {
+			for j := i + 1; j < len(sorted); j++ {
+				if sorted[i].Priority != sorted[j].Priority || specificities[i] != specificities[j] {
+					continue
+				}
+				if videoPricingWindowsOverlap(sorted[i].ValidFrom, sorted[i].ValidUntil, sorted[j].ValidFrom, sorted[j].ValidUntil) &&
+					videoPricingConditionsOverlap(conditions[i], conditions[j], nil) {
+					return fmt.Errorf("video intervals #%d and #%d overlap at equal priority and specificity", i+1, j+1)
+				}
+			}
+		}
+		return validateUniqueTierLabels(sorted, true)
+	}
+	if mode == BillingModeImage {
 		return validateUniqueTierLabels(sorted, true)
 	}
 	if mode == BillingModePerRequest {

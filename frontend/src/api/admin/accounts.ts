@@ -172,6 +172,109 @@ export async function getById(id: number): Promise<Account> {
   return data
 }
 
+export interface AccountProviderIdentityReview {
+  id: number
+  account_id: number
+  account_identity_version: number
+  platform: string
+  principal_kind: 'account' | 'organization' | 'project' | 'tenant' | 'workspace'
+  issuer_fingerprint: string
+  principal_fingerprint: string
+  status: 'pending' | 'approved' | 'rejected'
+  proposed_by: number
+  decided_by?: number | null
+  reason: string
+  evidence_ref: string
+  decision_reason?: string | null
+  created_at: string
+  decided_at?: string | null
+}
+
+export interface AccountProviderIdentityBinding {
+  id: number
+  account_id: number
+  account_identity_version: number
+  platform: string
+  principal_kind: AccountProviderIdentityReview['principal_kind']
+  issuer_fingerprint: string
+  principal_fingerprint: string
+  verification_review_id: number
+  verified_by: number
+  verified_at: string
+  revoked_by?: number | null
+  revoked_at?: string | null
+}
+
+export interface AccountProviderIdentityState {
+  account_id: number
+  identity_version: number
+  isolation_state: 'unverified' | 'verified' | 'revoked'
+  binding?: AccountProviderIdentityBinding | null
+  reviews: AccountProviderIdentityReview[]
+}
+
+export interface AccountProviderIdentityResult {
+  state: AccountProviderIdentityState
+  review?: AccountProviderIdentityReview
+  replayed: boolean
+  affected_account_ids?: number[]
+}
+
+function providerIdentityHeaders(identityVersion: number | null, operationKey: string): Record<string, string> {
+  if (!operationKey.trim()) throw new Error('provider identity operation key is required')
+  const headers: Record<string, string> = { 'Idempotency-Key': operationKey.trim() }
+  if (identityVersion != null) {
+    if (!Number.isSafeInteger(identityVersion) || identityVersion <= 0) throw new Error('valid provider identity version is required')
+    headers['If-Match'] = `"${identityVersion}"`
+  }
+  return headers
+}
+
+export async function getProviderIdentity(id: number): Promise<AccountProviderIdentityState> {
+  const { data } = await apiClient.get<AccountProviderIdentityState>(`/admin/accounts/${id}/provider-identity`)
+  return data
+}
+
+export async function proposeProviderIdentity(
+  id: number,
+  identityVersion: number,
+  payload: { principal_kind: AccountProviderIdentityReview['principal_kind']; principal: string; reason: string; evidence_ref: string },
+  operationKey: string
+): Promise<AccountProviderIdentityResult> {
+  const { data } = await apiClient.post<AccountProviderIdentityResult>(`/admin/accounts/${id}/provider-identity/reviews`, payload, {
+    headers: providerIdentityHeaders(identityVersion, operationKey)
+  })
+  return data
+}
+
+export async function decideProviderIdentity(
+  id: number,
+  reviewID: number,
+  identityVersion: number,
+  approve: boolean,
+  reason: string,
+  operationKey: string
+): Promise<AccountProviderIdentityResult> {
+  const action = approve ? 'approve' : 'reject'
+  const { data } = await apiClient.post<AccountProviderIdentityResult>(
+    `/admin/accounts/${id}/provider-identity/reviews/${reviewID}/${action}`,
+    { reason },
+    { headers: providerIdentityHeaders(identityVersion, operationKey) }
+  )
+  return data
+}
+
+export async function revokeProviderIdentity(
+  id: number,
+  payload: { reason: string; evidence_ref: string },
+  operationKey: string
+): Promise<AccountProviderIdentityResult> {
+  const { data } = await apiClient.post<AccountProviderIdentityResult>(`/admin/accounts/${id}/provider-identity/revoke`, payload, {
+    headers: providerIdentityHeaders(null, operationKey)
+  })
+  return data
+}
+
 /**
  * Create new account
  * @param accountData - Account data
@@ -1081,6 +1184,10 @@ export const accountsAPI = {
   listWithEtag,
   getUpstreamBillingRatesWithEtag,
   getById,
+  getProviderIdentity,
+  proposeProviderIdentity,
+  decideProviderIdentity,
+  revokeProviderIdentity,
   create,
   duplicate,
   update,

@@ -1537,6 +1537,11 @@ async function handleSubmit() {
         appStore.showError(t('admin.channels.form.perRequestPriceRequired', '按次/图片计费模式必须设置默认价格或至少一个计费层级'))
         return
       }
+      if (entry.billing_mode === 'video' && (!entry.intervals || entry.intervals.length === 0)) {
+        appStore.showError(t('admin.channels.form.videoRuleRequired'))
+        activeTab.value = section.platform
+        return
+      }
     }
   }
 

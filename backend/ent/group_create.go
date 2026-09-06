@@ -504,6 +504,20 @@ func (_c *GroupCreate) SetVideoModelPrices(v map[string]map[string]float64) *Gro
 	return _c
 }
 
+// SetVideoDisclosurePolicy sets the "video_disclosure_policy" field.
+func (_c *GroupCreate) SetVideoDisclosurePolicy(v string) *GroupCreate {
+	_c.mutation.SetVideoDisclosurePolicy(v)
+	return _c
+}
+
+// SetNillableVideoDisclosurePolicy sets the "video_disclosure_policy" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableVideoDisclosurePolicy(v *string) *GroupCreate {
+	if v != nil {
+		_c.SetVideoDisclosurePolicy(*v)
+	}
+	return _c
+}
+
 // SetWebSearchPricePerCall sets the "web_search_price_per_call" field.
 func (_c *GroupCreate) SetWebSearchPricePerCall(v float64) *GroupCreate {
 	_c.mutation.SetWebSearchPricePerCall(v)
@@ -1317,6 +1331,11 @@ func (_c *GroupCreate) check() error {
 	if _, ok := _c.mutation.VideoRateMultiplier(); !ok {
 		return &ValidationError{Name: "video_rate_multiplier", err: errors.New(`ent: missing required field "Group.video_rate_multiplier"`)}
 	}
+	if v, ok := _c.mutation.VideoDisclosurePolicy(); ok {
+		if err := group.VideoDisclosurePolicyValidator(v); err != nil {
+			return &ValidationError{Name: "video_disclosure_policy", err: fmt.Errorf(`ent: validator failed for field "Group.video_disclosure_policy": %w`, err)}
+		}
+	}
 	if v, ok := _c.mutation.SearchPricePer1k(); ok {
 		if err := group.SearchPricePer1kValidator(v); err != nil {
 			return &ValidationError{Name: "search_price_per_1k", err: fmt.Errorf(`ent: validator failed for field "Group.search_price_per_1k": %w`, err)}
@@ -1584,6 +1603,10 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.VideoModelPrices(); ok {
 		_spec.SetField(group.FieldVideoModelPrices, field.TypeJSON, value)
 		_node.VideoModelPrices = value
+	}
+	if value, ok := _c.mutation.VideoDisclosurePolicy(); ok {
+		_spec.SetField(group.FieldVideoDisclosurePolicy, field.TypeString, value)
+		_node.VideoDisclosurePolicy = &value
 	}
 	if value, ok := _c.mutation.WebSearchPricePerCall(); ok {
 		_spec.SetField(group.FieldWebSearchPricePerCall, field.TypeFloat64, value)
@@ -2426,6 +2449,24 @@ func (u *GroupUpsert) UpdateVideoModelPrices() *GroupUpsert {
 // ClearVideoModelPrices clears the value of the "video_model_prices" field.
 func (u *GroupUpsert) ClearVideoModelPrices() *GroupUpsert {
 	u.SetNull(group.FieldVideoModelPrices)
+	return u
+}
+
+// SetVideoDisclosurePolicy sets the "video_disclosure_policy" field.
+func (u *GroupUpsert) SetVideoDisclosurePolicy(v string) *GroupUpsert {
+	u.Set(group.FieldVideoDisclosurePolicy, v)
+	return u
+}
+
+// UpdateVideoDisclosurePolicy sets the "video_disclosure_policy" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateVideoDisclosurePolicy() *GroupUpsert {
+	u.SetExcluded(group.FieldVideoDisclosurePolicy)
+	return u
+}
+
+// ClearVideoDisclosurePolicy clears the value of the "video_disclosure_policy" field.
+func (u *GroupUpsert) ClearVideoDisclosurePolicy() *GroupUpsert {
+	u.SetNull(group.FieldVideoDisclosurePolicy)
 	return u
 }
 
@@ -3624,6 +3665,27 @@ func (u *GroupUpsertOne) UpdateVideoModelPrices() *GroupUpsertOne {
 func (u *GroupUpsertOne) ClearVideoModelPrices() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
 		s.ClearVideoModelPrices()
+	})
+}
+
+// SetVideoDisclosurePolicy sets the "video_disclosure_policy" field.
+func (u *GroupUpsertOne) SetVideoDisclosurePolicy(v string) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetVideoDisclosurePolicy(v)
+	})
+}
+
+// UpdateVideoDisclosurePolicy sets the "video_disclosure_policy" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateVideoDisclosurePolicy() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateVideoDisclosurePolicy()
+	})
+}
+
+// ClearVideoDisclosurePolicy clears the value of the "video_disclosure_policy" field.
+func (u *GroupUpsertOne) ClearVideoDisclosurePolicy() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.ClearVideoDisclosurePolicy()
 	})
 }
 
@@ -5070,6 +5132,27 @@ func (u *GroupUpsertBulk) UpdateVideoModelPrices() *GroupUpsertBulk {
 func (u *GroupUpsertBulk) ClearVideoModelPrices() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
 		s.ClearVideoModelPrices()
+	})
+}
+
+// SetVideoDisclosurePolicy sets the "video_disclosure_policy" field.
+func (u *GroupUpsertBulk) SetVideoDisclosurePolicy(v string) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetVideoDisclosurePolicy(v)
+	})
+}
+
+// UpdateVideoDisclosurePolicy sets the "video_disclosure_policy" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateVideoDisclosurePolicy() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateVideoDisclosurePolicy()
+	})
+}
+
+// ClearVideoDisclosurePolicy clears the value of the "video_disclosure_policy" field.
+func (u *GroupUpsertBulk) ClearVideoDisclosurePolicy() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.ClearVideoDisclosurePolicy()
 	})
 }
 

@@ -326,7 +326,11 @@ func (r *apiKeyRepository) Update(ctx context.Context, key *service.APIKey, fiel
 	if fields.NotificationEmail {
 		if key.NotificationEmail != nil {
 			builder.SetNotificationEmail(*key.NotificationEmail)
-			builder.SetNillableNotificationEmailVerifiedAt(key.NotificationEmailVerifiedAt)
+			if key.NotificationEmailVerifiedAt != nil {
+				builder.SetNotificationEmailVerifiedAt(*key.NotificationEmailVerifiedAt)
+			} else {
+				builder.ClearNotificationEmailVerifiedAt()
+			}
 		} else {
 			builder.ClearNotificationEmail()
 			builder.ClearNotificationEmailVerifiedAt()
@@ -763,7 +767,6 @@ func (r *apiKeyRepository) ListNotificationKeysByUserAndGroup(ctx context.Contex
 			apikey.GroupIDEQ(groupID),
 			apikey.ChangeNotifyEnabledEQ(true),
 			apikey.NotificationEmailNotNil(),
-			apikey.NotificationEmailVerifiedAtNotNil(),
 			apikey.DeletedAtIsNil(),
 		).
 		Order(dbent.Asc(apikey.FieldID)).
@@ -1065,6 +1068,7 @@ func groupEntityToService(g *dbent.Group) *service.Group {
 		VideoPrice720P:                  g.VideoPrice720p,
 		VideoPrice1080P:                 g.VideoPrice1080p,
 		VideoModelPrices:                service.NormalizeVideoModelPrices(g.VideoModelPrices),
+		VideoDisclosurePolicy:           derefString(g.VideoDisclosurePolicy),
 		WebSearchPricePerCall:           g.WebSearchPricePerCall,
 		SearchPricePer1k:                g.SearchPricePer1k,
 		AudioRealtimePricePerMin:        g.AudioRealtimePricePerMin,

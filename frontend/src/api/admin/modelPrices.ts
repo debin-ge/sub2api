@@ -19,8 +19,123 @@ export const PRICE_FIELDS = [
 ] as const
 
 export type PriceField = (typeof PRICE_FIELDS)[number]
-export type ModelPricePayload = Partial<Record<PriceField, number>>
 export type ModelPriceCurrency = 'USD' | 'CNY'
+
+export type VideoBillingUnit = 'request' | 'second' | 'video_token'
+export type VideoEstimatorType = 'pixel_frame' | 'fixed_tokens_per_second' | 'fixed_max_units'
+export type VideoTokenScope = 'output_only' | 'input_plus_output'
+
+export interface VideoPricingDefaults {
+  resolution?: string
+  generate_audio?: boolean
+  request_mode?: 'standard' | 'batch'
+  inference_mode?: 'online' | 'offline'
+}
+
+export interface VideoResolutionSpec {
+  sizes: string[]
+}
+
+export interface VideoPricingConditions {
+  providers?: string[]
+  operations?: string[]
+  sizes?: string[]
+  resolutions?: string[]
+  seconds?: number[]
+  input_types?: string[]
+  input_has_video?: boolean
+  generate_audio?: boolean
+  audio_enabled?: boolean
+  request_modes?: Array<'standard' | 'batch'>
+  inference_modes?: Array<'online' | 'offline'>
+  qualities?: string[]
+  service_tiers?: string[]
+}
+
+export interface VideoMinimumUnitsRule {
+  units: number
+  conditions?: VideoPricingConditions
+}
+
+export interface VideoUsageEstimator {
+  type: VideoEstimatorType
+  token_scope?: VideoTokenScope
+  fps?: number
+  divisor?: number
+  tokens_per_second?: number
+  max_units?: number
+  max_input_video_seconds?: number
+  minimum_units?: VideoMinimumUnitsRule[]
+}
+
+export interface VideoPricingRule {
+  key: string
+  billing_unit: VideoBillingUnit
+  unit_price_usd: number
+  estimator?: string
+  conditions?: VideoPricingConditions
+  priority?: number
+  valid_from?: string
+  valid_until?: string
+}
+
+export interface VideoPricingConfig {
+  version: 1
+  enabled: boolean
+  currency: 'USD'
+  defaults?: VideoPricingDefaults
+  resolutions?: Record<string, VideoResolutionSpec>
+  estimators?: Record<string, VideoUsageEstimator>
+  rules?: VideoPricingRule[]
+}
+
+export interface VideoPricingPreviewAttributes {
+  provider?: string
+  model?: string
+  operation?: string
+  size?: string
+  resolution?: string
+  seconds?: number
+  maximum_output_seconds?: number
+  output_spec_unverified?: boolean
+  input_type?: string
+  input_has_video: boolean
+  input_video_seconds?: number
+  generate_audio?: boolean
+  request_mode?: string
+  inference_mode?: string
+  quality?: string
+  service_tier?: string
+  customer_multiplier?: number
+  at?: string
+}
+
+export interface VideoPricingPreviewMismatch {
+  field: string
+  expected?: unknown
+  actual?: unknown
+}
+
+export interface VideoPricingPreviewRejectedRule {
+  key: string
+  mismatches: VideoPricingPreviewMismatch[]
+}
+
+export interface VideoPricingPreviewResult {
+  matched: boolean
+  rule_key?: string
+  billing_unit?: string
+  estimated_units?: number
+  maximum_units?: number
+  estimated_cost?: number
+  error_code?: string
+  normalized_attributes: VideoPricingPreviewAttributes
+  rejected_rules: VideoPricingPreviewRejectedRule[]
+}
+
+export type ModelPricePayload = Partial<Record<PriceField, number>> & {
+  video_pricing?: VideoPricingConfig
+}
 
 /** 倍率语义见 @/api/channels 中的同名类型：都是相对随行的那份生效价。 */
 export interface ModelPriceTimeSchedule {
@@ -40,6 +155,12 @@ export interface ModelPriceListItem {
   override_currency?: ModelPriceCurrency
   token_pricing_absent: boolean
   has_image_pricing: boolean
+  has_video_pricing: boolean
+  video_pricing_valid: boolean
+  video_rule_count: number
+  video_billing_units: VideoBillingUnit[]
+  video_resolutions: string[]
+  video_pricing_error?: string
   sync_invalidated: boolean
   redundant: boolean
   effective: Record<string, unknown>
@@ -64,6 +185,12 @@ export interface ModelPriceDetail {
   enabled: boolean
   token_pricing_absent: boolean
   has_image_pricing: boolean
+  has_video_pricing: boolean
+  video_pricing_valid: boolean
+  video_rule_count: number
+  video_billing_units: VideoBillingUnit[]
+  video_resolutions: string[]
+  video_pricing_error?: string
   sync_invalidated: boolean
   redundant: boolean
   override_platform?: string
@@ -143,6 +270,17 @@ export async function listModelPricePlatforms(): Promise<string[]> {
 export async function getModelPriceEntry(platform: string, model: string): Promise<ModelPriceDetail> {
   const { data } = await apiClient.get('/admin/model-prices/entry', {
     params: { platform, model },
+  })
+  return data
+}
+
+export async function previewVideoPrice(
+  videoPricing: VideoPricingConfig,
+  attributes: VideoPricingPreviewAttributes,
+): Promise<VideoPricingPreviewResult> {
+  const { data } = await apiClient.post('/admin/model-prices/video-preview', {
+    video_pricing: videoPricing,
+    attributes,
   })
   return data
 }

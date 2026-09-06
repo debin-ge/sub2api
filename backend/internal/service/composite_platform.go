@@ -36,6 +36,7 @@ func WithCompositeRouteDecision(ctx context.Context, decision CompositeRouteDeci
 		return ctx
 	}
 	ctx = WithResolvedTargetPlatform(ctx, decision.TargetPlatform)
+	ctx = context.WithValue(ctx, compositeRouteDecisionContextKey{}, decision)
 	if model := strings.TrimSpace(decision.UpstreamModel); model != "" {
 		ctx = context.WithValue(ctx, ctxkey.ResolvedUpstreamModel, model)
 	}
@@ -46,6 +47,16 @@ func WithCompositeRouteDecision(ctx context.Context, decision CompositeRouteDeci
 		ctx = context.WithValue(ctx, ctxkey.CompositeRouteSource, source)
 	}
 	return ctx
+}
+
+type compositeRouteDecisionContextKey struct{}
+
+func CompositeRouteDecisionFromContext(ctx context.Context) (CompositeRouteDecision, bool) {
+	if ctx == nil {
+		return CompositeRouteDecision{}, false
+	}
+	decision, ok := ctx.Value(compositeRouteDecisionContextKey{}).(CompositeRouteDecision)
+	return decision, ok
 }
 
 func ResolvedUpstreamModelFromContext(ctx context.Context) (string, bool) {
@@ -129,6 +140,8 @@ func DetectModelPlatform(model string) (string, bool) {
 		strings.HasPrefix(normalized, "claude-"):
 		return PlatformAnthropic, true
 	case strings.HasPrefix(normalized, "gpt-"),
+		normalized == OpenAIVideoModelSora2,
+		normalized == OpenAIVideoModelSora2Pro,
 		strings.HasPrefix(normalized, "chatgpt-"),
 		strings.HasPrefix(normalized, "codex-"),
 		strings.HasPrefix(normalized, "text-embedding-"),

@@ -60,6 +60,7 @@ const messages: Record<string, string> = {
   'keys.sendVerificationCode': 'Send Code',
   'keys.verifyEmail': 'Verify Email',
   'keys.notificationEmailVerified': 'Email verified',
+  'keys.notificationEmailVerificationOptional': 'Email verification is optional',
   'keys.changeNotification': 'Change Notifications',
   'keys.rotateOnExpiry': 'Rotate After Expiry',
   'keys.searchPlaceholder': 'Search name or key...',
@@ -669,6 +670,104 @@ describe('user KeysView column settings', () => {
       change_notify_enabled: true,
       rotate_on_expiry: true,
     }))
+  })
+
+  it('allows an unverified changed email to enable notifications and rotation', async () => {
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+    listKeys.mockResolvedValueOnce({
+      items: [{
+        ...createApiKey(),
+        group_id: 42,
+        expires_at: expiresAt,
+        notification_email: 'old@example.com',
+        notification_email_verified: true,
+      }],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1,
+    })
+    getAvailableGroups.mockResolvedValueOnce([{
+      id: 42,
+      name: 'OpenAI',
+      description: null,
+      platform: 'openai',
+      rate_multiplier: 1,
+      peak_rate_enabled: false,
+      peak_start: '',
+      peak_end: '',
+      peak_rate_multiplier: 1,
+      subscription_type: 'standard',
+      vip_only: false,
+      can_bind: true,
+      deny_reason: null,
+      suggested_action: null,
+    }])
+    updateKey.mockResolvedValueOnce({})
+    const wrapper = await mountView()
+
+    await getButtonByText(wrapper, 'common.edit').trigger('click')
+    await nextTick()
+    await wrapper.get('input[type="email"]').setValue('new@example.com')
+    expect(wrapper.text()).toContain('Email verification is optional')
+
+    const toggles = wrapper.findAll('button[aria-pressed]')
+    expect(toggles).toHaveLength(2)
+    await toggles[0]!.trigger('click')
+    await toggles[1]!.trigger('click')
+    await wrapper.get('#key-form').trigger('submit')
+    await flushPromises()
+
+    expect(sendNotificationEmailCode).not.toHaveBeenCalled()
+    expect(verifyNotificationEmail).not.toHaveBeenCalled()
+    expect(updateKey).toHaveBeenCalledWith(1, expect.objectContaining({
+      notification_email: 'new@example.com',
+      change_notify_enabled: true,
+      rotate_on_expiry: true,
+    }))
+    expect(updateKey.mock.calls[0]![1]).not.toHaveProperty('notification_email_verification_token')
+  })
+
+  it('creates a key with notifications without verifying the email', async () => {
+    getAvailableGroups.mockResolvedValueOnce([{
+      id: 42,
+      name: 'OpenAI',
+      description: null,
+      platform: 'openai',
+      rate_multiplier: 1,
+      peak_rate_enabled: false,
+      peak_start: '',
+      peak_end: '',
+      peak_rate_multiplier: 1,
+      subscription_type: 'standard',
+      vip_only: false,
+      can_bind: true,
+      deny_reason: null,
+      suggested_action: null,
+    }])
+    createKey.mockResolvedValueOnce({})
+    const wrapper = await mountView()
+
+    await getButtonByText(wrapper, 'Create API Key').trigger('click')
+    await nextTick()
+    await wrapper.get('input[data-tour="key-form-name"]').setValue('notification-key')
+    const matchingSelects = wrapper.findAllComponents({ name: 'Select' }).filter(
+      (select) => select.props('options')?.some((option: { value?: unknown }) => option.value === 42),
+    )
+    await matchingSelects[matchingSelects.length - 1]!.vm.$emit('update:modelValue', 42)
+    await wrapper.get('input[type="email"]').setValue('owner@example.com')
+    await wrapper.findAll('button[aria-pressed]')[0]!.trigger('click')
+    await wrapper.get('#key-form').trigger('submit')
+    await flushPromises()
+
+    expect(createKey).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'notification-key',
+      group_id: 42,
+      notification_email: 'owner@example.com',
+      change_notify_enabled: true,
+      rotate_on_expiry: false,
+    }))
+    expect(createKey.mock.calls[0]![0]).not.toHaveProperty('notification_email_verification_token')
   })
 
   it('keeps the original quick binding when the backend rejects a raced catalog decision', async () => {

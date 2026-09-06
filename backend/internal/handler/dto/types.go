@@ -131,6 +131,7 @@ type Group struct {
 	BatchImageHoldMultiplier     float64 `json:"batch_image_hold_multiplier"`
 	VideoRateIndependent         bool    `json:"video_rate_independent"`
 	VideoRateMultiplier          float64 `json:"video_rate_multiplier"`
+	VideoDisclosurePolicy        string  `json:"video_disclosure_policy,omitempty"`
 	// 高峰时段倍率配置
 	PeakRateEnabled    bool     `json:"peak_rate_enabled"`
 	PeakStart          string   `json:"peak_start"`
@@ -242,24 +243,32 @@ type Account struct {
 	Type     string  `json:"type"`
 	// Credentials 经 RedactCredentials 处理后只含非敏感子键；敏感 token / api_key / 私钥
 	// 的存在性通过 CredentialsStatus（has_<key>）暴露，原始值不返回前端。
-	Credentials             map[string]any                 `json:"credentials"`
-	CredentialsStatus       map[string]bool                `json:"credentials_status,omitempty"`
-	Extra                   map[string]any                 `json:"extra"`
-	OllamaCloudUsage        *service.OllamaCloudUsageState `json:"ollama_cloud_usage,omitempty"`
-	ProxyID                 *int64                         `json:"proxy_id"`
-	ProxyFallbackOriginID   *int64                         `json:"proxy_fallback_origin_id"`
-	ProxyFallbackOriginName *string                        `json:"proxy_fallback_origin_name,omitempty"`
-	Concurrency             int                            `json:"concurrency"`
-	LoadFactor              *int                           `json:"load_factor,omitempty"`
-	Priority                int                            `json:"priority"`
-	RateMultiplier          float64                        `json:"rate_multiplier"`
-	Status                  string                         `json:"status"`
-	ErrorMessage            string                         `json:"error_message"`
-	LastUsedAt              *time.Time                     `json:"last_used_at"`
-	ExpiresAt               *int64                         `json:"expires_at"`
-	AutoPauseOnExpired      bool                           `json:"auto_pause_on_expired"`
-	CreatedAt               time.Time                      `json:"created_at"`
-	UpdatedAt               time.Time                      `json:"updated_at"`
+	Credentials                map[string]any                 `json:"credentials"`
+	CredentialsStatus          map[string]bool                `json:"credentials_status,omitempty"`
+	Extra                      map[string]any                 `json:"extra"`
+	VideoOwnerUserID           *int64                         `json:"video_owner_user_id,omitempty"`
+	OwnershipMode              string                         `json:"ownership_mode"`
+	OwnerUserID                *int64                         `json:"owner_user_id"`
+	IsolationState             string                         `json:"isolation_state"`
+	ProviderIdentityVersion    int64                          `json:"provider_identity_version"`
+	IsolationVerifiedVersion   int64                          `json:"isolation_verified_version"`
+	ProviderPrincipalBindingID *int64                         `json:"provider_principal_binding_id,omitempty"`
+	VideoDisclosurePolicy      string                         `json:"video_disclosure_policy,omitempty"`
+	OllamaCloudUsage           *service.OllamaCloudUsageState `json:"ollama_cloud_usage,omitempty"`
+	ProxyID                    *int64                         `json:"proxy_id"`
+	ProxyFallbackOriginID      *int64                         `json:"proxy_fallback_origin_id"`
+	ProxyFallbackOriginName    *string                        `json:"proxy_fallback_origin_name,omitempty"`
+	Concurrency                int                            `json:"concurrency"`
+	LoadFactor                 *int                           `json:"load_factor,omitempty"`
+	Priority                   int                            `json:"priority"`
+	RateMultiplier             float64                        `json:"rate_multiplier"`
+	Status                     string                         `json:"status"`
+	ErrorMessage               string                         `json:"error_message"`
+	LastUsedAt                 *time.Time                     `json:"last_used_at"`
+	ExpiresAt                  *int64                         `json:"expires_at"`
+	AutoPauseOnExpired         bool                           `json:"auto_pause_on_expired"`
+	CreatedAt                  time.Time                      `json:"created_at"`
+	UpdatedAt                  time.Time                      `json:"updated_at"`
 
 	Schedulable bool `json:"schedulable"`
 
@@ -583,6 +592,14 @@ type UsageLog struct {
 	ImageSizeBreakdown map[string]int `json:"image_size_breakdown"`
 	MediaType          *string        `json:"media_type"`
 
+	// 视频生成字段复用现有 usage_logs 视频列；单价与单位数由已落库的基础费用和计费单位推导。
+	VideoCount           int      `json:"video_count"`
+	VideoResolution      *string  `json:"video_resolution"`
+	VideoDurationSeconds *int     `json:"video_duration_seconds"`
+	VideoBillingUnit     *string  `json:"video_billing_unit,omitempty"`
+	VideoUnits           *float64 `json:"video_units,omitempty"`
+	VideoUnitPrice       *float64 `json:"video_unit_price,omitempty"`
+
 	// User-Agent
 	UserAgent *string `json:"user_agent"`
 	// IPAddress is visible to the owner of the usage record.
@@ -594,7 +611,7 @@ type UsageLog struct {
 	// Cache TTL Override 标记
 	CacheTTLOverridden bool `json:"cache_ttl_overridden"`
 
-	// BillingMode 计费模式：token/image
+	// BillingMode 计费模式：token/image/video
 	BillingMode *string `json:"billing_mode,omitempty"`
 
 	CreatedAt time.Time `json:"created_at"`

@@ -9,6 +9,7 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -27,7 +28,7 @@ func (s *UserRepoAPIKeyGroupFilterSuite) SetupTest() {
 	_, _ = integrationDB.ExecContext(s.ctx, "DELETE FROM api_keys")
 	_, _ = integrationDB.ExecContext(s.ctx, "DELETE FROM user_allowed_groups")
 	_, _ = integrationDB.ExecContext(s.ctx, "DELETE FROM user_subscriptions")
-	_, _ = integrationDB.ExecContext(s.ctx, "DELETE FROM users")
+	softDeleteIntegrationUsers(s.T(), s.ctx)
 	_, _ = integrationDB.ExecContext(s.ctx, "DELETE FROM groups")
 }
 
@@ -62,7 +63,7 @@ func (s *UserRepoAPIKeyGroupFilterSuite) mustCreateAPIKey(userID int64, key, nam
 	s.T().Helper()
 	create := s.client.APIKey.Create().
 		SetUserID(userID).
-		SetKey(key).
+		SetKey(key + "-" + uuid.NewString()).
 		SetName(name)
 	if groupID != nil {
 		create = create.SetGroupID(*groupID)

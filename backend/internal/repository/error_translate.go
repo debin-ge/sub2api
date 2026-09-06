@@ -8,6 +8,7 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/lib/pq"
 )
 
@@ -50,6 +51,10 @@ func clientFromContext(ctx context.Context, defaultClient *dbent.Client) *dbent.
 func translatePersistenceError(err error, notFound, conflict *infraerrors.ApplicationError) error {
 	if err == nil {
 		return nil
+	}
+	var ownershipError *pq.Error
+	if errors.As(err, &ownershipError) && ownershipError.Constraint == "accounts_video_identity_in_use" {
+		return service.ErrAccountIdentityInUse.WithCause(err)
 	}
 
 	// 兼容 Ent ORM 和标准 database/sql 的 NotFound 行为。

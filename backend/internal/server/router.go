@@ -70,6 +70,9 @@ func SetupRouter(
 		return nil
 	}))
 	r.Use(middleware2.ServerTiming(cfg.Server.EnableServerTiming))
+	if handlers != nil && handlers.Video != nil {
+		r.Use(handlers.Video.PublicContentProxy)
+	}
 
 	// Serve embedded frontend with settings injection if available
 	if web.HasEmbeddedFrontend() {

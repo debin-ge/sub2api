@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"math"
 	"strings"
 	"time"
@@ -28,6 +29,9 @@ func (r *usageBillingRepository) Apply(ctx context.Context, cmd *service.UsageBi
 	}
 	if r == nil || r.db == nil {
 		return nil, errors.New("usage billing repository db is nil")
+	}
+	if cmd.QuotaTime != nil {
+		return nil, fmt.Errorf("%w: video quota time requires hold-backed settlement", service.ErrUsageBillingPayloadInvalid)
 	}
 
 	cmd.Normalize()
@@ -113,33 +117,90 @@ func (r *usageBillingRepository) claimUsageBillingRequest(ctx context.Context, t
 }
 
 func (r *usageBillingRepository) ReserveBatchImageBalance(ctx context.Context, cmd *service.BatchImageBalanceHoldCommand) (*service.BatchImageBalanceHoldResult, error) {
-	return r.applyBatchImageBalanceHold(ctx, cmd, reserveUsageBillingBatchImageBalance)
+	generic := balanceHoldCommandFromBatchImage(cmd)
+	result, err := r.ReserveBalanceHold(ctx, generic)
+	return batchImageBalanceHoldResult(result), translateBatchImageBalanceHoldError(err)
 }
 
 func (r *usageBillingRepository) CaptureBatchImageBalance(ctx context.Context, cmd *service.BatchImageBalanceHoldCommand) (*service.BatchImageBalanceHoldResult, error) {
-	return r.applyBatchImageBalanceHold(ctx, cmd, captureUsageBillingBatchImageBalance)
+	generic := balanceHoldCommandFromBatchImage(cmd)
+	result, err := r.CaptureBalanceHold(ctx, generic)
+	return batchImageBalanceHoldResult(result), translateBatchImageBalanceHoldError(err)
 }
 
 func (r *usageBillingRepository) ReleaseBatchImageBalance(ctx context.Context, cmd *service.BatchImageBalanceHoldCommand) (*service.BatchImageBalanceHoldResult, error) {
-	return r.applyBatchImageBalanceHold(ctx, cmd, releaseUsageBillingBatchImageBalance)
+	generic := balanceHoldCommandFromBatchImage(cmd)
+	result, err := r.ReleaseBalanceHold(ctx, generic)
+	return batchImageBalanceHoldResult(result), translateBatchImageBalanceHoldError(err)
 }
 
-func (r *usageBillingRepository) applyBatchImageBalanceHold(
-	ctx context.Context,
-	cmd *service.BatchImageBalanceHoldCommand,
-	apply func(context.Context, *sql.Tx, *service.BatchImageBalanceHoldCommand) (*service.BatchImageBalanceHoldResult, error),
-) (_ *service.BatchImageBalanceHoldResult, err error) {
+func balanceHoldCommandFromBatchImage(cmd *service.BatchImageBalanceHoldCommand) *service.BalanceHoldCommand {
 	if cmd == nil {
-		return &service.BatchImageBalanceHoldResult{}, nil
+		return nil
+	}
+	// Normalize here, before entering the generic path, to preserve the legacy
+	// Batch Image fingerprint byte-for-byte.
+	cmd.Normalize()
+	return &service.BalanceHoldCommand{
+		RequestID:          cmd.RequestID,
+		APIKeyID:           cmd.APIKeyID,
+		RequestFingerprint: cmd.RequestFingerprint,
+		RequestPayloadHash: cmd.RequestPayloadHash,
+		UserID:             cmd.UserID,
+		Scope:              service.BalanceHoldScopeBatchImage,
+		RefID:              cmd.BatchID,
+		HoldAmount:         cmd.HoldAmount,
+		ActualAmount:       cmd.ActualAmount,
+	}
+}
+
+func batchImageBalanceHoldResult(result *service.BalanceHoldResult) *service.BatchImageBalanceHoldResult {
+	if result == nil {
+		return nil
+	}
+	return &service.BatchImageBalanceHoldResult{
+		Applied:       result.Applied,
+		NewBalance:    result.NewBalance,
+		FrozenBalance: result.FrozenBalance,
+	}
+}
+
+func translateBatchImageBalanceHoldError(err error) error {
+	switch {
+	case errors.Is(err, service.ErrBalanceHoldInsufficientBalance):
+		return service.ErrBatchImageInsufficientBalance
+	case errors.Is(err, service.ErrBalanceHoldSettlementCostExceedsHold):
+		return service.ErrBatchImageSettlementCostExceedsHold
+	default:
+		return err
+	}
+}
+
+func (r *usageBillingRepository) ReserveBalanceHold(ctx context.Context, cmd *service.BalanceHoldCommand) (*service.BalanceHoldResult, error) {
+	return r.applyBalanceHold(ctx, cmd, reserveUsageBillingBalance)
+}
+
+func (r *usageBillingRepository) CaptureBalanceHold(ctx context.Context, cmd *service.BalanceHoldCommand) (*service.BalanceHoldResult, error) {
+	return r.applyBalanceHold(ctx, cmd, captureUsageBillingBalance)
+}
+
+func (r *usageBillingRepository) ReleaseBalanceHold(ctx context.Context, cmd *service.BalanceHoldCommand) (*service.BalanceHoldResult, error) {
+	return r.applyBalanceHold(ctx, cmd, releaseUsageBillingBalance)
+}
+
+type balanceHoldApplyFunc func(context.Context, *sql.Tx, *service.BalanceHoldCommand) (*service.BalanceHoldResult, error)
+
+func (r *usageBillingRepository) applyBalanceHold(
+	ctx context.Context,
+	cmd *service.BalanceHoldCommand,
+	apply balanceHoldApplyFunc,
+) (_ *service.BalanceHoldResult, err error) {
+	if cmd == nil {
+		return &service.BalanceHoldResult{}, nil
 	}
 	if r == nil || r.db == nil {
 		return nil, errors.New("usage billing repository db is nil")
 	}
-	cmd.Normalize()
-	if cmd.RequestID == "" {
-		return nil, service.ErrUsageBillingRequestIDRequired
-	}
-
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -150,22 +211,10 @@ func (r *usageBillingRepository) applyBatchImageBalanceHold(
 		}
 	}()
 
-	applied, err := r.claimUsageBillingRequest(ctx, tx, cmd.RequestID, cmd.APIKeyID, cmd.RequestFingerprint)
+	result, err := r.applyBalanceHoldTx(ctx, tx, cmd, apply)
 	if err != nil {
 		return nil, err
 	}
-	if !applied {
-		return &service.BatchImageBalanceHoldResult{Applied: false}, nil
-	}
-
-	result, err := apply(ctx, tx, cmd)
-	if err != nil {
-		return nil, err
-	}
-	if result == nil {
-		result = &service.BatchImageBalanceHoldResult{}
-	}
-	result.Applied = true
 
 	if err := tx.Commit(); err != nil {
 		return nil, err
@@ -174,7 +223,59 @@ func (r *usageBillingRepository) applyBatchImageBalanceHold(
 	return result, nil
 }
 
+func (r *usageBillingRepository) reserveBalanceHoldTx(ctx context.Context, tx *sql.Tx, cmd *service.BalanceHoldCommand) (*service.BalanceHoldResult, error) {
+	return r.applyBalanceHoldTx(ctx, tx, cmd, reserveUsageBillingBalance)
+}
+
+func (r *usageBillingRepository) applyBalanceHoldTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	cmd *service.BalanceHoldCommand,
+	apply balanceHoldApplyFunc,
+) (*service.BalanceHoldResult, error) {
+	if cmd == nil {
+		return &service.BalanceHoldResult{}, nil
+	}
+	if tx == nil {
+		return nil, errors.New("usage billing transaction is nil")
+	}
+	cmd.Normalize()
+	if err := cmd.Validate(); err != nil {
+		return nil, err
+	}
+
+	applied, err := r.claimUsageBillingRequest(ctx, tx, cmd.RequestID, cmd.APIKeyID, cmd.RequestFingerprint)
+	if err != nil {
+		return nil, err
+	}
+	if !applied {
+		return &service.BalanceHoldResult{Applied: false}, nil
+	}
+
+	result, err := apply(ctx, tx, cmd)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		result = &service.BalanceHoldResult{}
+	}
+	result.Applied = true
+	return result, nil
+}
+
 func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, tx *sql.Tx, cmd *service.UsageBillingCommand, result *service.UsageBillingApplyResult) error {
+	if err := cmd.ValidateQuotaTime(); err != nil {
+		return err
+	}
+	quotaCommand := cmd
+	if cmd.QuotaTime != nil {
+		var err error
+		quotaCommand, err = prepareVideoQuotaPostingCommand(ctx, tx, cmd)
+		if err != nil {
+			return err
+		}
+		result.QuotaPostedAt = &quotaCommand.OccurredAt
+	}
 	if cmd.SubscriptionCost > 0 && cmd.SubscriptionID != nil {
 		if err := incrementUsageBillingSubscription(ctx, tx, *cmd.SubscriptionID, cmd.SubscriptionCost); err != nil {
 			return err
@@ -199,7 +300,13 @@ func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, t
 	}
 
 	if cmd.APIKeyRateLimitCost > 0 {
-		if err := incrementUsageBillingAPIKeyRateLimit(ctx, tx, cmd.APIKeyID, cmd.APIKeyRateLimitCost); err != nil {
+		var err error
+		if cmd.QuotaTime == nil {
+			err = incrementUsageBillingAPIKeyRateLimit(ctx, tx, cmd.APIKeyID, cmd.APIKeyRateLimitCost)
+		} else {
+			err = incrementUsageBillingAPIKeyQuotaAtEvent(ctx, tx, quotaCommand)
+		}
+		if err != nil {
 			return err
 		}
 	}
@@ -213,7 +320,7 @@ func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, t
 	}
 
 	if cmd.PlatformQuotaCost > 0 && strings.TrimSpace(cmd.Platform) != "" {
-		if err := applyUsageBillingPlatformQuota(ctx, tx, cmd); err != nil {
+		if err := applyUsageBillingPlatformQuota(ctx, tx, quotaCommand); err != nil {
 			return err
 		}
 	}
@@ -388,7 +495,11 @@ func applyUsageBillingPlatformQuota(
 		if err != nil {
 			return err
 		}
-		row = reconciledUsageBillingPlatformQuota(row, cmd.PlatformQuotaSnapshot, cmd.PlatformQuotaCost, now)
+		if cmd.QuotaTime == nil {
+			row = reconciledUsageBillingPlatformQuota(row, cmd.PlatformQuotaSnapshot, cmd.PlatformQuotaCost, now)
+		} else {
+			row = reconciledUsageBillingPlatformQuotaAtEvent(row, cmd.PlatformQuotaSnapshot, cmd.PlatformQuotaCost, now, cmd.QuotaTime)
+		}
 		if exists {
 			result, err := tx.ExecContext(ctx, `
 				UPDATE user_platform_quotas
@@ -496,9 +607,9 @@ func deductUsageBillingBalance(ctx context.Context, tx *sql.Tx, userID int64, am
 	return newBalance, false, nil
 }
 
-func reserveUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *service.BatchImageBalanceHoldCommand) (*service.BatchImageBalanceHoldResult, error) {
+func reserveUsageBillingBalance(ctx context.Context, tx *sql.Tx, cmd *service.BalanceHoldCommand) (*service.BalanceHoldResult, error) {
 	if cmd.HoldAmount <= 0 {
-		return &service.BatchImageBalanceHoldResult{}, nil
+		return &service.BalanceHoldResult{}, nil
 	}
 	var balance, frozen float64
 	err := tx.QueryRowContext(ctx, `
@@ -510,7 +621,7 @@ func reserveUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *
 		RETURNING balance, frozen_balance
 	`, cmd.HoldAmount, cmd.UserID).Scan(&balance, &frozen)
 	if err == nil {
-		return &service.BatchImageBalanceHoldResult{NewBalance: &balance, FrozenBalance: &frozen}, nil
+		return &service.BalanceHoldResult{NewBalance: &balance, FrozenBalance: &frozen}, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
@@ -520,15 +631,29 @@ func reserveUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *
 	} else if !exists {
 		return nil, service.ErrUserNotFound
 	}
-	return nil, service.ErrBatchImageInsufficientBalance
+	return nil, service.ErrBalanceHoldInsufficientBalance
 }
 
-func captureUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *service.BatchImageBalanceHoldCommand) (*service.BatchImageBalanceHoldResult, error) {
+func captureUsageBillingBalance(ctx context.Context, tx *sql.Tx, cmd *service.BalanceHoldCommand) (*service.BalanceHoldResult, error) {
 	if cmd.HoldAmount <= 0 && cmd.ActualAmount <= 0 {
-		return &service.BatchImageBalanceHoldResult{}, nil
+		return &service.BalanceHoldResult{}, nil
 	}
-	if cmd.ActualAmount-cmd.HoldAmount > 0.00000001 {
-		return nil, service.ErrBatchImageSettlementCostExceedsHold
+	if cmd.Scope == service.BalanceHoldScopeVideoTask {
+		held, err := balanceHoldClaimExists(
+			ctx,
+			tx,
+			service.BalanceHoldReserveRequestID(cmd.Scope, cmd.RefID),
+			cmd.APIKeyID,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if !held {
+			return nil, service.ErrBalanceHoldReserveNotFound
+		}
+	}
+	if cmd.Scope != service.BalanceHoldScopeVideoTask && cmd.ActualAmount-cmd.HoldAmount > 0.00000001 {
+		return nil, service.ErrBalanceHoldSettlementCostExceedsHold
 	}
 	var balance, frozen float64
 	err := tx.QueryRowContext(ctx, `
@@ -542,7 +667,11 @@ func captureUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *
 		RETURNING balance, frozen_balance
 	`, cmd.HoldAmount, cmd.ActualAmount, cmd.UserID).Scan(&balance, &frozen)
 	if err == nil {
-		return &service.BatchImageBalanceHoldResult{NewBalance: &balance, FrozenBalance: &frozen}, nil
+		return &service.BalanceHoldResult{
+			NewBalance:         &balance,
+			FrozenBalance:      &frozen,
+			BalanceOverdrafted: balance < 0,
+		}, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
@@ -552,25 +681,24 @@ func captureUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *
 	} else if !exists {
 		return nil, service.ErrUserNotFound
 	}
-	return nil, errors.New("batch image frozen balance is insufficient")
+	return nil, errors.New("balance hold frozen balance is insufficient")
 }
 
-func releaseUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *service.BatchImageBalanceHoldCommand) (*service.BatchImageBalanceHoldResult, error) {
+func releaseUsageBillingBalance(ctx context.Context, tx *sql.Tx, cmd *service.BalanceHoldCommand) (*service.BalanceHoldResult, error) {
 	if cmd.HoldAmount <= 0 {
-		return &service.BatchImageBalanceHoldResult{}, nil
+		return &service.BalanceHoldResult{}, nil
 	}
-	// 释放前校验该 job 确实预留过 hold（hold request id 已被 claim），
-	// 防止从未成功冻结的 job 触发"幻影释放"，从其他用户的冻结资金池中凭空生成余额。
-	held, heldErr := batchImageHoldClaimExists(ctx, tx, service.BatchImageHoldRequestID(cmd.BatchID), cmd.APIKeyID)
-	if heldErr != nil {
-		return nil, heldErr
+	holdRequestID := service.BalanceHoldReserveRequestID(cmd.Scope, cmd.RefID)
+	held, err := balanceHoldClaimExists(ctx, tx, holdRequestID, cmd.APIKeyID)
+	if err != nil {
+		return nil, err
 	}
 	if !held {
-		logger.LegacyPrintf("repository.usage_billing", "[BatchImage] release skipped, hold was never reserved: batch=%s", cmd.BatchID)
-		return &service.BatchImageBalanceHoldResult{}, nil
+		logger.LegacyPrintf("repository.usage_billing", "balance hold release skipped because reserve was never committed: scope=%s ref=%s", cmd.Scope, cmd.RefID)
+		return &service.BalanceHoldResult{}, nil
 	}
 	var balance, frozen float64
-	err := tx.QueryRowContext(ctx, `
+	err = tx.QueryRowContext(ctx, `
 		UPDATE users
 		SET balance = balance + $1,
 			frozen_balance = COALESCE(frozen_balance, 0) - $1,
@@ -579,7 +707,7 @@ func releaseUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *
 		RETURNING balance, frozen_balance
 	`, cmd.HoldAmount, cmd.UserID).Scan(&balance, &frozen)
 	if err == nil {
-		return &service.BatchImageBalanceHoldResult{NewBalance: &balance, FrozenBalance: &frozen}, nil
+		return &service.BalanceHoldResult{NewBalance: &balance, FrozenBalance: &frozen}, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
@@ -589,12 +717,10 @@ func releaseUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *
 	} else if !exists {
 		return nil, service.ErrUserNotFound
 	}
-	return nil, errors.New("batch image frozen balance is insufficient")
+	return nil, errors.New("balance hold frozen balance is insufficient")
 }
 
-// batchImageHoldClaimExists 检查 hold request id 是否已在 dedup（或归档）表中被 claim，
-// 即该 batch 的冻结操作确实成功提交过。
-func batchImageHoldClaimExists(ctx context.Context, tx *sql.Tx, holdRequestID string, apiKeyID int64) (bool, error) {
+func balanceHoldClaimExists(ctx context.Context, tx *sql.Tx, holdRequestID string, apiKeyID int64) (bool, error) {
 	var exists int
 	err := tx.QueryRowContext(ctx, `
 		SELECT 1

@@ -140,6 +140,7 @@ func newGatewayRoutesTestRouterForPlatformWithConfigAndHandlers(platform string,
 		servermiddleware.APIKeyAuthMiddleware(func(c *gin.Context) {
 			groupID := int64(1)
 			c.Set(string(servermiddleware.ContextKeyAPIKey), &service.APIKey{
+				ID:      7,
 				UserID:  101,
 				GroupID: &groupID,
 				Group:   &service.Group{ID: groupID, Platform: platform},
@@ -331,6 +332,48 @@ func TestGatewayRoutesGrokImagesAndVideosPathsAreRegistered(t *testing.T) {
 
 		router.ServeHTTP(w, req)
 		require.NotEqual(t, http.StatusNotFound, w.Code, "path=%s should hit Grok video handler", path)
+		require.NotContains(t, w.Body.String(), "not supported for this platform")
+	}
+}
+
+func TestGatewayRoutesOpenAIVideoPlatformSurfaceIsRegistered(t *testing.T) {
+	router := newGatewayRoutesTestRouter(service.PlatformOpenAI)
+	registered := make(map[string]bool)
+	for _, route := range router.Routes() {
+		registered[route.Method+" "+route.Path] = true
+	}
+	for _, prefix := range []string{"/v1", ""} {
+		for _, route := range []string{
+			"POST " + prefix + "/videos",
+			"GET " + prefix + "/videos",
+			"GET " + prefix + "/videos/:request_id",
+			"DELETE " + prefix + "/videos/:request_id",
+			"GET " + prefix + "/videos/:request_id/content",
+			"HEAD " + prefix + "/videos/:request_id/content",
+			"POST " + prefix + "/videos/characters",
+			"GET " + prefix + "/videos/characters/:character_id",
+			"DELETE " + prefix + "/videos/characters/:character_id",
+			"POST " + prefix + "/videos/edits",
+			"POST " + prefix + "/videos/extensions",
+		} {
+			require.True(t, registered[route], "%s should be registered", route)
+		}
+	}
+	require.True(t, registered["POST /webhooks/videos/:provider/:account_id"])
+}
+
+func TestGatewayRoutesOpenAIVideosDispatchToVideoHandler(t *testing.T) {
+	handlers := defaultGatewayRoutesTestHandlers(service.PlatformOpenAI)
+	handlers.Video = &handler.VideoHandler{}
+	router := newGatewayRoutesTestRouterForPlatformWithHandlers(service.PlatformOpenAI, handlers)
+	for _, request := range []*http.Request{
+		httptest.NewRequest(http.MethodPost, "/v1/videos", strings.NewReader(`{"model":"sora-2","prompt":"waves"}`)),
+		httptest.NewRequest(http.MethodGet, "/v1/videos/video_0123456789abcdef0123456789abcdef", nil),
+	} {
+		request.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, request)
+		require.Contains(t, w.Body.String(), "video_disabled")
 		require.NotContains(t, w.Body.String(), "not supported for this platform")
 	}
 }

@@ -1,0 +1,84 @@
+groups:
+  - name: video-platform
+    interval: 30s
+    rules:
+      - alert: VideoSubmissionUnknownFrozenAmount
+        expr: sum by (job) (video_platform_submission_unknown_hold_amount) > 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Video submissions have an unknown outcome with frozen balance"
+          runbook: "deploy/monitoring/video-runbook.md#videosubmissionunknownfrozenamount"
+
+      - alert: VideoSettlementPendingTooOld
+        expr: max by (job) (video_platform_oldest_settlement_pending_age_seconds) > 300
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "A video balance settlement has remained pending for more than five minutes"
+          runbook: "deploy/monitoring/video-runbook.md#videosettlementpendingtooold"
+
+      - alert: VideoSpoolCleanupFailure
+        expr: sum by (job) (increase(video_platform_spool_cleanup_total{result="error"}[10m])) > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Encrypted video submission spool cleanup is failing"
+          runbook: "deploy/monitoring/video-runbook.md#videospoolcleanupfailure"
+
+      - alert: VideoSpoolDiskHigh
+        expr: max by (job) (video_platform_spool_utilization_ratio) > 0.8
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Encrypted video submission spool utilization exceeds 80%"
+          runbook: "deploy/monitoring/video-runbook.md#videospooldiskhigh"
+
+      - alert: VideoPollPendingTooOld
+        expr: max by (job) (video_platform_task_state_oldest_age_seconds{state=~"queued|in_progress"}) > 1800
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "A video generation has remained active for more than thirty minutes"
+          runbook: "deploy/monitoring/video-runbook.md#videopollpendingtooold"
+
+      - alert: VideoDeletePendingTooOld
+        expr: max by (job) (video_platform_oldest_delete_pending_age_seconds) > 300
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "A video content deletion has remained pending for more than five minutes"
+          runbook: "deploy/monitoring/video-runbook.md#videodeletependingtooold"
+
+      - alert: VideoContentProxy5xx
+        expr: sum by (job) (rate(video_platform_content_requests_total{status="5xx"}[10m])) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Video content proxy is returning 5xx responses"
+          runbook: "deploy/monitoring/video-runbook.md#videocontentproxy5xx"
+
+      - alert: VideoCapabilityProbeFailures
+        expr: sum by (job) (increase(video_platform_capability_probes_total{status="unsupported"}[15m])) >= 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Multiple OpenAI video accounts became unsupported"
+          runbook: "deploy/monitoring/video-runbook.md#videocapabilityprobefailures"
+
+      - alert: VideoDedicatedCredentialDisclosure
+        expr: sum by (job) (increase(video_platform_access_disclosures_total{kind="dedicated_credential",policy="dedicated_credentials"}[10m])) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "A dedicated Provider credential was disclosed through the video API"
+          runbook: "deploy/monitoring/video-runbook.md#videodedicatedcredentialdisclosure"

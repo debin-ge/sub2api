@@ -139,6 +139,9 @@ func createAccountRecord(ctx context.Context, client *dbent.Client, account *ser
 	if account == nil {
 		return service.ErrAccountNilInput
 	}
+	if err := service.NormalizeAccountOwnership(account); err != nil {
+		return err
+	}
 
 	builder := client.Account.Create().
 		SetName(account.Name).
@@ -147,12 +150,20 @@ func createAccountRecord(ctx context.Context, client *dbent.Client, account *ser
 		SetType(account.Type).
 		SetCredentials(normalizeJSONMap(account.Credentials)).
 		SetExtra(normalizeJSONMap(account.Extra)).
+		SetOwnershipMode(account.OwnershipMode).
+		SetNillableOwnerUserID(account.OwnerUserID).
 		SetConcurrency(account.Concurrency).
 		SetPriority(account.Priority).
 		SetStatus(account.Status).
 		SetErrorMessage(account.ErrorMessage).
 		SetSchedulable(account.Schedulable).
 		SetAutoPauseOnExpired(account.AutoPauseOnExpired)
+	if account.VideoOwnerUserID != nil {
+		builder.SetVideoOwnerUserID(*account.VideoOwnerUserID)
+	}
+	if account.VideoDisclosurePolicy != "" {
+		builder.SetVideoDisclosurePolicy(account.VideoDisclosurePolicy)
+	}
 
 	if account.RateMultiplier != nil {
 		builder.SetRateMultiplier(*account.RateMultiplier)
@@ -502,6 +513,12 @@ func (r *accountRepository) updateAccount(
 	}
 
 	account.UpdatedAt = updated.UpdatedAt
+	account.OwnershipMode = updated.OwnershipMode
+	account.OwnerUserID = updated.OwnerUserID
+	account.IsolationState = updated.IsolationState
+	account.ProviderIdentityVersion = updated.ProviderIdentityVersion
+	account.IsolationVerifiedVersion = updated.IsolationVerifiedVersion
+	account.ProviderPrincipalBindingID = updated.ProviderPrincipalBindingID
 	// 普通账号编辑（如 model_mapping / credentials）也需要立即刷新单账号快照，
 	// 否则网关在 outbox worker 延迟或异常时仍可能读到旧配置。
 	if contextTx == nil {
@@ -518,6 +535,9 @@ func (r *accountRepository) updateLockedAccount(
 	explicitRateSyncEnabled *bool,
 	explicitRateMultiplier *float64,
 ) (*dbent.Account, error) {
+	if err := service.NormalizeAccountOwnership(account); err != nil {
+		return nil, err
+	}
 	extra, err := lockAndMergeAccountProbeExtra(ctx, client, account, explicitProbeEnabled, explicitRateSyncEnabled)
 	if err != nil {
 		return nil, err
@@ -536,12 +556,24 @@ func (r *accountRepository) updateLockedAccount(
 		SetType(account.Type).
 		SetCredentials(normalizeJSONMap(account.Credentials)).
 		SetExtra(extra).
+		SetOwnershipMode(account.OwnershipMode).
+		SetNillableOwnerUserID(account.OwnerUserID).
 		SetConcurrency(account.Concurrency).
 		SetPriority(account.Priority).
 		SetStatus(account.Status).
 		SetErrorMessage(account.ErrorMessage).
 		SetSchedulable(schedulable).
 		SetAutoPauseOnExpired(account.AutoPauseOnExpired)
+	if account.VideoOwnerUserID != nil {
+		builder.SetVideoOwnerUserID(*account.VideoOwnerUserID)
+	} else {
+		builder.ClearVideoOwnerUserID()
+	}
+	if account.VideoDisclosurePolicy != "" {
+		builder.SetVideoDisclosurePolicy(account.VideoDisclosurePolicy)
+	} else {
+		builder.ClearVideoDisclosurePolicy()
+	}
 
 	if explicitRateMultiplier != nil {
 		builder.SetRateMultiplier(*explicitRateMultiplier)
@@ -843,7 +875,7 @@ func (r *accountRepository) UpdateCredentials(ctx context.Context, id int64, cre
 		WHERE id = $2 AND deleted_at IS NULL
 	`, string(payload), id)
 	if err != nil {
-		return err
+		return translatePersistenceError(err, service.ErrAccountNotFound, nil)
 	}
 	affected, err := result.RowsAffected()
 	if err != nil {
@@ -3378,37 +3410,45 @@ func accountEntityToService(m *dbent.Account) *service.Account {
 	rateMultiplier := m.RateMultiplier
 
 	return &service.Account{
-		ID:                      m.ID,
-		Name:                    m.Name,
-		Notes:                   m.Notes,
-		Platform:                m.Platform,
-		Type:                    m.Type,
-		Credentials:             copyJSONMap(m.Credentials),
-		Extra:                   copyJSONMap(m.Extra),
-		ProxyID:                 m.ProxyID,
-		ProxyFallbackOriginID:   m.ProxyFallbackOriginID,
-		Concurrency:             m.Concurrency,
-		Priority:                m.Priority,
-		RateMultiplier:          &rateMultiplier,
-		LoadFactor:              m.LoadFactor,
-		Status:                  m.Status,
-		ErrorMessage:            derefString(m.ErrorMessage),
-		LastUsedAt:              m.LastUsedAt,
-		ExpiresAt:               m.ExpiresAt,
-		AutoPauseOnExpired:      m.AutoPauseOnExpired,
-		CreatedAt:               m.CreatedAt,
-		UpdatedAt:               m.UpdatedAt,
-		Schedulable:             m.Schedulable,
-		RateLimitedAt:           m.RateLimitedAt,
-		RateLimitResetAt:        m.RateLimitResetAt,
-		OverloadUntil:           m.OverloadUntil,
-		TempUnschedulableUntil:  m.TempUnschedulableUntil,
-		TempUnschedulableReason: derefString(m.TempUnschedulableReason),
-		SessionWindowStart:      m.SessionWindowStart,
-		SessionWindowEnd:        m.SessionWindowEnd,
-		SessionWindowStatus:     derefString(m.SessionWindowStatus),
-		ParentAccountID:         m.ParentAccountID,
-		QuotaDimension:          string(m.QuotaDimension),
+		ID:                         m.ID,
+		Name:                       m.Name,
+		Notes:                      m.Notes,
+		Platform:                   m.Platform,
+		Type:                       m.Type,
+		Credentials:                copyJSONMap(m.Credentials),
+		Extra:                      copyJSONMap(m.Extra),
+		VideoOwnerUserID:           m.VideoOwnerUserID,
+		VideoDisclosurePolicy:      derefString(m.VideoDisclosurePolicy),
+		OwnershipMode:              m.OwnershipMode,
+		OwnerUserID:                m.OwnerUserID,
+		IsolationState:             m.IsolationState,
+		ProviderIdentityVersion:    m.ProviderIdentityVersion,
+		IsolationVerifiedVersion:   m.IsolationVerifiedVersion,
+		ProviderPrincipalBindingID: m.ProviderPrincipalBindingID,
+		ProxyID:                    m.ProxyID,
+		ProxyFallbackOriginID:      m.ProxyFallbackOriginID,
+		Concurrency:                m.Concurrency,
+		Priority:                   m.Priority,
+		RateMultiplier:             &rateMultiplier,
+		LoadFactor:                 m.LoadFactor,
+		Status:                     m.Status,
+		ErrorMessage:               derefString(m.ErrorMessage),
+		LastUsedAt:                 m.LastUsedAt,
+		ExpiresAt:                  m.ExpiresAt,
+		AutoPauseOnExpired:         m.AutoPauseOnExpired,
+		CreatedAt:                  m.CreatedAt,
+		UpdatedAt:                  m.UpdatedAt,
+		Schedulable:                m.Schedulable,
+		RateLimitedAt:              m.RateLimitedAt,
+		RateLimitResetAt:           m.RateLimitResetAt,
+		OverloadUntil:              m.OverloadUntil,
+		TempUnschedulableUntil:     m.TempUnschedulableUntil,
+		TempUnschedulableReason:    derefString(m.TempUnschedulableReason),
+		SessionWindowStart:         m.SessionWindowStart,
+		SessionWindowEnd:           m.SessionWindowEnd,
+		SessionWindowStatus:        derefString(m.SessionWindowStatus),
+		ParentAccountID:            m.ParentAccountID,
+		QuotaDimension:             string(m.QuotaDimension),
 	}
 }
 

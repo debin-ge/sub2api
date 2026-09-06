@@ -379,6 +379,10 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	}
 
 	platform := NormalizeGroupPlatform(input.Platform)
+	videoDisclosurePolicy, err := normalizeVideoDisclosurePolicy(input.VideoDisclosurePolicy, true)
+	if err != nil {
+		return nil, err
+	}
 	modelPricing, err := normalizeGroupModelPricing(platform, input.ModelPricing)
 	if err != nil {
 		return nil, err
@@ -556,6 +560,7 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		BatchImageHoldMultiplier:        batchImageHoldMultiplier,
 		VideoRateIndependent:            input.VideoRateIndependent,
 		VideoRateMultiplier:             videoRateMultiplier,
+		VideoDisclosurePolicy:           videoDisclosurePolicy,
 		PeakRateEnabled:                 peakRateEnabled,
 		PeakStart:                       peakStart,
 		PeakEnd:                         peakEnd,
@@ -854,6 +859,13 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 			return nil, errors.New("video_rate_multiplier must be >= 0")
 		}
 		group.VideoRateMultiplier = *input.VideoRateMultiplier
+	}
+	if input.VideoDisclosurePolicy != nil {
+		policy, normalizeErr := normalizeVideoDisclosurePolicy(*input.VideoDisclosurePolicy, true)
+		if normalizeErr != nil {
+			return nil, normalizeErr
+		}
+		group.VideoDisclosurePolicy = policy
 	}
 	if input.PeakRateEnabled != nil {
 		group.PeakRateEnabled = *input.PeakRateEnabled
@@ -1436,7 +1448,7 @@ func (s *adminServiceImpl) AdminUpdateAPIKeyGroupID(ctx context.Context, keyID i
 
 	// Unbinding is permission-reducing and does not need a target-user profile.
 	changeSummary := APIKeyConfigurationChangeSummary(beforeUpdate, apiKey)
-	shouldNotify := apiKey.ChangeNotifyEnabled && apiKey.NotificationEmail != nil && apiKey.NotificationEmailVerifiedAt != nil && changeSummary != ""
+	shouldNotify := apiKeyChangeNotificationEnabled(apiKey) && changeSummary != ""
 	if shouldNotify {
 		if s.entClient == nil || s.notificationOutbox == nil {
 			return nil, fmt.Errorf("admin API key notification transaction is not configured")
@@ -1471,7 +1483,7 @@ func (s *adminServiceImpl) AdminUpdateAPIKeyGroupID(ctx context.Context, keyID i
 
 func (s *adminServiceImpl) enqueueAdminAPIKeyChange(ctx context.Context, before, after *APIKey) error {
 	summary := APIKeyConfigurationChangeSummary(before, after)
-	if summary == "" || !after.ChangeNotifyEnabled || after.NotificationEmail == nil || after.NotificationEmailVerifiedAt == nil {
+	if summary == "" || !apiKeyChangeNotificationEnabled(after) {
 		return nil
 	}
 	if s.notificationOutbox == nil {

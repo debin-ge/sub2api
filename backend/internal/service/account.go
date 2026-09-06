@@ -21,18 +21,26 @@ import (
 )
 
 type Account struct {
-	ID                      int64
-	Name                    string
-	Notes                   *string
-	Platform                string
-	Type                    string
-	Credentials             map[string]any
-	Extra                   map[string]any
-	ProxyID                 *int64
-	ProxyFallbackOriginID   *int64
-	ProxyFallbackOriginName *string // 仅展示用
-	Concurrency             int
-	Priority                int
+	ID                         int64
+	Name                       string
+	Notes                      *string
+	Platform                   string
+	Type                       string
+	Credentials                map[string]any
+	Extra                      map[string]any
+	VideoOwnerUserID           *int64
+	VideoDisclosurePolicy      string
+	OwnershipMode              string
+	OwnerUserID                *int64
+	IsolationState             string
+	ProviderIdentityVersion    int64
+	IsolationVerifiedVersion   int64
+	ProviderPrincipalBindingID *int64
+	ProxyID                    *int64
+	ProxyFallbackOriginID      *int64
+	ProxyFallbackOriginName    *string // 仅展示用
+	Concurrency                int
+	Priority                   int
 	// RateMultiplier 账号计费倍率（>=0，允许 0 表示该账号计费为 0）。
 	// 使用指针用于兼容旧版本调度缓存（Redis）中缺字段的情况：nil 表示按 1.0 处理。
 	RateMultiplier     *float64
@@ -101,6 +109,10 @@ const (
 	OpenAIEndpointCapabilityEmbeddings      OpenAIEndpointCapability = "embeddings"
 	OpenAIEndpointCapabilityAlphaSearch     OpenAIEndpointCapability = "alpha_search"
 	OpenAIEndpointCapabilityLive            OpenAIEndpointCapability = "live"
+	// OpenAIEndpointCapabilityVideos is intentionally narrower than the other
+	// OpenAI-compatible capabilities: the first video release only supports
+	// native OpenAI API-key accounts. Custom base URLs must opt in explicitly.
+	OpenAIEndpointCapabilityVideos OpenAIEndpointCapability = "videos"
 	// OpenAIEndpointCapabilityGrokMediaGeneration keeps image/video generation
 	// away from Grok accounts that are explicitly disabled or whose billing
 	// entitlement probe was forbidden. Video status lookups intentionally do not
@@ -2188,6 +2200,21 @@ func (a *Account) SupportsOpenAIEndpointCapability(capability OpenAIEndpointCapa
 	}
 	if !a.IsOpenAICompatible() {
 		return false
+	}
+	if capability == OpenAIEndpointCapabilityVideos {
+		if !a.IsOpenAIApiKey() || isAzureOpenAIAPIKeyAccount(a) {
+			return false
+		}
+		configured, found := a.openAIEndpointCapabilitySet()
+		if found {
+			return configured[string(OpenAIEndpointCapabilityVideos)]
+		}
+		baseURL, err := url.Parse(strings.TrimSpace(a.GetOpenAIBaseURL()))
+		if err != nil || !strings.EqualFold(baseURL.Hostname(), "api.openai.com") {
+			return false
+		}
+		probe := OpenAIVideoCapabilityProbe(a)
+		return probe != nil && probe.Status == VideoCapabilityProbeSupported
 	}
 	if a.IsGrok() {
 		switch capability {

@@ -177,8 +177,9 @@
                     ? 'https://cloudcode-pa.googleapis.com'
                     : account.platform === 'grok'
                       ? 'https://api.x.ai/v1'
-                      : 'https://api.anthropic.com'
+                  : 'https://api.anthropic.com'
             "
+            @input="syncOpenAIVideoCapabilityForBaseURL"
           />
           <p v-if="baseUrlHint" class="input-hint">{{ baseUrlHint }}</p>
           <GrokBaseUrlPresets
@@ -1969,8 +1970,82 @@
               <span class="text-gray-700 dark:text-gray-200">{{ option.label }}</span>
             </label>
           </div>
-          <p class="input-hint">{{ t('admin.accounts.openai.endpointCapabilitiesDesc') }}</p>
+				<p class="input-hint">{{ t('admin.accounts.openai.endpointCapabilitiesDesc') }}</p>
+				<div class="mt-3 flex flex-col gap-3 border-t border-gray-200 pt-3 sm:flex-row sm:items-center sm:justify-between dark:border-dark-600" data-testid="openai-video-capability-probe">
+					<div class="min-w-0 text-xs text-gray-600 dark:text-gray-300">
+						<div class="flex flex-wrap items-center gap-2">
+							<span>{{ t('admin.accounts.openai.videoCapabilityProbe') }}</span>
+							<span class="inline-flex min-h-6 items-center rounded px-2 py-0.5 font-medium" :class="videoCapabilityProbeClass">
+								{{ t(`admin.accounts.openai.videoCapabilityProbeStatus.${videoCapabilityProbeState}`) }}
+							</span>
+							<span v-if="videoCapabilityStatus?.probe?.checked_at">{{ formatDateTime(new Date(videoCapabilityStatus.probe.checked_at)) }}</span>
+						</div>
+						<p v-if="videoCapabilityStatus?.probe?.error_summary" class="mt-1 break-all text-gray-500 dark:text-gray-400">
+							{{ videoCapabilityStatus.probe.error_summary }}<span v-if="videoCapabilityStatus.probe.http_status"> (HTTP {{ videoCapabilityStatus.probe.http_status }})</span>
+						</p>
+					</div>
+					<button type="button" class="btn btn-secondary flex-none" :disabled="videoCapabilityProbeLoading" @click="probeVideoCapability">
+						<Icon name="refresh" size="sm" :class="videoCapabilityProbeLoading ? 'animate-spin' : ''" />
+						<span>{{ t('admin.accounts.openai.videoCapabilityProbeAction') }}</span>
+					</button>
+				</div>
+			</div>
+      </div>
+
+      <div
+        v-if="account?.platform === 'openai' && account?.type === 'apikey'"
+        class="space-y-4 border-t border-gray-200 pt-4 dark:border-dark-600"
+        data-testid="edit-video-disclosure-section"
+      >
+        <div>
+          <label class="input-label mb-0">{{ t('admin.accounts.openai.videoDisclosureTitle') }}</label>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            {{ t('admin.accounts.openai.videoDisclosureDescription') }}
+          </p>
         </div>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label class="input-label">{{ t('admin.accounts.openai.videoOwnerUserId') }}</label>
+            <input
+              v-model.number="form.video_owner_user_id"
+              type="number"
+              min="1"
+              step="1"
+              class="input"
+              data-testid="edit-video-owner-user-id"
+              disabled
+              :placeholder="t('admin.accounts.openai.videoOwnerUserIdPlaceholder')"
+            />
+            <p class="input-hint">{{ t('admin.accounts.openai.accountOwnershipImmutableHint') }}</p>
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.openai.videoDisclosurePolicy') }}</label>
+            <Select
+              v-model="form.video_disclosure_policy"
+              :options="videoDisclosurePolicyOptions"
+              data-testid="edit-video-disclosure-policy"
+            />
+            <p class="input-hint">{{ t('admin.accounts.openai.videoDisclosurePolicyHint') }}</p>
+          </div>
+        </div>
+        <p
+          v-if="form.video_disclosure_policy === 'dedicated_credentials'"
+          class="text-xs text-amber-700 dark:text-amber-300"
+        >
+          {{ t('admin.accounts.openai.videoDedicatedCredentialsWarning') }}
+        </p>
+        <p class="input-hint" data-testid="account-isolation-state">
+          {{ account?.isolation_state === 'verified' && (account.provider_identity_version ?? 0) > 0 && account.isolation_verified_version === account.provider_identity_version
+            ? t('admin.accounts.openai.accountIsolationVerified', { version: account.provider_identity_version })
+            : account?.isolation_state === 'revoked'
+              ? t('admin.accounts.openai.accountIsolationRevoked')
+              : t('admin.accounts.openai.accountIsolationUnverified') }}
+        </p>
+        <AccountProviderIdentityPanel
+          v-if="account.ownership_mode === 'user_dedicated' && !isSparkShadow"
+          :account="account"
+          @changed="handleProviderIdentityChanged"
+        />
       </div>
 
       <div
@@ -3087,6 +3162,7 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { adminAPI } from '@/api/admin'
+import videosAPI, { type VideoAccountCapabilityStatus } from '@/api/admin/videos'
 import { useQuotaNotifyState } from '@/composables/useQuotaNotifyState'
 import type {
   Account,
@@ -3096,6 +3172,7 @@ import type {
   OpenAICompactMode,
   OpenAIResponsesMode,
   OpenAIEndpointCapability,
+  VideoDisclosurePolicy,
   OllamaCloudUsageState
 } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -3112,6 +3189,8 @@ import GrokBaseUrlPresets from '@/components/account/GrokBaseUrlPresets.vue'
 import CnBaseUrlPresets from '@/components/account/CnBaseUrlPresets.vue'
 import HeaderOverrideEditor from '@/components/account/HeaderOverrideEditor.vue'
 import OllamaCloudUsageSettings from '@/components/account/OllamaCloudUsageSettings.vue'
+import AccountProviderIdentityPanel from '@/components/account/AccountProviderIdentityPanel.vue'
+import type { AccountProviderIdentityState } from '@/api/admin/accounts'
 import {
   applyAntigravityProjectID,
   applyHeaderOverride,
@@ -3196,6 +3275,17 @@ const hideAccountLongContextBilling = computed(() => {
 
 const handleOllamaCloudUsageUpdated = (state: OllamaCloudUsageState) => {
   if (props.account) emit('updated', { ...props.account, ollama_cloud_usage: state })
+}
+
+const handleProviderIdentityChanged = (state: AccountProviderIdentityState) => {
+  if (!props.account) return
+  emit('updated', {
+    ...props.account,
+    isolation_state: state.isolation_state,
+    provider_identity_version: state.identity_version,
+    isolation_verified_version: state.isolation_state === 'verified' ? state.identity_version : 0,
+    provider_principal_binding_id: state.binding?.id ?? null
+  })
 }
 
 // Platform-specific hint for Base URL
@@ -3543,6 +3633,9 @@ const editPlanType = ref<string>('')
 const openAICompactMode = ref<OpenAICompactMode>('auto')
 const openAIResponsesMode = ref<OpenAIResponsesMode>('auto')
 const openAIEndpointCapabilities = ref<OpenAIEndpointCapability[]>(['chat_completions', 'embeddings'])
+const openAIEndpointCapabilitiesExplicit = ref(false)
+const videoCapabilityStatus = ref<VideoAccountCapabilityStatus | null>(null)
+const videoCapabilityProbeLoading = ref(false)
 const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const codexCLIOnlyEnabled = ref(false)
@@ -3708,24 +3801,50 @@ const openAITextEndpointCapabilityLabel = computed(() => {
 })
 const openAIEndpointCapabilityOptions = computed<{ value: OpenAIEndpointCapability; label: string }[]>(() => [
   { value: 'chat_completions', label: openAITextEndpointCapabilityLabel.value },
-  { value: 'embeddings', label: t('admin.accounts.openai.capabilityEmbeddings') }
+  { value: 'embeddings', label: t('admin.accounts.openai.capabilityEmbeddings') },
+  { value: 'videos', label: t('admin.accounts.openai.capabilityVideos') }
+])
+const videoDisclosurePolicyOptions = computed(() => [
+  { value: '', label: t('admin.accounts.openai.videoDisclosureInherit') },
+  { value: 'none', label: t('admin.accounts.openai.videoDisclosureNone') },
+  { value: 'identity', label: t('admin.accounts.openai.videoDisclosureIdentity') },
+  { value: 'task_access', label: t('admin.accounts.openai.videoDisclosureTaskAccess') },
+  { value: 'dedicated_credentials', label: t('admin.accounts.openai.videoDisclosureDedicatedCredentials') }
 ])
 const openAITextGenerationCapabilityEnabled = computed(() =>
   openAIEndpointCapabilities.value.includes('chat_completions')
 )
 
-const normalizeOpenAIEndpointCapabilities = (values: OpenAIEndpointCapability[]) => {
-  const allowed: OpenAIEndpointCapability[] = ['chat_completions', 'embeddings']
+const normalizeOpenAIEndpointCapabilities = (values: OpenAIEndpointCapability[]): OpenAIEndpointCapability[] => {
+  const allowed: OpenAIEndpointCapability[] = ['chat_completions', 'embeddings', 'videos']
   const selected = allowed.filter((value) => values.includes(value))
-  return selected.length > 0 ? selected : allowed
+  return selected.length > 0 ? selected : ['chat_completions', 'embeddings']
 }
 
-const readOpenAIEndpointCapabilities = (credentials?: Record<string, unknown>): OpenAIEndpointCapability[] => {
+const isOfficialOpenAIBaseURL = (value: unknown) => {
+  const normalized = typeof value === 'string' && value.trim() ? value.trim() : 'https://api.openai.com'
+  try {
+    const parsed = new URL(normalized)
+    return parsed.protocol === 'https:' && parsed.hostname.toLowerCase() === 'api.openai.com'
+  } catch {
+    return false
+  }
+}
+
+const syncOpenAIVideoCapabilityForBaseURL = () => {
+  if (props.account?.platform !== 'openai' || props.account.type !== 'apikey') return
+  const withoutVideos = openAIEndpointCapabilities.value.filter((value) => value !== 'videos')
+	openAIEndpointCapabilities.value = isOfficialOpenAIBaseURL(editBaseUrl.value) && videoCapabilityStatus.value?.probe?.status === 'supported'
+		? normalizeOpenAIEndpointCapabilities([...withoutVideos, 'videos'])
+		: normalizeOpenAIEndpointCapabilities(withoutVideos)
+}
+
+const readOpenAIEndpointCapabilities = (credentials?: Record<string, unknown>, extra?: Record<string, unknown>): OpenAIEndpointCapability[] => {
   const raw = credentials?.openai_capabilities
   if (Array.isArray(raw)) {
     return normalizeOpenAIEndpointCapabilities(
       raw.filter((value): value is OpenAIEndpointCapability =>
-        value === 'chat_completions' || value === 'embeddings'
+        value === 'chat_completions' || value === 'embeddings' || value === 'videos'
       )
     )
   }
@@ -3737,10 +3856,14 @@ const readOpenAIEndpointCapabilities = (credentials?: Record<string, unknown>): 
         .filter((value) => capabilityMap[value] === true)
     )
   }
-  return ['chat_completions', 'embeddings']
+	const probe = extra?.video_capability_probe as Record<string, unknown> | undefined
+	return isOfficialOpenAIBaseURL(credentials?.base_url) && probe?.status === 'supported'
+		? ['chat_completions', 'embeddings', 'videos']
+		: ['chat_completions', 'embeddings']
 }
 
 const toggleOpenAIEndpointCapability = (capability: OpenAIEndpointCapability, event?: Event) => {
+	openAIEndpointCapabilitiesExplicit.value = true
   if (openAIEndpointCapabilities.value.includes(capability)) {
     if (openAIEndpointCapabilities.value.length <= 1) {
       const input = event?.target as HTMLInputElement | null
@@ -3762,13 +3885,63 @@ const toggleOpenAIEndpointCapability = (capability: OpenAIEndpointCapability, ev
 }
 
 const applyOpenAIEndpointCapabilities = (credentials: Record<string, unknown>) => {
-  const capabilities = normalizeOpenAIEndpointCapabilities(openAIEndpointCapabilities.value)
-  if (capabilities.length === 2) {
+	const capabilities = normalizeOpenAIEndpointCapabilities(openAIEndpointCapabilities.value)
+	if (!openAIEndpointCapabilitiesExplicit.value) {
+		delete credentials.openai_capabilities
+		return
+	}
+  const defaults = capabilities.length === 2 && capabilities.includes('chat_completions') && capabilities.includes('embeddings')
+	const officialDefaults = capabilities.length === 3 && isOfficialOpenAIBaseURL(editBaseUrl.value) && videoCapabilityStatus.value?.probe?.status === 'supported'
+  if ((defaults && !isOfficialOpenAIBaseURL(editBaseUrl.value)) || officialDefaults) {
     delete credentials.openai_capabilities
     return
   }
   credentials.openai_capabilities = capabilities
 }
+
+const videoCapabilityStatusFromAccount = (account: Account): VideoAccountCapabilityStatus => {
+	const credentials = account.credentials as Record<string, unknown> | undefined
+	const extra = account.extra as Record<string, unknown> | undefined
+	const rawProbe = extra?.video_capability_probe
+	const probe = rawProbe && typeof rawProbe === 'object'
+		? rawProbe as VideoAccountCapabilityStatus['probe']
+		: undefined
+	const overrideConfigured = credentials != null && Object.prototype.hasOwnProperty.call(credentials, 'openai_capabilities')
+	const overrideEnabled = overrideConfigured && readOpenAIEndpointCapabilities(credentials, extra).includes('videos')
+	return {
+		account_id: account.id,
+		probe,
+		override_configured: overrideConfigured,
+		override_enabled: overrideEnabled,
+		effective: overrideConfigured ? overrideEnabled : probe?.status === 'supported',
+	}
+}
+
+const probeVideoCapability = async () => {
+	if (!props.account?.id || videoCapabilityProbeLoading.value) return
+	videoCapabilityProbeLoading.value = true
+	try {
+		videoCapabilityStatus.value = await videosAPI.probeAccountCapability(props.account.id)
+		if (!videoCapabilityStatus.value.override_configured) {
+			const withoutVideos = openAIEndpointCapabilities.value.filter((value) => value !== 'videos')
+			openAIEndpointCapabilities.value = videoCapabilityStatus.value.probe?.status === 'supported'
+				? normalizeOpenAIEndpointCapabilities([...withoutVideos, 'videos'])
+				: normalizeOpenAIEndpointCapabilities(withoutVideos)
+		}
+		appStore.showSuccess(t('admin.accounts.openai.videoCapabilityProbeCompleted'))
+	} catch (cause) {
+		appStore.showError(cause instanceof Error ? cause.message : t('admin.accounts.openai.videoCapabilityProbeFailed'))
+	} finally {
+		videoCapabilityProbeLoading.value = false
+	}
+}
+
+const videoCapabilityProbeState = computed(() => videoCapabilityStatus.value?.probe?.status || 'unknown')
+const videoCapabilityProbeClass = computed(() => {
+	if (videoCapabilityProbeState.value === 'supported') return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+	if (videoCapabilityProbeState.value === 'unsupported') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+	return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+})
 const normalizeOpenAIResponsesMode = (mode: unknown): OpenAIResponsesMode => {
   if (mode === 'force_responses' || mode === 'force_chat_completions') {
     return mode
@@ -3890,6 +4063,8 @@ const mixedChannelWarningMessageText = computed(() => {
 const form = reactive({
   name: '',
   notes: '',
+  video_owner_user_id: null as number | null | '',
+  video_disclosure_policy: '' as VideoDisclosurePolicy | '',
   proxy_id: null as number | null,
   concurrency: 1,
   load_factor: null as number | null,
@@ -3976,6 +4151,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   mixedChannelWarningAction.value = null
   form.name = newAccount.name
   form.notes = newAccount.notes || ''
+  form.video_owner_user_id = newAccount.video_owner_user_id ?? null
+  form.video_disclosure_policy = newAccount.video_disclosure_policy ?? ''
   form.proxy_id = newAccount.proxy_id
   form.concurrency = newAccount.concurrency
   form.load_factor = newAccount.load_factor ?? null
@@ -4033,7 +4210,9 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   editPlanType.value = ''
   openAICompactMode.value = 'auto'
   openAIResponsesMode.value = 'auto'
-  openAIEndpointCapabilities.value = ['chat_completions', 'embeddings']
+	openAIEndpointCapabilities.value = ['chat_completions', 'embeddings']
+	openAIEndpointCapabilitiesExplicit.value = false
+	videoCapabilityStatus.value = null
   openAICompactModelMappings.value = []
   openaiOAuthResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
   openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
@@ -4057,10 +4236,13 @@ const syncFormFromAccount = (newAccount: Account | null) => {
       : ''
     openAICompactMode.value = (extra?.openai_compact_mode as OpenAICompactMode) || 'auto'
     if (newAccount.type === 'apikey') {
-      openAIResponsesMode.value = normalizeOpenAIResponsesMode(extra?.openai_responses_mode)
-      openAIEndpointCapabilities.value = readOpenAIEndpointCapabilities(
-        newAccount.credentials as Record<string, unknown> | undefined
-      )
+		openAIResponsesMode.value = normalizeOpenAIResponsesMode(extra?.openai_responses_mode)
+		videoCapabilityStatus.value = videoCapabilityStatusFromAccount(newAccount)
+		openAIEndpointCapabilitiesExplicit.value = videoCapabilityStatus.value.override_configured
+		openAIEndpointCapabilities.value = readOpenAIEndpointCapabilities(
+			newAccount.credentials as Record<string, unknown> | undefined,
+			extra
+		)
       if (!openAITextGenerationCapabilityEnabled.value) {
         openAIResponsesMode.value = 'auto'
       }
@@ -4974,6 +5156,30 @@ const handleSubmit = async () => {
 
   const updatePayload: Record<string, unknown> = { ...form }
   try {
+		if (props.account.platform === 'openai' && props.account.type === 'apikey') {
+			const rawOwnerID = form.video_owner_user_id
+			if (rawOwnerID === null || rawOwnerID === '') {
+				updatePayload.video_owner_user_id = 0
+			} else {
+				const parsedOwnerID = Number(rawOwnerID)
+				if (!Number.isSafeInteger(parsedOwnerID) || parsedOwnerID <= 0) {
+					appStore.showError(t('admin.accounts.openai.videoOwnerUserIdInvalid'))
+					return
+				}
+				updatePayload.video_owner_user_id = parsedOwnerID
+			}
+			updatePayload.video_disclosure_policy = form.video_disclosure_policy
+			if (
+				form.video_disclosure_policy === 'dedicated_credentials' &&
+				updatePayload.video_owner_user_id === 0
+			) {
+				appStore.showError(t('admin.accounts.openai.videoDedicatedOwnerRequired'))
+				return
+			}
+		} else {
+			delete updatePayload.video_owner_user_id
+			delete updatePayload.video_disclosure_policy
+		}
     // 后端期望 proxy_id: 0 表示清除代理，而不是 null
     if (updatePayload.proxy_id === null) {
       updatePayload.proxy_id = 0

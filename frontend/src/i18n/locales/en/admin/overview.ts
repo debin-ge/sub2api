@@ -1024,6 +1024,16 @@ export default {
         finalPricePreview: 'Final per-second price preview',
         notConfigured: 'Not configured'
       },
+      videoDisclosure: {
+        title: 'Video provider disclosure',
+        description:
+          'Set the maximum provider information this group allows. The effective policy is the most restrictive of system, group, and account.',
+        inherit: 'Inherit system policy',
+        none: 'None',
+        identity: 'Provider identity and upstream task ID',
+        taskAccess: 'Task-scoped temporary access',
+        dedicatedCredentials: 'Dedicated account credentials'
+      },
       explicitPricing: {
         title: 'Grok Search & Voice Pricing',
         description: 'Optional per-group prices for web_search (per 1k calls) and Voice realtime / TTS / STT (USD). Leave empty if unused.',

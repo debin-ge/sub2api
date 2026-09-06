@@ -338,6 +338,9 @@ func monthlyMaybeReset(prevUsage float64, prevStart *time.Time, cost float64, no
 // 仅改 *_limit_usd + deleted_at + updated_at，保留 *_usage_usd / *_window_start。
 func (r *userPlatformQuotaRepository) UpsertForUser(ctx context.Context, userID int64, records []UserPlatformQuotaRecord) error {
 	return r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+		if _, err := txClient.ExecContext(txCtx, `SELECT id FROM users WHERE id = $1 FOR NO KEY UPDATE`, userID); err != nil {
+			return err
+		}
 		platforms := make([]string, 0, len(records))
 		for _, rec := range records {
 			platforms = append(platforms, rec.Platform)

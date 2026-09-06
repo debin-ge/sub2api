@@ -151,6 +151,7 @@ type AccountTestService struct {
 	modelMetadataRegistry     map[string]modelsDevProvider
 	modelMetadataRegistryAt   time.Time
 	pluginManager             *PluginManager
+	videoCapabilityProbe      *VideoCapabilityProbeService
 	agentIdentityTaskMu       sync.Mutex
 	agentIdentityWS           agentIdentityWSConnectionInvalidator
 	// grokWSDialer is optional; realtime account tests use the default OpenAI-style
@@ -167,6 +168,12 @@ func (s *AccountTestService) SetSettingService(settingService *SettingService) {
 func (s *AccountTestService) SetPluginManager(pluginManager *PluginManager) {
 	if s != nil {
 		s.pluginManager = pluginManager
+	}
+}
+
+func (s *AccountTestService) SetVideoCapabilityProbe(probe *VideoCapabilityProbeService) {
+	if s != nil {
+		s.videoCapabilityProbe = probe
 	}
 }
 

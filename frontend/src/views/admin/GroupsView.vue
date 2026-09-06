@@ -1214,6 +1214,18 @@
           </div>
         </div>
 
+        <div class="border-t pt-4" data-testid="create-video-disclosure-policy-section">
+          <label class="input-label">{{ t("admin.groups.videoDisclosure.title") }}</label>
+          <p class="mb-3 text-xs text-gray-500 dark:text-gray-400">
+            {{ t("admin.groups.videoDisclosure.description") }}
+          </p>
+          <Select
+            v-model="createForm.video_disclosure_policy"
+            :options="videoDisclosurePolicyOptions"
+            data-testid="create-video-disclosure-policy"
+          />
+        </div>
+
         <!-- 高峰时段倍率配置（仅订阅类型分组） -->
         <div v-if="createForm.subscription_type === 'subscription'" class="border-t pt-4">
           <div class="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -3052,6 +3064,18 @@
           </div>
         </div>
 
+        <div class="border-t pt-4" data-testid="edit-video-disclosure-policy-section">
+          <label class="input-label">{{ t("admin.groups.videoDisclosure.title") }}</label>
+          <p class="mb-3 text-xs text-gray-500 dark:text-gray-400">
+            {{ t("admin.groups.videoDisclosure.description") }}
+          </p>
+          <Select
+            v-model="editForm.video_disclosure_policy"
+            :options="videoDisclosurePolicyOptions"
+            data-testid="edit-video-disclosure-policy"
+          />
+        </div>
+
         <!-- 高峰时段倍率配置（仅订阅类型分组） -->
         <div v-if="editForm.subscription_type === 'subscription'" class="border-t pt-4">
           <div class="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -4666,6 +4690,7 @@ import type {
   CompositeRouteMatchType,
   GroupPlatform,
   SubscriptionType,
+  VideoDisclosurePolicy,
 } from "@/types";
 import {
   CONCRETE_PLATFORM_OPTIONS,
@@ -4766,6 +4791,17 @@ import {
 
 const supportsLivePlatform = (platform: string): boolean =>
   platform === "openai" || platform === "composite";
+
+const videoDisclosurePolicyOptions = computed(() => [
+  { value: "", label: t("admin.groups.videoDisclosure.inherit") },
+  { value: "none", label: t("admin.groups.videoDisclosure.none") },
+  { value: "identity", label: t("admin.groups.videoDisclosure.identity") },
+  { value: "task_access", label: t("admin.groups.videoDisclosure.taskAccess") },
+  {
+    value: "dedicated_credentials",
+    label: t("admin.groups.videoDisclosure.dedicatedCredentials"),
+  },
+]);
 
 const emptyGroupPricing = (): PricingFormEntry => ({
   models: [],
@@ -5303,6 +5339,7 @@ const createForm = reactive({
   // 视频生成计费配置（仅 Grok 平台）
   video_rate_independent: false,
   video_rate_multiplier: 1,
+  video_disclosure_policy: "" as VideoDisclosurePolicy | "",
   video_price_480p: null as number | null,
   video_price_720p: null as number | null,
   video_price_1080p: null as number | null,
@@ -5668,6 +5705,7 @@ const editForm = reactive({
   // 视频生成计费配置（仅 Grok 平台）
   video_rate_independent: false,
   video_rate_multiplier: 1,
+  video_disclosure_policy: "" as VideoDisclosurePolicy | "",
   video_price_480p: null as number | null,
   video_price_720p: null as number | null,
   video_price_1080p: null as number | null,
@@ -6118,6 +6156,7 @@ const closeCreateModal = () => {
   createForm.image_price_4k = null;
   createForm.video_rate_independent = false;
   createForm.video_rate_multiplier = 1;
+  createForm.video_disclosure_policy = "";
   createForm.video_price_480p = null;
   createForm.video_price_720p = null;
   createForm.video_price_1080p = null;
@@ -6382,6 +6421,7 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.image_price_4k = group.image_price_4k;
   editForm.video_rate_independent = group.video_rate_independent ?? false;
   editForm.video_rate_multiplier = group.video_rate_multiplier ?? 1;
+  editForm.video_disclosure_policy = group.video_disclosure_policy ?? "";
   editForm.video_price_480p = group.video_price_480p;
   editForm.video_price_720p = group.video_price_720p;
   editForm.video_price_1080p = group.video_price_1080p;
@@ -6473,6 +6513,7 @@ const closeEditModal = () => {
   editForm.profit_safety_buffer_percent = 0;
   editForm.video_rate_independent = false;
   editForm.video_rate_multiplier = 1;
+  editForm.video_disclosure_policy = "";
   editForm.video_price_480p = null;
   editForm.video_price_720p = null;
   editForm.video_price_1080p = null;

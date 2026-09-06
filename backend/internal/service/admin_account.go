@@ -491,19 +491,24 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 	delete(accountExtra, OllamaCloudUsageSessionExtraKey)
 	delete(accountExtra, OllamaCloudUsageAutoRefreshExtraKey)
 	delete(accountExtra, OllamaCloudUsageSnapshotExtraKey)
+	delete(accountExtra, VideoCapabilityProbeExtraKey)
 	accountExtra = prepareCodexFingerprintExtraForCreate(input.Platform, input.Type, accountExtra)
 	account := &Account{
-		Name:        input.Name,
-		Notes:       normalizeAccountNotes(input.Notes),
-		Platform:    input.Platform,
-		Type:        input.Type,
-		Credentials: input.Credentials,
-		Extra:       accountExtra,
-		ProxyID:     input.ProxyID,
-		Concurrency: normalizeAccountConcurrency(input.Platform, input.Type, input.Concurrency),
-		Priority:    input.Priority,
-		Status:      StatusActive,
-		Schedulable: true,
+		Name:                  input.Name,
+		Notes:                 normalizeAccountNotes(input.Notes),
+		Platform:              input.Platform,
+		Type:                  input.Type,
+		Credentials:           input.Credentials,
+		Extra:                 accountExtra,
+		VideoOwnerUserID:      input.VideoOwnerUserID,
+		VideoDisclosurePolicy: input.VideoDisclosurePolicy,
+		OwnershipMode:         input.OwnershipMode,
+		OwnerUserID:           input.OwnerUserID,
+		ProxyID:               input.ProxyID,
+		Concurrency:           normalizeAccountConcurrency(input.Platform, input.Type, input.Concurrency),
+		Priority:              input.Priority,
+		Status:                StatusActive,
+		Schedulable:           true,
 	}
 	if input.ProbeEnabled != nil && *input.ProbeEnabled {
 		if !isUpstreamBillingProbeAccount(account) {
@@ -542,6 +547,12 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 			return nil, errors.New("load_factor must be <= 10000")
 		}
 		account.LoadFactor = input.LoadFactor
+	}
+	if err := NormalizeAccountOwnership(account); err != nil {
+		return nil, err
+	}
+	if err := validateVideoAccountDisclosure(account); err != nil {
+		return nil, err
 	}
 	return account, nil
 }
@@ -642,6 +653,10 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	if err != nil {
 		return nil, err
 	}
+	previousOwnership := *account
+	if input.VideoOwnerUserID != nil && account.VideoOwnerUserID != nil && *input.VideoOwnerUserID != *account.VideoOwnerUserID {
+		return nil, ErrAccountOwnershipImmutable
+	}
 	var normalizedExtra map[string]any
 	if input.Extra != nil {
 		normalizedExtra, err = normalizeOpenAILongContextBillingUpdateExtra(account, input)
@@ -667,6 +682,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	}
 	previousProbeIdentity := upstreamBillingProbeIdentity(account)
 	previousOllamaUsageIdentity := ollamaCloudUsageIdentity(account)
+	previousVideoCapabilityIdentity := openAIVideoCapabilityProbeIdentity(account)
 	// 安全/身份不变量(影子账号):通用更新路径被 edit/re-auth/refresh/batch 共用,
 	// 必须在此守住,否则仅在创建时的保证可被这些路径绕过。
 	if account.IsCredentialShadow() {
@@ -701,6 +717,27 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	}
 	if input.Type != "" {
 		account.Type = input.Type
+	}
+	if input.VideoOwnerUserID != nil {
+		if *input.VideoOwnerUserID <= 0 {
+			account.VideoOwnerUserID = nil
+		} else {
+			ownerID := *input.VideoOwnerUserID
+			account.VideoOwnerUserID = &ownerID
+		}
+	}
+	if input.VideoDisclosurePolicy != nil {
+		account.VideoDisclosurePolicy = *input.VideoDisclosurePolicy
+	}
+	if input.OwnershipMode != nil {
+		account.OwnershipMode = *input.OwnershipMode
+	}
+	if input.OwnerUserID != nil {
+		ownerID := *input.OwnerUserID
+		account.OwnerUserID = &ownerID
+	}
+	if err := validateAccountOwnershipUpdate(&previousOwnership, account); err != nil {
+		return nil, err
 	}
 	if input.Notes != nil {
 		account.Notes = normalizeAccountNotes(input.Notes)
@@ -740,6 +777,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		delete(normalizedExtra, OllamaCloudUsageSessionExtraKey)
 		delete(normalizedExtra, OllamaCloudUsageAutoRefreshExtraKey)
 		delete(normalizedExtra, OllamaCloudUsageSnapshotExtraKey)
+		delete(normalizedExtra, VideoCapabilityProbeExtraKey)
 		// 保留配额用量和专用服务受管字段，防止普通账号编辑意外覆盖。
 		for _, key := range []string{
 			"quota_used",
@@ -755,6 +793,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 			OllamaCloudUsageAutoRefreshExtraKey,
 			OllamaCloudUsageSnapshotExtraKey,
 			OpenAIAutoResetCreditStateExtraKey,
+			VideoCapabilityProbeExtraKey,
 		} {
 			if v, ok := account.Extra[key]; ok {
 				normalizedExtra[key] = v
@@ -782,6 +821,12 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	}
 	if input.Extra == nil {
 		account.Extra = prepareCodexFingerprintExtraForUpdate(account, account.Extra)
+	}
+	if previousVideoCapabilityIdentity != openAIVideoCapabilityProbeIdentity(account) && account.Extra != nil {
+		delete(account.Extra, VideoCapabilityProbeExtraKey)
+	}
+	if err := validateVideoAccountDisclosure(account); err != nil {
+		return nil, err
 	}
 	if requestedRateSyncEnabledUpdate != nil && *requestedRateSyncEnabledUpdate {
 		if requestedProbeEnabledUpdate != nil && !*requestedProbeEnabledUpdate {
@@ -983,6 +1028,7 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
 	delete(updates, OllamaCloudUsageSessionExtraKey)
 	delete(updates, OllamaCloudUsageAutoRefreshExtraKey)
 	delete(updates, OllamaCloudUsageSnapshotExtraKey)
+	delete(updates, VideoCapabilityProbeExtraKey)
 	if _, exists := updates[openAILongContextBillingEnabledKey]; exists {
 		account, err := s.accountRepo.GetByID(ctx, id)
 		if err != nil {
@@ -1016,6 +1062,7 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	delete(input.Extra, OllamaCloudUsageSessionExtraKey)
 	delete(input.Extra, OllamaCloudUsageAutoRefreshExtraKey)
 	delete(input.Extra, OllamaCloudUsageSnapshotExtraKey)
+	delete(input.Extra, VideoCapabilityProbeExtraKey)
 
 	if len(input.AccountIDs) == 0 && input.Filters != nil {
 		accountIDs, err := s.resolveBulkUpdateTargetIDs(ctx, input.Filters)

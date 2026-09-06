@@ -138,7 +138,8 @@ func (r *channelRepository) batchLoadIntervals(ctx context.Context, pricingIDs [
 		`SELECT id, pricing_id, min_tokens, max_tokens, tier_label,
 		        input_price, output_price, cache_write_price, cache_write_1h_price, cache_read_price,
 		        input_multiplier, output_multiplier, cache_write_multiplier, cache_read_multiplier,
-		        per_request_price, sort_order, created_at, updated_at
+		        per_request_price, conditions, billing_unit, priority, valid_from, valid_until,
+		        sort_order, created_at, updated_at
 		 FROM channel_pricing_intervals
 		 WHERE pricing_id = ANY($1) ORDER BY pricing_id, sort_order, id`,
 		pq.Array(pricingIDs),
@@ -151,14 +152,17 @@ func (r *channelRepository) batchLoadIntervals(ctx context.Context, pricingIDs [
 	intervalMap := make(map[int64][]service.PricingInterval, len(pricingIDs))
 	for rows.Next() {
 		var iv service.PricingInterval
+		var conditions []byte
 		if err := rows.Scan(
 			&iv.ID, &iv.PricingID, &iv.MinTokens, &iv.MaxTokens, &iv.TierLabel,
 			&iv.InputPrice, &iv.OutputPrice, &iv.CacheWritePrice, &iv.CacheWrite1hPrice, &iv.CacheReadPrice,
 			&iv.InputMultiplier, &iv.OutputMultiplier, &iv.CacheWriteMultiplier, &iv.CacheReadMultiplier,
-			&iv.PerRequestPrice, &iv.SortOrder, &iv.CreatedAt, &iv.UpdatedAt,
+			&iv.PerRequestPrice, &conditions, &iv.BillingUnit, &iv.Priority, &iv.ValidFrom, &iv.ValidUntil,
+			&iv.SortOrder, &iv.CreatedAt, &iv.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan interval: %w", err)
 		}
+		iv.Conditions = append(iv.Conditions[:0], conditions...)
 		intervalMap[iv.PricingID] = append(intervalMap[iv.PricingID], iv)
 	}
 	if err := rows.Err(); err != nil {
@@ -291,14 +295,18 @@ func unmarshalChannelTimePricing(data []byte) (*service.ChannelTimePricing, erro
 }
 
 func createIntervalExec(ctx context.Context, exec dbExec, iv *service.PricingInterval) error {
+	conditions := iv.Conditions
+	if len(conditions) == 0 {
+		conditions = json.RawMessage(`{}`)
+	}
 	return exec.QueryRowContext(ctx,
 		`INSERT INTO channel_pricing_intervals
-		 (pricing_id, min_tokens, max_tokens, tier_label, input_price, output_price, cache_write_price, cache_write_1h_price, cache_read_price, input_multiplier, output_multiplier, cache_write_multiplier, cache_read_multiplier, per_request_price, sort_order)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id, created_at, updated_at`,
+		 (pricing_id, min_tokens, max_tokens, tier_label, input_price, output_price, cache_write_price, cache_write_1h_price, cache_read_price, input_multiplier, output_multiplier, cache_write_multiplier, cache_read_multiplier, per_request_price, conditions, billing_unit, priority, valid_from, valid_until, sort_order)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, $16, $17, $18, $19, $20) RETURNING id, created_at, updated_at`,
 		iv.PricingID, iv.MinTokens, iv.MaxTokens, iv.TierLabel,
 		iv.InputPrice, iv.OutputPrice, iv.CacheWritePrice, iv.CacheWrite1hPrice, iv.CacheReadPrice,
 		iv.InputMultiplier, iv.OutputMultiplier, iv.CacheWriteMultiplier, iv.CacheReadMultiplier,
-		iv.PerRequestPrice, iv.SortOrder,
+		iv.PerRequestPrice, string(conditions), iv.BillingUnit, iv.Priority, iv.ValidFrom, iv.ValidUntil, iv.SortOrder,
 	).Scan(&iv.ID, &iv.CreatedAt, &iv.UpdatedAt)
 }
 

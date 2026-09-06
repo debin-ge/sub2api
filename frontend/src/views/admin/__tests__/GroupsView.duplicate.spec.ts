@@ -145,6 +145,25 @@ const BaseDialogStub = defineComponent({
   template: '<div v-if="show"><slot /><slot name="footer" /></div>'
 })
 
+const SelectStub = defineComponent({
+  props: {
+    modelValue: { type: [String, Number, Boolean], default: '' },
+    options: { type: Array, default: () => [] }
+  },
+  emits: ['update:modelValue'],
+  template: `
+    <select
+      v-bind="$attrs"
+      :value="modelValue"
+      @change="$emit('update:modelValue', $event.target.value)"
+    >
+      <option v-for="option in options" :key="String(option.value)" :value="option.value">
+        {{ option.label }}
+      </option>
+    </select>
+  `
+})
+
 function mountView() {
   return mount(GroupsView, {
     global: {
@@ -156,7 +175,7 @@ function mountView() {
         BaseDialog: BaseDialogStub,
         ConfirmDialog: true,
         EmptyState: true,
-        Select: true,
+        Select: SelectStub,
         PlatformIcon: true,
         Icon: true,
         GroupCapacityBadge: true,
@@ -300,6 +319,33 @@ describe('GroupsView duplicate action', () => {
 
     expect(updateGroup).toHaveBeenCalledTimes(1)
     expect(showError).toHaveBeenCalledWith('group name already exists [GROUP_EXISTS]')
+    wrapper.unmount()
+  })
+
+  it('loads and submits the group video disclosure policy', async () => {
+    const group = { ...sourceGroup, video_disclosure_policy: 'task_access' as const }
+    listGroups.mockResolvedValueOnce({
+      items: [group], total: 1, page: 1, page_size: 20, pages: 1
+    })
+    updateGroup.mockResolvedValueOnce(group)
+    const wrapper = mountView()
+    await flushPromises()
+
+    const editButton = wrapper.findAll('button').find((button) => button.text() === 'common.edit')
+    expect(editButton).toBeTruthy()
+    await editButton!.trigger('click')
+    await flushPromises()
+
+    const disclosure = wrapper.get<HTMLSelectElement>('[data-testid="edit-video-disclosure-policy"]')
+    expect(disclosure.element.value).toBe('task_access')
+    await disclosure.setValue('none')
+    await wrapper.get('#edit-group-form').trigger('submit')
+    await flushPromises()
+
+    expect(updateGroup).toHaveBeenCalledTimes(1)
+    expect(updateGroup.mock.calls[0]?.[1]).toEqual(expect.objectContaining({
+      video_disclosure_policy: 'none'
+    }))
     wrapper.unmount()
   })
 })

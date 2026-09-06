@@ -37,6 +37,22 @@ type Account struct {
 	Credentials map[string]interface{} `json:"credentials,omitempty"`
 	// Extra holds the value of the "extra" field.
 	Extra map[string]interface{} `json:"extra,omitempty"`
+	// OwnershipMode holds the value of the "ownership_mode" field.
+	OwnershipMode string `json:"ownership_mode,omitempty"`
+	// OwnerUserID holds the value of the "owner_user_id" field.
+	OwnerUserID *int64 `json:"owner_user_id,omitempty"`
+	// IsolationState holds the value of the "isolation_state" field.
+	IsolationState string `json:"isolation_state,omitempty"`
+	// ProviderIdentityVersion holds the value of the "provider_identity_version" field.
+	ProviderIdentityVersion int64 `json:"provider_identity_version,omitempty"`
+	// IsolationVerifiedVersion holds the value of the "isolation_verified_version" field.
+	IsolationVerifiedVersion int64 `json:"isolation_verified_version,omitempty"`
+	// ProviderPrincipalBindingID holds the value of the "provider_principal_binding_id" field.
+	ProviderPrincipalBindingID *int64 `json:"provider_principal_binding_id,omitempty"`
+	// User that exclusively owns this account for video credential disclosure
+	VideoOwnerUserID *int64 `json:"video_owner_user_id,omitempty"`
+	// Optional account-level ceiling for video provider disclosure
+	VideoDisclosurePolicy *string `json:"video_disclosure_policy,omitempty"`
 	// ProxyID holds the value of the "proxy_id" field.
 	ProxyID *int64 `json:"proxy_id,omitempty"`
 	// Original proxy id replaced by expiry-fallback; for manual revert. NULL = not in fallback.
@@ -175,9 +191,9 @@ func (*Account) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case account.FieldRateMultiplier:
 			values[i] = new(sql.NullFloat64)
-		case account.FieldID, account.FieldProxyID, account.FieldProxyFallbackOriginID, account.FieldConcurrency, account.FieldLoadFactor, account.FieldPriority, account.FieldParentAccountID:
+		case account.FieldID, account.FieldOwnerUserID, account.FieldProviderIdentityVersion, account.FieldIsolationVerifiedVersion, account.FieldProviderPrincipalBindingID, account.FieldVideoOwnerUserID, account.FieldProxyID, account.FieldProxyFallbackOriginID, account.FieldConcurrency, account.FieldLoadFactor, account.FieldPriority, account.FieldParentAccountID:
 			values[i] = new(sql.NullInt64)
-		case account.FieldName, account.FieldNotes, account.FieldPlatform, account.FieldType, account.FieldStatus, account.FieldErrorMessage, account.FieldTempUnschedulableReason, account.FieldSessionWindowStatus, account.FieldQuotaDimension:
+		case account.FieldName, account.FieldNotes, account.FieldPlatform, account.FieldType, account.FieldOwnershipMode, account.FieldIsolationState, account.FieldVideoDisclosurePolicy, account.FieldStatus, account.FieldErrorMessage, account.FieldTempUnschedulableReason, account.FieldSessionWindowStatus, account.FieldQuotaDimension:
 			values[i] = new(sql.NullString)
 		case account.FieldCreatedAt, account.FieldUpdatedAt, account.FieldDeletedAt, account.FieldLastUsedAt, account.FieldExpiresAt, account.FieldRateLimitedAt, account.FieldRateLimitResetAt, account.FieldOverloadUntil, account.FieldTempUnschedulableUntil, account.FieldSessionWindowStart, account.FieldSessionWindowEnd:
 			values[i] = new(sql.NullTime)
@@ -261,6 +277,58 @@ func (_m *Account) assignValues(columns []string, values []any) error {
 				if err := json.Unmarshal(*value, &_m.Extra); err != nil {
 					return fmt.Errorf("unmarshal field extra: %w", err)
 				}
+			}
+		case account.FieldOwnershipMode:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field ownership_mode", values[i])
+			} else if value.Valid {
+				_m.OwnershipMode = value.String
+			}
+		case account.FieldOwnerUserID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field owner_user_id", values[i])
+			} else if value.Valid {
+				_m.OwnerUserID = new(int64)
+				*_m.OwnerUserID = value.Int64
+			}
+		case account.FieldIsolationState:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field isolation_state", values[i])
+			} else if value.Valid {
+				_m.IsolationState = value.String
+			}
+		case account.FieldProviderIdentityVersion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field provider_identity_version", values[i])
+			} else if value.Valid {
+				_m.ProviderIdentityVersion = value.Int64
+			}
+		case account.FieldIsolationVerifiedVersion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field isolation_verified_version", values[i])
+			} else if value.Valid {
+				_m.IsolationVerifiedVersion = value.Int64
+			}
+		case account.FieldProviderPrincipalBindingID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field provider_principal_binding_id", values[i])
+			} else if value.Valid {
+				_m.ProviderPrincipalBindingID = new(int64)
+				*_m.ProviderPrincipalBindingID = value.Int64
+			}
+		case account.FieldVideoOwnerUserID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field video_owner_user_id", values[i])
+			} else if value.Valid {
+				_m.VideoOwnerUserID = new(int64)
+				*_m.VideoOwnerUserID = value.Int64
+			}
+		case account.FieldVideoDisclosurePolicy:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field video_disclosure_policy", values[i])
+			} else if value.Valid {
+				_m.VideoDisclosurePolicy = new(string)
+				*_m.VideoDisclosurePolicy = value.String
 			}
 		case account.FieldProxyID:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -505,6 +573,38 @@ func (_m *Account) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("extra=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Extra))
+	builder.WriteString(", ")
+	builder.WriteString("ownership_mode=")
+	builder.WriteString(_m.OwnershipMode)
+	builder.WriteString(", ")
+	if v := _m.OwnerUserID; v != nil {
+		builder.WriteString("owner_user_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("isolation_state=")
+	builder.WriteString(_m.IsolationState)
+	builder.WriteString(", ")
+	builder.WriteString("provider_identity_version=")
+	builder.WriteString(fmt.Sprintf("%v", _m.ProviderIdentityVersion))
+	builder.WriteString(", ")
+	builder.WriteString("isolation_verified_version=")
+	builder.WriteString(fmt.Sprintf("%v", _m.IsolationVerifiedVersion))
+	builder.WriteString(", ")
+	if v := _m.ProviderPrincipalBindingID; v != nil {
+		builder.WriteString("provider_principal_binding_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.VideoOwnerUserID; v != nil {
+		builder.WriteString("video_owner_user_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.VideoDisclosurePolicy; v != nil {
+		builder.WriteString("video_disclosure_policy=")
+		builder.WriteString(*v)
+	}
 	builder.WriteString(", ")
 	if v := _m.ProxyID; v != nil {
 		builder.WriteString("proxy_id=")

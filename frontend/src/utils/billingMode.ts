@@ -27,13 +27,57 @@ interface ImageBillingRow {
   total_cost: number
 }
 
+interface VideoBillingRow {
+  video_count?: number | null
+  video_duration_seconds?: number | null
+  video_billing_unit?: string | null
+  video_units?: number | null
+  video_unit_price?: number | null
+  output_tokens?: number | null
+  media_type?: string | null
+  billing_mode?: string | null
+  total_cost?: number | null
+}
+
+export type VideoBillingUnit = 'request' | 'second' | 'video_token'
+
+export function isVideoUsage(row: VideoBillingRow | null | undefined): boolean {
+  return row?.billing_mode === BILLING_MODE_VIDEO || row?.media_type === BILLING_MODE_VIDEO || (row?.video_count ?? 0) > 0
+}
+
+export function getVideoBillingUnit(row: VideoBillingRow | null | undefined): VideoBillingUnit {
+  if (row?.video_billing_unit === 'request' || row?.video_billing_unit === 'second' || row?.video_billing_unit === 'video_token') {
+    return row.video_billing_unit
+  }
+  if ((row?.output_tokens ?? 0) > 0) return 'video_token'
+  if ((row?.video_duration_seconds ?? 0) > 0) return 'second'
+  return 'request'
+}
+
+export function getVideoUsageUnits(row: VideoBillingRow | null | undefined): number {
+  if (Number.isFinite(row?.video_units) && (row?.video_units ?? 0) >= 0) return row?.video_units ?? 0
+  const unit = getVideoBillingUnit(row)
+  if (unit === 'video_token') return row?.output_tokens ?? 0
+  if (unit === 'second') return (row?.video_duration_seconds ?? 0) * Math.max(row?.video_count ?? 1, 1)
+  return Math.max(row?.video_count ?? 1, 1)
+}
+
+export function getVideoUnitPrice(row: VideoBillingRow | null | undefined): number {
+  if (Number.isFinite(row?.video_unit_price) && (row?.video_unit_price ?? 0) >= 0) return row?.video_unit_price ?? 0
+  const units = getVideoUsageUnits(row)
+  if (units <= 0) return 0
+  const price = (row?.total_cost ?? 0) / units
+  return Number.isFinite(price) ? price : 0
+}
+
 export function isImageUsage(row: Pick<ImageBillingRow, 'image_count' | 'billing_mode'> | null | undefined): boolean {
   return (row?.image_count ?? 0) > 0 && row?.billing_mode !== BILLING_MODE_TOKEN && row?.billing_mode !== BILLING_MODE_VIDEO
 }
 
 export function getDisplayBillingMode(row: Pick<ImageBillingRow, 'billing_mode' | 'image_count'> | null | undefined): string | null | undefined {
-  // Explicit video/token modes always win over image_count heuristics.
-  if (row?.billing_mode === BILLING_MODE_VIDEO || row?.billing_mode === BILLING_MODE_TOKEN) {
+	if (isVideoUsage(row)) return BILLING_MODE_VIDEO
+	// Explicit token mode always wins over image_count heuristics.
+	if (row?.billing_mode === BILLING_MODE_TOKEN) {
     return row.billing_mode
   }
   if ((row?.image_count ?? 0) > 0 && !row?.billing_mode) {

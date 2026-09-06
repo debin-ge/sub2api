@@ -137,9 +137,11 @@ func (w *UsageBillingOutboxWorker) processBatch(ctx context.Context) error {
 }
 
 func (w *UsageBillingOutboxWorker) processEvent(parent context.Context, event UsageBillingOutboxEvent) {
-	if event.Command == nil || event.UsageLog == nil {
+	videoRelease := event.BalanceSettlement != nil && event.BalanceSettlement.Action == BalanceSettlementRelease
+	if (!videoRelease && (event.Command == nil || event.UsageLog == nil)) ||
+		(videoRelease && event.Command != nil) {
 		w.quarantineEvent(event, fmt.Errorf(
-			"%w: claimed outbox event is missing command or usage log",
+			"%w: claimed outbox event has an invalid command or usage log shape",
 			ErrUsageBillingPayloadInvalid,
 		))
 		return
@@ -176,7 +178,7 @@ func (w *UsageBillingOutboxWorker) processEvent(parent context.Context, event Us
 			ErrDurableUsageBillingRequired,
 		)
 	}
-	if err == nil && !result.UsageLogRecorded {
+	if err == nil && !videoRelease && !result.UsageLogRecorded {
 		err = fmt.Errorf(
 			"%w: complete usage billing outbox did not record the usage log",
 			ErrDurableUsageBillingRequired,
@@ -186,7 +188,16 @@ func (w *UsageBillingOutboxWorker) processEvent(parent context.Context, event Us
 		if w.postEffects == nil {
 			err = errors.New("usage billing post-effects service is not configured")
 		} else {
-			err = w.postEffects.Finalize(ctx, event.Command, result)
+			command := event.Command
+			if videoRelease {
+				command = &UsageBillingCommand{
+					RequestID: event.BalanceSettlement.Hold.RequestID,
+					APIKeyID:  event.BalanceSettlement.Hold.APIKeyID,
+					UserID:    event.BalanceSettlement.Hold.UserID,
+					MediaType: "video",
+				}
+			}
+			err = w.postEffects.Finalize(ctx, command, result)
 		}
 	}
 	if err == nil {

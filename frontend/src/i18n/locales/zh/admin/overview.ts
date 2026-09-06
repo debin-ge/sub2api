@@ -1021,6 +1021,15 @@ export default {
         finalPricePreview: '最终每秒价格预览',
         notConfigured: '未配置'
       },
+      videoDisclosure: {
+        title: '视频 Provider 信息披露',
+        description: '设置该分组允许的最高披露级别，最终取系统、分组和账号三层策略中最严格的结果。',
+        inherit: '继承系统策略',
+        none: '不披露',
+        identity: 'Provider 信息和上游任务 ID',
+        taskAccess: '任务级临时访问凭证',
+        dedicatedCredentials: '独享账号凭证'
+      },
       explicitPricing: {
         title: 'Grok 搜索与 Voice 定价',
         description: '分组级 web_search（每千次）与 Voice realtime / TTS / STT 单价（USD）。留空表示未配置。',

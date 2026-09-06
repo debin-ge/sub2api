@@ -80,6 +80,8 @@ ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS example_column VARCHAR(100);
 
 ```bash
 backend/scripts/check-migration-gate.sh origin/main
+# 包含已暂存、未暂存及未跟踪的新迁移：
+backend/scripts/check-migration-gate.sh origin/main --worktree
 ```
 
 ## Important Rules

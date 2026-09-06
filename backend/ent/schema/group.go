@@ -158,6 +158,11 @@ func (Group) Fields() []ent.Field {
 			Optional().
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}).
 			Comment("按模型族和分辨率覆盖视频每秒价格"),
+		field.String("video_disclosure_policy").
+			MaxLen(32).
+			Optional().
+			Nillable().
+			Comment("Optional group-level ceiling for video provider disclosure"),
 		field.Float("web_search_price_per_call").
 			Optional().
 			Nillable().

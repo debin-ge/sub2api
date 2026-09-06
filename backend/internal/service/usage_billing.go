@@ -64,6 +64,7 @@ type UsageBillingCommand struct {
 	TotalCost                   float64
 	IsSubscriptionBilling       bool
 	OccurredAt                  time.Time
+	QuotaTime                   *UsageBillingQuotaTime
 
 	BalanceCost         float64
 	SubscriptionCost    float64
@@ -166,6 +167,11 @@ func buildUsageBillingFingerprint(c *UsageBillingCommand) string {
 	if payloadHash := strings.TrimSpace(c.RequestPayloadHash); payloadHash != "" {
 		raw += "|" + payloadHash
 	}
+	if c.QuotaTime != nil {
+		raw += fmt.Sprintf("|quota_time:%d|%s|%s|%s|%s", c.QuotaTime.Version, c.QuotaTime.TimeZone,
+			c.OccurredAt.UTC().Format(time.RFC3339Nano), c.QuotaTime.DayStart.UTC().Format(time.RFC3339Nano),
+			c.QuotaTime.WeekStart.UTC().Format(time.RFC3339Nano))
+	}
 	sum := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(sum[:])
 }
@@ -206,8 +212,10 @@ type UsageBillingApplyResult struct {
 	ProjectionRepairRequired bool
 	APIKeyQuotaExhausted     bool
 	NewBalance               *float64           // post-deduction balance (nil = no balance deduction)
+	FrozenBalance            *float64           // post-settlement frozen balance for hold-backed billing
 	BalanceOverdrafted       bool               // true when the sufficient-balance guard missed and debt was still recorded
 	QuotaState               *AccountQuotaState // post-increment quota state (nil = no quota increment)
+	QuotaPostedAt            *time.Time
 	OutboxReceipt            *UsageBillingOutboxReceipt
 }
 
@@ -223,8 +231,10 @@ type UsageBillingOutboxEvent struct {
 	ID                     int64
 	Attempts               int
 	Stage                  int8
+	PayloadVersion         int
 	Command                *UsageBillingCommand
 	UsageLog               *UsageLog
+	BalanceSettlement      *BalanceSettlementCommand
 	Result                 *UsageBillingApplyResult
 	PayloadValidationError string
 	CreatedAt              time.Time
@@ -276,6 +286,210 @@ type BatchImageBalanceHoldResult struct {
 	Applied       bool
 	NewBalance    *float64
 	FrozenBalance *float64
+}
+
+type BalanceHoldScope string
+
+const (
+	BalanceHoldScopeBatchImage BalanceHoldScope = "batch_image"
+	BalanceHoldScopeVideoTask  BalanceHoldScope = "video_task"
+
+	videoTaskHoldRequestPrefix    = "video_task_hold:"
+	videoTaskCaptureRequestPrefix = "video_task_capture:"
+	videoTaskReleaseRequestPrefix = "video_task_release:"
+)
+
+var (
+	ErrBalanceHoldScopeInvalid              = errors.New("balance hold scope is invalid")
+	ErrBalanceHoldRefIDRequired             = errors.New("balance hold ref_id is required")
+	ErrBalanceHoldAmountInvalid             = errors.New("balance hold amount is invalid")
+	ErrBalanceHoldInsufficientBalance       = errors.New("insufficient balance for hold")
+	ErrBalanceHoldReserveNotFound           = errors.New("balance hold reserve was not committed")
+	ErrBalanceHoldSettlementCostExceedsHold = errors.New("balance hold settlement cost exceeds hold")
+)
+
+// BalanceHoldCommand describes an idempotent reserve, capture, or release
+// operation. Scope and RefID bind the money movement to one durable owner.
+type BalanceHoldCommand struct {
+	BillingReviewID    int64
+	RequestID          string
+	APIKeyID           int64
+	RequestFingerprint string
+	RequestPayloadHash string
+	UserID             int64
+	Scope              BalanceHoldScope
+	RefID              string
+	HoldAmount         float64
+	ActualAmount       float64
+}
+
+func (c *BalanceHoldCommand) Normalize() {
+	if c == nil {
+		return
+	}
+	c.RequestID = strings.TrimSpace(c.RequestID)
+	c.Scope = BalanceHoldScope(strings.ToLower(strings.TrimSpace(string(c.Scope))))
+	c.RefID = strings.TrimSpace(c.RefID)
+	if strings.TrimSpace(c.RequestFingerprint) == "" {
+		c.RequestFingerprint = buildBalanceHoldFingerprint(c)
+	}
+	c.HoldAmount = QuantizeUsageBillingAmount(c.HoldAmount)
+	c.ActualAmount = QuantizeUsageBillingAmount(c.ActualAmount)
+}
+
+func (c *BalanceHoldCommand) Validate() error {
+	if c == nil {
+		return nil
+	}
+	if c.RequestID == "" {
+		return ErrUsageBillingRequestIDRequired
+	}
+	if c.BillingReviewID < 0 || (c.BillingReviewID > 0 && (c.Scope != BalanceHoldScopeVideoTask ||
+		(c.RequestID != VideoTaskCaptureRequestID(c.RefID) && c.RequestID != VideoTaskReleaseRequestID(c.RefID)))) {
+		return ErrUsageBillingPayloadInvalid
+	}
+	switch c.Scope {
+	case BalanceHoldScopeBatchImage, BalanceHoldScopeVideoTask:
+	default:
+		return ErrBalanceHoldScopeInvalid
+	}
+	if c.RefID == "" {
+		return ErrBalanceHoldRefIDRequired
+	}
+	if c.UserID <= 0 || c.APIKeyID <= 0 || c.HoldAmount < 0 || c.ActualAmount < 0 ||
+		math.IsNaN(c.HoldAmount) || math.IsNaN(c.ActualAmount) ||
+		math.IsInf(c.HoldAmount, 0) || math.IsInf(c.ActualAmount, 0) {
+		return ErrBalanceHoldAmountInvalid
+	}
+	return nil
+}
+
+func buildBalanceHoldFingerprint(c *BalanceHoldCommand) string {
+	if c == nil {
+		return ""
+	}
+	raw := fmt.Sprintf(
+		"%s|%s|%d|%d|%0.10f|%0.10f",
+		strings.TrimSpace(string(c.Scope)),
+		strings.TrimSpace(c.RefID),
+		c.UserID,
+		c.APIKeyID,
+		c.HoldAmount,
+		c.ActualAmount,
+	)
+	if payloadHash := strings.TrimSpace(c.RequestPayloadHash); payloadHash != "" {
+		raw += "|" + payloadHash
+	}
+	if c.BillingReviewID > 0 {
+		raw += fmt.Sprintf("|billing_review:%d", c.BillingReviewID)
+	}
+	sum := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(sum[:])
+}
+
+func VideoTaskHoldRequestID(taskID string) string {
+	return videoTaskHoldRequestPrefix + strings.TrimSpace(taskID)
+}
+
+func VideoTaskCaptureRequestID(taskID string) string {
+	return videoTaskCaptureRequestPrefix + strings.TrimSpace(taskID)
+}
+
+func VideoTaskReleaseRequestID(taskID string) string {
+	return videoTaskReleaseRequestPrefix + strings.TrimSpace(taskID)
+}
+
+func BalanceHoldReserveRequestID(scope BalanceHoldScope, refID string) string {
+	switch scope {
+	case BalanceHoldScopeBatchImage:
+		return BatchImageHoldRequestID(refID)
+	case BalanceHoldScopeVideoTask:
+		return VideoTaskHoldRequestID(refID)
+	default:
+		return ""
+	}
+}
+
+type BalanceHoldResult struct {
+	Applied            bool
+	NewBalance         *float64
+	FrozenBalance      *float64
+	BalanceOverdrafted bool
+}
+
+type BalanceSettlementAction string
+
+const (
+	BalanceSettlementCapture BalanceSettlementAction = "capture"
+	BalanceSettlementRelease BalanceSettlementAction = "release"
+)
+
+// BalanceSettlementCommand is the durable intent that settles one hold and
+// advances the owning video task in the same database transaction.
+type BalanceSettlementCommand struct {
+	TaskID  int64
+	Action  BalanceSettlementAction
+	Hold    BalanceHoldCommand
+	Billing *UsageBillingCommand
+}
+
+func (c *BalanceSettlementCommand) Normalize() {
+	if c == nil {
+		return
+	}
+	c.Action = BalanceSettlementAction(strings.ToLower(strings.TrimSpace(string(c.Action))))
+	c.Hold.Normalize()
+	if c.Billing != nil {
+		c.Billing.Normalize()
+	}
+}
+
+func (c *BalanceSettlementCommand) Validate() error {
+	if c == nil {
+		return fmt.Errorf("%w: balance settlement command is required", ErrUsageBillingPayloadInvalid)
+	}
+	if c.TaskID <= 0 || c.Hold.Scope != BalanceHoldScopeVideoTask {
+		return fmt.Errorf("%w: video task identity is invalid", ErrUsageBillingPayloadInvalid)
+	}
+	if err := c.Hold.Validate(); err != nil {
+		return fmt.Errorf("%w: %v", ErrUsageBillingPayloadInvalid, err)
+	}
+	switch c.Action {
+	case BalanceSettlementCapture:
+		if c.Billing == nil || c.Billing.BalanceCost != 0 || c.Billing.SubscriptionCost != 0 ||
+			c.Billing.IsSubscriptionBilling || c.Billing.ActualCost != c.Hold.ActualAmount {
+			return fmt.Errorf("%w: invalid video capture allocation", ErrUsageBillingPayloadInvalid)
+		}
+		if c.Hold.RequestID != VideoTaskCaptureRequestID(c.Hold.RefID) {
+			return fmt.Errorf("%w: video capture request_id does not match task", ErrUsageBillingPayloadInvalid)
+		}
+	case BalanceSettlementRelease:
+		if c.Billing != nil || c.Hold.ActualAmount != 0 ||
+			c.Hold.RequestID != VideoTaskReleaseRequestID(c.Hold.RefID) {
+			return fmt.Errorf("%w: invalid video release allocation", ErrUsageBillingPayloadInvalid)
+		}
+	default:
+		return fmt.Errorf("%w: balance settlement action is invalid", ErrUsageBillingPayloadInvalid)
+	}
+	return nil
+}
+
+// BalanceHoldRepository is separate from UsageBillingRepository so existing
+// synchronous gateway test doubles do not need to implement video-only APIs.
+type BalanceHoldRepository interface {
+	ReserveBalanceHold(ctx context.Context, cmd *BalanceHoldCommand) (*BalanceHoldResult, error)
+	CaptureBalanceHold(ctx context.Context, cmd *BalanceHoldCommand) (*BalanceHoldResult, error)
+	ReleaseBalanceHold(ctx context.Context, cmd *BalanceHoldCommand) (*BalanceHoldResult, error)
+}
+
+type VideoBalanceSettlementRepository interface {
+	BalanceHoldRepository
+	SettleVideoBalance(ctx context.Context, settlement *BalanceSettlementCommand, usageLog *UsageLog) (*UsageBillingApplyResult, error)
+	AcknowledgeVideoBalanceSettlement(ctx context.Context, workerID string, eventID int64) error
+}
+
+type VideoBalanceSettlementRecovery interface {
+	ResumeVideoBalanceSettlement(context.Context, *VideoTask) (*UsageBillingApplyResult, *UsageBillingCommand, bool, error)
 }
 
 type UsageBillingRepository interface {

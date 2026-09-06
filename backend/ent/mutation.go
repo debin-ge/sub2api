@@ -2809,60 +2809,73 @@ func (m *APIKeyMutation) ResetEdge(name string) error {
 // AccountMutation represents an operation that mutates the Account nodes in the graph.
 type AccountMutation struct {
 	config
-	op                          Op
-	typ                         string
-	id                          *int64
-	created_at                  *time.Time
-	updated_at                  *time.Time
-	deleted_at                  *time.Time
-	name                        *string
-	notes                       *string
-	platform                    *string
-	_type                       *string
-	credentials                 *map[string]interface{}
-	extra                       *map[string]interface{}
-	proxy_fallback_origin_id    *int64
-	addproxy_fallback_origin_id *int64
-	concurrency                 *int
-	addconcurrency              *int
-	load_factor                 *int
-	addload_factor              *int
-	priority                    *int
-	addpriority                 *int
-	rate_multiplier             *float64
-	addrate_multiplier          *float64
-	status                      *string
-	error_message               *string
-	last_used_at                *time.Time
-	expires_at                  *time.Time
-	auto_pause_on_expired       *bool
-	schedulable                 *bool
-	rate_limited_at             *time.Time
-	rate_limit_reset_at         *time.Time
-	overload_until              *time.Time
-	temp_unschedulable_until    *time.Time
-	temp_unschedulable_reason   *string
-	session_window_start        *time.Time
-	session_window_end          *time.Time
-	session_window_status       *string
-	quota_dimension             *account.QuotaDimension
-	clearedFields               map[string]struct{}
-	groups                      map[int64]struct{}
-	removedgroups               map[int64]struct{}
-	clearedgroups               bool
-	proxy                       *int64
-	clearedproxy                bool
-	parent                      *int64
-	clearedparent               bool
-	children                    map[int64]struct{}
-	removedchildren             map[int64]struct{}
-	clearedchildren             bool
-	usage_logs                  map[int64]struct{}
-	removedusage_logs           map[int64]struct{}
-	clearedusage_logs           bool
-	done                        bool
-	oldValue                    func(context.Context) (*Account, error)
-	predicates                  []predicate.Account
+	op                               Op
+	typ                              string
+	id                               *int64
+	created_at                       *time.Time
+	updated_at                       *time.Time
+	deleted_at                       *time.Time
+	name                             *string
+	notes                            *string
+	platform                         *string
+	_type                            *string
+	credentials                      *map[string]interface{}
+	extra                            *map[string]interface{}
+	ownership_mode                   *string
+	owner_user_id                    *int64
+	addowner_user_id                 *int64
+	isolation_state                  *string
+	provider_identity_version        *int64
+	addprovider_identity_version     *int64
+	isolation_verified_version       *int64
+	addisolation_verified_version    *int64
+	provider_principal_binding_id    *int64
+	addprovider_principal_binding_id *int64
+	video_owner_user_id              *int64
+	addvideo_owner_user_id           *int64
+	video_disclosure_policy          *string
+	proxy_fallback_origin_id         *int64
+	addproxy_fallback_origin_id      *int64
+	concurrency                      *int
+	addconcurrency                   *int
+	load_factor                      *int
+	addload_factor                   *int
+	priority                         *int
+	addpriority                      *int
+	rate_multiplier                  *float64
+	addrate_multiplier               *float64
+	status                           *string
+	error_message                    *string
+	last_used_at                     *time.Time
+	expires_at                       *time.Time
+	auto_pause_on_expired            *bool
+	schedulable                      *bool
+	rate_limited_at                  *time.Time
+	rate_limit_reset_at              *time.Time
+	overload_until                   *time.Time
+	temp_unschedulable_until         *time.Time
+	temp_unschedulable_reason        *string
+	session_window_start             *time.Time
+	session_window_end               *time.Time
+	session_window_status            *string
+	quota_dimension                  *account.QuotaDimension
+	clearedFields                    map[string]struct{}
+	groups                           map[int64]struct{}
+	removedgroups                    map[int64]struct{}
+	clearedgroups                    bool
+	proxy                            *int64
+	clearedproxy                     bool
+	parent                           *int64
+	clearedparent                    bool
+	children                         map[int64]struct{}
+	removedchildren                  map[int64]struct{}
+	clearedchildren                  bool
+	usage_logs                       map[int64]struct{}
+	removedusage_logs                map[int64]struct{}
+	clearedusage_logs                bool
+	done                             bool
+	oldValue                         func(context.Context) (*Account, error)
+	predicates                       []predicate.Account
 }
 
 var _ ent.Mutation = (*AccountMutation)(nil)
@@ -3311,6 +3324,449 @@ func (m *AccountMutation) OldExtra(ctx context.Context) (v map[string]interface{
 // ResetExtra resets all changes to the "extra" field.
 func (m *AccountMutation) ResetExtra() {
 	m.extra = nil
+}
+
+// SetOwnershipMode sets the "ownership_mode" field.
+func (m *AccountMutation) SetOwnershipMode(s string) {
+	m.ownership_mode = &s
+}
+
+// OwnershipMode returns the value of the "ownership_mode" field in the mutation.
+func (m *AccountMutation) OwnershipMode() (r string, exists bool) {
+	v := m.ownership_mode
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOwnershipMode returns the old "ownership_mode" field's value of the Account entity.
+// If the Account object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountMutation) OldOwnershipMode(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOwnershipMode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOwnershipMode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOwnershipMode: %w", err)
+	}
+	return oldValue.OwnershipMode, nil
+}
+
+// ResetOwnershipMode resets all changes to the "ownership_mode" field.
+func (m *AccountMutation) ResetOwnershipMode() {
+	m.ownership_mode = nil
+}
+
+// SetOwnerUserID sets the "owner_user_id" field.
+func (m *AccountMutation) SetOwnerUserID(i int64) {
+	m.owner_user_id = &i
+	m.addowner_user_id = nil
+}
+
+// OwnerUserID returns the value of the "owner_user_id" field in the mutation.
+func (m *AccountMutation) OwnerUserID() (r int64, exists bool) {
+	v := m.owner_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOwnerUserID returns the old "owner_user_id" field's value of the Account entity.
+// If the Account object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountMutation) OldOwnerUserID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOwnerUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOwnerUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOwnerUserID: %w", err)
+	}
+	return oldValue.OwnerUserID, nil
+}
+
+// AddOwnerUserID adds i to the "owner_user_id" field.
+func (m *AccountMutation) AddOwnerUserID(i int64) {
+	if m.addowner_user_id != nil {
+		*m.addowner_user_id += i
+	} else {
+		m.addowner_user_id = &i
+	}
+}
+
+// AddedOwnerUserID returns the value that was added to the "owner_user_id" field in this mutation.
+func (m *AccountMutation) AddedOwnerUserID() (r int64, exists bool) {
+	v := m.addowner_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearOwnerUserID clears the value of the "owner_user_id" field.
+func (m *AccountMutation) ClearOwnerUserID() {
+	m.owner_user_id = nil
+	m.addowner_user_id = nil
+	m.clearedFields[account.FieldOwnerUserID] = struct{}{}
+}
+
+// OwnerUserIDCleared returns if the "owner_user_id" field was cleared in this mutation.
+func (m *AccountMutation) OwnerUserIDCleared() bool {
+	_, ok := m.clearedFields[account.FieldOwnerUserID]
+	return ok
+}
+
+// ResetOwnerUserID resets all changes to the "owner_user_id" field.
+func (m *AccountMutation) ResetOwnerUserID() {
+	m.owner_user_id = nil
+	m.addowner_user_id = nil
+	delete(m.clearedFields, account.FieldOwnerUserID)
+}
+
+// SetIsolationState sets the "isolation_state" field.
+func (m *AccountMutation) SetIsolationState(s string) {
+	m.isolation_state = &s
+}
+
+// IsolationState returns the value of the "isolation_state" field in the mutation.
+func (m *AccountMutation) IsolationState() (r string, exists bool) {
+	v := m.isolation_state
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldIsolationState returns the old "isolation_state" field's value of the Account entity.
+// If the Account object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountMutation) OldIsolationState(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldIsolationState is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldIsolationState requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldIsolationState: %w", err)
+	}
+	return oldValue.IsolationState, nil
+}
+
+// ResetIsolationState resets all changes to the "isolation_state" field.
+func (m *AccountMutation) ResetIsolationState() {
+	m.isolation_state = nil
+}
+
+// SetProviderIdentityVersion sets the "provider_identity_version" field.
+func (m *AccountMutation) SetProviderIdentityVersion(i int64) {
+	m.provider_identity_version = &i
+	m.addprovider_identity_version = nil
+}
+
+// ProviderIdentityVersion returns the value of the "provider_identity_version" field in the mutation.
+func (m *AccountMutation) ProviderIdentityVersion() (r int64, exists bool) {
+	v := m.provider_identity_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProviderIdentityVersion returns the old "provider_identity_version" field's value of the Account entity.
+// If the Account object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountMutation) OldProviderIdentityVersion(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProviderIdentityVersion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProviderIdentityVersion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProviderIdentityVersion: %w", err)
+	}
+	return oldValue.ProviderIdentityVersion, nil
+}
+
+// AddProviderIdentityVersion adds i to the "provider_identity_version" field.
+func (m *AccountMutation) AddProviderIdentityVersion(i int64) {
+	if m.addprovider_identity_version != nil {
+		*m.addprovider_identity_version += i
+	} else {
+		m.addprovider_identity_version = &i
+	}
+}
+
+// AddedProviderIdentityVersion returns the value that was added to the "provider_identity_version" field in this mutation.
+func (m *AccountMutation) AddedProviderIdentityVersion() (r int64, exists bool) {
+	v := m.addprovider_identity_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetProviderIdentityVersion resets all changes to the "provider_identity_version" field.
+func (m *AccountMutation) ResetProviderIdentityVersion() {
+	m.provider_identity_version = nil
+	m.addprovider_identity_version = nil
+}
+
+// SetIsolationVerifiedVersion sets the "isolation_verified_version" field.
+func (m *AccountMutation) SetIsolationVerifiedVersion(i int64) {
+	m.isolation_verified_version = &i
+	m.addisolation_verified_version = nil
+}
+
+// IsolationVerifiedVersion returns the value of the "isolation_verified_version" field in the mutation.
+func (m *AccountMutation) IsolationVerifiedVersion() (r int64, exists bool) {
+	v := m.isolation_verified_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldIsolationVerifiedVersion returns the old "isolation_verified_version" field's value of the Account entity.
+// If the Account object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountMutation) OldIsolationVerifiedVersion(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldIsolationVerifiedVersion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldIsolationVerifiedVersion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldIsolationVerifiedVersion: %w", err)
+	}
+	return oldValue.IsolationVerifiedVersion, nil
+}
+
+// AddIsolationVerifiedVersion adds i to the "isolation_verified_version" field.
+func (m *AccountMutation) AddIsolationVerifiedVersion(i int64) {
+	if m.addisolation_verified_version != nil {
+		*m.addisolation_verified_version += i
+	} else {
+		m.addisolation_verified_version = &i
+	}
+}
+
+// AddedIsolationVerifiedVersion returns the value that was added to the "isolation_verified_version" field in this mutation.
+func (m *AccountMutation) AddedIsolationVerifiedVersion() (r int64, exists bool) {
+	v := m.addisolation_verified_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetIsolationVerifiedVersion resets all changes to the "isolation_verified_version" field.
+func (m *AccountMutation) ResetIsolationVerifiedVersion() {
+	m.isolation_verified_version = nil
+	m.addisolation_verified_version = nil
+}
+
+// SetProviderPrincipalBindingID sets the "provider_principal_binding_id" field.
+func (m *AccountMutation) SetProviderPrincipalBindingID(i int64) {
+	m.provider_principal_binding_id = &i
+	m.addprovider_principal_binding_id = nil
+}
+
+// ProviderPrincipalBindingID returns the value of the "provider_principal_binding_id" field in the mutation.
+func (m *AccountMutation) ProviderPrincipalBindingID() (r int64, exists bool) {
+	v := m.provider_principal_binding_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProviderPrincipalBindingID returns the old "provider_principal_binding_id" field's value of the Account entity.
+// If the Account object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountMutation) OldProviderPrincipalBindingID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProviderPrincipalBindingID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProviderPrincipalBindingID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProviderPrincipalBindingID: %w", err)
+	}
+	return oldValue.ProviderPrincipalBindingID, nil
+}
+
+// AddProviderPrincipalBindingID adds i to the "provider_principal_binding_id" field.
+func (m *AccountMutation) AddProviderPrincipalBindingID(i int64) {
+	if m.addprovider_principal_binding_id != nil {
+		*m.addprovider_principal_binding_id += i
+	} else {
+		m.addprovider_principal_binding_id = &i
+	}
+}
+
+// AddedProviderPrincipalBindingID returns the value that was added to the "provider_principal_binding_id" field in this mutation.
+func (m *AccountMutation) AddedProviderPrincipalBindingID() (r int64, exists bool) {
+	v := m.addprovider_principal_binding_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearProviderPrincipalBindingID clears the value of the "provider_principal_binding_id" field.
+func (m *AccountMutation) ClearProviderPrincipalBindingID() {
+	m.provider_principal_binding_id = nil
+	m.addprovider_principal_binding_id = nil
+	m.clearedFields[account.FieldProviderPrincipalBindingID] = struct{}{}
+}
+
+// ProviderPrincipalBindingIDCleared returns if the "provider_principal_binding_id" field was cleared in this mutation.
+func (m *AccountMutation) ProviderPrincipalBindingIDCleared() bool {
+	_, ok := m.clearedFields[account.FieldProviderPrincipalBindingID]
+	return ok
+}
+
+// ResetProviderPrincipalBindingID resets all changes to the "provider_principal_binding_id" field.
+func (m *AccountMutation) ResetProviderPrincipalBindingID() {
+	m.provider_principal_binding_id = nil
+	m.addprovider_principal_binding_id = nil
+	delete(m.clearedFields, account.FieldProviderPrincipalBindingID)
+}
+
+// SetVideoOwnerUserID sets the "video_owner_user_id" field.
+func (m *AccountMutation) SetVideoOwnerUserID(i int64) {
+	m.video_owner_user_id = &i
+	m.addvideo_owner_user_id = nil
+}
+
+// VideoOwnerUserID returns the value of the "video_owner_user_id" field in the mutation.
+func (m *AccountMutation) VideoOwnerUserID() (r int64, exists bool) {
+	v := m.video_owner_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVideoOwnerUserID returns the old "video_owner_user_id" field's value of the Account entity.
+// If the Account object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountMutation) OldVideoOwnerUserID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVideoOwnerUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVideoOwnerUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVideoOwnerUserID: %w", err)
+	}
+	return oldValue.VideoOwnerUserID, nil
+}
+
+// AddVideoOwnerUserID adds i to the "video_owner_user_id" field.
+func (m *AccountMutation) AddVideoOwnerUserID(i int64) {
+	if m.addvideo_owner_user_id != nil {
+		*m.addvideo_owner_user_id += i
+	} else {
+		m.addvideo_owner_user_id = &i
+	}
+}
+
+// AddedVideoOwnerUserID returns the value that was added to the "video_owner_user_id" field in this mutation.
+func (m *AccountMutation) AddedVideoOwnerUserID() (r int64, exists bool) {
+	v := m.addvideo_owner_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearVideoOwnerUserID clears the value of the "video_owner_user_id" field.
+func (m *AccountMutation) ClearVideoOwnerUserID() {
+	m.video_owner_user_id = nil
+	m.addvideo_owner_user_id = nil
+	m.clearedFields[account.FieldVideoOwnerUserID] = struct{}{}
+}
+
+// VideoOwnerUserIDCleared returns if the "video_owner_user_id" field was cleared in this mutation.
+func (m *AccountMutation) VideoOwnerUserIDCleared() bool {
+	_, ok := m.clearedFields[account.FieldVideoOwnerUserID]
+	return ok
+}
+
+// ResetVideoOwnerUserID resets all changes to the "video_owner_user_id" field.
+func (m *AccountMutation) ResetVideoOwnerUserID() {
+	m.video_owner_user_id = nil
+	m.addvideo_owner_user_id = nil
+	delete(m.clearedFields, account.FieldVideoOwnerUserID)
+}
+
+// SetVideoDisclosurePolicy sets the "video_disclosure_policy" field.
+func (m *AccountMutation) SetVideoDisclosurePolicy(s string) {
+	m.video_disclosure_policy = &s
+}
+
+// VideoDisclosurePolicy returns the value of the "video_disclosure_policy" field in the mutation.
+func (m *AccountMutation) VideoDisclosurePolicy() (r string, exists bool) {
+	v := m.video_disclosure_policy
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVideoDisclosurePolicy returns the old "video_disclosure_policy" field's value of the Account entity.
+// If the Account object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountMutation) OldVideoDisclosurePolicy(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVideoDisclosurePolicy is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVideoDisclosurePolicy requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVideoDisclosurePolicy: %w", err)
+	}
+	return oldValue.VideoDisclosurePolicy, nil
+}
+
+// ClearVideoDisclosurePolicy clears the value of the "video_disclosure_policy" field.
+func (m *AccountMutation) ClearVideoDisclosurePolicy() {
+	m.video_disclosure_policy = nil
+	m.clearedFields[account.FieldVideoDisclosurePolicy] = struct{}{}
+}
+
+// VideoDisclosurePolicyCleared returns if the "video_disclosure_policy" field was cleared in this mutation.
+func (m *AccountMutation) VideoDisclosurePolicyCleared() bool {
+	_, ok := m.clearedFields[account.FieldVideoDisclosurePolicy]
+	return ok
+}
+
+// ResetVideoDisclosurePolicy resets all changes to the "video_disclosure_policy" field.
+func (m *AccountMutation) ResetVideoDisclosurePolicy() {
+	m.video_disclosure_policy = nil
+	delete(m.clearedFields, account.FieldVideoDisclosurePolicy)
 }
 
 // SetProxyID sets the "proxy_id" field.
@@ -4665,7 +5121,7 @@ func (m *AccountMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *AccountMutation) Fields() []string {
-	fields := make([]string, 0, 31)
+	fields := make([]string, 0, 39)
 	if m.created_at != nil {
 		fields = append(fields, account.FieldCreatedAt)
 	}
@@ -4692,6 +5148,30 @@ func (m *AccountMutation) Fields() []string {
 	}
 	if m.extra != nil {
 		fields = append(fields, account.FieldExtra)
+	}
+	if m.ownership_mode != nil {
+		fields = append(fields, account.FieldOwnershipMode)
+	}
+	if m.owner_user_id != nil {
+		fields = append(fields, account.FieldOwnerUserID)
+	}
+	if m.isolation_state != nil {
+		fields = append(fields, account.FieldIsolationState)
+	}
+	if m.provider_identity_version != nil {
+		fields = append(fields, account.FieldProviderIdentityVersion)
+	}
+	if m.isolation_verified_version != nil {
+		fields = append(fields, account.FieldIsolationVerifiedVersion)
+	}
+	if m.provider_principal_binding_id != nil {
+		fields = append(fields, account.FieldProviderPrincipalBindingID)
+	}
+	if m.video_owner_user_id != nil {
+		fields = append(fields, account.FieldVideoOwnerUserID)
+	}
+	if m.video_disclosure_policy != nil {
+		fields = append(fields, account.FieldVideoDisclosurePolicy)
 	}
 	if m.proxy != nil {
 		fields = append(fields, account.FieldProxyID)
@@ -4785,6 +5265,22 @@ func (m *AccountMutation) Field(name string) (ent.Value, bool) {
 		return m.Credentials()
 	case account.FieldExtra:
 		return m.Extra()
+	case account.FieldOwnershipMode:
+		return m.OwnershipMode()
+	case account.FieldOwnerUserID:
+		return m.OwnerUserID()
+	case account.FieldIsolationState:
+		return m.IsolationState()
+	case account.FieldProviderIdentityVersion:
+		return m.ProviderIdentityVersion()
+	case account.FieldIsolationVerifiedVersion:
+		return m.IsolationVerifiedVersion()
+	case account.FieldProviderPrincipalBindingID:
+		return m.ProviderPrincipalBindingID()
+	case account.FieldVideoOwnerUserID:
+		return m.VideoOwnerUserID()
+	case account.FieldVideoDisclosurePolicy:
+		return m.VideoDisclosurePolicy()
 	case account.FieldProxyID:
 		return m.ProxyID()
 	case account.FieldProxyFallbackOriginID:
@@ -4856,6 +5352,22 @@ func (m *AccountMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldCredentials(ctx)
 	case account.FieldExtra:
 		return m.OldExtra(ctx)
+	case account.FieldOwnershipMode:
+		return m.OldOwnershipMode(ctx)
+	case account.FieldOwnerUserID:
+		return m.OldOwnerUserID(ctx)
+	case account.FieldIsolationState:
+		return m.OldIsolationState(ctx)
+	case account.FieldProviderIdentityVersion:
+		return m.OldProviderIdentityVersion(ctx)
+	case account.FieldIsolationVerifiedVersion:
+		return m.OldIsolationVerifiedVersion(ctx)
+	case account.FieldProviderPrincipalBindingID:
+		return m.OldProviderPrincipalBindingID(ctx)
+	case account.FieldVideoOwnerUserID:
+		return m.OldVideoOwnerUserID(ctx)
+	case account.FieldVideoDisclosurePolicy:
+		return m.OldVideoDisclosurePolicy(ctx)
 	case account.FieldProxyID:
 		return m.OldProxyID(ctx)
 	case account.FieldProxyFallbackOriginID:
@@ -4971,6 +5483,62 @@ func (m *AccountMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetExtra(v)
+		return nil
+	case account.FieldOwnershipMode:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOwnershipMode(v)
+		return nil
+	case account.FieldOwnerUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOwnerUserID(v)
+		return nil
+	case account.FieldIsolationState:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetIsolationState(v)
+		return nil
+	case account.FieldProviderIdentityVersion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProviderIdentityVersion(v)
+		return nil
+	case account.FieldIsolationVerifiedVersion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetIsolationVerifiedVersion(v)
+		return nil
+	case account.FieldProviderPrincipalBindingID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProviderPrincipalBindingID(v)
+		return nil
+	case account.FieldVideoOwnerUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVideoOwnerUserID(v)
+		return nil
+	case account.FieldVideoDisclosurePolicy:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVideoDisclosurePolicy(v)
 		return nil
 	case account.FieldProxyID:
 		v, ok := value.(int64)
@@ -5134,6 +5702,21 @@ func (m *AccountMutation) SetField(name string, value ent.Value) error {
 // this mutation.
 func (m *AccountMutation) AddedFields() []string {
 	var fields []string
+	if m.addowner_user_id != nil {
+		fields = append(fields, account.FieldOwnerUserID)
+	}
+	if m.addprovider_identity_version != nil {
+		fields = append(fields, account.FieldProviderIdentityVersion)
+	}
+	if m.addisolation_verified_version != nil {
+		fields = append(fields, account.FieldIsolationVerifiedVersion)
+	}
+	if m.addprovider_principal_binding_id != nil {
+		fields = append(fields, account.FieldProviderPrincipalBindingID)
+	}
+	if m.addvideo_owner_user_id != nil {
+		fields = append(fields, account.FieldVideoOwnerUserID)
+	}
 	if m.addproxy_fallback_origin_id != nil {
 		fields = append(fields, account.FieldProxyFallbackOriginID)
 	}
@@ -5157,6 +5740,16 @@ func (m *AccountMutation) AddedFields() []string {
 // was not set, or was not defined in the schema.
 func (m *AccountMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
+	case account.FieldOwnerUserID:
+		return m.AddedOwnerUserID()
+	case account.FieldProviderIdentityVersion:
+		return m.AddedProviderIdentityVersion()
+	case account.FieldIsolationVerifiedVersion:
+		return m.AddedIsolationVerifiedVersion()
+	case account.FieldProviderPrincipalBindingID:
+		return m.AddedProviderPrincipalBindingID()
+	case account.FieldVideoOwnerUserID:
+		return m.AddedVideoOwnerUserID()
 	case account.FieldProxyFallbackOriginID:
 		return m.AddedProxyFallbackOriginID()
 	case account.FieldConcurrency:
@@ -5176,6 +5769,41 @@ func (m *AccountMutation) AddedField(name string) (ent.Value, bool) {
 // type.
 func (m *AccountMutation) AddField(name string, value ent.Value) error {
 	switch name {
+	case account.FieldOwnerUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddOwnerUserID(v)
+		return nil
+	case account.FieldProviderIdentityVersion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddProviderIdentityVersion(v)
+		return nil
+	case account.FieldIsolationVerifiedVersion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddIsolationVerifiedVersion(v)
+		return nil
+	case account.FieldProviderPrincipalBindingID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddProviderPrincipalBindingID(v)
+		return nil
+	case account.FieldVideoOwnerUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddVideoOwnerUserID(v)
+		return nil
 	case account.FieldProxyFallbackOriginID:
 		v, ok := value.(int64)
 		if !ok {
@@ -5224,6 +5852,18 @@ func (m *AccountMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(account.FieldNotes) {
 		fields = append(fields, account.FieldNotes)
+	}
+	if m.FieldCleared(account.FieldOwnerUserID) {
+		fields = append(fields, account.FieldOwnerUserID)
+	}
+	if m.FieldCleared(account.FieldProviderPrincipalBindingID) {
+		fields = append(fields, account.FieldProviderPrincipalBindingID)
+	}
+	if m.FieldCleared(account.FieldVideoOwnerUserID) {
+		fields = append(fields, account.FieldVideoOwnerUserID)
+	}
+	if m.FieldCleared(account.FieldVideoDisclosurePolicy) {
+		fields = append(fields, account.FieldVideoDisclosurePolicy)
 	}
 	if m.FieldCleared(account.FieldProxyID) {
 		fields = append(fields, account.FieldProxyID)
@@ -5289,6 +5929,18 @@ func (m *AccountMutation) ClearField(name string) error {
 		return nil
 	case account.FieldNotes:
 		m.ClearNotes()
+		return nil
+	case account.FieldOwnerUserID:
+		m.ClearOwnerUserID()
+		return nil
+	case account.FieldProviderPrincipalBindingID:
+		m.ClearProviderPrincipalBindingID()
+		return nil
+	case account.FieldVideoOwnerUserID:
+		m.ClearVideoOwnerUserID()
+		return nil
+	case account.FieldVideoDisclosurePolicy:
+		m.ClearVideoDisclosurePolicy()
 		return nil
 	case account.FieldProxyID:
 		m.ClearProxyID()
@@ -5369,6 +6021,30 @@ func (m *AccountMutation) ResetField(name string) error {
 		return nil
 	case account.FieldExtra:
 		m.ResetExtra()
+		return nil
+	case account.FieldOwnershipMode:
+		m.ResetOwnershipMode()
+		return nil
+	case account.FieldOwnerUserID:
+		m.ResetOwnerUserID()
+		return nil
+	case account.FieldIsolationState:
+		m.ResetIsolationState()
+		return nil
+	case account.FieldProviderIdentityVersion:
+		m.ResetProviderIdentityVersion()
+		return nil
+	case account.FieldIsolationVerifiedVersion:
+		m.ResetIsolationVerifiedVersion()
+		return nil
+	case account.FieldProviderPrincipalBindingID:
+		m.ResetProviderPrincipalBindingID()
+		return nil
+	case account.FieldVideoOwnerUserID:
+		m.ResetVideoOwnerUserID()
+		return nil
+	case account.FieldVideoDisclosurePolicy:
+		m.ResetVideoDisclosurePolicy()
 		return nil
 	case account.FieldProxyID:
 		m.ResetProxyID()
@@ -22659,6 +23335,7 @@ type GroupMutation struct {
 	video_price_1080p                       *float64
 	addvideo_price_1080p                    *float64
 	video_model_prices                      *map[string]map[string]float64
+	video_disclosure_policy                 *string
 	web_search_price_per_call               *float64
 	addweb_search_price_per_call            *float64
 	search_price_per_1k                     *float64
@@ -24584,6 +25261,55 @@ func (m *GroupMutation) ResetVideoModelPrices() {
 	delete(m.clearedFields, group.FieldVideoModelPrices)
 }
 
+// SetVideoDisclosurePolicy sets the "video_disclosure_policy" field.
+func (m *GroupMutation) SetVideoDisclosurePolicy(s string) {
+	m.video_disclosure_policy = &s
+}
+
+// VideoDisclosurePolicy returns the value of the "video_disclosure_policy" field in the mutation.
+func (m *GroupMutation) VideoDisclosurePolicy() (r string, exists bool) {
+	v := m.video_disclosure_policy
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVideoDisclosurePolicy returns the old "video_disclosure_policy" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldVideoDisclosurePolicy(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVideoDisclosurePolicy is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVideoDisclosurePolicy requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVideoDisclosurePolicy: %w", err)
+	}
+	return oldValue.VideoDisclosurePolicy, nil
+}
+
+// ClearVideoDisclosurePolicy clears the value of the "video_disclosure_policy" field.
+func (m *GroupMutation) ClearVideoDisclosurePolicy() {
+	m.video_disclosure_policy = nil
+	m.clearedFields[group.FieldVideoDisclosurePolicy] = struct{}{}
+}
+
+// VideoDisclosurePolicyCleared returns if the "video_disclosure_policy" field was cleared in this mutation.
+func (m *GroupMutation) VideoDisclosurePolicyCleared() bool {
+	_, ok := m.clearedFields[group.FieldVideoDisclosurePolicy]
+	return ok
+}
+
+// ResetVideoDisclosurePolicy resets all changes to the "video_disclosure_policy" field.
+func (m *GroupMutation) ResetVideoDisclosurePolicy() {
+	m.video_disclosure_policy = nil
+	delete(m.clearedFields, group.FieldVideoDisclosurePolicy)
+}
+
 // SetWebSearchPricePerCall sets the "web_search_price_per_call" field.
 func (m *GroupMutation) SetWebSearchPricePerCall(f float64) {
 	m.web_search_price_per_call = &f
@@ -26448,7 +27174,7 @@ func (m *GroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *GroupMutation) Fields() []string {
-	fields := make([]string, 0, 66)
+	fields := make([]string, 0, 67)
 	if m.created_at != nil {
 		fields = append(fields, group.FieldCreatedAt)
 	}
@@ -26553,6 +27279,9 @@ func (m *GroupMutation) Fields() []string {
 	}
 	if m.video_model_prices != nil {
 		fields = append(fields, group.FieldVideoModelPrices)
+	}
+	if m.video_disclosure_policy != nil {
+		fields = append(fields, group.FieldVideoDisclosurePolicy)
 	}
 	if m.web_search_price_per_call != nil {
 		fields = append(fields, group.FieldWebSearchPricePerCall)
@@ -26725,6 +27454,8 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.VideoPrice1080p()
 	case group.FieldVideoModelPrices:
 		return m.VideoModelPrices()
+	case group.FieldVideoDisclosurePolicy:
+		return m.VideoDisclosurePolicy()
 	case group.FieldWebSearchPricePerCall:
 		return m.WebSearchPricePerCall()
 	case group.FieldSearchPricePer1k:
@@ -26866,6 +27597,8 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldVideoPrice1080p(ctx)
 	case group.FieldVideoModelPrices:
 		return m.OldVideoModelPrices(ctx)
+	case group.FieldVideoDisclosurePolicy:
+		return m.OldVideoDisclosurePolicy(ctx)
 	case group.FieldWebSearchPricePerCall:
 		return m.OldWebSearchPricePerCall(ctx)
 	case group.FieldSearchPricePer1k:
@@ -27181,6 +27914,13 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetVideoModelPrices(v)
+		return nil
+	case group.FieldVideoDisclosurePolicy:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVideoDisclosurePolicy(v)
 		return nil
 	case group.FieldWebSearchPricePerCall:
 		v, ok := value.(float64)
@@ -27795,6 +28535,9 @@ func (m *GroupMutation) ClearedFields() []string {
 	if m.FieldCleared(group.FieldVideoModelPrices) {
 		fields = append(fields, group.FieldVideoModelPrices)
 	}
+	if m.FieldCleared(group.FieldVideoDisclosurePolicy) {
+		fields = append(fields, group.FieldVideoDisclosurePolicy)
+	}
 	if m.FieldCleared(group.FieldWebSearchPricePerCall) {
 		fields = append(fields, group.FieldWebSearchPricePerCall)
 	}
@@ -27874,6 +28617,9 @@ func (m *GroupMutation) ClearField(name string) error {
 		return nil
 	case group.FieldVideoModelPrices:
 		m.ClearVideoModelPrices()
+		return nil
+	case group.FieldVideoDisclosurePolicy:
+		m.ClearVideoDisclosurePolicy()
 		return nil
 	case group.FieldWebSearchPricePerCall:
 		m.ClearWebSearchPricePerCall()
@@ -28014,6 +28760,9 @@ func (m *GroupMutation) ResetField(name string) error {
 		return nil
 	case group.FieldVideoModelPrices:
 		m.ResetVideoModelPrices()
+		return nil
+	case group.FieldVideoDisclosurePolicy:
+		m.ResetVideoDisclosurePolicy()
 		return nil
 	case group.FieldWebSearchPricePerCall:
 		m.ResetWebSearchPricePerCall()

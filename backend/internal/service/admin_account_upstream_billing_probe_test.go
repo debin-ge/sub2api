@@ -610,6 +610,7 @@ func TestUpdateAccountExtraDropsManagedBillingProbeFields(t *testing.T) {
 		UpstreamBillingProbeEnabledExtraKey:    true,
 		UpstreamBillingRateSyncEnabledExtraKey: true,
 		UpstreamBillingProbeExtraKey:           map[string]any{"status": "ok"},
+		VideoCapabilityProbeExtraKey:           map[string]any{"status": "supported"},
 	})
 
 	require.NoError(t, err)
@@ -617,6 +618,7 @@ func TestUpdateAccountExtraDropsManagedBillingProbeFields(t *testing.T) {
 	require.NotContains(t, repo.accounts[accountID].Extra, UpstreamBillingProbeEnabledExtraKey)
 	require.NotContains(t, repo.accounts[accountID].Extra, UpstreamBillingRateSyncEnabledExtraKey)
 	require.NotContains(t, repo.accounts[accountID].Extra, UpstreamBillingProbeExtraKey)
+	require.NotContains(t, repo.accounts[accountID].Extra, VideoCapabilityProbeExtraKey)
 }
 
 func TestBulkUpdateAccountsDropsManagedUpstreamBillingProbeState(t *testing.T) {
@@ -629,6 +631,7 @@ func TestBulkUpdateAccountsDropsManagedUpstreamBillingProbeState(t *testing.T) {
 			UpstreamBillingProbeEnabledExtraKey:    true,
 			UpstreamBillingRateSyncEnabledExtraKey: true,
 			UpstreamBillingProbeExtraKey:           map[string]any{"status": "ok"},
+			VideoCapabilityProbeExtraKey:           map[string]any{"status": "supported"},
 		},
 	}
 
@@ -641,6 +644,7 @@ func TestBulkUpdateAccountsDropsManagedUpstreamBillingProbeState(t *testing.T) {
 	require.NotContains(t, repo.bulkUpdates[0].Extra, UpstreamBillingProbeEnabledExtraKey)
 	require.NotContains(t, repo.bulkUpdates[0].Extra, UpstreamBillingRateSyncEnabledExtraKey)
 	require.NotContains(t, repo.bulkUpdates[0].Extra, UpstreamBillingProbeExtraKey)
+	require.NotContains(t, repo.bulkUpdates[0].Extra, VideoCapabilityProbeExtraKey)
 }
 
 func TestBulkUpdateAccountsAcceptsDedicatedUpstreamBillingProbeSetting(t *testing.T) {

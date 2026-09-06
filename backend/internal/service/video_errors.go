@@ -1,0 +1,45 @@
+package service
+
+import (
+	"net/http"
+
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+)
+
+var (
+	ErrVideoDisabled                  = infraerrors.New(http.StatusNotFound, "VIDEO_DISABLED", "video API is disabled")
+	ErrVideoCreationDisabled          = infraerrors.New(http.StatusForbidden, "VIDEO_CREATION_DISABLED", "video creation is disabled")
+	ErrVideoOperationDisabled         = infraerrors.New(http.StatusForbidden, "VIDEO_OPERATION_DISABLED", "video operation is disabled")
+	ErrVideoCallbacksDisabled         = infraerrors.New(http.StatusForbidden, "VIDEO_CALLBACKS_DISABLED", "video callbacks are disabled")
+	ErrVideoExtensionLimitExceeded    = infraerrors.New(http.StatusBadRequest, "VIDEO_EXTENSION_LIMIT_EXCEEDED", "video extension exceeds the maximum chain depth or total duration")
+	ErrVideoTaskNotFound              = infraerrors.New(http.StatusNotFound, "VIDEO_TASK_NOT_FOUND", "video task not found")
+	ErrVideoResourceNotFound          = infraerrors.New(http.StatusNotFound, "VIDEO_RESOURCE_NOT_FOUND", "video resource not found")
+	ErrVideoInvalidRequest            = infraerrors.New(http.StatusBadRequest, "VIDEO_INVALID_REQUEST", "invalid video request")
+	ErrVideoSourceSpecConflict        = infraerrors.New(http.StatusBadRequest, "VIDEO_SOURCE_SPEC_CONFLICT", "video request conflicts with the source execution specification")
+	ErrVideoSourceSpecUnavailable     = infraerrors.New(http.StatusConflict, "VIDEO_SOURCE_SPEC_UNAVAILABLE", "the source video execution specification is unavailable")
+	ErrVideoCapabilityUnsupported     = infraerrors.New(http.StatusBadRequest, "VIDEO_CAPABILITY_UNSUPPORTED", "video capability is not supported")
+	ErrVideoInputUnsupported          = infraerrors.New(http.StatusBadRequest, "VIDEO_INPUT_UNSUPPORTED", "video input is not supported")
+	ErrVideoInputTooLarge             = infraerrors.New(http.StatusRequestEntityTooLarge, "VIDEO_INPUT_TOO_LARGE", "video input is too large")
+	ErrVideoIdempotencyConflict       = infraerrors.New(http.StatusConflict, "VIDEO_IDEMPOTENCY_CONFLICT", "idempotency key reused with a different video request")
+	ErrVideoInvalidTransition         = infraerrors.New(http.StatusConflict, "VIDEO_INVALID_TRANSITION", "invalid video task state transition")
+	ErrVideoProviderUnsupported       = infraerrors.New(http.StatusBadRequest, "VIDEO_PROVIDER_UNSUPPORTED", "video provider is not supported")
+	ErrVideoNoAccountAvailable        = infraerrors.New(http.StatusBadGateway, "VIDEO_NO_ACCOUNT_AVAILABLE", "no compatible video account is available")
+	ErrVideoAccountConcurrencyLimited = infraerrors.New(http.StatusTooManyRequests, "VIDEO_ACCOUNT_CONCURRENCY_LIMITED", "all compatible video accounts are at their long-running concurrency limit")
+	ErrVideoInsufficientBalance       = infraerrors.New(http.StatusPaymentRequired, "VIDEO_INSUFFICIENT_BALANCE", "insufficient balance for video task hold")
+	ErrVideoSubscriptionUnsupported   = infraerrors.New(http.StatusForbidden, "VIDEO_SUBSCRIPTION_BILLING_UNSUPPORTED", "subscription billing is not supported for video tasks")
+	ErrVideoPricingMissing            = infraerrors.New(http.StatusBadRequest, "VIDEO_PRICING_MISSING", "video pricing is not configured")
+	ErrVideoPricingRuleMissing        = infraerrors.New(http.StatusBadRequest, "VIDEO_PRICING_RULE_MISSING", "no video pricing rule matches this request")
+	ErrVideoPricingAmbiguous          = infraerrors.New(http.StatusConflict, "VIDEO_PRICING_AMBIGUOUS", "multiple video pricing rules match")
+	ErrVideoPricingResolutionMissing  = infraerrors.New(http.StatusBadRequest, "VIDEO_PRICING_RESOLUTION_MISSING", "video pricing resolution cannot be determined")
+	ErrVideoPricingEstimatorMissing   = infraerrors.New(http.StatusBadRequest, "VIDEO_PRICING_ESTIMATOR_MISSING", "video pricing estimator is not configured")
+	ErrVideoPricingInvalid            = infraerrors.New(http.StatusBadRequest, "VIDEO_PRICING_INVALID", "video pricing configuration is invalid")
+	ErrVideoSubmissionUnknown         = infraerrors.New(http.StatusBadGateway, "VIDEO_SUBMISSION_UNKNOWN", "video provider submission outcome is unknown")
+	ErrVideoSettlementPending         = infraerrors.New(http.StatusServiceUnavailable, "VIDEO_SETTLEMENT_PENDING", "video settlement is pending")
+	ErrVideoContentNotReady           = infraerrors.New(http.StatusConflict, "VIDEO_CONTENT_NOT_READY", "video content is not ready")
+	ErrVideoContentExpired            = infraerrors.New(http.StatusGone, "VIDEO_CONTENT_EXPIRED", "video content has expired")
+	ErrVideoDeleteConflict            = infraerrors.New(http.StatusConflict, "VIDEO_DELETE_CONFLICT", "video task cannot be deleted in its current state")
+	ErrVideoQueueEmpty                = infraerrors.New(http.StatusNotFound, "VIDEO_QUEUE_EMPTY", "video task queue is empty")
+	ErrVideoQueueInvalidPayload       = infraerrors.New(http.StatusBadRequest, "VIDEO_QUEUE_INVALID_PAYLOAD", "invalid video task queue payload")
+	ErrVideoSpoolLimited              = infraerrors.New(http.StatusTooManyRequests, "VIDEO_SPOOL_LIMITED", "video submission spool capacity is exhausted")
+	ErrVideoSpoolCorrupt              = infraerrors.New(http.StatusInternalServerError, "VIDEO_SPOOL_CORRUPT", "video submission spool is corrupt")
+)

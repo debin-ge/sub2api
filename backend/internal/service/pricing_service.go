@@ -107,31 +107,32 @@ var (
 // The catalog schema is compatible with model-price-repo JSON and includes
 // fields such as input_cost_per_token and litellm_provider.
 type ModelPriceEntry struct {
-	Currency                            string  `json:"currency,omitempty"`
-	InputCostPerToken                   float64 `json:"input_cost_per_token"`
-	InputCostPerTokenPriority           float64 `json:"input_cost_per_token_priority"`
-	OutputCostPerToken                  float64 `json:"output_cost_per_token"`
-	OutputCostPerTokenPriority          float64 `json:"output_cost_per_token_priority"`
-	CacheCreationInputTokenCost         float64 `json:"cache_creation_input_token_cost"`
-	CacheCreationInputTokenCostPriority float64 `json:"cache_creation_input_token_cost_priority"`
-	CacheCreationInputTokenCostAbove1hr float64 `json:"cache_creation_input_token_cost_above_1hr"`
-	CacheReadInputTokenCost             float64 `json:"cache_read_input_token_cost"`
-	CacheReadInputTokenCostPriority     float64 `json:"cache_read_input_token_cost_priority"`
-	LongContextInputTokenThreshold      int     `json:"long_context_input_token_threshold,omitempty"`
-	LongContextInputCostMultiplier      float64 `json:"long_context_input_cost_multiplier,omitempty"`
-	LongContextOutputCostMultiplier     float64 `json:"long_context_output_cost_multiplier,omitempty"`
-	SupportsServiceTier                 bool    `json:"supports_service_tier"`
-	PricingCatalogProvider              string  `json:"litellm_provider"`
-	Mode                                string  `json:"mode"`
-	SupportsPromptCaching               bool    `json:"supports_prompt_caching"`
-	OutputCostPerImage                  float64 `json:"output_cost_per_image"`       // 图片生成模型每张图片价格
-	OutputCostPerImageToken             float64 `json:"output_cost_per_image_token"` // 图片输出 token 价格
-	InputCostPerImageToken              float64 `json:"input_cost_per_image_token"`  // 图片输入 token 价格（如 gpt-image-2 图片编辑）
-	OutputCostPerImageExplicit          bool    `json:"-"`
-	ImageOutputPriceExplicit            bool    `json:"-"`
-	ImageInputPriceExplicit             bool    `json:"-"`
-	InputPriceExplicit                  bool    `json:"-"`
-	OutputPriceExplicit                 bool    `json:"-"`
+	Currency                            string              `json:"currency,omitempty"`
+	InputCostPerToken                   float64             `json:"input_cost_per_token"`
+	InputCostPerTokenPriority           float64             `json:"input_cost_per_token_priority"`
+	OutputCostPerToken                  float64             `json:"output_cost_per_token"`
+	OutputCostPerTokenPriority          float64             `json:"output_cost_per_token_priority"`
+	CacheCreationInputTokenCost         float64             `json:"cache_creation_input_token_cost"`
+	CacheCreationInputTokenCostPriority float64             `json:"cache_creation_input_token_cost_priority"`
+	CacheCreationInputTokenCostAbove1hr float64             `json:"cache_creation_input_token_cost_above_1hr"`
+	CacheReadInputTokenCost             float64             `json:"cache_read_input_token_cost"`
+	CacheReadInputTokenCostPriority     float64             `json:"cache_read_input_token_cost_priority"`
+	LongContextInputTokenThreshold      int                 `json:"long_context_input_token_threshold,omitempty"`
+	LongContextInputCostMultiplier      float64             `json:"long_context_input_cost_multiplier,omitempty"`
+	LongContextOutputCostMultiplier     float64             `json:"long_context_output_cost_multiplier,omitempty"`
+	SupportsServiceTier                 bool                `json:"supports_service_tier"`
+	PricingCatalogProvider              string              `json:"litellm_provider"`
+	Mode                                string              `json:"mode"`
+	SupportsPromptCaching               bool                `json:"supports_prompt_caching"`
+	OutputCostPerImage                  float64             `json:"output_cost_per_image"`       // 图片生成模型每张图片价格
+	OutputCostPerImageToken             float64             `json:"output_cost_per_image_token"` // 图片输出 token 价格
+	InputCostPerImageToken              float64             `json:"input_cost_per_image_token"`  // 图片输入 token 价格（如 gpt-image-2 图片编辑）
+	VideoPricing                        *VideoPricingConfig `json:"video_pricing,omitempty"`
+	OutputCostPerImageExplicit          bool                `json:"-"`
+	ImageOutputPriceExplicit            bool                `json:"-"`
+	ImageInputPriceExplicit             bool                `json:"-"`
+	InputPriceExplicit                  bool                `json:"-"`
+	OutputPriceExplicit                 bool                `json:"-"`
 	// PricePresenceKnown is true for entries parsed from the JSON catalog.
 	// In-memory fallback/test entries predate presence tracking and keep the
 	// zero value for backward compatibility.
@@ -146,6 +147,7 @@ type ModelPriceEntry struct {
 	LongContextPricingExplicit         bool `json:"-"`
 	LongContextThresholdInclusive      bool `json:"-"`
 	OperatorOverride                   bool `json:"-"`
+	VideoPricingOperatorOverride       bool `json:"-"`
 
 	// TokenPricingAbsent 表示源数据缺少一组完整、自洽的 token 价格：
 	// input/output 必须同时存在；声明 cache、priority 或 long-context 时，
@@ -168,26 +170,27 @@ type PricingRemoteClient interface {
 // RawModelPriceEntry parses raw JSON while preserving whether optional price
 // fields were present.
 type RawModelPriceEntry struct {
-	Currency                            string   `json:"currency"`
-	InputCostPerToken                   *float64 `json:"input_cost_per_token"`
-	InputCostPerTokenPriority           *float64 `json:"input_cost_per_token_priority"`
-	OutputCostPerToken                  *float64 `json:"output_cost_per_token"`
-	OutputCostPerTokenPriority          *float64 `json:"output_cost_per_token_priority"`
-	CacheCreationInputTokenCost         *float64 `json:"cache_creation_input_token_cost"`
-	CacheCreationInputTokenCostPriority *float64 `json:"cache_creation_input_token_cost_priority"`
-	CacheCreationInputTokenCostAbove1hr *float64 `json:"cache_creation_input_token_cost_above_1hr"`
-	CacheReadInputTokenCost             *float64 `json:"cache_read_input_token_cost"`
-	CacheReadInputTokenCostPriority     *float64 `json:"cache_read_input_token_cost_priority"`
-	LongContextInputTokenThreshold      *int     `json:"long_context_input_token_threshold"`
-	LongContextInputCostMultiplier      *float64 `json:"long_context_input_cost_multiplier"`
-	LongContextOutputCostMultiplier     *float64 `json:"long_context_output_cost_multiplier"`
-	SupportsServiceTier                 bool     `json:"supports_service_tier"`
-	PricingCatalogProvider              string   `json:"litellm_provider"`
-	Mode                                string   `json:"mode"`
-	SupportsPromptCaching               bool     `json:"supports_prompt_caching"`
-	OutputCostPerImage                  *float64 `json:"output_cost_per_image"`
-	OutputCostPerImageToken             *float64 `json:"output_cost_per_image_token"`
-	InputCostPerImageToken              *float64 `json:"input_cost_per_image_token"`
+	Currency                            string              `json:"currency"`
+	InputCostPerToken                   *float64            `json:"input_cost_per_token"`
+	InputCostPerTokenPriority           *float64            `json:"input_cost_per_token_priority"`
+	OutputCostPerToken                  *float64            `json:"output_cost_per_token"`
+	OutputCostPerTokenPriority          *float64            `json:"output_cost_per_token_priority"`
+	CacheCreationInputTokenCost         *float64            `json:"cache_creation_input_token_cost"`
+	CacheCreationInputTokenCostPriority *float64            `json:"cache_creation_input_token_cost_priority"`
+	CacheCreationInputTokenCostAbove1hr *float64            `json:"cache_creation_input_token_cost_above_1hr"`
+	CacheReadInputTokenCost             *float64            `json:"cache_read_input_token_cost"`
+	CacheReadInputTokenCostPriority     *float64            `json:"cache_read_input_token_cost_priority"`
+	LongContextInputTokenThreshold      *int                `json:"long_context_input_token_threshold"`
+	LongContextInputCostMultiplier      *float64            `json:"long_context_input_cost_multiplier"`
+	LongContextOutputCostMultiplier     *float64            `json:"long_context_output_cost_multiplier"`
+	SupportsServiceTier                 bool                `json:"supports_service_tier"`
+	PricingCatalogProvider              string              `json:"litellm_provider"`
+	Mode                                string              `json:"mode"`
+	SupportsPromptCaching               bool                `json:"supports_prompt_caching"`
+	OutputCostPerImage                  *float64            `json:"output_cost_per_image"`
+	OutputCostPerImageToken             *float64            `json:"output_cost_per_image_token"`
+	InputCostPerImageToken              *float64            `json:"input_cost_per_image_token"`
+	VideoPricing                        *VideoPricingConfig `json:"video_pricing"`
 }
 
 // codexAutoReviewHasUnpricedServiceTier is an explicit catalog policy for the
@@ -728,14 +731,28 @@ func (s *PricingService) parsePricingData(body []byte) (map[string]*ModelPriceEn
 		}
 
 		// 尝试解析每个条目
+		entryBody := rawEntry
+		var rawFields map[string]json.RawMessage
+		if json.Unmarshal(rawEntry, &rawFields) == nil {
+			if videoRaw, present := rawFields["video_pricing"]; present {
+				var profile VideoPricingConfig
+				if err := json.Unmarshal(videoRaw, &profile); err != nil || ValidateVideoPricingConfig(&profile) != nil {
+					logger.LegacyPrintf("service.pricing", "[Pricing] Model %s has invalid video pricing; video pricing was ignored", modelName)
+					delete(rawFields, "video_pricing")
+					if sanitized, marshalErr := json.Marshal(rawFields); marshalErr == nil {
+						entryBody = sanitized
+					}
+				}
+			}
+		}
 		var entry RawModelPriceEntry
-		if err := json.Unmarshal(rawEntry, &entry); err != nil {
+		if err := json.Unmarshal(entryBody, &entry); err != nil {
 			skipped++
 			continue
 		}
 
 		// 只保留有有效价格的条目
-		if entry.InputCostPerToken == nil && entry.OutputCostPerToken == nil && entry.OutputCostPerImage == nil && entry.OutputCostPerImageToken == nil && entry.InputCostPerImageToken == nil {
+		if entry.InputCostPerToken == nil && entry.OutputCostPerToken == nil && entry.OutputCostPerImage == nil && entry.OutputCostPerImageToken == nil && entry.InputCostPerImageToken == nil && entry.VideoPricing == nil {
 			continue
 		}
 		if normalized, err := NormalizeModelPriceCurrency(entry.Currency); err != nil {

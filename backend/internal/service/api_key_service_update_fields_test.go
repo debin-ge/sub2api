@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -16,6 +17,7 @@ import (
 type updateFieldsAPIKeyRepoStub struct {
 	quotaBaseAPIKeyRepoStub
 	key          *APIKey
+	updated      *APIKey
 	updateFields []APIKeyUpdateFields
 }
 
@@ -30,9 +32,65 @@ func (s *updateFieldsAPIKeyRepoStub) GetByID(context.Context, int64) (*APIKey, e
 	return &clone, nil
 }
 
-func (s *updateFieldsAPIKeyRepoStub) Update(_ context.Context, _ *APIKey, fields APIKeyUpdateFields) error {
+func (s *updateFieldsAPIKeyRepoStub) Update(_ context.Context, key *APIKey, fields APIKeyUpdateFields) error {
+	clone := *key
+	s.updated = &clone
 	s.updateFields = append(s.updateFields, fields)
 	return nil
+}
+
+func TestAPIKeyUpdate_AllowsUnverifiedNotificationEmail(t *testing.T) {
+	oldEmail := "old@example.com"
+	newEmail := "new@example.com"
+	verifiedAt := time.Now().UTC().Add(-time.Hour)
+	expiresAt := time.Now().UTC().Add(time.Hour)
+	duration := int64(time.Hour / time.Second)
+	changeNotifyEnabled := true
+	rotateOnExpiry := true
+	svc, repo := newUpdateFieldsAPIKeyService(&APIKey{
+		ID: 1, UserID: 7, Key: "sk-test", Status: StatusActive,
+		NotificationEmail: &oldEmail, NotificationEmailVerifiedAt: &verifiedAt,
+		ExpiresAt: &expiresAt, ValidityDurationSeconds: &duration,
+	})
+
+	_, err := svc.Update(context.Background(), 1, 7, UpdateAPIKeyRequest{
+		NotificationEmail:   &newEmail,
+		ChangeNotifyEnabled: &changeNotifyEnabled,
+		RotateOnExpiry:      &rotateOnExpiry,
+	})
+	require.NoError(t, err)
+	require.Equal(t, newEmail, *repo.updated.NotificationEmail)
+	require.Nil(t, repo.updated.NotificationEmailVerifiedAt)
+	require.True(t, repo.updated.ChangeNotifyEnabled)
+	require.True(t, repo.updated.RotateOnExpiry)
+	require.Equal(t, []APIKeyUpdateFields{{NotificationEmail: true, NotificationSettings: true}}, repo.updateFields)
+}
+
+func TestAPIKeyUpdate_CanOptionallyVerifyExistingEmail(t *testing.T) {
+	ctx := context.Background()
+	email := "owner@example.com"
+	verifiedAt := time.Now().UTC()
+	cache := newAPIKeyEmailVerificationMemoryCache()
+	require.NoError(t, cache.SetProof(ctx, "valid-proof", APIKeyEmailVerificationProof{
+		UserID: 7, Email: email, Purpose: apiKeyEmailVerificationPurpose, VerifiedAt: verifiedAt,
+	}, time.Minute))
+	svc, repo := newUpdateFieldsAPIKeyService(&APIKey{
+		ID: 1, UserID: 7, Key: "sk-test", Status: StatusActive, NotificationEmail: &email,
+	})
+	svc.emailVerification = NewAPIKeyEmailVerificationService(cache, nil)
+
+	_, err := svc.Update(ctx, 1, 7, UpdateAPIKeyRequest{
+		NotificationEmail:             &email,
+		NotificationEmailVerification: "valid-proof",
+	})
+	require.NoError(t, err)
+	require.Equal(t, verifiedAt, *repo.updated.NotificationEmailVerifiedAt)
+
+	_, err = svc.Update(ctx, 1, 7, UpdateAPIKeyRequest{
+		NotificationEmail:             &email,
+		NotificationEmailVerification: "invalid-proof",
+	})
+	require.ErrorIs(t, err, ErrAPIKeyNotificationUnverified)
 }
 
 func newUpdateFieldsAPIKeyService(key *APIKey) (*APIKeyService, *updateFieldsAPIKeyRepoStub) {

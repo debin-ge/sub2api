@@ -170,6 +170,35 @@ func TestBatchImagePromptGuardRunsBeforePersistenceOrBilling(t *testing.T) {
 	require.NotContains(t, string(requests[0].Body), "QklOQVJZX0NBTkFSWQ==")
 }
 
+func TestVideoPromptGuardIncludesReferenceImageBeforeTaskOrHold(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := blockingHandlerPromptEngine()
+	openAI := &OpenAIGatewayHandler{securityAuditCoordinator: securityaudit.NewCoordinator(nil, engine)}
+	fake := &videoTaskAPIFake{}
+	h := newVideoHandler(fake, nil, videoHandlerTestConfig(t))
+	h.openAI = openAI
+
+	router := gin.New()
+	router.Use(securityAuditMediaTestMiddleware)
+	router.POST("/v1/videos", h.Create)
+	request := httptest.NewRequest(http.MethodPost, "/v1/videos", strings.NewReader(`{
+		"model":"sora-2","prompt":"blocked video prompt",
+		"input_reference":{"image_url":"https://images.example/reference.png"}
+	}`))
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusForbidden, recorder.Code)
+	require.Zero(t, fake.submitCalls, "task creation and balance hold must remain downstream of moderation")
+	evaluated, _, requests := engine.snapshot()
+	require.Equal(t, 1, evaluated)
+	require.Len(t, requests, 1)
+	input := service.ExtractContentModerationInput(service.ContentModerationProtocolOpenAIImages, requests[0].Body)
+	require.Equal(t, "blocked video prompt", input.Text)
+	require.Equal(t, []string{"https://images.example/reference.png"}, input.Images)
+}
+
 func TestSecurityAuditBlockingFailuresLeaveAllDownstreamCountersAtZero(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for _, kind := range []securityaudit.DecisionKind{securityaudit.DecisionBlock, securityaudit.DecisionUnavailable, securityaudit.DecisionInvalid} {

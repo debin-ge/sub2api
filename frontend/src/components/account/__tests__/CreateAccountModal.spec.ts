@@ -7,6 +7,7 @@ const {
   checkMixedChannelRiskMock,
   probeUpstreamBillingMock,
   syncUpstreamModelsMock,
+  showErrorMock,
   showWarningMock,
   importCodexSessionMock,
   createOpenAICodexPATMock,
@@ -16,6 +17,7 @@ const {
   checkMixedChannelRiskMock: vi.fn(),
   probeUpstreamBillingMock: vi.fn(),
   syncUpstreamModelsMock: vi.fn(),
+  showErrorMock: vi.fn(),
   showWarningMock: vi.fn(),
   importCodexSessionMock: vi.fn(),
   createOpenAICodexPATMock: vi.fn(),
@@ -24,7 +26,7 @@ const {
 
 vi.mock('@/stores/app', () => ({
 	useAppStore: () => ({
-		showError: vi.fn(),
+		showError: showErrorMock,
 		showSuccess: vi.fn(),
 		showInfo: vi.fn(),
 		showWarning: showWarningMock
@@ -264,6 +266,7 @@ describe('CreateAccountModal', () => {
     checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
     probeUpstreamBillingMock.mockReset().mockResolvedValue({})
     syncUpstreamModelsMock.mockReset().mockResolvedValue({ models: [], metadata: {} })
+    showErrorMock.mockReset()
     showWarningMock.mockReset()
     importCodexSessionMock.mockReset().mockResolvedValue({
       created: 1,
@@ -554,6 +557,40 @@ describe('CreateAccountModal', () => {
 
     expect(createAccountMock).toHaveBeenCalledTimes(1)
     expect(createAccountMock.mock.calls[0]?.[0]?.extra?.openai_long_context_billing_enabled).toBe(true)
+  })
+
+  it('submits owner and dedicated credential disclosure for an OpenAI API key account', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+    await selectButtonByText(wrapper, 'API Key')
+    await wrapper.get('[data-tour="account-form-name"]').setValue('Dedicated video account')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('test-api-key')
+    await wrapper.get('[data-testid="create-video-owner-user-id"]').setValue('42')
+    await wrapper.get('[data-testid="create-video-disclosure-policy"]').setValue('dedicated_credentials')
+
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock).toHaveBeenCalledTimes(1)
+    expect(createAccountMock.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
+      video_owner_user_id: 42,
+      video_disclosure_policy: 'dedicated_credentials'
+    }))
+  })
+
+  it('does not create an account when dedicated credential disclosure has no owner', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+    await selectButtonByText(wrapper, 'API Key')
+    await wrapper.get('[data-tour="account-form-name"]').setValue('Invalid dedicated account')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('test-api-key')
+    await wrapper.get('[data-testid="create-video-disclosure-policy"]').setValue('dedicated_credentials')
+
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock).not.toHaveBeenCalled()
+    expect(showErrorMock).toHaveBeenCalledWith('admin.accounts.openai.videoDedicatedOwnerRequired')
   })
 
   it('omits the OpenAI setting for non-OpenAI account creation', async () => {

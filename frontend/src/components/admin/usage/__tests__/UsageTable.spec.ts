@@ -57,12 +57,24 @@ const messages: Record<string, string> = {
   'usage.imageSizeUnknown': 'unknown',
   'usage.imageUnitPrice': 'Per-image price',
   'usage.imageTotalPrice': 'Image total price',
+	'usage.videoResolution': 'Video resolution',
+	'usage.videoDuration': 'Video duration',
+	'usage.videoBillingUnit': 'Video billing unit',
+	'usage.videoUnits': 'Video billable units',
+	'usage.videoUnitPrice': 'Video unit price',
+	'usage.videoBaseCost': 'Video base cost',
+	'usage.videoTokenUnit': 'video tokens',
+	'usage.videoSecondUnit': 'seconds',
+	'usage.videoRequestUnit': 'requests',
+	'usage.secondsShort': 'sec',
+	'usage.perMillionVideoTokens': '/ 1M video tokens',
   'usage.stream': 'Stream',
   'usage.sync': 'Sync',
   'usage.nativeCompactionV2': 'Compaction',
   'admin.usage.billingModeToken': 'Token',
   'admin.usage.billingModePerRequest': 'Per request',
-  'admin.usage.billingModeImage': 'Image',
+	'admin.usage.billingModeImage': 'Image',
+	'admin.usage.billingModeVideo': 'Video',
 	'admin.usage.requestIdCopied': 'Request ID copied',
 	'keys.copied': 'Copied',
 	'keys.copyToClipboard': 'Copy to clipboard',
@@ -149,6 +161,68 @@ describe('admin UsageTable tooltip', () => {
       toJSON: () => ({}),
     } as DOMRect)
   })
+
+	it.each([
+		{ unit: 'video_token', units: 125_000, outputTokens: 125_000, duration: 7, expected: '125,000 video tokens' },
+		{ unit: 'second', units: 8, outputTokens: 0, duration: 8, expected: '8 seconds' },
+		{ unit: 'request', units: 1, outputTokens: 0, duration: 6, expected: '1 requests' },
+	])('renders $unit video usage instead of text token counters', ({ unit, units, outputTokens, duration, expected }) => {
+		const wrapper = mount(UsageTable, {
+			props: {
+				data: [{
+					...baseImageRow,
+					request_id: `req-video-${unit}`,
+					billing_mode: 'video',
+					image_count: 0,
+					video_count: 1,
+					video_resolution: '864x480',
+					video_duration_seconds: duration,
+					video_billing_unit: unit,
+					video_units: units,
+					video_unit_price: 0.000002,
+					output_tokens: outputTokens,
+				}],
+				loading: false,
+				columns: [],
+			},
+			global: { stubs: { DataTable: DataTableStub, EmptyState: true, Icon: true, Teleport: true } },
+		})
+
+		const cell = wrapper.get('[data-testid="video-usage-cell"]')
+		expect(cell.text()).toContain(expected)
+		expect(cell.text()).toContain('864x480')
+		expect(cell.text()).not.toContain('0 0')
+	})
+
+	it('shows video pricing and charged cost in the cost tooltip', async () => {
+		const wrapper = mount(UsageTable, {
+			props: {
+				data: [{
+					...baseImageRow,
+					request_id: 'req-video-tooltip',
+					billing_mode: 'video', image_count: 0, video_count: 1,
+					video_resolution: '864x480', video_duration_seconds: 7,
+					video_billing_unit: 'video_token', video_units: 125_000,
+					video_unit_price: 0.000002, output_tokens: 125_000,
+					total_cost: 0.25, actual_cost: 0.375, rate_multiplier: 1.5,
+				}],
+				loading: false,
+				columns: [],
+			},
+			global: { stubs: { DataTable: DataTableStub, EmptyState: true, Icon: true, Teleport: true } },
+		})
+
+		const tooltipTriggers = wrapper.findAll('.group.relative')
+		await tooltipTriggers[tooltipTriggers.length - 1].trigger('mouseenter')
+		await nextTick()
+		const text = wrapper.text()
+		expect(text).toContain('Video unit price')
+		expect(text).toContain('$2.000000 / 1M video tokens')
+		expect(text).toContain('Video base cost')
+		expect(text).toContain('$0.250000')
+		expect(text).toContain('User billed')
+		expect(text).toContain('$0.375000')
+	})
 
   it('marks only usage rows that actually applied long-context billing', () => {
     const wrapper = mount(UsageTable, {

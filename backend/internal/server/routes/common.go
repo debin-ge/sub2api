@@ -25,6 +25,7 @@ type healthPayload struct {
 func RegisterCommonRoutes(r *gin.Engine, cfg *config.Config, version string) {
 	// Initialize Radar collectors before exposing the process gatherer.
 	observability.DefaultRadarMetrics()
+	observability.DefaultVideoMetrics()
 	token := ""
 	if cfg != nil {
 		token = strings.TrimSpace(cfg.Radar.MetricsBearerToken)

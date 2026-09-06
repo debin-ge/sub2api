@@ -1,13 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { get, put, del } = vi.hoisted(() => ({
+const { get, post, put, del } = vi.hoisted(() => ({
   get: vi.fn(),
+  post: vi.fn(),
   put: vi.fn(),
   del: vi.fn(),
 }))
 
 vi.mock('@/api/client', () => ({
-  apiClient: { get, put, delete: del },
+  apiClient: { get, post, put, delete: del },
 }))
 
 import {
@@ -16,6 +17,7 @@ import {
   getModelPriceEntry,
   isImageField,
   mTokToToken,
+  previewVideoPrice,
   tokenToMTok,
 } from '@/api/admin/modelPrices'
 import enModelPrices from '@/i18n/locales/en/admin/modelPrices'
@@ -51,8 +53,10 @@ describe('model price helpers', () => {
 describe('model price API encoding', () => {
   beforeEach(() => {
     get.mockReset()
+    post.mockReset()
     del.mockReset()
     get.mockResolvedValue({ data: {} })
+    post.mockResolvedValue({ data: {} })
     del.mockResolvedValue({ data: {} })
   })
 
@@ -65,6 +69,23 @@ describe('model price API encoding', () => {
     await deleteModelPrice('*', 'models/glm-4.7-flash')
     expect(del).toHaveBeenCalledWith('/admin/model-prices/entry', {
       params: { platform: '*', model: 'models/glm-4.7-flash' },
+    })
+  })
+
+  it('sends unsaved video pricing to the backend preview endpoint', async () => {
+    const videoPricing = {
+      version: 1 as const,
+      enabled: true,
+      currency: 'USD' as const,
+      rules: [{ key: 'default', billing_unit: 'second' as const, unit_price_usd: 0.1 }],
+    }
+    const attributes = { operation: 'generate', seconds: 10, input_has_video: false }
+
+    await previewVideoPrice(videoPricing, attributes)
+
+    expect(post).toHaveBeenCalledWith('/admin/model-prices/video-preview', {
+      video_pricing: videoPricing,
+      attributes,
     })
   })
 })

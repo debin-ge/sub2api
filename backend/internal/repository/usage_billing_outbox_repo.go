@@ -19,7 +19,12 @@ import (
 )
 
 const (
-	usageBillingOutboxPayloadVersion = 1
+	usageBillingOutboxPayloadVersionV1 = 1
+	usageBillingOutboxPayloadVersionV2 = 2
+	usageBillingOutboxPayloadVersionV3 = 3
+	usageBillingOutboxPayloadVersionV4 = 4
+	// Legacy alias retained for v1 golden tests and compatibility helpers.
+	usageBillingOutboxPayloadVersion = usageBillingOutboxPayloadVersionV1
 	usageBillingInlineRetryDelay     = time.Second
 	usageBillingOutboxStageBilling   = int8(0)
 	usageBillingOutboxStageEffects   = int8(1)
@@ -59,6 +64,7 @@ type usageBillingCommandPayloadV1 struct {
 	TotalCost                   float64                                    `json:"total_cost"`
 	IsSubscriptionBilling       bool                                       `json:"is_subscription_billing"`
 	OccurredAt                  time.Time                                  `json:"occurred_at"`
+	QuotaTime                   *service.UsageBillingQuotaTime             `json:"quota_time,omitempty"`
 
 	BalanceCost         float64 `json:"balance_cost"`
 	SubscriptionCost    float64 `json:"subscription_cost"`
@@ -67,6 +73,24 @@ type usageBillingCommandPayloadV1 struct {
 	AccountQuotaCost    float64 `json:"account_quota_cost"`
 
 	InvalidNumerics []usageBillingNumericIssueV1 `json:"invalid_numerics,omitempty"`
+}
+
+type balanceSettlementPayloadV2 struct {
+	BillingReviewID    int64                           `json:"billing_review_id,omitempty"`
+	TaskID             int64                           `json:"video_task_id"`
+	Action             service.BalanceSettlementAction `json:"action"`
+	SettlementScope    service.BalanceHoldScope        `json:"settlement_scope"`
+	SettlementRefID    string                          `json:"settlement_ref_id"`
+	RequestID          string                          `json:"request_id"`
+	APIKeyID           int64                           `json:"api_key_id"`
+	RequestFingerprint string                          `json:"request_fingerprint"`
+	RequestPayloadHash string                          `json:"request_payload_hash,omitempty"`
+	UserID             int64                           `json:"user_id"`
+	HoldAmount         float64                         `json:"hold_amount"`
+	ActualAmount       float64                         `json:"actual_amount"`
+	AllowOverCapture   bool                            `json:"allow_over_capture"`
+	Billing            *usageBillingCommandPayloadV1   `json:"billing,omitempty"`
+	InvalidNumerics    []usageBillingNumericIssueV1    `json:"invalid_numerics,omitempty"`
 }
 
 type usageBillingNumericIssueV1 struct {
@@ -164,6 +188,7 @@ func commandToUsageBillingPayloadV1(cmd *service.UsageBillingCommand) usageBilli
 		PlatformQuotaSnapshotNeeded: cmd.PlatformQuotaSnapshotNeeded,
 		ActualCost:                  cmd.ActualCost, TotalCost: cmd.TotalCost,
 		IsSubscriptionBilling: cmd.IsSubscriptionBilling, OccurredAt: cmd.OccurredAt,
+		QuotaTime:   cmd.QuotaTime,
 		BalanceCost: cmd.BalanceCost, SubscriptionCost: cmd.SubscriptionCost,
 		APIKeyQuotaCost: cmd.APIKeyQuotaCost, APIKeyRateLimitCost: cmd.APIKeyRateLimitCost,
 		AccountQuotaCost: cmd.AccountQuotaCost,
@@ -186,10 +211,65 @@ func (p usageBillingCommandPayloadV1) command() *service.UsageBillingCommand {
 		PlatformQuotaSnapshotNeeded: p.PlatformQuotaSnapshotNeeded,
 		ActualCost:                  p.ActualCost, TotalCost: p.TotalCost,
 		IsSubscriptionBilling: p.IsSubscriptionBilling, OccurredAt: p.OccurredAt,
+		QuotaTime:   p.QuotaTime,
 		BalanceCost: p.BalanceCost, SubscriptionCost: p.SubscriptionCost,
 		APIKeyQuotaCost: p.APIKeyQuotaCost, APIKeyRateLimitCost: p.APIKeyRateLimitCost,
 		AccountQuotaCost: p.AccountQuotaCost,
 	}
+}
+
+func balanceSettlementToPayloadV2(settlement *service.BalanceSettlementCommand) balanceSettlementPayloadV2 {
+	if settlement == nil {
+		return balanceSettlementPayloadV2{}
+	}
+	settlement.Normalize()
+	payload := balanceSettlementPayloadV2{
+		BillingReviewID:    settlement.Hold.BillingReviewID,
+		TaskID:             settlement.TaskID,
+		Action:             settlement.Action,
+		SettlementScope:    settlement.Hold.Scope,
+		SettlementRefID:    canonicalizeUsageBillingIdentity(settlement.Hold.RefID, 64),
+		RequestID:          canonicalizeUsageBillingIdentity(settlement.Hold.RequestID, 255),
+		APIKeyID:           settlement.Hold.APIKeyID,
+		RequestFingerprint: strings.TrimSpace(sanitizeUsageBillingPostgresText(settlement.Hold.RequestFingerprint)),
+		RequestPayloadHash: strings.TrimSpace(sanitizeUsageBillingPostgresText(settlement.Hold.RequestPayloadHash)),
+		UserID:             settlement.Hold.UserID,
+		HoldAmount:         settlement.Hold.HoldAmount,
+		ActualAmount:       settlement.Hold.ActualAmount,
+		AllowOverCapture:   settlement.Hold.Scope == service.BalanceHoldScopeVideoTask,
+	}
+	if settlement.Billing != nil {
+		billing := commandToUsageBillingPayloadV1(settlement.Billing)
+		payload.Billing = &billing
+	}
+	payload.HoldAmount = usageBillingJSONSafeFloat(payload.HoldAmount, "hold_amount", &payload.InvalidNumerics)
+	payload.ActualAmount = usageBillingJSONSafeFloat(payload.ActualAmount, "actual_amount", &payload.InvalidNumerics)
+	payload.InvalidNumerics = sanitizeUsageBillingNumericIssues(payload.InvalidNumerics)
+	return payload
+}
+
+func (p balanceSettlementPayloadV2) settlement() *service.BalanceSettlementCommand {
+	settlement := &service.BalanceSettlementCommand{
+		TaskID: p.TaskID,
+		Action: p.Action,
+		Hold: service.BalanceHoldCommand{
+			BillingReviewID:    p.BillingReviewID,
+			RequestID:          p.RequestID,
+			APIKeyID:           p.APIKeyID,
+			RequestFingerprint: p.RequestFingerprint,
+			RequestPayloadHash: p.RequestPayloadHash,
+			UserID:             p.UserID,
+			Scope:              p.SettlementScope,
+			RefID:              p.SettlementRefID,
+			HoldAmount:         p.HoldAmount,
+			ActualAmount:       p.ActualAmount,
+		},
+	}
+	if p.Billing != nil {
+		settlement.Billing = p.Billing.command()
+	}
+	settlement.Normalize()
+	return settlement
 }
 
 func usageLogToPayloadV1(log *service.UsageLog) usageLogPayloadV1 {
@@ -543,8 +623,10 @@ type usageBillingResultPayloadV1 struct {
 	ProjectionRepairRequired bool                       `json:"projection_repair_required,omitempty"`
 	APIKeyQuotaExhausted     bool                       `json:"api_key_quota_exhausted"`
 	NewBalance               *float64                   `json:"new_balance,omitempty"`
+	FrozenBalance            *float64                   `json:"frozen_balance,omitempty"`
 	BalanceOverdrafted       bool                       `json:"balance_overdrafted"`
 	QuotaState               *service.AccountQuotaState `json:"quota_state,omitempty"`
+	QuotaPostedAt            *time.Time                 `json:"quota_posted_at,omitempty"`
 }
 
 func usageBillingResultToPayloadV1(result *service.UsageBillingApplyResult) usageBillingResultPayloadV1 {
@@ -557,8 +639,10 @@ func usageBillingResultToPayloadV1(result *service.UsageBillingApplyResult) usag
 		ProjectionRepairRequired: result.ProjectionRepairRequired,
 		APIKeyQuotaExhausted:     result.APIKeyQuotaExhausted,
 		NewBalance:               result.NewBalance,
+		FrozenBalance:            result.FrozenBalance,
 		BalanceOverdrafted:       result.BalanceOverdrafted,
 		QuotaState:               result.QuotaState,
+		QuotaPostedAt:            result.QuotaPostedAt,
 	}
 }
 
@@ -569,8 +653,10 @@ func (p usageBillingResultPayloadV1) result() *service.UsageBillingApplyResult {
 		ProjectionRepairRequired: p.ProjectionRepairRequired,
 		APIKeyQuotaExhausted:     p.APIKeyQuotaExhausted,
 		NewBalance:               p.NewBalance,
+		FrozenBalance:            p.FrozenBalance,
 		BalanceOverdrafted:       p.BalanceOverdrafted,
 		QuotaState:               p.QuotaState,
+		QuotaPostedAt:            p.QuotaPostedAt,
 	}
 }
 
@@ -776,12 +862,21 @@ func validateUsageBillingOutboxEvent(event service.UsageBillingOutboxEvent) erro
 	if reason := strings.TrimSpace(event.PayloadValidationError); reason != "" {
 		return fmt.Errorf("%w: %s", service.ErrUsageBillingPayloadInvalid, reason)
 	}
+	if event.BalanceSettlement != nil {
+		return validateBalanceSettlementPayload(event.BalanceSettlement, event.UsageLog)
+	}
 	return validateUsageBillingOutboxPayload(event.Command, event.UsageLog)
 }
 
 func validateUsageBillingOutboxPayload(cmd *service.UsageBillingCommand, log *service.UsageLog) error {
 	if cmd == nil || log == nil {
 		return fmt.Errorf("%w: command and usage log are required", service.ErrUsageBillingPayloadInvalid)
+	}
+	if err := cmd.ValidateQuotaTime(); err != nil {
+		return err
+	}
+	if cmd.QuotaTime != nil && !cmd.OccurredAt.Equal(log.CreatedAt) {
+		return fmt.Errorf("%w: video quota event time and usage time differ", service.ErrUsageBillingPayloadInvalid)
 	}
 	if log.RequestID == "" || len(log.RequestID) > 255 {
 		return fmt.Errorf("%w: usage log request_id length must be 1..255", service.ErrUsageBillingPayloadInvalid)
@@ -993,6 +1088,9 @@ func marshalUsageBillingOutboxPayload(cmd *service.UsageBillingCommand, usageLog
 	if cmd == nil || usageLog == nil {
 		return nil, nil, errors.New("usage billing outbox command and usage log are required")
 	}
+	if cmd.QuotaTime != nil {
+		return nil, nil, fmt.Errorf("%w: video quota time requires hold-backed settlement", service.ErrUsageBillingPayloadInvalid)
+	}
 	sanitizeUsageBillingCommandText(cmd)
 	usageLog.RequestID = canonicalizeUsageBillingIdentity(usageLog.RequestID, 255)
 	usageLog.Model = canonicalizeUsageBillingIdentity(usageLog.Model, 100)
@@ -1029,6 +1127,97 @@ func marshalUsageBillingOutboxPayload(cmd *service.UsageBillingCommand, usageLog
 	return commandJSON, usageLogJSON, nil
 }
 
+func marshalBalanceSettlementOutboxPayload(
+	settlement *service.BalanceSettlementCommand,
+	usageLog *service.UsageLog,
+) ([]byte, []byte, error) {
+	if settlement == nil {
+		return nil, nil, errors.New("balance settlement command is required")
+	}
+	settlement.Normalize()
+	settlement.Hold.RequestID = canonicalizeUsageBillingIdentity(settlement.Hold.RequestID, 255)
+	settlement.Hold.RefID = canonicalizeUsageBillingIdentity(settlement.Hold.RefID, 64)
+	settlement.Hold.RequestPayloadHash = strings.TrimSpace(sanitizeUsageBillingPostgresText(settlement.Hold.RequestPayloadHash))
+	settlement.Hold.RequestFingerprint = ""
+	settlement.Hold.Normalize()
+	if settlement.Billing != nil {
+		sanitizeUsageBillingCommandText(settlement.Billing)
+		if settlement.Billing.QuotaTime != nil || settlement.Hold.BillingReviewID > 0 {
+			settlement.Billing.RequestFingerprint = ""
+		}
+		settlement.Billing.Normalize()
+	}
+	if usageLog != nil {
+		usageLog.RequestID = canonicalizeUsageBillingIdentity(usageLog.RequestID, 255)
+		usageLog.Model = canonicalizeUsageBillingIdentity(usageLog.Model, 100)
+		usageLog.RequestedModel = strings.TrimSpace(sanitizeUsageBillingPostgresText(usageLog.RequestedModel))
+		if usageLog.RequestedModel == "" {
+			usageLog.RequestedModel = usageLog.Model
+		}
+	}
+	if err := validateBalanceSettlementPayload(settlement, usageLog); err != nil {
+		return nil, nil, err
+	}
+
+	commandJSON, err := json.Marshal(balanceSettlementToPayloadV2(settlement))
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshal balance settlement command: %w", err)
+	}
+	usageLogJSON := []byte("{}")
+	if usageLog != nil {
+		usageLogJSON, err = json.Marshal(usageLogToPayloadV1(usageLog))
+		if err != nil {
+			return nil, nil, fmt.Errorf("marshal balance settlement usage log: %w", err)
+		}
+	}
+	return commandJSON, usageLogJSON, nil
+}
+
+func validateBalanceSettlementPayload(
+	settlement *service.BalanceSettlementCommand,
+	usageLog *service.UsageLog,
+) error {
+	if settlement == nil {
+		return fmt.Errorf("%w: balance settlement command is required", service.ErrUsageBillingPayloadInvalid)
+	}
+	settlement.Normalize()
+	if err := settlement.Validate(); err != nil {
+		return err
+	}
+	for name, value := range map[string]float64{
+		"hold_amount":   settlement.Hold.HoldAmount,
+		"actual_amount": settlement.Hold.ActualAmount,
+	} {
+		if value < 0 || value >= usageBillingNumeric20Scale10UpperBound || math.IsNaN(value) || math.IsInf(value, 0) {
+			return fmt.Errorf("%w: %s must fit PostgreSQL NUMERIC(20,10)", service.ErrUsageBillingPayloadInvalid, name)
+		}
+	}
+
+	if settlement.Action == service.BalanceSettlementRelease {
+		if usageLog != nil {
+			return fmt.Errorf("%w: release settlement must not contain a usage log", service.ErrUsageBillingPayloadInvalid)
+		}
+		return nil
+	}
+	if settlement.Billing == nil || usageLog == nil {
+		return fmt.Errorf("%w: capture settlement requires billing and usage log snapshots", service.ErrUsageBillingPayloadInvalid)
+	}
+	if settlement.Billing.RequestID != settlement.Hold.RequestID ||
+		settlement.Billing.APIKeyID != settlement.Hold.APIKeyID ||
+		settlement.Billing.UserID != settlement.Hold.UserID {
+		return fmt.Errorf("%w: capture settlement identities differ", service.ErrUsageBillingPayloadInvalid)
+	}
+	// Reuse every v1 validation rule except its balance allocation rule. The
+	// actual balance movement is performed from the hold, so v2 requires the
+	// persisted command to keep BalanceCost at zero.
+	validationCommand := *settlement.Billing
+	validationCommand.BalanceCost = validationCommand.ActualCost
+	if err := validateUsageBillingOutboxPayload(&validationCommand, usageLog); err != nil {
+		return err
+	}
+	return nil
+}
+
 func decodeUsageBillingOutboxEvent(
 	id int64,
 	attempts int,
@@ -1042,9 +1231,35 @@ func decodeUsageBillingOutboxEvent(
 	usageLogJSON []byte,
 	resultJSON []byte,
 ) (service.UsageBillingOutboxEvent, error) {
-	if payloadVersion != usageBillingOutboxPayloadVersion {
+	switch payloadVersion {
+	case usageBillingOutboxPayloadVersionV1:
+		return decodeUsageBillingOutboxEventV1(
+			id, attempts, createdAt, requestID, apiKeyID, fingerprint,
+			payloadVersion, stage, commandJSON, usageLogJSON, resultJSON,
+		)
+	case usageBillingOutboxPayloadVersionV2, usageBillingOutboxPayloadVersionV3, usageBillingOutboxPayloadVersionV4:
+		return decodeUsageBillingOutboxEventV2(
+			id, attempts, createdAt, requestID, apiKeyID, fingerprint,
+			payloadVersion, stage, commandJSON, usageLogJSON, resultJSON,
+		)
+	default:
 		return service.UsageBillingOutboxEvent{}, fmt.Errorf("unsupported usage billing outbox payload version %d", payloadVersion)
 	}
+}
+
+func decodeUsageBillingOutboxEventV1(
+	id int64,
+	attempts int,
+	createdAt time.Time,
+	requestID string,
+	apiKeyID int64,
+	fingerprint string,
+	payloadVersion int,
+	stage int8,
+	commandJSON []byte,
+	usageLogJSON []byte,
+	resultJSON []byte,
+) (service.UsageBillingOutboxEvent, error) {
 	if stage != usageBillingOutboxStageBilling && stage != usageBillingOutboxStageEffects {
 		return service.UsageBillingOutboxEvent{}, fmt.Errorf("unsupported usage billing outbox stage %d", stage)
 	}
@@ -1057,6 +1272,9 @@ func decodeUsageBillingOutboxEvent(
 		return service.UsageBillingOutboxEvent{}, fmt.Errorf("decode usage billing log payload: %w", err)
 	}
 	cmd := commandPayload.command()
+	if cmd.QuotaTime != nil {
+		return service.UsageBillingOutboxEvent{}, fmt.Errorf("%w: video quota time requires payload v3", service.ErrUsageBillingPayloadInvalid)
+	}
 	cmd.Normalize()
 	usageLog := logPayload.usageLog()
 	payloadValidationError := usageBillingPayloadNumericError(
@@ -1094,7 +1312,100 @@ func decodeUsageBillingOutboxEvent(
 		result = payload.result()
 	}
 	return service.UsageBillingOutboxEvent{
-		ID: id, Attempts: attempts, Stage: stage, Command: cmd, UsageLog: usageLog,
+		ID: id, Attempts: attempts, Stage: stage, PayloadVersion: payloadVersion,
+		Command: cmd, UsageLog: usageLog,
+		Result: result, PayloadValidationError: payloadValidationError, CreatedAt: createdAt,
+	}, nil
+}
+
+func decodeUsageBillingOutboxEventV2(
+	id int64,
+	attempts int,
+	createdAt time.Time,
+	requestID string,
+	apiKeyID int64,
+	fingerprint string,
+	payloadVersion int,
+	stage int8,
+	commandJSON []byte,
+	usageLogJSON []byte,
+	resultJSON []byte,
+) (service.UsageBillingOutboxEvent, error) {
+	if stage != usageBillingOutboxStageBilling && stage != usageBillingOutboxStageEffects {
+		return service.UsageBillingOutboxEvent{}, fmt.Errorf("unsupported usage billing outbox stage %d", stage)
+	}
+	var payload balanceSettlementPayloadV2
+	if err := json.Unmarshal(commandJSON, &payload); err != nil {
+		return service.UsageBillingOutboxEvent{}, fmt.Errorf("decode balance settlement payload: %w", err)
+	}
+	settlement := payload.settlement()
+	if (payloadVersion == usageBillingOutboxPayloadVersionV4) != (settlement.Hold.BillingReviewID > 0) {
+		return service.UsageBillingOutboxEvent{}, fmt.Errorf("%w: reviewed video settlement requires payload v4", service.ErrUsageBillingPayloadInvalid)
+	}
+	if payloadVersion == usageBillingOutboxPayloadVersionV4 && settlement.Billing != nil {
+		verified := *settlement.Billing
+		verified.RequestFingerprint = ""
+		verified.Normalize()
+		if verified.RequestFingerprint != settlement.Billing.RequestFingerprint {
+			return service.UsageBillingOutboxEvent{}, service.ErrUsageBillingPayloadInvalid
+		}
+	}
+	if payloadVersion == usageBillingOutboxPayloadVersionV3 || (payloadVersion == usageBillingOutboxPayloadVersionV4 && settlement.Billing != nil && settlement.Billing.QuotaTime != nil) {
+		if settlement.Action != service.BalanceSettlementCapture || settlement.Billing == nil || settlement.Billing.QuotaTime == nil {
+			return service.UsageBillingOutboxEvent{}, fmt.Errorf("%w: v3 video quota time contract is missing", service.ErrUsageBillingPayloadInvalid)
+		}
+		billing := *settlement.Billing
+		billing.RequestFingerprint = ""
+		billing.Normalize()
+		if billing.RequestFingerprint != settlement.Billing.RequestFingerprint {
+			return service.UsageBillingOutboxEvent{}, fmt.Errorf("%w: v3 video billing fingerprint mismatch", service.ErrUsageBillingPayloadInvalid)
+		}
+	} else if payloadVersion != usageBillingOutboxPayloadVersionV4 && settlement.Billing != nil && settlement.Billing.QuotaTime != nil {
+		return service.UsageBillingOutboxEvent{}, fmt.Errorf("%w: video quota time requires payload v3", service.ErrUsageBillingPayloadInvalid)
+	}
+	if settlement.Hold.RequestID != requestID || settlement.Hold.APIKeyID != apiKeyID ||
+		settlement.Hold.RequestFingerprint != fingerprint {
+		return service.UsageBillingOutboxEvent{}, errors.New("balance settlement outbox payload identity mismatch")
+	}
+	recomputed := settlement.Hold
+	recomputed.RequestFingerprint = ""
+	recomputed.Normalize()
+	payloadValidationError := usageBillingPayloadNumericError(payload.InvalidNumerics, nil)
+	if payloadValidationError == "" && recomputed.RequestFingerprint != fingerprint {
+		return service.UsageBillingOutboxEvent{}, errors.New("balance settlement outbox payload identity mismatch")
+	}
+	if payload.AllowOverCapture != (settlement.Hold.Scope == service.BalanceHoldScopeVideoTask) {
+		return service.UsageBillingOutboxEvent{}, errors.New("balance settlement outbox over-capture policy mismatch")
+	}
+
+	var usageLog *service.UsageLog
+	if settlement.Action == service.BalanceSettlementCapture {
+		var logPayload usageLogPayloadV1
+		if err := json.Unmarshal(usageLogJSON, &logPayload); err != nil {
+			return service.UsageBillingOutboxEvent{}, fmt.Errorf("decode balance settlement usage log payload: %w", err)
+		}
+		usageLog = logPayload.usageLog()
+		payloadValidationError = usageBillingPayloadNumericError(payload.InvalidNumerics, logPayload.InvalidNumerics)
+	}
+
+	var result *service.UsageBillingApplyResult
+	if stage == usageBillingOutboxStageEffects {
+		if len(resultJSON) == 0 {
+			return service.UsageBillingOutboxEvent{}, errors.New("balance settlement outbox effects stage result is missing")
+		}
+		var resultPayload usageBillingResultPayloadV1
+		if err := json.Unmarshal(resultJSON, &resultPayload); err != nil {
+			return service.UsageBillingOutboxEvent{}, fmt.Errorf("decode balance settlement result payload: %w", err)
+		}
+		result = resultPayload.result()
+		if settlement.Billing != nil && settlement.Billing.QuotaTime != nil && (result.QuotaPostedAt == nil || result.QuotaPostedAt.Before(settlement.Billing.OccurredAt)) {
+			return service.UsageBillingOutboxEvent{}, fmt.Errorf("%w: video quota posting receipt is missing or invalid", service.ErrUsageBillingPayloadInvalid)
+		}
+	}
+
+	return service.UsageBillingOutboxEvent{
+		ID: id, Attempts: attempts, Stage: stage, PayloadVersion: payloadVersion,
+		Command: settlement.Billing, UsageLog: usageLog, BalanceSettlement: settlement,
 		Result: result, PayloadValidationError: payloadValidationError, CreatedAt: createdAt,
 	}, nil
 }
@@ -1154,6 +1465,126 @@ func (r *usageBillingRepository) ApplyAndRecord(
 	return nil, err
 }
 
+func (r *usageBillingRepository) ResumeVideoBalanceSettlement(ctx context.Context, task *service.VideoTask) (*service.UsageBillingApplyResult, *service.UsageBillingCommand, bool, error) {
+	if r == nil || r.db == nil {
+		return nil, nil, false, errors.New("video settlement recovery repository is not configured")
+	}
+	if task == nil || task.ID <= 0 || task.APIKeyID == nil || !service.IsValidVideoTaskID(task.PublicID) {
+		return nil, nil, false, service.ErrVideoInvalidRequest
+	}
+	requestID := service.VideoTaskCaptureRequestID(task.PublicID)
+	if task.BillingState == service.VideoBillingReleasePending {
+		requestID = service.VideoTaskReleaseRequestID(task.PublicID)
+	} else if task.BillingState != service.VideoBillingCapturePending {
+		return nil, nil, false, service.ErrVideoInvalidTransition
+	}
+	var id int64
+	var attempts, version int
+	var stage int8
+	var createdAt time.Time
+	var fingerprint string
+	var commandJSON, usageJSON, resultJSON []byte
+	err := r.db.QueryRowContext(ctx, `
+		SELECT id, attempts, created_at, request_fingerprint, payload_version, stage,
+			command_payload, usage_log_payload, result_payload
+		FROM usage_billing_outbox WHERE request_id = $1 AND api_key_id = $2
+	`, requestID, *task.APIKeyID).Scan(&id, &attempts, &createdAt, &fingerprint, &version, &stage, &commandJSON, &usageJSON, &resultJSON)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil, false, nil
+	}
+	if err != nil {
+		return nil, nil, false, err
+	}
+	stored, err := decodeUsageBillingOutboxEvent(id, attempts, createdAt, requestID, *task.APIKeyID, fingerprint, version, stage, commandJSON, usageJSON, resultJSON)
+	if err != nil {
+		return nil, nil, true, err
+	}
+	if stored.BalanceSettlement == nil || stored.BalanceSettlement.TaskID != task.ID ||
+		stored.BalanceSettlement.Hold.UserID != task.UserID || stored.BalanceSettlement.Hold.RefID != task.PublicID {
+		return nil, nil, true, service.ErrUsageBillingRequestConflict
+	}
+	workerID := "inline-video-recovery-" + uuid.NewString()
+	event, err := r.enqueueAndClaimUsageBillingOutboxPayload(ctx, workerID, requestID, *task.APIKeyID, fingerprint, version, commandJSON, usageJSON)
+	if err != nil {
+		return nil, nil, true, err
+	}
+	result, err := r.completeClaimedVideoSettlement(ctx, workerID, event)
+	return result, event.Command, true, err
+}
+
+func (r *usageBillingRepository) SettleVideoBalance(
+	ctx context.Context,
+	settlement *service.BalanceSettlementCommand,
+	usageLog *service.UsageLog,
+) (*service.UsageBillingApplyResult, error) {
+	if r == nil || r.db == nil {
+		return nil, errors.New("usage billing repository db is nil")
+	}
+	commandJSON, usageLogJSON, err := marshalBalanceSettlementOutboxPayload(settlement, usageLog)
+	if err != nil {
+		return nil, err
+	}
+	workerID := "inline-video-" + uuid.NewString()
+	payloadVersion := usageBillingOutboxPayloadVersionV2
+	if settlement.Billing != nil && settlement.Billing.QuotaTime != nil {
+		payloadVersion = usageBillingOutboxPayloadVersionV3
+	}
+	if settlement.Hold.BillingReviewID > 0 {
+		payloadVersion = usageBillingOutboxPayloadVersionV4
+	}
+	event, err := r.enqueueAndClaimUsageBillingOutboxPayload(
+		ctx,
+		workerID,
+		settlement.Hold.RequestID,
+		settlement.Hold.APIKeyID,
+		settlement.Hold.RequestFingerprint,
+		payloadVersion,
+		commandJSON,
+		usageLogJSON,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return r.completeClaimedVideoSettlement(ctx, workerID, event)
+}
+
+func (r *usageBillingRepository) completeClaimedVideoSettlement(ctx context.Context, workerID string, event service.UsageBillingOutboxEvent) (*service.UsageBillingApplyResult, error) {
+	result, err := r.CompleteUsageBillingOutbox(ctx, workerID, event)
+	if err == nil {
+		return result, nil
+	}
+
+	retryCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	var retryErr error
+	if isPermanentUsageBillingOutboxError(err) {
+		retryErr = r.QuarantineUsageBillingOutbox(retryCtx, workerID, event.ID, boundedUsageBillingRepositoryError(err))
+	} else {
+		retryErr = r.RetryUsageBillingOutbox(
+			retryCtx,
+			workerID,
+			event.ID,
+			time.Now().UTC().Add(usageBillingInlineRetryDelay),
+			boundedUsageBillingRepositoryError(err),
+		)
+	}
+	if retryErr != nil {
+		return nil, errors.Join(
+			service.ErrUsageBillingIntentPending,
+			err,
+			fmt.Errorf("release durable video settlement intent: %w", retryErr),
+		)
+	}
+	if !isPermanentUsageBillingOutboxError(err) {
+		return nil, errors.Join(service.ErrUsageBillingIntentPending, err)
+	}
+	return nil, err
+}
+
+func (r *usageBillingRepository) AcknowledgeVideoBalanceSettlement(ctx context.Context, workerID string, eventID int64) error {
+	return r.AcknowledgeUsageBillingOutbox(ctx, workerID, eventID)
+}
+
 func isPermanentUsageBillingOutboxError(err error) bool {
 	return errors.Is(err, service.ErrUsageBillingRequestConflict) ||
 		errors.Is(err, service.ErrUsageBillingPayloadInvalid)
@@ -1166,6 +1597,28 @@ func (r *usageBillingRepository) enqueueAndClaimUsageBillingOutbox(
 	commandJSON []byte,
 	usageLogJSON []byte,
 ) (event service.UsageBillingOutboxEvent, err error) {
+	return r.enqueueAndClaimUsageBillingOutboxPayload(
+		ctx,
+		workerID,
+		cmd.RequestID,
+		cmd.APIKeyID,
+		cmd.RequestFingerprint,
+		usageBillingOutboxPayloadVersionV1,
+		commandJSON,
+		usageLogJSON,
+	)
+}
+
+func (r *usageBillingRepository) enqueueAndClaimUsageBillingOutboxPayload(
+	ctx context.Context,
+	workerID string,
+	requestID string,
+	apiKeyID int64,
+	requestFingerprint string,
+	payloadVersionToInsert int,
+	commandJSON []byte,
+	usageLogJSON []byte,
+) (event service.UsageBillingOutboxEvent, err error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return event, err
@@ -1175,7 +1628,7 @@ func (r *usageBillingRepository) enqueueAndClaimUsageBillingOutbox(
 			_ = tx.Rollback()
 		}
 	}()
-	if err = r.validateUsageBillingFingerprintBeforeEnqueue(ctx, tx, cmd); err != nil {
+	if err = r.validateUsageBillingFingerprintIdentityBeforeEnqueue(ctx, tx, requestID, apiKeyID, requestFingerprint); err != nil {
 		return event, err
 	}
 
@@ -1198,9 +1651,10 @@ func (r *usageBillingRepository) enqueueAndClaimUsageBillingOutbox(
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
 		RETURNING id, attempts, created_at, payload_version, stage,
 			command_payload, usage_log_payload, result_payload
-	`, cmd.RequestID, cmd.APIKeyID, cmd.RequestFingerprint, usageBillingOutboxPayloadVersion,
+	`, requestID, apiKeyID, requestFingerprint, payloadVersionToInsert,
 		string(commandJSON), string(usageLogJSON), workerID,
 	).Scan(&id, &attempts, &createdAt, &payloadVersion, &stage, &storedCmd, &storedLog, &resultJSON)
+	newIntent := err == nil
 	if errors.Is(err, sql.ErrNoRows) {
 		err = tx.QueryRowContext(ctx, `
 			UPDATE usage_billing_outbox
@@ -1212,7 +1666,7 @@ func (r *usageBillingRepository) enqueueAndClaimUsageBillingOutbox(
 			  AND (claimed_at IS NULL OR claimed_at < NOW() - INTERVAL '2 minutes')
 			RETURNING id, attempts, created_at, payload_version, stage,
 				command_payload, usage_log_payload, result_payload
-		`, cmd.RequestID, cmd.APIKeyID, cmd.RequestFingerprint, workerID).
+		`, requestID, apiKeyID, requestFingerprint, workerID).
 			Scan(&id, &attempts, &createdAt, &payloadVersion, &stage, &storedCmd, &storedLog, &resultJSON)
 		if errors.Is(err, sql.ErrNoRows) {
 			var (
@@ -1223,10 +1677,10 @@ func (r *usageBillingRepository) enqueueAndClaimUsageBillingOutbox(
 				SELECT request_fingerprint, terminal_at
 				FROM usage_billing_outbox
 				WHERE request_id = $1 AND api_key_id = $2
-			`, cmd.RequestID, cmd.APIKeyID).Scan(&existingFingerprint, &terminalAt); lookupErr != nil {
+			`, requestID, apiKeyID).Scan(&existingFingerprint, &terminalAt); lookupErr != nil {
 				return event, lookupErr
 			}
-			if existingFingerprint != cmd.RequestFingerprint {
+			if existingFingerprint != requestFingerprint {
 				return event, service.ErrUsageBillingRequestConflict
 			}
 			if terminalAt.Valid {
@@ -1239,11 +1693,23 @@ func (r *usageBillingRepository) enqueueAndClaimUsageBillingOutbox(
 		return event, err
 	}
 	event, err = decodeUsageBillingOutboxEvent(
-		id, attempts, createdAt, cmd.RequestID, cmd.APIKeyID, cmd.RequestFingerprint,
+		id, attempts, createdAt, requestID, apiKeyID, requestFingerprint,
 		payloadVersion, stage, storedCmd, storedLog, resultJSON,
 	)
 	if err != nil {
 		return event, err
+	}
+	if guard, guarded := service.VideoTaskWriteGuardFromContext(ctx); newIntent && guarded && event.BalanceSettlement != nil {
+		if event.BalanceSettlement.TaskID != guard.TaskID {
+			return event, service.ErrVideoInvalidRequest
+		}
+		task, err := scanVideoTask(tx.QueryRowContext(ctx, `SELECT to_jsonb(vt) FROM video_tasks vt WHERE id = $1 FOR UPDATE`, guard.TaskID))
+		if err != nil {
+			return event, err
+		}
+		if _, err := videoTaskGuardTx(ctx, tx, task); err != nil {
+			return event, err
+		}
 	}
 	if err = tx.Commit(); err != nil {
 		return event, err
@@ -1252,10 +1718,12 @@ func (r *usageBillingRepository) enqueueAndClaimUsageBillingOutbox(
 	return event, nil
 }
 
-func (r *usageBillingRepository) validateUsageBillingFingerprintBeforeEnqueue(
+func (r *usageBillingRepository) validateUsageBillingFingerprintIdentityBeforeEnqueue(
 	ctx context.Context,
 	tx *sql.Tx,
-	cmd *service.UsageBillingCommand,
+	requestID string,
+	apiKeyID int64,
+	requestFingerprint string,
 ) error {
 	for _, table := range []string{"usage_billing_dedup", "usage_billing_dedup_archive"} {
 		var existingFingerprint string
@@ -1264,14 +1732,14 @@ func (r *usageBillingRepository) validateUsageBillingFingerprintBeforeEnqueue(
 			FROM %s
 			WHERE request_id = $1 AND api_key_id = $2
 		`, table)
-		err := tx.QueryRowContext(ctx, query, cmd.RequestID, cmd.APIKeyID).Scan(&existingFingerprint)
+		err := tx.QueryRowContext(ctx, query, requestID, apiKeyID).Scan(&existingFingerprint)
 		if errors.Is(err, sql.ErrNoRows) {
 			continue
 		}
 		if err != nil {
 			return err
 		}
-		if strings.TrimSpace(existingFingerprint) != strings.TrimSpace(cmd.RequestFingerprint) {
+		if strings.TrimSpace(existingFingerprint) != strings.TrimSpace(requestFingerprint) {
 			return service.ErrUsageBillingRequestConflict
 		}
 	}
@@ -1314,7 +1782,7 @@ func (r *usageBillingRepository) ClaimUsageBillingOutbox(
 			FROM usage_billing_outbox
 			WHERE available_at <= NOW()
 			  AND terminal_at IS NULL
-			  AND payload_version = $4
+			  AND payload_version IN ($4, $5, $6, $7)
 			  AND (claimed_at IS NULL OR claimed_at < NOW() - ($3 * INTERVAL '1 second'))
 			ORDER BY id
 			LIMIT $2
@@ -1327,7 +1795,7 @@ func (r *usageBillingRepository) ClaimUsageBillingOutbox(
 		RETURNING o.id, o.attempts, o.created_at, o.request_id, o.api_key_id,
 			o.request_fingerprint, o.payload_version, o.stage,
 			o.command_payload, o.usage_log_payload, o.result_payload
-	`, workerID, limit, leaseSeconds, usageBillingOutboxPayloadVersion)
+	`, workerID, limit, leaseSeconds, usageBillingOutboxPayloadVersionV1, usageBillingOutboxPayloadVersionV2, usageBillingOutboxPayloadVersionV3, usageBillingOutboxPayloadVersionV4)
 	if err != nil {
 		return nil, err
 	}
@@ -1480,6 +1948,18 @@ func (r *usageBillingRepository) CompleteUsageBillingOutbox(
 	if err := validateUsageBillingOutboxEvent(storedEvent); err != nil {
 		return nil, err
 	}
+	if storedEvent.BalanceSettlement != nil {
+		result, err := r.completeVideoBalanceSettlementTx(ctx, tx, workerID, storedEvent)
+		if err != nil {
+			return nil, err
+		}
+		if err := tx.Commit(); err != nil {
+			return nil, err
+		}
+		tx = nil
+		result.OutboxReceipt = &service.UsageBillingOutboxReceipt{ID: event.ID, WorkerID: workerID}
+		return result, nil
+	}
 	if storedEvent.Command.PlatformQuotaCost > 0 &&
 		storedEvent.Command.PlatformQuotaSnapshotNeeded {
 		return nil, service.ErrUsageBillingPlatformQuotaSnapshotRequired
@@ -1588,6 +2068,232 @@ func (r *usageBillingRepository) CompleteUsageBillingOutbox(
 	return result, nil
 }
 
+func (r *usageBillingRepository) completeVideoBalanceSettlementTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	workerID string,
+	event service.UsageBillingOutboxEvent,
+) (*service.UsageBillingApplyResult, error) {
+	settlement := event.BalanceSettlement
+	if settlement == nil {
+		return nil, fmt.Errorf("%w: balance settlement is missing", service.ErrUsageBillingPayloadInvalid)
+	}
+	if _, err := lockVideoBudgetOwnerTx(ctx, tx, settlement.Hold.UserID); err != nil {
+		return nil, err
+	}
+	var (
+		publicID      string
+		billingState  string
+		taskUserID    sql.NullInt64
+		taskAPIKeyID  sql.NullInt64
+		taskHold      sql.NullFloat64
+		taskSettledAt sql.NullTime
+	)
+	err := tx.QueryRowContext(ctx, `
+		SELECT public_id, billing_state, user_id, api_key_id, hold_amount, settled_at
+		FROM video_tasks
+		WHERE id = $1
+		FOR UPDATE
+	`, settlement.TaskID).Scan(&publicID, &billingState, &taskUserID, &taskAPIKeyID, &taskHold, &taskSettledAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, service.ErrVideoTaskNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	if publicID != settlement.Hold.RefID || !taskUserID.Valid || !taskAPIKeyID.Valid ||
+		taskUserID.Int64 != settlement.Hold.UserID || taskAPIKeyID.Int64 != settlement.Hold.APIKeyID ||
+		!taskHold.Valid || math.Abs(taskHold.Float64-settlement.Hold.HoldAmount) > 0.00000001 {
+		return nil, fmt.Errorf("%w: video task and settlement facts differ", service.ErrUsageBillingPayloadInvalid)
+	}
+
+	expectedState := service.VideoBillingCapturePending
+	targetState := service.VideoBillingCaptured
+	eventType := "billing_captured"
+	if settlement.Action == service.BalanceSettlementRelease {
+		expectedState = service.VideoBillingReleasePending
+		targetState = service.VideoBillingReleased
+		eventType = "billing_released"
+	}
+	if billingState != expectedState && billingState != targetState {
+		return nil, fmt.Errorf(
+			"%w: expected video billing state %s or %s, got %s",
+			service.ErrVideoInvalidTransition,
+			expectedState,
+			targetState,
+			billingState,
+		)
+	}
+
+	claimed, err := r.claimUsageBillingRequest(
+		ctx,
+		tx,
+		settlement.Hold.RequestID,
+		settlement.Hold.APIKeyID,
+		settlement.Hold.RequestFingerprint,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if billingState == targetState {
+		if claimed {
+			return nil, fmt.Errorf("%w: terminal video billing state has no prior settlement claim", service.ErrUsageBillingPayloadInvalid)
+		}
+		result := &service.UsageBillingApplyResult{Applied: false}
+		if settlement.Billing != nil && settlement.Billing.QuotaTime != nil {
+			if !taskSettledAt.Valid || taskSettledAt.Time.Before(settlement.Billing.OccurredAt) {
+				return nil, fmt.Errorf("%w: video quota posting time is missing", service.ErrUsageBillingPayloadInvalid)
+			}
+			result.QuotaPostedAt = &taskSettledAt.Time
+		}
+		if settlement.Action == service.BalanceSettlementCapture {
+			existingLog, exists, err := loadUsageBillingExistingLogPayload(
+				ctx, tx, settlement.Hold.RequestID, settlement.Hold.APIKeyID,
+			)
+			if err != nil {
+				return nil, err
+			}
+			if !exists || !usageLogPayloadsBillingEquivalent(existingLog, usageLogToPayloadV1(event.UsageLog)) {
+				return nil, service.ErrUsageBillingRequestConflict
+			}
+			result.UsageLogRecorded = true
+		}
+		if err := stageUsageBillingOutboxResultTx(ctx, tx, workerID, event.ID, result); err != nil {
+			return nil, err
+		}
+		return result, nil
+	}
+	if !claimed {
+		return nil, service.ErrUsageBillingRequestConflict
+	}
+
+	result := &service.UsageBillingApplyResult{Applied: true}
+	if settlement.Action == service.BalanceSettlementCapture {
+		holdResult, err := captureUsageBillingBalance(ctx, tx, &settlement.Hold)
+		if err != nil {
+			return nil, err
+		}
+		result.NewBalance = holdResult.NewBalance
+		result.FrozenBalance = holdResult.FrozenBalance
+		result.BalanceOverdrafted = holdResult.BalanceOverdrafted
+		if err := r.applyUsageBillingEffects(ctx, tx, settlement.Billing, result); err != nil {
+			return nil, err
+		}
+
+		existingLog, exists, err := loadUsageBillingExistingLogPayload(
+			ctx, tx, settlement.Hold.RequestID, settlement.Hold.APIKeyID,
+		)
+		if err != nil {
+			return nil, err
+		}
+		intendedLog := usageLogToPayloadV1(event.UsageLog)
+		if exists && !usageLogPayloadsBillingEquivalent(existingLog, intendedLog) {
+			return nil, service.ErrUsageBillingRequestConflict
+		}
+		if !exists {
+			logRepo := &usageLogRepository{}
+			inserted, err := logRepo.createSingle(ctx, tx, event.UsageLog)
+			if err != nil {
+				return nil, fmt.Errorf("insert video settlement usage log: %w", err)
+			}
+			if !inserted {
+				return nil, service.ErrUsageBillingRequestConflict
+			}
+		}
+		result.UsageLogRecorded = true
+	} else {
+		holdResult, err := releaseUsageBillingBalance(ctx, tx, &settlement.Hold)
+		if err != nil {
+			return nil, err
+		}
+		result.NewBalance = holdResult.NewBalance
+		result.FrozenBalance = holdResult.FrozenBalance
+	}
+
+	updateResult, err := tx.ExecContext(ctx, `
+		UPDATE video_tasks
+		SET billing_state = $2,
+			actual_cost = $3,
+			settled_at = COALESCE($5::timestamptz, NOW()),
+			callback_intent_state = CASE WHEN callback_url_enc IS NOT NULL AND callback_intent_state = 'none' THEN 'pending' ELSE callback_intent_state END,
+			updated_at = NOW(),
+			version = version + 1
+		WHERE id = $1 AND billing_state = $4
+	`, settlement.TaskID, targetState, settlement.Hold.ActualAmount, expectedState, result.QuotaPostedAt)
+	if err != nil {
+		return nil, err
+	}
+	updated, err := updateResult.RowsAffected()
+	if err != nil {
+		return nil, err
+	}
+	if updated != 1 {
+		return nil, service.ErrVideoInvalidTransition
+	}
+
+	eventFacts := map[string]any{
+		"action": settlement.Action, "hold_amount": settlement.Hold.HoldAmount,
+		"actual_amount": settlement.Hold.ActualAmount,
+	}
+	if result.QuotaPostedAt != nil {
+		eventFacts["quota_posted_at"] = result.QuotaPostedAt
+	}
+	if settlement.Hold.BillingReviewID > 0 {
+		eventFacts["billing_review_id"] = settlement.Hold.BillingReviewID
+	}
+	eventPayload, err := json.Marshal(eventFacts)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO video_task_events (
+			task_id, event_type, from_billing_state, to_billing_state, payload, event_hash
+		)
+		VALUES ($1, $2, $3, $4, $5::jsonb, $6)
+		ON CONFLICT (task_id, event_hash) WHERE task_id IS NOT NULL AND event_hash IS NOT NULL AND event_hash <> ''
+		DO NOTHING
+	`, settlement.TaskID, eventType, expectedState, targetState, string(eventPayload), settlement.Hold.RequestFingerprint); err != nil {
+		return nil, err
+	}
+
+	if err := stageUsageBillingOutboxResultTx(ctx, tx, workerID, event.ID, result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func stageUsageBillingOutboxResultTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	workerID string,
+	eventID int64,
+	result *service.UsageBillingApplyResult,
+) error {
+	resultPayload, err := json.Marshal(usageBillingResultToPayloadV1(result))
+	if err != nil {
+		return err
+	}
+	stageResult, err := tx.ExecContext(ctx, `
+		UPDATE usage_billing_outbox
+		SET stage = $3,
+			result_payload = $4::jsonb,
+			last_error = NULL,
+			updated_at = NOW()
+		WHERE id = $1 AND claimed_by = $2 AND stage = $5 AND terminal_at IS NULL
+	`, eventID, workerID, usageBillingOutboxStageEffects, string(resultPayload), usageBillingOutboxStageBilling)
+	if err != nil {
+		return err
+	}
+	staged, err := stageResult.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if staged != 1 {
+		return errors.New("video settlement outbox claim was lost before stage commit")
+	}
+	return nil
+}
+
 func loadUsageBillingExistingLogPayload(
 	ctx context.Context,
 	tx *sql.Tx,
@@ -1626,20 +2332,35 @@ func (r *usageBillingRepository) UpdateUsageBillingOutboxCommand(
 	if eventID <= 0 || strings.TrimSpace(workerID) == "" || cmd == nil {
 		return errors.New("usage billing outbox command update identity is required")
 	}
+	if err := cmd.ValidateQuotaTime(); err != nil {
+		return err
+	}
 	cmd.Normalize()
+	if cmd.QuotaTime != nil {
+		verified := *cmd
+		verified.RequestFingerprint = ""
+		verified.Normalize()
+		if verified.RequestFingerprint != cmd.RequestFingerprint {
+			return service.ErrUsageBillingRequestConflict
+		}
+	}
 	commandJSON, err := json.Marshal(commandToUsageBillingPayloadV1(cmd))
 	if err != nil {
 		return fmt.Errorf("marshal updated usage billing command: %w", err)
 	}
 	result, err := r.db.ExecContext(ctx, `
 		UPDATE usage_billing_outbox
-		SET command_payload = $5::jsonb,
+		SET command_payload = CASE
+				WHEN payload_version IN (2, 3, 4) THEN jsonb_set(command_payload, '{billing}', $5::jsonb, true)
+				ELSE $5::jsonb
+			END,
 			updated_at = NOW()
 		WHERE id = $1
 		  AND claimed_by = $2
 		  AND request_id = $3
 		  AND api_key_id = $4
-		  AND request_fingerprint = $6
+		  AND ((payload_version = 1 AND request_fingerprint = $6)
+			OR (payload_version IN (2, 3, 4) AND command_payload #>> '{billing,request_fingerprint}' = $6))
 		  AND stage = $7
 		  AND terminal_at IS NULL
 	`, eventID, workerID, cmd.RequestID, cmd.APIKeyID, string(commandJSON),

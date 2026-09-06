@@ -41,6 +41,7 @@
                 <span class="ml-2">{{ t('admin.modelPrices.syncNow') }}</span>
               </button>
               <button class="btn btn-primary" @click="openCreate">
+                <Icon name="plus" size="sm" />
                 {{ t('admin.modelPrices.addModel') }}
               </button>
             </div>
@@ -54,8 +55,10 @@
             <div class="flex flex-col gap-1">
               <span class="font-medium text-gray-900 dark:text-white">{{ row.model }}</span>
               <div class="flex flex-wrap gap-1">
-                <span v-if="row.token_pricing_absent && !row.has_image_pricing" class="badge-warn">{{ t('admin.modelPrices.missing') }}</span>
-                <span v-if="row.has_image_pricing && row.token_pricing_absent" class="badge-info">{{ t('admin.modelPrices.imageOnly') }}</span>
+                <span v-if="row.token_pricing_absent && !row.has_image_pricing && !row.has_video_pricing" class="badge-warn">{{ t('admin.modelPrices.missing') }}</span>
+                <span v-if="row.has_image_pricing && row.token_pricing_absent && !row.has_video_pricing" class="badge-info">{{ t('admin.modelPrices.imageOnly') }}</span>
+                <span v-if="row.has_video_pricing" class="badge-video">{{ t('admin.modelPrices.video.badge', { count: row.video_rule_count || 0 }) }}</span>
+                <span v-if="row.video_pricing_error" class="badge-danger">{{ t('admin.modelPrices.video.invalid') }}</span>
                 <span v-if="row.sync_invalidated" class="badge-danger">{{ t('admin.modelPrices.syncInvalidated') }}</span>
                 <span v-if="row.redundant" class="badge-muted">{{ t('admin.modelPrices.redundant') }}</span>
                 <span v-if="row.enabled === false" class="badge-muted">{{ t('admin.modelPrices.disabled') }}</span>
@@ -81,6 +84,9 @@
               <span>{{ scheduledPriceLabel(row.effective?.output_cost_per_token, row.time_schedule, 'peak', row.currency) }}</span>
               <span v-if="row.time_schedule" class="text-gray-500 dark:text-gray-400">
                 {{ scheduledPriceLabel(row.effective?.output_cost_per_token, row.time_schedule, 'offPeak', row.currency) }}
+              </span>
+              <span v-if="row.has_video_pricing" class="text-gray-500 dark:text-gray-400">
+                {{ row.video_billing_units?.join(' / ') }} · {{ row.video_resolutions?.join(', ') }}
               </span>
             </div>
           </template>
@@ -134,6 +140,7 @@
           <span class="mb-1 block text-gray-600 dark:text-gray-300">{{ t('admin.modelPrices.currency') }}</span>
           <Select v-model="form.currency" :options="currencyOptions" />
         </label>
+        <p v-if="form.videoPricing !== null" class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.modelPrices.video.usdOnly') }}</p>
         <p
           v-if="detail?.catalog_currency && detail.catalog_currency !== form.currency"
           class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200"
@@ -144,8 +151,13 @@
           <input v-model="form.enabled" type="checkbox" class="rounded border-gray-300" />
           {{ t('admin.modelPrices.enabled') }}
         </label>
-        <div class="space-y-3">
-          <div v-for="field in PRICE_FIELDS" :key="field" class="grid items-end gap-2 sm:grid-cols-[1fr,1fr,1fr,auto]">
+        <div class="flex border-b border-gray-200 dark:border-dark-600" role="tablist">
+          <button v-for="tab in editorTabs" :key="tab.value" type="button" class="editor-tab" :class="editorTab === tab.value ? 'editor-tab-active' : ''" @click="editorTab = tab.value">
+            {{ tab.label }}
+          </button>
+        </div>
+        <div v-if="editorTab !== 'video'" class="space-y-3">
+          <div v-for="field in activePriceFields" :key="field" class="grid items-end gap-2 sm:grid-cols-[1fr,1fr,1fr,auto]">
             <div class="text-xs text-gray-500 dark:text-gray-400">
               <div class="font-medium text-gray-800 dark:text-gray-200">{{ fieldLabel(field) }}</div>
               <div>{{ t('admin.modelPrices.catalogValue') }}: {{ formatFieldPrice(detail?.catalog?.[field], field, detail?.catalog_currency) }}</div>
@@ -170,6 +182,12 @@
             </button>
           </div>
         </div>
+        <VideoPricingEditor
+          v-else
+          v-model="form.videoPricing"
+          :inherited-value="inheritedVideoPricing"
+          @validation-change="videoPricingErrors = $event"
+        />
         <label class="block text-sm">
           <span class="mb-1 block text-gray-600 dark:text-gray-300">{{ t('admin.modelPrices.note') }}</span>
           <textarea v-model="form.note" class="input min-h-20" />
@@ -217,6 +235,8 @@ import Icon from '@/components/icons/Icon.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import VideoPricingEditor from '@/components/admin/model-price/VideoPricingEditor.vue'
+import { prepareVideoPricingForSave } from '@/components/admin/model-price/videoPricingForm'
 import {
   PRICE_FIELDS,
   deleteModelPrice,
@@ -234,7 +254,9 @@ import {
   type ModelPriceListItem,
   type ModelPriceSyncStatus,
   type ModelPriceTimeSchedule,
+  type ModelPricePayload,
   type PriceField,
+  type VideoPricingConfig,
 } from '@/api/admin/modelPrices'
 
 const { t } = useI18n()
@@ -252,6 +274,8 @@ const showMagnitude = ref(false)
 const creating = ref(false)
 const detail = ref<ModelPriceDetail | null>(null)
 const pendingDelete = ref<ModelPriceListItem | null>(null)
+const editorTab = ref<'token' | 'image' | 'video'>('token')
+const videoPricingErrors = ref<string[]>([])
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
 const pagination = reactive({ page: 1, pageSize: 50, total: 0 })
@@ -263,6 +287,20 @@ const form = reactive({
   enabled: true,
   note: '',
   fields: Object.fromEntries(PRICE_FIELDS.map((field) => [field, ''])) as Record<PriceField, string>,
+  videoPricing: null as VideoPricingConfig | null,
+})
+
+const IMAGE_PRICE_FIELDS = ['output_cost_per_image', 'output_cost_per_image_token', 'input_cost_per_image_token'] as const satisfies readonly PriceField[]
+const imagePriceFieldSet = new Set<PriceField>(IMAGE_PRICE_FIELDS)
+const activePriceFields = computed(() => PRICE_FIELDS.filter((field) => editorTab.value === 'image' ? imagePriceFieldSet.has(field) : !imagePriceFieldSet.has(field)))
+const editorTabs = computed(() => [
+  { value: 'token' as const, label: t('admin.modelPrices.tabs.token') },
+  { value: 'image' as const, label: t('admin.modelPrices.tabs.image') },
+  { value: 'video' as const, label: t('admin.modelPrices.tabs.video') },
+])
+const inheritedVideoPricing = computed(() => {
+	const value = detail.value?.catalog?.video_pricing
+	return value && typeof value === 'object' ? value as VideoPricingConfig : null
 })
 
 const currencyOptions = [
@@ -429,6 +467,8 @@ function resetForm() {
   form.currency = 'USD'
   form.enabled = true
   form.note = ''
+  form.videoPricing = null
+  videoPricingErrors.value = []
   for (const field of PRICE_FIELDS) {
     form.fields[field] = ''
   }
@@ -440,6 +480,8 @@ function fillFormFromDetail(entry: ModelPriceDetail) {
   form.currency = entry.override_currency ?? entry.currency ?? 'USD'
   form.enabled = entry.enabled
   form.note = entry.note || ''
+  form.videoPricing = entry.override?.video_pricing ? JSON.parse(JSON.stringify(entry.override.video_pricing)) : null
+  videoPricingErrors.value = []
   for (const field of PRICE_FIELDS) {
     const raw = entry.override ? entry.override[field] : undefined
     if (raw == null) {
@@ -454,6 +496,7 @@ function openCreate() {
   creating.value = true
   detail.value = null
   resetForm()
+  editorTab.value = 'token'
   showEditor.value = true
 }
 
@@ -463,14 +506,15 @@ async function openEdit(row: ModelPriceListItem) {
     const entry = await getModelPriceEntry(row.platform, row.model)
     detail.value = entry
     fillFormFromDetail(entry)
+    editorTab.value = row.has_video_pricing && row.token_pricing_absent && !row.has_image_pricing ? 'video' : 'token'
     showEditor.value = true
   } catch (error) {
     appStore.showError(extractI18nErrorMessage(error, t, 'admin.modelPrices.errors', t('common.error')))
   }
 }
 
-function buildPayload(): Record<string, number> {
-  const payload: Record<string, number> = {}
+function buildPayload(): ModelPricePayload {
+  const payload: ModelPricePayload = {}
   for (const field of PRICE_FIELDS) {
     const raw = form.fields[field].trim()
     if (raw === '') continue
@@ -478,14 +522,20 @@ function buildPayload(): Record<string, number> {
     if (value == null || Number.isNaN(value)) continue
     payload[field] = value
   }
+  if (form.videoPricing !== null) payload.video_pricing = prepareVideoPricingForSave(form.videoPricing)
   return payload
 }
 
-function hasMagnitudeRisk(payload: Record<string, number>): boolean {
-  return PRICE_FIELDS.some((field) => !isImageField(field) && payload[field] != null && payload[field] > 1)
+function hasMagnitudeRisk(payload: ModelPricePayload): boolean {
+  return PRICE_FIELDS.some((field) => !isImageField(field) && payload[field] != null && Number(payload[field]) > 1)
 }
 
 async function saveOverride(confirmed: boolean) {
+  if (videoPricingErrors.value.length) {
+    editorTab.value = 'video'
+    appStore.showError(videoPricingErrors.value[0])
+    return
+  }
   const payload = buildPayload()
   if (!confirmed && hasMagnitudeRisk(payload)) {
     showMagnitude.value = true
@@ -536,6 +586,7 @@ onMounted(async () => {
   }
   await reload()
 })
+
 </script>
 
 <style scoped>
@@ -544,6 +595,9 @@ onMounted(async () => {
 }
 .badge-info {
   @apply inline-flex rounded bg-sky-100 px-2 py-0.5 text-xs text-sky-800 dark:bg-sky-900/40 dark:text-sky-100;
+}
+.badge-video {
+  @apply inline-flex rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-100;
 }
 .badge-danger {
   @apply inline-flex rounded bg-red-100 px-2 py-0.5 text-xs text-red-800 dark:bg-red-900/40 dark:text-red-100;
@@ -556,5 +610,11 @@ onMounted(async () => {
 }
 .action-danger {
   @apply hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400;
+}
+.editor-tab {
+  @apply min-h-10 border-b-2 border-transparent px-4 text-sm text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white;
+}
+.editor-tab-active {
+  @apply border-primary-500 font-medium text-primary-600 dark:text-primary-300;
 }
 </style>

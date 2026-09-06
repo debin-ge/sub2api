@@ -3244,3 +3244,31 @@ func TestLoad_DefaultGatewayImageStreamConfig(t *testing.T) {
 		t.Fatalf("image stream timeout = %d, want greater than ordinary stream timeout %d", cfg.Gateway.ImageStreamDataIntervalTimeout, cfg.Gateway.StreamDataIntervalTimeout)
 	}
 }
+
+func TestLoadAndValidateVideoWorkerBatchSize(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, 32, cfg.Gateway.Video.WorkerBatchSize)
+	require.Equal(t, 4, cfg.Gateway.Video.WorkerConcurrency)
+	require.Equal(t, 30, cfg.Gateway.Video.WorkerRequestTimeoutSeconds)
+
+	cfg.Gateway.Video.Enabled = true
+	cfg.Gateway.Video.Callback.Enabled = false
+	cfg.Gateway.Video.PollIntervalSeconds = 0
+	require.ErrorContains(t, cfg.Validate(), "gateway.video.poll_interval_seconds")
+	cfg.Gateway.Video.PollIntervalSeconds = 10
+	cfg.Gateway.Video.WorkerBatchSize = 0
+	require.ErrorContains(t, cfg.Validate(), "gateway.video.worker_batch_size")
+	cfg.Gateway.Video.WorkerBatchSize = 1001
+	require.ErrorContains(t, cfg.Validate(), "gateway.video.worker_batch_size")
+	cfg.Gateway.Video.WorkerBatchSize = 64
+	require.NoError(t, cfg.Validate())
+	cfg.Gateway.Video.WorkerConcurrency = 65
+	require.ErrorContains(t, cfg.Validate(), "gateway.video.worker_concurrency")
+	cfg.Gateway.Video.WorkerConcurrency = 4
+	cfg.Gateway.Video.WorkerRequestTimeoutSeconds = 301
+	require.ErrorContains(t, cfg.Validate(), "gateway.video.worker_request_timeout_seconds")
+	cfg.Gateway.Video.WorkerRequestTimeoutSeconds = 30
+	require.NoError(t, cfg.Validate())
+}

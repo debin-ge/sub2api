@@ -200,13 +200,17 @@ func createAccountStatsModelPricingTx(ctx context.Context, tx *sql.Tx, ruleID in
 
 // createAccountStatsIntervalTx inserts a single interval for an account stats pricing entry.
 func createAccountStatsIntervalTx(ctx context.Context, tx *sql.Tx, iv *service.PricingInterval) error {
+	conditions := iv.Conditions
+	if len(conditions) == 0 {
+		conditions = json.RawMessage(`{}`)
+	}
 	return tx.QueryRowContext(ctx,
 		`INSERT INTO channel_account_stats_pricing_intervals
-		 (pricing_id, min_tokens, max_tokens, tier_label, input_price, output_price, cache_write_price, cache_write_1h_price, cache_read_price, per_request_price, sort_order)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id, created_at, updated_at`,
+		 (pricing_id, min_tokens, max_tokens, tier_label, input_price, output_price, cache_write_price, cache_write_1h_price, cache_read_price, per_request_price, conditions, billing_unit, priority, valid_from, valid_until, sort_order)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, $14, $15, $16) RETURNING id, created_at, updated_at`,
 		iv.PricingID, iv.MinTokens, iv.MaxTokens, iv.TierLabel,
 		iv.InputPrice, iv.OutputPrice, iv.CacheWritePrice, iv.CacheWrite1hPrice, iv.CacheReadPrice,
-		iv.PerRequestPrice, iv.SortOrder,
+		iv.PerRequestPrice, string(conditions), iv.BillingUnit, iv.Priority, iv.ValidFrom, iv.ValidUntil, iv.SortOrder,
 	).Scan(&iv.ID, &iv.CreatedAt, &iv.UpdatedAt)
 }
 
@@ -218,7 +222,8 @@ func (r *channelRepository) batchLoadAccountStatsIntervals(ctx context.Context, 
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT id, pricing_id, min_tokens, max_tokens, tier_label,
 		        input_price, output_price, cache_write_price, cache_write_1h_price, cache_read_price,
-		        per_request_price, sort_order, created_at, updated_at
+		        per_request_price, conditions, billing_unit, priority, valid_from, valid_until,
+		        sort_order, created_at, updated_at
 		 FROM channel_account_stats_pricing_intervals
 		 WHERE pricing_id = ANY($1) ORDER BY pricing_id, sort_order, id`,
 		pq.Array(pricingIDs),
@@ -231,13 +236,16 @@ func (r *channelRepository) batchLoadAccountStatsIntervals(ctx context.Context, 
 	result := make(map[int64][]service.PricingInterval)
 	for rows.Next() {
 		var iv service.PricingInterval
+		var conditions []byte
 		if err := rows.Scan(
 			&iv.ID, &iv.PricingID, &iv.MinTokens, &iv.MaxTokens, &iv.TierLabel,
 			&iv.InputPrice, &iv.OutputPrice, &iv.CacheWritePrice, &iv.CacheWrite1hPrice, &iv.CacheReadPrice,
-			&iv.PerRequestPrice, &iv.SortOrder, &iv.CreatedAt, &iv.UpdatedAt,
+			&iv.PerRequestPrice, &conditions, &iv.BillingUnit, &iv.Priority, &iv.ValidFrom, &iv.ValidUntil,
+			&iv.SortOrder, &iv.CreatedAt, &iv.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan account stats pricing interval: %w", err)
 		}
+		iv.Conditions = append(iv.Conditions[:0], conditions...)
 		result[iv.PricingID] = append(result[iv.PricingID], iv)
 	}
 	return result, rows.Err()

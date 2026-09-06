@@ -77,6 +77,9 @@ func (s *GatewayService) resolveProfitControlGroup(ctx context.Context, groupID 
 // the latest scheduler snapshot. Snapshot read failures are deliberately
 // fail-open to preserve availability, but are observable.
 func (s *GatewayService) GatewayProfitControlVetoLatest(ctx context.Context, selected *Account) (*Account, bool, string) {
+	if selected != nil && !canScheduleAccountForUser(ctx, s.accountRepo, selected, accountSchedulingUserID(ctx)) {
+		return selected, true, "account_ownership_denied"
+	}
 	return profitControlVetoLatest(ctx, selected, s.schedulerSnapshot)
 }
 
@@ -102,6 +105,9 @@ func profitControlVetoLatest(ctx context.Context, selected *Account, snapshot *S
 }
 
 func (s *GatewayService) isGatewayAccountProfitEligible(ctx context.Context, account *Account) bool {
+	if !canScheduleAccountForUser(ctx, s.accountRepo, account, accountSchedulingUserID(ctx)) {
+		return false
+	}
 	vetoed, _ := openAIProfitControlVetoReason(ctx, account)
 	return !vetoed
 }

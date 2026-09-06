@@ -34,10 +34,14 @@ func TestProvideHandlersIncludesRadarHandler(t *testing.T) {
 		radar,
 		nil,         // asyncImageHandler
 		nil,         // batchImageHandler
+		nil,         // videoHandler
 		BuildInfo{}, // buildInfo
 		nil,         // idempotencyCoordinator
 		nil,         // idempotencyCleanupService
 		nil,         // openAIQuotaAutoResetService
+		nil,         // videoSpoolRuntime
+		nil,         // videoTaskRuntime
+		nil,         // videoCallbackRuntime
 	)
 
 	require.Same(t, radar, handlers.Radar)

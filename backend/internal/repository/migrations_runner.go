@@ -64,6 +64,8 @@ const usageLogsUpstreamModelMismatchIndex = "idx_usage_logs_upstream_model_misma
 const usageLogsEffectiveModelIndexesMigration = "226_add_usage_log_effective_model_indexes_notx.sql"
 const usageLogsEffectiveRequestedModelIndex = "idx_usage_logs_effective_requested_model_created"
 const usageLogsEffectiveUpstreamModelIndex = "idx_usage_logs_effective_upstream_model_created"
+const videoTasksAccountActiveIndexMigration = "244_video_tasks_account_active_v2_notx.sql"
+const videoTasksAccountActiveIndex = "idx_video_tasks_account_active_v2"
 
 var vipConcurrentIndexNames = []string{
 	"idx_users_is_vip",
@@ -331,6 +333,8 @@ func prepareNonTransactionalMigration(ctx context.Context, db migrationConnectio
 			}
 		}
 		return nil
+	case videoTasksAccountActiveIndexMigration:
+		return dropInvalidIndexIfPresent(ctx, db, videoTasksAccountActiveIndex)
 	default:
 		return nil
 	}

@@ -90,6 +90,46 @@ func Type(v string) predicate.Account {
 	return predicate.Account(sql.FieldEQ(FieldType, v))
 }
 
+// OwnershipMode applies equality check predicate on the "ownership_mode" field. It's identical to OwnershipModeEQ.
+func OwnershipMode(v string) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldOwnershipMode, v))
+}
+
+// OwnerUserID applies equality check predicate on the "owner_user_id" field. It's identical to OwnerUserIDEQ.
+func OwnerUserID(v int64) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldOwnerUserID, v))
+}
+
+// IsolationState applies equality check predicate on the "isolation_state" field. It's identical to IsolationStateEQ.
+func IsolationState(v string) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldIsolationState, v))
+}
+
+// ProviderIdentityVersion applies equality check predicate on the "provider_identity_version" field. It's identical to ProviderIdentityVersionEQ.
+func ProviderIdentityVersion(v int64) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldProviderIdentityVersion, v))
+}
+
+// IsolationVerifiedVersion applies equality check predicate on the "isolation_verified_version" field. It's identical to IsolationVerifiedVersionEQ.
+func IsolationVerifiedVersion(v int64) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldIsolationVerifiedVersion, v))
+}
+
+// ProviderPrincipalBindingID applies equality check predicate on the "provider_principal_binding_id" field. It's identical to ProviderPrincipalBindingIDEQ.
+func ProviderPrincipalBindingID(v int64) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldProviderPrincipalBindingID, v))
+}
+
+// VideoOwnerUserID applies equality check predicate on the "video_owner_user_id" field. It's identical to VideoOwnerUserIDEQ.
+func VideoOwnerUserID(v int64) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldVideoOwnerUserID, v))
+}
+
+// VideoDisclosurePolicy applies equality check predicate on the "video_disclosure_policy" field. It's identical to VideoDisclosurePolicyEQ.
+func VideoDisclosurePolicy(v string) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldVideoDisclosurePolicy, v))
+}
+
 // ProxyID applies equality check predicate on the "proxy_id" field. It's identical to ProxyIDEQ.
 func ProxyID(v int64) predicate.Account {
 	return predicate.Account(sql.FieldEQ(FieldProxyID, v))
@@ -593,6 +633,441 @@ func TypeEqualFold(v string) predicate.Account {
 // TypeContainsFold applies the ContainsFold predicate on the "type" field.
 func TypeContainsFold(v string) predicate.Account {
 	return predicate.Account(sql.FieldContainsFold(FieldType, v))
+}
+
+// OwnershipModeEQ applies the EQ predicate on the "ownership_mode" field.
+func OwnershipModeEQ(v string) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldOwnershipMode, v))
+}
+
+// OwnershipModeNEQ applies the NEQ predicate on the "ownership_mode" field.
+func OwnershipModeNEQ(v string) predicate.Account {
+	return predicate.Account(sql.FieldNEQ(FieldOwnershipMode, v))
+}
+
+// OwnershipModeIn applies the In predicate on the "ownership_mode" field.
+func OwnershipModeIn(vs ...string) predicate.Account {
+	return predicate.Account(sql.FieldIn(FieldOwnershipMode, vs...))
+}
+
+// OwnershipModeNotIn applies the NotIn predicate on the "ownership_mode" field.
+func OwnershipModeNotIn(vs ...string) predicate.Account {
+	return predicate.Account(sql.FieldNotIn(FieldOwnershipMode, vs...))
+}
+
+// OwnershipModeGT applies the GT predicate on the "ownership_mode" field.
+func OwnershipModeGT(v string) predicate.Account {
+	return predicate.Account(sql.FieldGT(FieldOwnershipMode, v))
+}
+
+// OwnershipModeGTE applies the GTE predicate on the "ownership_mode" field.
+func OwnershipModeGTE(v string) predicate.Account {
+	return predicate.Account(sql.FieldGTE(FieldOwnershipMode, v))
+}
+
+// OwnershipModeLT applies the LT predicate on the "ownership_mode" field.
+func OwnershipModeLT(v string) predicate.Account {
+	return predicate.Account(sql.FieldLT(FieldOwnershipMode, v))
+}
+
+// OwnershipModeLTE applies the LTE predicate on the "ownership_mode" field.
+func OwnershipModeLTE(v string) predicate.Account {
+	return predicate.Account(sql.FieldLTE(FieldOwnershipMode, v))
+}
+
+// OwnershipModeContains applies the Contains predicate on the "ownership_mode" field.
+func OwnershipModeContains(v string) predicate.Account {
+	return predicate.Account(sql.FieldContains(FieldOwnershipMode, v))
+}
+
+// OwnershipModeHasPrefix applies the HasPrefix predicate on the "ownership_mode" field.
+func OwnershipModeHasPrefix(v string) predicate.Account {
+	return predicate.Account(sql.FieldHasPrefix(FieldOwnershipMode, v))
+}
+
+// OwnershipModeHasSuffix applies the HasSuffix predicate on the "ownership_mode" field.
+func OwnershipModeHasSuffix(v string) predicate.Account {
+	return predicate.Account(sql.FieldHasSuffix(FieldOwnershipMode, v))
+}
+
+// OwnershipModeEqualFold applies the EqualFold predicate on the "ownership_mode" field.
+func OwnershipModeEqualFold(v string) predicate.Account {
+	return predicate.Account(sql.FieldEqualFold(FieldOwnershipMode, v))
+}
+
+// OwnershipModeContainsFold applies the ContainsFold predicate on the "ownership_mode" field.
+func OwnershipModeContainsFold(v string) predicate.Account {
+	return predicate.Account(sql.FieldContainsFold(FieldOwnershipMode, v))
+}
+
+// OwnerUserIDEQ applies the EQ predicate on the "owner_user_id" field.
+func OwnerUserIDEQ(v int64) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldOwnerUserID, v))
+}
+
+// OwnerUserIDNEQ applies the NEQ predicate on the "owner_user_id" field.
+func OwnerUserIDNEQ(v int64) predicate.Account {
+	return predicate.Account(sql.FieldNEQ(FieldOwnerUserID, v))
+}
+
+// OwnerUserIDIn applies the In predicate on the "owner_user_id" field.
+func OwnerUserIDIn(vs ...int64) predicate.Account {
+	return predicate.Account(sql.FieldIn(FieldOwnerUserID, vs...))
+}
+
+// OwnerUserIDNotIn applies the NotIn predicate on the "owner_user_id" field.
+func OwnerUserIDNotIn(vs ...int64) predicate.Account {
+	return predicate.Account(sql.FieldNotIn(FieldOwnerUserID, vs...))
+}
+
+// OwnerUserIDGT applies the GT predicate on the "owner_user_id" field.
+func OwnerUserIDGT(v int64) predicate.Account {
+	return predicate.Account(sql.FieldGT(FieldOwnerUserID, v))
+}
+
+// OwnerUserIDGTE applies the GTE predicate on the "owner_user_id" field.
+func OwnerUserIDGTE(v int64) predicate.Account {
+	return predicate.Account(sql.FieldGTE(FieldOwnerUserID, v))
+}
+
+// OwnerUserIDLT applies the LT predicate on the "owner_user_id" field.
+func OwnerUserIDLT(v int64) predicate.Account {
+	return predicate.Account(sql.FieldLT(FieldOwnerUserID, v))
+}
+
+// OwnerUserIDLTE applies the LTE predicate on the "owner_user_id" field.
+func OwnerUserIDLTE(v int64) predicate.Account {
+	return predicate.Account(sql.FieldLTE(FieldOwnerUserID, v))
+}
+
+// OwnerUserIDIsNil applies the IsNil predicate on the "owner_user_id" field.
+func OwnerUserIDIsNil() predicate.Account {
+	return predicate.Account(sql.FieldIsNull(FieldOwnerUserID))
+}
+
+// OwnerUserIDNotNil applies the NotNil predicate on the "owner_user_id" field.
+func OwnerUserIDNotNil() predicate.Account {
+	return predicate.Account(sql.FieldNotNull(FieldOwnerUserID))
+}
+
+// IsolationStateEQ applies the EQ predicate on the "isolation_state" field.
+func IsolationStateEQ(v string) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldIsolationState, v))
+}
+
+// IsolationStateNEQ applies the NEQ predicate on the "isolation_state" field.
+func IsolationStateNEQ(v string) predicate.Account {
+	return predicate.Account(sql.FieldNEQ(FieldIsolationState, v))
+}
+
+// IsolationStateIn applies the In predicate on the "isolation_state" field.
+func IsolationStateIn(vs ...string) predicate.Account {
+	return predicate.Account(sql.FieldIn(FieldIsolationState, vs...))
+}
+
+// IsolationStateNotIn applies the NotIn predicate on the "isolation_state" field.
+func IsolationStateNotIn(vs ...string) predicate.Account {
+	return predicate.Account(sql.FieldNotIn(FieldIsolationState, vs...))
+}
+
+// IsolationStateGT applies the GT predicate on the "isolation_state" field.
+func IsolationStateGT(v string) predicate.Account {
+	return predicate.Account(sql.FieldGT(FieldIsolationState, v))
+}
+
+// IsolationStateGTE applies the GTE predicate on the "isolation_state" field.
+func IsolationStateGTE(v string) predicate.Account {
+	return predicate.Account(sql.FieldGTE(FieldIsolationState, v))
+}
+
+// IsolationStateLT applies the LT predicate on the "isolation_state" field.
+func IsolationStateLT(v string) predicate.Account {
+	return predicate.Account(sql.FieldLT(FieldIsolationState, v))
+}
+
+// IsolationStateLTE applies the LTE predicate on the "isolation_state" field.
+func IsolationStateLTE(v string) predicate.Account {
+	return predicate.Account(sql.FieldLTE(FieldIsolationState, v))
+}
+
+// IsolationStateContains applies the Contains predicate on the "isolation_state" field.
+func IsolationStateContains(v string) predicate.Account {
+	return predicate.Account(sql.FieldContains(FieldIsolationState, v))
+}
+
+// IsolationStateHasPrefix applies the HasPrefix predicate on the "isolation_state" field.
+func IsolationStateHasPrefix(v string) predicate.Account {
+	return predicate.Account(sql.FieldHasPrefix(FieldIsolationState, v))
+}
+
+// IsolationStateHasSuffix applies the HasSuffix predicate on the "isolation_state" field.
+func IsolationStateHasSuffix(v string) predicate.Account {
+	return predicate.Account(sql.FieldHasSuffix(FieldIsolationState, v))
+}
+
+// IsolationStateEqualFold applies the EqualFold predicate on the "isolation_state" field.
+func IsolationStateEqualFold(v string) predicate.Account {
+	return predicate.Account(sql.FieldEqualFold(FieldIsolationState, v))
+}
+
+// IsolationStateContainsFold applies the ContainsFold predicate on the "isolation_state" field.
+func IsolationStateContainsFold(v string) predicate.Account {
+	return predicate.Account(sql.FieldContainsFold(FieldIsolationState, v))
+}
+
+// ProviderIdentityVersionEQ applies the EQ predicate on the "provider_identity_version" field.
+func ProviderIdentityVersionEQ(v int64) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldProviderIdentityVersion, v))
+}
+
+// ProviderIdentityVersionNEQ applies the NEQ predicate on the "provider_identity_version" field.
+func ProviderIdentityVersionNEQ(v int64) predicate.Account {
+	return predicate.Account(sql.FieldNEQ(FieldProviderIdentityVersion, v))
+}
+
+// ProviderIdentityVersionIn applies the In predicate on the "provider_identity_version" field.
+func ProviderIdentityVersionIn(vs ...int64) predicate.Account {
+	return predicate.Account(sql.FieldIn(FieldProviderIdentityVersion, vs...))
+}
+
+// ProviderIdentityVersionNotIn applies the NotIn predicate on the "provider_identity_version" field.
+func ProviderIdentityVersionNotIn(vs ...int64) predicate.Account {
+	return predicate.Account(sql.FieldNotIn(FieldProviderIdentityVersion, vs...))
+}
+
+// ProviderIdentityVersionGT applies the GT predicate on the "provider_identity_version" field.
+func ProviderIdentityVersionGT(v int64) predicate.Account {
+	return predicate.Account(sql.FieldGT(FieldProviderIdentityVersion, v))
+}
+
+// ProviderIdentityVersionGTE applies the GTE predicate on the "provider_identity_version" field.
+func ProviderIdentityVersionGTE(v int64) predicate.Account {
+	return predicate.Account(sql.FieldGTE(FieldProviderIdentityVersion, v))
+}
+
+// ProviderIdentityVersionLT applies the LT predicate on the "provider_identity_version" field.
+func ProviderIdentityVersionLT(v int64) predicate.Account {
+	return predicate.Account(sql.FieldLT(FieldProviderIdentityVersion, v))
+}
+
+// ProviderIdentityVersionLTE applies the LTE predicate on the "provider_identity_version" field.
+func ProviderIdentityVersionLTE(v int64) predicate.Account {
+	return predicate.Account(sql.FieldLTE(FieldProviderIdentityVersion, v))
+}
+
+// IsolationVerifiedVersionEQ applies the EQ predicate on the "isolation_verified_version" field.
+func IsolationVerifiedVersionEQ(v int64) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldIsolationVerifiedVersion, v))
+}
+
+// IsolationVerifiedVersionNEQ applies the NEQ predicate on the "isolation_verified_version" field.
+func IsolationVerifiedVersionNEQ(v int64) predicate.Account {
+	return predicate.Account(sql.FieldNEQ(FieldIsolationVerifiedVersion, v))
+}
+
+// IsolationVerifiedVersionIn applies the In predicate on the "isolation_verified_version" field.
+func IsolationVerifiedVersionIn(vs ...int64) predicate.Account {
+	return predicate.Account(sql.FieldIn(FieldIsolationVerifiedVersion, vs...))
+}
+
+// IsolationVerifiedVersionNotIn applies the NotIn predicate on the "isolation_verified_version" field.
+func IsolationVerifiedVersionNotIn(vs ...int64) predicate.Account {
+	return predicate.Account(sql.FieldNotIn(FieldIsolationVerifiedVersion, vs...))
+}
+
+// IsolationVerifiedVersionGT applies the GT predicate on the "isolation_verified_version" field.
+func IsolationVerifiedVersionGT(v int64) predicate.Account {
+	return predicate.Account(sql.FieldGT(FieldIsolationVerifiedVersion, v))
+}
+
+// IsolationVerifiedVersionGTE applies the GTE predicate on the "isolation_verified_version" field.
+func IsolationVerifiedVersionGTE(v int64) predicate.Account {
+	return predicate.Account(sql.FieldGTE(FieldIsolationVerifiedVersion, v))
+}
+
+// IsolationVerifiedVersionLT applies the LT predicate on the "isolation_verified_version" field.
+func IsolationVerifiedVersionLT(v int64) predicate.Account {
+	return predicate.Account(sql.FieldLT(FieldIsolationVerifiedVersion, v))
+}
+
+// IsolationVerifiedVersionLTE applies the LTE predicate on the "isolation_verified_version" field.
+func IsolationVerifiedVersionLTE(v int64) predicate.Account {
+	return predicate.Account(sql.FieldLTE(FieldIsolationVerifiedVersion, v))
+}
+
+// ProviderPrincipalBindingIDEQ applies the EQ predicate on the "provider_principal_binding_id" field.
+func ProviderPrincipalBindingIDEQ(v int64) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldProviderPrincipalBindingID, v))
+}
+
+// ProviderPrincipalBindingIDNEQ applies the NEQ predicate on the "provider_principal_binding_id" field.
+func ProviderPrincipalBindingIDNEQ(v int64) predicate.Account {
+	return predicate.Account(sql.FieldNEQ(FieldProviderPrincipalBindingID, v))
+}
+
+// ProviderPrincipalBindingIDIn applies the In predicate on the "provider_principal_binding_id" field.
+func ProviderPrincipalBindingIDIn(vs ...int64) predicate.Account {
+	return predicate.Account(sql.FieldIn(FieldProviderPrincipalBindingID, vs...))
+}
+
+// ProviderPrincipalBindingIDNotIn applies the NotIn predicate on the "provider_principal_binding_id" field.
+func ProviderPrincipalBindingIDNotIn(vs ...int64) predicate.Account {
+	return predicate.Account(sql.FieldNotIn(FieldProviderPrincipalBindingID, vs...))
+}
+
+// ProviderPrincipalBindingIDGT applies the GT predicate on the "provider_principal_binding_id" field.
+func ProviderPrincipalBindingIDGT(v int64) predicate.Account {
+	return predicate.Account(sql.FieldGT(FieldProviderPrincipalBindingID, v))
+}
+
+// ProviderPrincipalBindingIDGTE applies the GTE predicate on the "provider_principal_binding_id" field.
+func ProviderPrincipalBindingIDGTE(v int64) predicate.Account {
+	return predicate.Account(sql.FieldGTE(FieldProviderPrincipalBindingID, v))
+}
+
+// ProviderPrincipalBindingIDLT applies the LT predicate on the "provider_principal_binding_id" field.
+func ProviderPrincipalBindingIDLT(v int64) predicate.Account {
+	return predicate.Account(sql.FieldLT(FieldProviderPrincipalBindingID, v))
+}
+
+// ProviderPrincipalBindingIDLTE applies the LTE predicate on the "provider_principal_binding_id" field.
+func ProviderPrincipalBindingIDLTE(v int64) predicate.Account {
+	return predicate.Account(sql.FieldLTE(FieldProviderPrincipalBindingID, v))
+}
+
+// ProviderPrincipalBindingIDIsNil applies the IsNil predicate on the "provider_principal_binding_id" field.
+func ProviderPrincipalBindingIDIsNil() predicate.Account {
+	return predicate.Account(sql.FieldIsNull(FieldProviderPrincipalBindingID))
+}
+
+// ProviderPrincipalBindingIDNotNil applies the NotNil predicate on the "provider_principal_binding_id" field.
+func ProviderPrincipalBindingIDNotNil() predicate.Account {
+	return predicate.Account(sql.FieldNotNull(FieldProviderPrincipalBindingID))
+}
+
+// VideoOwnerUserIDEQ applies the EQ predicate on the "video_owner_user_id" field.
+func VideoOwnerUserIDEQ(v int64) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldVideoOwnerUserID, v))
+}
+
+// VideoOwnerUserIDNEQ applies the NEQ predicate on the "video_owner_user_id" field.
+func VideoOwnerUserIDNEQ(v int64) predicate.Account {
+	return predicate.Account(sql.FieldNEQ(FieldVideoOwnerUserID, v))
+}
+
+// VideoOwnerUserIDIn applies the In predicate on the "video_owner_user_id" field.
+func VideoOwnerUserIDIn(vs ...int64) predicate.Account {
+	return predicate.Account(sql.FieldIn(FieldVideoOwnerUserID, vs...))
+}
+
+// VideoOwnerUserIDNotIn applies the NotIn predicate on the "video_owner_user_id" field.
+func VideoOwnerUserIDNotIn(vs ...int64) predicate.Account {
+	return predicate.Account(sql.FieldNotIn(FieldVideoOwnerUserID, vs...))
+}
+
+// VideoOwnerUserIDGT applies the GT predicate on the "video_owner_user_id" field.
+func VideoOwnerUserIDGT(v int64) predicate.Account {
+	return predicate.Account(sql.FieldGT(FieldVideoOwnerUserID, v))
+}
+
+// VideoOwnerUserIDGTE applies the GTE predicate on the "video_owner_user_id" field.
+func VideoOwnerUserIDGTE(v int64) predicate.Account {
+	return predicate.Account(sql.FieldGTE(FieldVideoOwnerUserID, v))
+}
+
+// VideoOwnerUserIDLT applies the LT predicate on the "video_owner_user_id" field.
+func VideoOwnerUserIDLT(v int64) predicate.Account {
+	return predicate.Account(sql.FieldLT(FieldVideoOwnerUserID, v))
+}
+
+// VideoOwnerUserIDLTE applies the LTE predicate on the "video_owner_user_id" field.
+func VideoOwnerUserIDLTE(v int64) predicate.Account {
+	return predicate.Account(sql.FieldLTE(FieldVideoOwnerUserID, v))
+}
+
+// VideoOwnerUserIDIsNil applies the IsNil predicate on the "video_owner_user_id" field.
+func VideoOwnerUserIDIsNil() predicate.Account {
+	return predicate.Account(sql.FieldIsNull(FieldVideoOwnerUserID))
+}
+
+// VideoOwnerUserIDNotNil applies the NotNil predicate on the "video_owner_user_id" field.
+func VideoOwnerUserIDNotNil() predicate.Account {
+	return predicate.Account(sql.FieldNotNull(FieldVideoOwnerUserID))
+}
+
+// VideoDisclosurePolicyEQ applies the EQ predicate on the "video_disclosure_policy" field.
+func VideoDisclosurePolicyEQ(v string) predicate.Account {
+	return predicate.Account(sql.FieldEQ(FieldVideoDisclosurePolicy, v))
+}
+
+// VideoDisclosurePolicyNEQ applies the NEQ predicate on the "video_disclosure_policy" field.
+func VideoDisclosurePolicyNEQ(v string) predicate.Account {
+	return predicate.Account(sql.FieldNEQ(FieldVideoDisclosurePolicy, v))
+}
+
+// VideoDisclosurePolicyIn applies the In predicate on the "video_disclosure_policy" field.
+func VideoDisclosurePolicyIn(vs ...string) predicate.Account {
+	return predicate.Account(sql.FieldIn(FieldVideoDisclosurePolicy, vs...))
+}
+
+// VideoDisclosurePolicyNotIn applies the NotIn predicate on the "video_disclosure_policy" field.
+func VideoDisclosurePolicyNotIn(vs ...string) predicate.Account {
+	return predicate.Account(sql.FieldNotIn(FieldVideoDisclosurePolicy, vs...))
+}
+
+// VideoDisclosurePolicyGT applies the GT predicate on the "video_disclosure_policy" field.
+func VideoDisclosurePolicyGT(v string) predicate.Account {
+	return predicate.Account(sql.FieldGT(FieldVideoDisclosurePolicy, v))
+}
+
+// VideoDisclosurePolicyGTE applies the GTE predicate on the "video_disclosure_policy" field.
+func VideoDisclosurePolicyGTE(v string) predicate.Account {
+	return predicate.Account(sql.FieldGTE(FieldVideoDisclosurePolicy, v))
+}
+
+// VideoDisclosurePolicyLT applies the LT predicate on the "video_disclosure_policy" field.
+func VideoDisclosurePolicyLT(v string) predicate.Account {
+	return predicate.Account(sql.FieldLT(FieldVideoDisclosurePolicy, v))
+}
+
+// VideoDisclosurePolicyLTE applies the LTE predicate on the "video_disclosure_policy" field.
+func VideoDisclosurePolicyLTE(v string) predicate.Account {
+	return predicate.Account(sql.FieldLTE(FieldVideoDisclosurePolicy, v))
+}
+
+// VideoDisclosurePolicyContains applies the Contains predicate on the "video_disclosure_policy" field.
+func VideoDisclosurePolicyContains(v string) predicate.Account {
+	return predicate.Account(sql.FieldContains(FieldVideoDisclosurePolicy, v))
+}
+
+// VideoDisclosurePolicyHasPrefix applies the HasPrefix predicate on the "video_disclosure_policy" field.
+func VideoDisclosurePolicyHasPrefix(v string) predicate.Account {
+	return predicate.Account(sql.FieldHasPrefix(FieldVideoDisclosurePolicy, v))
+}
+
+// VideoDisclosurePolicyHasSuffix applies the HasSuffix predicate on the "video_disclosure_policy" field.
+func VideoDisclosurePolicyHasSuffix(v string) predicate.Account {
+	return predicate.Account(sql.FieldHasSuffix(FieldVideoDisclosurePolicy, v))
+}
+
+// VideoDisclosurePolicyIsNil applies the IsNil predicate on the "video_disclosure_policy" field.
+func VideoDisclosurePolicyIsNil() predicate.Account {
+	return predicate.Account(sql.FieldIsNull(FieldVideoDisclosurePolicy))
+}
+
+// VideoDisclosurePolicyNotNil applies the NotNil predicate on the "video_disclosure_policy" field.
+func VideoDisclosurePolicyNotNil() predicate.Account {
+	return predicate.Account(sql.FieldNotNull(FieldVideoDisclosurePolicy))
+}
+
+// VideoDisclosurePolicyEqualFold applies the EqualFold predicate on the "video_disclosure_policy" field.
+func VideoDisclosurePolicyEqualFold(v string) predicate.Account {
+	return predicate.Account(sql.FieldEqualFold(FieldVideoDisclosurePolicy, v))
+}
+
+// VideoDisclosurePolicyContainsFold applies the ContainsFold predicate on the "video_disclosure_policy" field.
+func VideoDisclosurePolicyContainsFold(v string) predicate.Account {
+	return predicate.Account(sql.FieldContainsFold(FieldVideoDisclosurePolicy, v))
 }
 
 // ProxyIDEQ applies the EQ predicate on the "proxy_id" field.

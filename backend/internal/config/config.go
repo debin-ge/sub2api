@@ -1089,6 +1089,57 @@ const (
 	ImageConcurrencyOverflowModeWait   = "wait"
 )
 
+const (
+	VideoDisclosureNone                 = "none"
+	VideoDisclosureIdentity             = "identity"
+	VideoDisclosureTaskAccess           = "task_access"
+	VideoDisclosureDedicatedCredentials = "dedicated_credentials"
+)
+
+type GatewayVideoSpoolConfig struct {
+	Directory            string `mapstructure:"directory"`
+	MaxPartBytes         int64  `mapstructure:"max_part_bytes"`
+	MaxRequestBytes      int64  `mapstructure:"max_request_bytes"`
+	MaxGlobalBytes       int64  `mapstructure:"max_global_bytes"`
+	MaxUserConcurrency   int    `mapstructure:"max_user_concurrency"`
+	MaxGlobalConcurrency int    `mapstructure:"max_global_concurrency"`
+	ChunkBytes           int    `mapstructure:"chunk_bytes"`
+	OrphanTTLMinutes     int    `mapstructure:"orphan_ttl_minutes"`
+}
+
+type GatewayVideoContentProxyConfig struct {
+	Enabled                      bool `mapstructure:"enabled"`
+	MaxUserConcurrency           int  `mapstructure:"max_user_concurrency"`
+	MaxAccountConcurrency        int  `mapstructure:"max_account_concurrency"`
+	ResponseHeaderTimeoutSeconds int  `mapstructure:"response_header_timeout_seconds"`
+	IdleTimeoutSeconds           int  `mapstructure:"idle_timeout_seconds"`
+	TotalTimeoutSeconds          int  `mapstructure:"total_timeout_seconds"`
+}
+
+type GatewayVideoCallbackConfig struct {
+	Enabled               bool   `mapstructure:"enabled"`
+	RetryHours            int    `mapstructure:"retry_hours"`
+	RequestTimeoutSeconds int    `mapstructure:"request_timeout_seconds"`
+	SigningSecret         string `mapstructure:"signing_secret"`
+}
+
+type GatewayVideoConfig struct {
+	Enabled                            bool                           `mapstructure:"enabled"`
+	CreationEnabled                    bool                           `mapstructure:"creation_enabled"`
+	SubmitTimeoutSeconds               int                            `mapstructure:"submit_timeout_seconds"`
+	PollIntervalSeconds                int                            `mapstructure:"poll_interval_seconds"`
+	LeaseSeconds                       int                            `mapstructure:"lease_seconds"`
+	WorkerBatchSize                    int                            `mapstructure:"worker_batch_size"`
+	WorkerConcurrency                  int                            `mapstructure:"worker_concurrency"`
+	WorkerRequestTimeoutSeconds        int                            `mapstructure:"worker_request_timeout_seconds"`
+	ManualReviewThresholdUSD           float64                        `mapstructure:"manual_review_threshold_usd"`
+	SubmissionUnknownQuarantineMinutes int                            `mapstructure:"submission_unknown_quarantine_minutes"`
+	DisclosurePolicy                   string                         `mapstructure:"disclosure_policy"`
+	Spool                              GatewayVideoSpoolConfig        `mapstructure:"spool"`
+	ContentProxy                       GatewayVideoContentProxyConfig `mapstructure:"content_proxy"`
+	Callback                           GatewayVideoCallbackConfig     `mapstructure:"callback"`
+}
+
 // GatewayConfig API网关相关配置
 type GatewayConfig struct {
 	// 等待上游响应头的超时时间（秒），0表示无超时
@@ -1163,6 +1214,8 @@ type GatewayConfig struct {
 	OpenAIProxyStreamCircuit GatewayOpenAIProxyStreamCircuitConfig `mapstructure:"openai_proxy_stream_circuit"`
 	// ImageConcurrency: 图片生成独立并发限制配置（默认关闭）
 	ImageConcurrency ImageConcurrencyConfig `mapstructure:"image_concurrency"`
+	// Video is the provider-neutral asynchronous video task platform.
+	Video GatewayVideoConfig `mapstructure:"video"`
 
 	// HTTP 上游连接池配置（性能优化：支持高并发场景调优）
 	// MaxIdleConns: 所有主机的最大空闲连接总数
@@ -1806,6 +1859,9 @@ type TotpConfig struct {
 	// EncryptionKey 用于加密 TOTP 密钥的 AES-256 密钥（32 字节 hex 编码）
 	// 如果为空，将自动生成一个随机密钥（仅适用于开发环境）
 	EncryptionKey string `mapstructure:"encryption_key"`
+	// LegacyEncryptionKeys 仅用于解密轮换前的历史密文；新密文始终使用 EncryptionKey。
+	// 最多保留 4 把，完成历史密文迁移或等待短期回执过期后应及时移除。
+	LegacyEncryptionKeys []string `mapstructure:"legacy_encryption_keys"`
 	// EncryptionKeyConfigured 标记加密密钥是否为手动配置（非自动生成）
 	// 只有手动配置了密钥才允许在管理后台启用 TOTP 功能
 	EncryptionKeyConfigured bool `mapstructure:"-"`
@@ -2171,6 +2227,20 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	} else {
 		cfg.Totp.EncryptionKeyConfigured = true
 	}
+	seenEncryptionKeys := map[string]struct{}{cfg.Totp.EncryptionKey: {}}
+	legacyEncryptionKeys := make([]string, 0, len(cfg.Totp.LegacyEncryptionKeys))
+	for _, candidate := range cfg.Totp.LegacyEncryptionKeys {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+		if _, exists := seenEncryptionKeys[candidate]; exists {
+			continue
+		}
+		seenEncryptionKeys[candidate] = struct{}{}
+		legacyEncryptionKeys = append(legacyEncryptionKeys, candidate)
+	}
+	cfg.Totp.LegacyEncryptionKeys = legacyEncryptionKeys
 
 	originalJWTSecret := cfg.JWT.Secret
 	if allowMissingJWTSecret && originalJWTSecret == "" {
@@ -2556,6 +2626,7 @@ func setDefaults() {
 
 	// TOTP
 	viper.SetDefault("totp.encryption_key", "")
+	viper.SetDefault("totp.legacy_encryption_keys", []string{})
 
 	// Default
 	// Admin credentials are created via the setup flow (web wizard / CLI / AUTO_SETUP).
@@ -2761,6 +2832,35 @@ func setDefaults() {
 	viper.SetDefault("gateway.image_concurrency.overflow_mode", ImageConcurrencyOverflowModeReject)
 	viper.SetDefault("gateway.image_concurrency.wait_timeout_seconds", 30)
 	viper.SetDefault("gateway.image_concurrency.max_waiting_requests", 100)
+	viper.SetDefault("gateway.video.enabled", false)
+	viper.SetDefault("gateway.video.creation_enabled", false)
+	viper.SetDefault("gateway.video.submit_timeout_seconds", 180)
+	viper.SetDefault("gateway.video.poll_interval_seconds", 10)
+	viper.SetDefault("gateway.video.lease_seconds", 90)
+	viper.SetDefault("gateway.video.worker_batch_size", 32)
+	viper.SetDefault("gateway.video.worker_concurrency", 4)
+	viper.SetDefault("gateway.video.worker_request_timeout_seconds", 30)
+	viper.SetDefault("gateway.video.manual_review_threshold_usd", 100)
+	viper.SetDefault("gateway.video.submission_unknown_quarantine_minutes", 60)
+	viper.SetDefault("gateway.video.disclosure_policy", VideoDisclosureIdentity)
+	viper.SetDefault("gateway.video.spool.directory", "data/video-spool")
+	viper.SetDefault("gateway.video.spool.max_part_bytes", int64(100*1024*1024))
+	viper.SetDefault("gateway.video.spool.max_request_bytes", int64(200*1024*1024))
+	viper.SetDefault("gateway.video.spool.max_global_bytes", int64(2*1024*1024*1024))
+	viper.SetDefault("gateway.video.spool.max_user_concurrency", 2)
+	viper.SetDefault("gateway.video.spool.max_global_concurrency", 16)
+	viper.SetDefault("gateway.video.spool.chunk_bytes", 64*1024)
+	viper.SetDefault("gateway.video.spool.orphan_ttl_minutes", 30)
+	viper.SetDefault("gateway.video.content_proxy.enabled", true)
+	viper.SetDefault("gateway.video.content_proxy.max_user_concurrency", 4)
+	viper.SetDefault("gateway.video.content_proxy.max_account_concurrency", 16)
+	viper.SetDefault("gateway.video.content_proxy.response_header_timeout_seconds", 30)
+	viper.SetDefault("gateway.video.content_proxy.idle_timeout_seconds", 60)
+	viper.SetDefault("gateway.video.content_proxy.total_timeout_seconds", 3600)
+	viper.SetDefault("gateway.video.callback.enabled", false)
+	viper.SetDefault("gateway.video.callback.retry_hours", 24)
+	viper.SetDefault("gateway.video.callback.request_timeout_seconds", 15)
+	viper.SetDefault("gateway.video.callback.signing_secret", "")
 	viper.SetDefault("gateway.antigravity_fallback_cooldown_minutes", 1)
 	viper.SetDefault("gateway.antigravity_extra_retries", 10)
 	viper.SetDefault("gateway.max_body_size", int64(256*1024*1024))
@@ -3784,6 +3884,60 @@ func (c *Config) Validate() error {
 	default:
 		return fmt.Errorf("gateway.image_concurrency.overflow_mode must be one of: %s/%s",
 			ImageConcurrencyOverflowModeReject, ImageConcurrencyOverflowModeWait)
+	}
+	videoConfigured := c.Gateway.Video.Enabled || c.Gateway.Video.CreationEnabled ||
+		c.Gateway.Video.SubmitTimeoutSeconds != 0 || c.Gateway.Video.PollIntervalSeconds != 0 ||
+		strings.TrimSpace(c.Gateway.Video.Spool.Directory) != ""
+	if c.Gateway.Video.ManualReviewThresholdUSD < 0 || c.Gateway.Video.ManualReviewThresholdUSD >= 1e10 || math.IsNaN(c.Gateway.Video.ManualReviewThresholdUSD) || math.IsInf(c.Gateway.Video.ManualReviewThresholdUSD, 0) {
+		return fmt.Errorf("gateway.video.manual_review_threshold_usd must be finite and between zero and 10000000000")
+	}
+	if videoConfigured {
+		if c.Gateway.Video.SubmitTimeoutSeconds <= 0 {
+			return fmt.Errorf("gateway.video.submit_timeout_seconds must be positive")
+		}
+		if c.Gateway.Video.PollIntervalSeconds <= 0 {
+			return fmt.Errorf("gateway.video.poll_interval_seconds must be positive")
+		}
+		if c.Gateway.Video.LeaseSeconds <= 0 || c.Gateway.Video.SubmissionUnknownQuarantineMinutes <= 0 {
+			return fmt.Errorf("gateway.video lease and submission unknown quarantine values must be positive")
+		}
+		if c.Gateway.Video.WorkerBatchSize <= 0 || c.Gateway.Video.WorkerBatchSize > 1000 {
+			return fmt.Errorf("gateway.video.worker_batch_size must be between 1 and 1000")
+		}
+		if c.Gateway.Video.WorkerConcurrency < 0 || c.Gateway.Video.WorkerConcurrency > 64 {
+			return fmt.Errorf("gateway.video.worker_concurrency must be between 1 and 64 (zero uses the default)")
+		}
+		if c.Gateway.Video.WorkerRequestTimeoutSeconds < 0 || c.Gateway.Video.WorkerRequestTimeoutSeconds > 300 {
+			return fmt.Errorf("gateway.video.worker_request_timeout_seconds must be between 1 and 300 (zero uses the default)")
+		}
+		switch strings.TrimSpace(c.Gateway.Video.DisclosurePolicy) {
+		case VideoDisclosureNone, VideoDisclosureIdentity, VideoDisclosureTaskAccess, VideoDisclosureDedicatedCredentials:
+		default:
+			return fmt.Errorf("gateway.video.disclosure_policy must be one of: %s/%s/%s/%s", VideoDisclosureNone, VideoDisclosureIdentity, VideoDisclosureTaskAccess, VideoDisclosureDedicatedCredentials)
+		}
+		if strings.TrimSpace(c.Gateway.Video.Spool.Directory) == "" {
+			return fmt.Errorf("gateway.video.spool.directory must not be empty")
+		}
+		if c.Gateway.Video.Spool.MaxPartBytes <= 0 || c.Gateway.Video.Spool.MaxRequestBytes < c.Gateway.Video.Spool.MaxPartBytes ||
+			c.Gateway.Video.Spool.MaxGlobalBytes < c.Gateway.Video.Spool.MaxRequestBytes {
+			return fmt.Errorf("gateway.video spool limits must be positive and ordered part <= request <= global")
+		}
+		if c.Gateway.Video.Spool.MaxUserConcurrency <= 0 || c.Gateway.Video.Spool.MaxGlobalConcurrency < c.Gateway.Video.Spool.MaxUserConcurrency ||
+			c.Gateway.Video.Spool.ChunkBytes < 4096 || c.Gateway.Video.Spool.ChunkBytes > 1024*1024 ||
+			c.Gateway.Video.Spool.OrphanTTLMinutes <= 0 {
+			return fmt.Errorf("gateway.video spool concurrency and orphan ttl must be positive")
+		}
+		if c.Gateway.Video.ContentProxy.MaxUserConcurrency <= 0 || c.Gateway.Video.ContentProxy.MaxAccountConcurrency <= 0 ||
+			c.Gateway.Video.ContentProxy.ResponseHeaderTimeoutSeconds <= 0 || c.Gateway.Video.ContentProxy.IdleTimeoutSeconds <= 0 ||
+			c.Gateway.Video.ContentProxy.TotalTimeoutSeconds <= 0 {
+			return fmt.Errorf("gateway.video content proxy limits and timeouts must be positive")
+		}
+		if c.Gateway.Video.Callback.RetryHours <= 0 || c.Gateway.Video.Callback.RequestTimeoutSeconds <= 0 {
+			return fmt.Errorf("gateway.video.callback retry window and request timeout must be positive")
+		}
+		if c.Gateway.Video.Enabled && c.Gateway.Video.Callback.Enabled && strings.TrimSpace(c.Gateway.Video.Callback.SigningSecret) == "" {
+			return fmt.Errorf("gateway.video.callback.signing_secret must be configured when video callbacks are enabled")
+		}
 	}
 	if c.Gateway.ImageConcurrency.WaitTimeoutSeconds < 0 {
 		return fmt.Errorf("gateway.image_concurrency.wait_timeout_seconds must be non-negative")

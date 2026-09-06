@@ -266,6 +266,64 @@ func TestCompositeTargetPlatformMiddlewareUsesExplicitRouteForMultipartImages(t 
 	require.Equal(t, http.StatusNoContent, w.Code)
 }
 
+func TestCompositeTargetPlatformMiddlewareLeavesVideoMultipartStreaming(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	resolver := service.NewCompositeRouteResolver(compositeRouteRepoStub{
+		routes: []service.CompositeModelRoute{{
+			ID: 1, GroupID: 1, PublicModel: "video-alias",
+			MatchType: service.CompositeRouteMatchExact, TargetPlatform: service.PlatformOpenAI,
+			UpstreamModel: "sora-2", Endpoint: service.CompositeRouteEndpointVideos,
+			Priority: 100, Enabled: true,
+		}},
+	})
+	router.Use(gin.HandlerFunc(servermiddleware.APIKeyAuthMiddleware(func(c *gin.Context) {
+		groupID := int64(1)
+		c.Set(string(servermiddleware.ContextKeyAPIKey), &service.APIKey{
+			GroupID: &groupID, Group: &service.Group{ID: groupID, Platform: service.PlatformComposite},
+		})
+		c.Next()
+	})))
+	router.Use(compositeTargetPlatformMiddleware(resolver))
+	var original []byte
+	router.POST("/v1/videos", func(c *gin.Context) {
+		_, resolved := service.ResolvedTargetPlatformFromContext(c.Request.Context())
+		require.False(t, resolved, "multipart video routing is resolved after the streaming parser")
+		body, err := io.ReadAll(c.Request.Body)
+		require.NoError(t, err)
+		require.Equal(t, original, body)
+		c.Status(http.StatusNoContent)
+	})
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	file, err := writer.CreateFormFile("input_reference", "frame.jpg")
+	require.NoError(t, err)
+	_, err = file.Write([]byte{0xff, 0xd8, 0xff, 0xe0})
+	require.NoError(t, err)
+	require.NoError(t, writer.WriteField("model", "video-alias"))
+	require.NoError(t, writer.Close())
+	original = append([]byte(nil), body.Bytes()...)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(original))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusNoContent, w.Code)
+}
+
+func TestCompositeVideoPathsUseDedicatedRouteEndpoints(t *testing.T) {
+	for path, expected := range map[string]string{
+		"/v1/videos":            service.CompositeRouteEndpointVideos,
+		"/v1/videos/characters": service.CompositeRouteEndpointVideoCharacters,
+		"/v1/videos/edits":      service.CompositeRouteEndpointVideoEdits,
+		"/v1/videos/extensions": service.CompositeRouteEndpointVideoExtensions,
+	} {
+		require.Equal(t, expected, compositeRouteEndpointForPath(path), "path=%s", path)
+	}
+}
+
 func TestCompositeGeminiTargetPlatformMiddlewareUsesPathRoute(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()

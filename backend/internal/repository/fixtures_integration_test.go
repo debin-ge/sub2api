@@ -69,6 +69,16 @@ func mustCreateUser(t *testing.T, client *dbent.Client, u *service.User) *servic
 	return u
 }
 
+func softDeleteIntegrationUsers(t testing.TB, ctx context.Context) {
+	t.Helper()
+	_, err := integrationDB.ExecContext(ctx, `
+		UPDATE users
+		SET status = 'disabled', deleted_at = COALESCE(deleted_at, NOW()), updated_at = NOW()
+		WHERE deleted_at IS NULL
+	`)
+	require.NoError(t, err)
+}
+
 func mustCreateGroup(t *testing.T, client *dbent.Client, g *service.Group) *service.Group {
 	t.Helper()
 	ctx := context.Background()

@@ -261,10 +261,9 @@ func TestUsageBillingOutboxClaim_UsesLeaseAndSkipLocked(t *testing.T) {
 
 	cmd, usageLog, commandJSON, usageLogJSON := newUsageBillingOutboxTestPayload(t)
 	mock.ExpectBegin()
-	// A v1 worker must not claim a future-version payload during a rolling
-	// upgrade and quarantine data that only the newer worker understands.
-	mock.ExpectQuery(`(?s)payload_version = \$4.*FOR UPDATE SKIP LOCKED.*UPDATE usage_billing_outbox`).
-		WithArgs("worker-a", 5, int64(120), usageBillingOutboxPayloadVersion).
+	// The upgraded worker claims both legacy usage intents and hold-backed video settlements.
+	mock.ExpectQuery(`(?s)payload_version IN \(\$4, \$5, \$6, \$7\).*FOR UPDATE SKIP LOCKED.*UPDATE usage_billing_outbox`).
+		WithArgs("worker-a", 5, int64(120), usageBillingOutboxPayloadVersionV1, usageBillingOutboxPayloadVersionV2, usageBillingOutboxPayloadVersionV3, usageBillingOutboxPayloadVersionV4).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"id", "attempts", "created_at", "request_id", "api_key_id",
 			"request_fingerprint", "payload_version", "stage",
@@ -596,7 +595,7 @@ func TestUsageBillingOutboxClaim_QuarantinesPoisonAndReturnsValidRows(t *testing
 	require.NoError(t, err)
 	mock.ExpectBegin()
 	mock.ExpectQuery(`(?s)FOR UPDATE SKIP LOCKED.*UPDATE usage_billing_outbox`).
-		WithArgs("worker-poison", 5, int64(120), usageBillingOutboxPayloadVersion).
+		WithArgs("worker-poison", 5, int64(120), usageBillingOutboxPayloadVersionV1, usageBillingOutboxPayloadVersionV2, usageBillingOutboxPayloadVersionV3, usageBillingOutboxPayloadVersionV4).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"id", "attempts", "created_at", "request_id", "api_key_id",
 			"request_fingerprint", "payload_version", "stage",

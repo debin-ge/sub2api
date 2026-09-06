@@ -85,6 +85,21 @@ func (Account) Fields() []ent.Field {
 		field.JSON("extra", map[string]any{}).
 			Default(func() map[string]any { return map[string]any{} }).
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
+		field.String("ownership_mode").Default("shared").MaxLen(32),
+		field.Int64("owner_user_id").Optional().Nillable(),
+		field.String("isolation_state").Default("unverified").MaxLen(32),
+		field.Int64("provider_identity_version").Default(1),
+		field.Int64("isolation_verified_version").Default(0),
+		field.Int64("provider_principal_binding_id").Optional().Nillable(),
+		field.Int64("video_owner_user_id").
+			Optional().
+			Nillable().
+			Comment("User that exclusively owns this account for video credential disclosure"),
+		field.String("video_disclosure_policy").
+			MaxLen(32).
+			Optional().
+			Nillable().
+			Comment("Optional account-level ceiling for video provider disclosure"),
 
 		// proxy_id: 关联的代理配置 ID（可选）
 		// 用于需要通过特定代理访问 API 的场景

@@ -2,7 +2,9 @@ package repository
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -26,6 +28,41 @@ const (
 
 type userRPMCacheImpl struct {
 	rdb *redis.Client
+}
+
+var videoRPMOnceScript = redis.NewScript(`
+if redis.call('EXISTS', KEYS[2]) == 1 then
+    return tonumber(redis.call('GET', KEYS[1]) or '0')
+end
+local count = redis.call('INCR', KEYS[1])
+redis.call('EXPIRE', KEYS[1], ARGV[1])
+redis.call('SET', KEYS[2], '1', 'EX', ARGV[1])
+return count
+`)
+
+func (c *userRPMCacheImpl) incrementOnce(ctx context.Context, key, operationToken string) (int, error) {
+	if strings.TrimSpace(operationToken) == "" {
+		return 0, fmt.Errorf("video RPM operation identity is required")
+	}
+	digest := sha256.Sum256([]byte(operationToken))
+	marker := fmt.Sprintf("rpm:once:{%s}:%x", key, digest)
+	return videoRPMOnceScript.Run(ctx, c.rdb, []string{key, marker}, int(userRPMKeyTTL/time.Second)).Int()
+}
+
+func (c *userRPMCacheImpl) IncrementUserGroupRPMOnce(ctx context.Context, userID, groupID int64, operationToken string) (int, error) {
+	minute, err := c.minuteTS(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return c.incrementOnce(ctx, fmt.Sprintf("%s%d:%d:%d", userGroupRPMKeyPrefix, userID, groupID, minute), operationToken)
+}
+
+func (c *userRPMCacheImpl) IncrementUserRPMOnce(ctx context.Context, userID int64, operationToken string) (int, error) {
+	minute, err := c.minuteTS(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return c.incrementOnce(ctx, fmt.Sprintf("%s%d:%d", userRPMKeyPrefix, userID, minute), operationToken)
 }
 
 // NewUserRPMCache 创建用户/分组级 RPM 计数器。

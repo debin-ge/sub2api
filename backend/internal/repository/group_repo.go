@@ -131,6 +131,9 @@ func createGroupRecord(ctx context.Context, client *dbent.Client, groupIn *servi
 		SetProfitControlEnabled(groupIn.ProfitControlEnabled).
 		SetProfitMinMargin(groupIn.ProfitMinMargin).
 		SetProfitSafetyBuffer(groupIn.ProfitSafetyBuffer)
+	if groupIn.VideoDisclosurePolicy != "" {
+		builder.SetVideoDisclosurePolicy(groupIn.VideoDisclosurePolicy)
+	}
 	if groupIn.DuplicateOperationID != "" {
 		builder = builder.SetDuplicateOperationID(groupIn.DuplicateOperationID)
 	}
@@ -319,6 +322,11 @@ func (r *groupRepository) update(
 			SetProfitControlEnabled(groupIn.ProfitControlEnabled).
 			SetProfitMinMargin(groupIn.ProfitMinMargin).
 			SetProfitSafetyBuffer(groupIn.ProfitSafetyBuffer)
+		if groupIn.VideoDisclosurePolicy != "" {
+			builder.SetVideoDisclosurePolicy(groupIn.VideoDisclosurePolicy)
+		} else {
+			builder.ClearVideoDisclosurePolicy()
+		}
 
 		// 显式处理可空字段：nil 需要 clear，非 nil 需要 set。
 		if groupIn.DailyLimitUSD != nil {

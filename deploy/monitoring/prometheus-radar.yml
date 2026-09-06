@@ -12,3 +12,4 @@ scrape_configs:
 
 rule_files:
   - radar-alerts.yml
+  - video-alerts.yml

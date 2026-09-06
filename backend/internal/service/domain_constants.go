@@ -219,6 +219,7 @@ const DingTalkConnectSyntheticEmailDomain = "@dingtalk-connect.invalid"
 
 // Setting keys
 const (
+	SettingKeyVideoCapabilityCatalog = "video_capability_catalog_v1"
 	// 注册设置
 	SettingKeyRegistrationEnabled              = "registration_enabled"                // 是否开放注册
 	SettingKeyEmailVerifyEnabled               = "email_verify_enabled"                // 是否开启邮件验证

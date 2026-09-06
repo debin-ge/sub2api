@@ -16,6 +16,11 @@ export interface IntervalFormEntry {
   cache_write_multiplier: number | string | null
   cache_read_multiplier: number | string | null
   per_request_price: number | string | null
+  conditions_json?: string
+  billing_unit?: 'request' | 'second' | 'video_token' | null
+  priority?: number
+  valid_from?: string | null
+  valid_until?: string | null
   sort_order: number
 }
 
@@ -209,6 +214,11 @@ export function apiIntervalsToForm(intervals: PricingInterval[]): IntervalFormEn
     cache_write_multiplier: iv.cache_write_multiplier,
     cache_read_multiplier: iv.cache_read_multiplier,
     per_request_price: iv.per_request_price,
+    conditions_json: JSON.stringify(iv.conditions || {}, null, 2),
+    billing_unit: iv.billing_unit || null,
+    priority: iv.priority || 0,
+    valid_from: apiTimestampToLocal(iv.valid_from),
+    valid_until: apiTimestampToLocal(iv.valid_until),
     sort_order: iv.sort_order
   }))
 }
@@ -228,8 +238,36 @@ export function formIntervalsToAPI(intervals: IntervalFormEntry[]): PricingInter
     cache_write_multiplier: toNullableNumber(iv.cache_write_multiplier),
     cache_read_multiplier: toNullableNumber(iv.cache_read_multiplier),
     per_request_price: toNullableNumber(iv.per_request_price),
+    conditions: parseVideoConditions(iv.conditions_json),
+    billing_unit: iv.billing_unit || null,
+    priority: Number.isInteger(Number(iv.priority)) ? Number(iv.priority) : 0,
+    valid_from: formTimestampToAPI(iv.valid_from),
+    valid_until: formTimestampToAPI(iv.valid_until),
     sort_order: iv.sort_order
   }))
+}
+
+function parseVideoConditions(value: string | undefined): Record<string, unknown> {
+  const parsed = JSON.parse(value?.trim() || '{}') as unknown
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('video conditions must be a JSON object')
+  }
+  return parsed as Record<string, unknown>
+}
+
+function apiTimestampToLocal(value: string | null | undefined): string | null {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
+  return local.toISOString().slice(0, 16)
+}
+
+function formTimestampToAPI(value: string | null | undefined): string | null {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) throw new Error('invalid video pricing validity time')
+  return date.toISOString()
 }
 
 // ── 模型模式冲突检测 ──────────────────────────────────────
@@ -295,9 +333,49 @@ export function validateIntervals(
     if (err) return err
   }
 
+	if (mode === 'video') return validateVideoIntervals(sorted, t)
   // per_request / image 模式按 tier_label 匹配，不做 token 区间重叠校验
   if (mode !== 'token') return null
   return checkIntervalOverlap(sorted, t)
+}
+
+const VIDEO_CONDITION_KEYS = new Set([
+  'providers', 'operations', 'sizes', 'seconds', 'input_types',
+  'audio_enabled', 'qualities', 'service_tiers',
+])
+
+function validateVideoIntervals(intervals: IntervalFormEntry[], t: TranslateFn): string | null {
+  const labels = new Set<string>()
+  const selectors = new Set<string>()
+  for (let index = 0; index < intervals.length; index++) {
+    const interval = intervals[index]
+    const label = interval.tier_label.trim().toLowerCase()
+    if (!label) return t('admin.channels.videoPricingValidation.label', { index: index + 1 })
+    if (labels.has(label)) return t('admin.channels.videoPricingValidation.duplicateLabel', { index: index + 1 })
+    labels.add(label)
+    if (!['request', 'second', 'video_token'].includes(interval.billing_unit || '')) {
+      return t('admin.channels.videoPricingValidation.billingUnit', { index: index + 1 })
+    }
+    if (interval.per_request_price == null || interval.per_request_price === '') {
+      return t('admin.channels.videoPricingValidation.price', { index: index + 1 })
+    }
+    let conditions: Record<string, unknown>
+    try {
+      conditions = parseVideoConditions(interval.conditions_json)
+    } catch {
+      return t('admin.channels.videoPricingValidation.conditions', { index: index + 1 })
+    }
+    if (Object.keys(conditions).some((key) => !VIDEO_CONDITION_KEYS.has(key))) {
+      return t('admin.channels.videoPricingValidation.conditions', { index: index + 1 })
+    }
+    if (interval.valid_from && interval.valid_until && new Date(interval.valid_until) <= new Date(interval.valid_from)) {
+      return t('admin.channels.videoPricingValidation.validity', { index: index + 1 })
+    }
+    const selector = `${Number(interval.priority) || 0}:${JSON.stringify(conditions)}`
+    if (selectors.has(selector)) return t('admin.channels.videoPricingValidation.duplicateSelector', { index: index + 1 })
+    selectors.add(selector)
+  }
+  return null
 }
 
 function intervalValidationMessage(
