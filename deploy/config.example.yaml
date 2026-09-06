@@ -257,7 +257,9 @@ gateway:
   # Provider-neutral asynchronous video task platform. Creation stays off
   # until video pricing and at least one capable OpenAI API-key account exist.
   video:
+    # Environment: GATEWAY_VIDEO_ENABLED
     enabled: false
+    # Environment: GATEWAY_VIDEO_CREATION_ENABLED
     creation_enabled: false
     submit_timeout_seconds: 180
     # Fixed interval between upstream status checks. Environment variable:
@@ -269,8 +271,10 @@ gateway:
     worker_request_timeout_seconds: 30
     manual_review_threshold_usd: 100
     submission_unknown_quarantine_minutes: 60
+    # Environment: GATEWAY_VIDEO_DISCLOSURE_POLICY
     disclosure_policy: identity # none | identity | task_access | dedicated_credentials
     spool:
+      # Environment: GATEWAY_VIDEO_SPOOL_DIRECTORY
       directory: data/video-spool
       max_part_bytes: 104857600
       max_request_bytes: 209715200
@@ -280,6 +284,7 @@ gateway:
       chunk_bytes: 65536
       orphan_ttl_minutes: 30
     content_proxy:
+      # Environment: GATEWAY_VIDEO_CONTENT_PROXY_ENABLED
       enabled: true
       max_user_concurrency: 4
       max_account_concurrency: 16
@@ -287,11 +292,13 @@ gateway:
       idle_timeout_seconds: 60
       total_timeout_seconds: 3600
     callback:
-      # Opt-in client callbacks. Enabling requires VIDEO_CALLBACK_SIGNING_SECRET.
+      # Environment: GATEWAY_VIDEO_CALLBACK_ENABLED
       enabled: false
       retry_hours: 24
       request_timeout_seconds: 15
-      signing_secret: ${VIDEO_CALLBACK_SIGNING_SECRET:-}
+      # Required only when callbacks are enabled. Prefer injecting it through
+      # GATEWAY_VIDEO_CALLBACK_SIGNING_SECRET instead of storing it in this file.
+      signing_secret: ""
   # Timeout for waiting upstream response headers (seconds)
   # 等待上游响应头超时时间（秒）
   response_header_timeout: 600

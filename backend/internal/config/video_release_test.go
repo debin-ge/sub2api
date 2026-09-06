@@ -23,3 +23,17 @@ func TestVideoReleaseConfigNeedsNoCallbackSigningSecret(t *testing.T) {
 	require.False(t, cfg.Gateway.Video.Callback.Enabled)
 	require.Empty(t, cfg.Gateway.Video.Callback.SigningSecret)
 }
+
+func TestVideoReleaseCallbackConfigLoadsFromEnvironment(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("GATEWAY_VIDEO_ENABLED", "true")
+	t.Setenv("GATEWAY_VIDEO_CALLBACK_ENABLED", "true")
+	t.Setenv("GATEWAY_VIDEO_CALLBACK_SIGNING_SECRET", "callback-signing-secret")
+	t.Setenv("TOTP_ENCRYPTION_KEY", strings.Repeat("03", 32))
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.True(t, cfg.Gateway.Video.Enabled)
+	require.True(t, cfg.Gateway.Video.Callback.Enabled)
+	require.Equal(t, "callback-signing-secret", cfg.Gateway.Video.Callback.SigningSecret)
+}
