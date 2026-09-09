@@ -67,7 +67,8 @@ func DefaultVideoCapabilityCatalogDocument() VideoCapabilityCatalogDocument {
 	return VideoCapabilityCatalogDocument{
 		Version: VideoCapabilityCatalogVersion,
 		Providers: map[string]VideoCapabilities{
-			VideoProviderOpenAI: DefaultOpenAIVideoCapabilities(),
+			VideoProviderOpenAI:    DefaultOpenAIVideoCapabilities(),
+			VideoProviderByteDance: DefaultByteDanceVideoCapabilities(),
 		},
 	}
 }
@@ -159,9 +160,6 @@ func validateVideoCapabilities(provider string, capabilities VideoCapabilities) 
 			seenSeconds[value] = struct{}{}
 		}
 		sizes := capabilities.SupportedSizes[canonicalModel]
-		if len(sizes) == 0 {
-			return fail("model %q requires supported sizes", model)
-		}
 		seenSizes := make(map[string]struct{}, len(sizes))
 		for _, size := range sizes {
 			normalizedSize, width, height, ok := parseVideoDimensions(size)
@@ -176,8 +174,12 @@ func validateVideoCapabilities(provider string, capabilities VideoCapabilities) 
 		if value := capabilities.DefaultSeconds[canonicalModel]; value <= 0 || !slices.Contains(seconds, value) {
 			return fail("model %q default duration is not supported", model)
 		}
-		if value := strings.ToLower(strings.TrimSpace(capabilities.DefaultSizes[canonicalModel])); value == "" || !slices.Contains(sizes, value) {
-			return fail("model %q default size is not supported", model)
+		if len(sizes) > 0 {
+			if value := strings.ToLower(strings.TrimSpace(capabilities.DefaultSizes[canonicalModel])); value == "" || !slices.Contains(sizes, value) {
+				return fail("model %q default size is not supported", model)
+			}
+		} else if strings.TrimSpace(capabilities.DefaultSizes[canonicalModel]) != "" {
+			return fail("model %q cannot define a default size without supported sizes", model)
 		}
 	}
 	for field, values := range map[string]map[string]int{

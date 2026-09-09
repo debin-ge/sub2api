@@ -367,6 +367,36 @@ SELECT EXISTS (
 	require.True(t, exists, "expected index %s on %s", index, table)
 }
 
+func requireMissingColumn(t *testing.T, tx *sql.Tx, table, column string) {
+	t.Helper()
+
+	var exists bool
+	err := tx.QueryRowContext(context.Background(), `
+SELECT EXISTS (
+	SELECT 1
+	FROM information_schema.columns
+	WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2
+)
+`, table, column).Scan(&exists)
+	require.NoError(t, err, "query information_schema.columns for %s.%s", table, column)
+	require.False(t, exists, "expected column %s.%s to be dropped", table, column)
+}
+
+func requireMissingTable(t *testing.T, tx *sql.Tx, table string) {
+	t.Helper()
+
+	var exists bool
+	err := tx.QueryRowContext(context.Background(), `
+SELECT EXISTS (
+	SELECT 1
+	FROM information_schema.tables
+	WHERE table_schema = 'public' AND table_name = $1
+)
+`, table).Scan(&exists)
+	require.NoError(t, err, "query information_schema.tables for %s", table)
+	require.False(t, exists, "expected table %s to be dropped", table)
+}
+
 func requireIndexAbsent(t *testing.T, tx *sql.Tx, table, index string) {
 	t.Helper()
 
@@ -438,6 +468,25 @@ LIMIT 1
 `, table, column, refTable).Scan(&actual)
 	require.NoError(t, err, "query foreign key action for %s.%s -> %s", table, column, refTable)
 	require.Equal(t, expected, actual, "unexpected ON DELETE action for %s.%s -> %s", table, column, refTable)
+}
+
+func requireConstraintDefinitionExcludes(t *testing.T, tx *sql.Tx, table, constraint string, fragments ...string) {
+	t.Helper()
+
+	var def string
+	err := tx.QueryRowContext(context.Background(), `
+SELECT pg_get_constraintdef(c.oid)
+FROM pg_constraint c
+JOIN pg_class tbl ON tbl.oid = c.conrelid
+JOIN pg_namespace ns ON ns.oid = tbl.relnamespace
+WHERE ns.nspname = 'public'
+  AND tbl.relname = $1
+  AND c.conname = $2
+`, table, constraint).Scan(&def)
+	require.NoError(t, err, "query constraint definition for %s.%s", table, constraint)
+	for _, fragment := range fragments {
+		require.NotContains(t, def, fragment, "constraint %s.%s must no longer allow %s", table, constraint, fragment)
+	}
 }
 
 func requireConstraintDefinitionContains(t *testing.T, tx *sql.Tx, table, constraint string, fragments ...string) {

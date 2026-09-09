@@ -17,7 +17,11 @@ import {
   readPlanType,
   serializeHeaderOverrideRows,
   splitHeaderOverridesObject,
-  validateHeaderOverrideRows
+  validateHeaderOverrideRows,
+  BYTEDANCE_PROTOCOL_MODE_CREDENTIAL_KEY,
+  applyByteDanceProtocolMode,
+  byteDanceProtocolRequiresBaseUrl,
+  readByteDanceProtocolMode
 } from '../credentialsBuilder'
 
 describe('applyInterceptWarmup', () => {
@@ -471,6 +475,67 @@ describe('plan_type helpers', () => {
       const out = applyPlanType({ plan_type: 'pro', email: 'a@b.c' }, '')
       expect(out).toEqual({ email: 'a@b.c' })
       expect('plan_type' in out).toBe(false)
+    })
+  })
+})
+
+describe('ByteDance protocol mode', () => {
+  describe('readByteDanceProtocolMode', () => {
+    it('reads the relay mode', () => {
+      expect(readByteDanceProtocolMode({ protocol_mode: 'openai_compatible' })).toBe(
+        'openai_compatible'
+      )
+    })
+    it('defaults to native when absent', () => {
+      expect(readByteDanceProtocolMode({})).toBe('native')
+      expect(readByteDanceProtocolMode(undefined)).toBe('native')
+      expect(readByteDanceProtocolMode(null)).toBe('native')
+    })
+    // The backend treats any unrecognised mode as unroutable, so the form must
+    // not present dirty data as a third, selectable state.
+    it('falls back to native for unknown or non-string values', () => {
+      expect(readByteDanceProtocolMode({ protocol_mode: 'grpc' })).toBe('native')
+      expect(readByteDanceProtocolMode({ protocol_mode: 42 })).toBe('native')
+      expect(readByteDanceProtocolMode({ protocol_mode: true })).toBe('native')
+    })
+  })
+
+  describe('byteDanceProtocolRequiresBaseUrl', () => {
+    it('requires a host only for the relay mode', () => {
+      expect(byteDanceProtocolRequiresBaseUrl('openai_compatible')).toBe(true)
+      expect(byteDanceProtocolRequiresBaseUrl('native')).toBe(false)
+    })
+  })
+
+  describe('applyByteDanceProtocolMode', () => {
+    it('create + native: omits the key, since native is the backend default', () => {
+      const creds: Record<string, unknown> = { api_key: 'sk' }
+      applyByteDanceProtocolMode(creds, 'native', 'create')
+      expect(BYTEDANCE_PROTOCOL_MODE_CREDENTIAL_KEY in creds).toBe(false)
+    })
+    it('create + openai_compatible: writes the key', () => {
+      const creds: Record<string, unknown> = { api_key: 'sk' }
+      applyByteDanceProtocolMode(creds, 'openai_compatible', 'create')
+      expect(creds.protocol_mode).toBe('openai_compatible')
+    })
+    it('edit + native: deletes a previously stored relay mode', () => {
+      const creds: Record<string, unknown> = { api_key: 'sk', protocol_mode: 'openai_compatible' }
+      applyByteDanceProtocolMode(creds, 'native', 'edit')
+      expect(BYTEDANCE_PROTOCOL_MODE_CREDENTIAL_KEY in creds).toBe(false)
+    })
+    it('edit + native + key absent: does not throw', () => {
+      const creds: Record<string, unknown> = { api_key: 'sk' }
+      applyByteDanceProtocolMode(creds, 'native', 'edit')
+      expect(BYTEDANCE_PROTOCOL_MODE_CREDENTIAL_KEY in creds).toBe(false)
+    })
+    it('preserves unrelated credentials', () => {
+      const creds: Record<string, unknown> = { api_key: 'sk', base_url: 'https://relay/v1' }
+      applyByteDanceProtocolMode(creds, 'openai_compatible', 'edit')
+      expect(creds).toEqual({
+        api_key: 'sk',
+        base_url: 'https://relay/v1',
+        protocol_mode: 'openai_compatible'
+      })
     })
   })
 })

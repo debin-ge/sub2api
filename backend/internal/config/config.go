@@ -1124,20 +1124,19 @@ type GatewayVideoCallbackConfig struct {
 }
 
 type GatewayVideoConfig struct {
-	Enabled                            bool                           `mapstructure:"enabled"`
-	CreationEnabled                    bool                           `mapstructure:"creation_enabled"`
-	SubmitTimeoutSeconds               int                            `mapstructure:"submit_timeout_seconds"`
-	PollIntervalSeconds                int                            `mapstructure:"poll_interval_seconds"`
-	LeaseSeconds                       int                            `mapstructure:"lease_seconds"`
-	WorkerBatchSize                    int                            `mapstructure:"worker_batch_size"`
-	WorkerConcurrency                  int                            `mapstructure:"worker_concurrency"`
-	WorkerRequestTimeoutSeconds        int                            `mapstructure:"worker_request_timeout_seconds"`
-	ManualReviewThresholdUSD           float64                        `mapstructure:"manual_review_threshold_usd"`
-	SubmissionUnknownQuarantineMinutes int                            `mapstructure:"submission_unknown_quarantine_minutes"`
-	DisclosurePolicy                   string                         `mapstructure:"disclosure_policy"`
-	Spool                              GatewayVideoSpoolConfig        `mapstructure:"spool"`
-	ContentProxy                       GatewayVideoContentProxyConfig `mapstructure:"content_proxy"`
-	Callback                           GatewayVideoCallbackConfig     `mapstructure:"callback"`
+	Enabled                         bool                           `mapstructure:"enabled"`
+	CreationEnabled                 bool                           `mapstructure:"creation_enabled"`
+	SubmitTimeoutSeconds            int                            `mapstructure:"submit_timeout_seconds"`
+	SubmissionReconciliationMinutes int                            `mapstructure:"submission_reconciliation_minutes"`
+	PollIntervalSeconds             int                            `mapstructure:"poll_interval_seconds"`
+	LeaseSeconds                    int                            `mapstructure:"lease_seconds"`
+	WorkerBatchSize                 int                            `mapstructure:"worker_batch_size"`
+	WorkerConcurrency               int                            `mapstructure:"worker_concurrency"`
+	WorkerRequestTimeoutSeconds     int                            `mapstructure:"worker_request_timeout_seconds"`
+	DisclosurePolicy                string                         `mapstructure:"disclosure_policy"`
+	Spool                           GatewayVideoSpoolConfig        `mapstructure:"spool"`
+	ContentProxy                    GatewayVideoContentProxyConfig `mapstructure:"content_proxy"`
+	Callback                        GatewayVideoCallbackConfig     `mapstructure:"callback"`
 }
 
 // GatewayConfig API网关相关配置
@@ -2847,13 +2846,12 @@ func setDefaults() {
 	viper.SetDefault("gateway.video.enabled", false)
 	viper.SetDefault("gateway.video.creation_enabled", false)
 	viper.SetDefault("gateway.video.submit_timeout_seconds", 180)
+	viper.SetDefault("gateway.video.submission_reconciliation_minutes", 30)
 	viper.SetDefault("gateway.video.poll_interval_seconds", 10)
 	viper.SetDefault("gateway.video.lease_seconds", 90)
 	viper.SetDefault("gateway.video.worker_batch_size", 32)
 	viper.SetDefault("gateway.video.worker_concurrency", 4)
 	viper.SetDefault("gateway.video.worker_request_timeout_seconds", 30)
-	viper.SetDefault("gateway.video.manual_review_threshold_usd", 100)
-	viper.SetDefault("gateway.video.submission_unknown_quarantine_minutes", 60)
 	viper.SetDefault("gateway.video.disclosure_policy", VideoDisclosureIdentity)
 	viper.SetDefault("gateway.video.spool.directory", "data/video-spool")
 	viper.SetDefault("gateway.video.spool.max_part_bytes", int64(100*1024*1024))
@@ -3901,19 +3899,20 @@ func (c *Config) Validate() error {
 	}
 	videoConfigured := c.Gateway.Video.Enabled || c.Gateway.Video.CreationEnabled ||
 		c.Gateway.Video.SubmitTimeoutSeconds != 0 || c.Gateway.Video.PollIntervalSeconds != 0 ||
+		c.Gateway.Video.SubmissionReconciliationMinutes != 0 ||
 		strings.TrimSpace(c.Gateway.Video.Spool.Directory) != ""
-	if c.Gateway.Video.ManualReviewThresholdUSD < 0 || c.Gateway.Video.ManualReviewThresholdUSD >= 1e10 || math.IsNaN(c.Gateway.Video.ManualReviewThresholdUSD) || math.IsInf(c.Gateway.Video.ManualReviewThresholdUSD, 0) {
-		return fmt.Errorf("gateway.video.manual_review_threshold_usd must be finite and between zero and 10000000000")
-	}
 	if videoConfigured {
 		if c.Gateway.Video.SubmitTimeoutSeconds <= 0 {
 			return fmt.Errorf("gateway.video.submit_timeout_seconds must be positive")
 		}
+		if c.Gateway.Video.SubmissionReconciliationMinutes <= 0 || c.Gateway.Video.SubmissionReconciliationMinutes > 24*60 {
+			return fmt.Errorf("gateway.video.submission_reconciliation_minutes must be between 1 and 1440")
+		}
 		if c.Gateway.Video.PollIntervalSeconds <= 0 {
 			return fmt.Errorf("gateway.video.poll_interval_seconds must be positive")
 		}
-		if c.Gateway.Video.LeaseSeconds <= 0 || c.Gateway.Video.SubmissionUnknownQuarantineMinutes <= 0 {
-			return fmt.Errorf("gateway.video lease and submission unknown quarantine values must be positive")
+		if c.Gateway.Video.LeaseSeconds <= 0 {
+			return fmt.Errorf("gateway.video.lease_seconds must be positive")
 		}
 		if c.Gateway.Video.WorkerBatchSize <= 0 || c.Gateway.Video.WorkerBatchSize > 1000 {
 			return fmt.Errorf("gateway.video.worker_batch_size must be between 1 and 1000")

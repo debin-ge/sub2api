@@ -1,16 +1,15 @@
 package service
 
 const (
-	VideoGenerationPreparing         = "preparing"
-	VideoGenerationHeld              = "held"
-	VideoGenerationSubmitting        = "submitting"
-	VideoGenerationSubmissionUnknown = "submission_unknown"
-	VideoGenerationQueued            = "queued"
-	VideoGenerationInProgress        = "in_progress"
-	VideoGenerationCompleted         = "completed"
-	VideoGenerationFailed            = "failed"
-	VideoGenerationCancelled         = "cancelled"
-	VideoGenerationExpired           = "expired"
+	VideoGenerationPreparing  = "preparing"
+	VideoGenerationHeld       = "held"
+	VideoGenerationSubmitting = "submitting"
+	VideoGenerationQueued     = "queued"
+	VideoGenerationInProgress = "in_progress"
+	VideoGenerationCompleted  = "completed"
+	VideoGenerationFailed     = "failed"
+	VideoGenerationCancelled  = "cancelled"
+	VideoGenerationExpired    = "expired"
 
 	VideoBillingNone           = "none"
 	VideoBillingHeld           = "held"
@@ -18,7 +17,6 @@ const (
 	VideoBillingCaptured       = "captured"
 	VideoBillingReleasePending = "release_pending"
 	VideoBillingReleased       = "released"
-	VideoBillingManualReview   = "manual_review"
 
 	VideoDeleteNone      = "none"
 	VideoDeleteRequested = "requested"
@@ -38,19 +36,10 @@ var videoGenerationTransitions = map[string]map[string]struct{}{
 		VideoGenerationCancelled:  {},
 	},
 	VideoGenerationSubmitting: {
-		VideoGenerationQueued:            {},
-		VideoGenerationInProgress:        {},
-		VideoGenerationCompleted:         {},
-		VideoGenerationSubmissionUnknown: {},
-		VideoGenerationFailed:            {},
-	},
-	VideoGenerationSubmissionUnknown: {
 		VideoGenerationQueued:     {},
 		VideoGenerationInProgress: {},
 		VideoGenerationCompleted:  {},
 		VideoGenerationFailed:     {},
-		VideoGenerationCancelled:  {},
-		VideoGenerationExpired:    {},
 	},
 	VideoGenerationQueued: {
 		VideoGenerationInProgress: {},
@@ -69,26 +58,21 @@ var videoGenerationTransitions = map[string]map[string]struct{}{
 
 var videoBillingTransitions = map[string]map[string]struct{}{
 	VideoBillingNone: {
-		VideoBillingHeld:         {},
-		VideoBillingManualReview: {},
+		VideoBillingHeld: {},
 	},
 	VideoBillingHeld: {
 		VideoBillingCapturePending: {},
 		VideoBillingReleasePending: {},
-		VideoBillingManualReview:   {},
 	},
 	VideoBillingCapturePending: {
-		VideoBillingCaptured:     {},
-		VideoBillingManualReview: {},
+		VideoBillingCaptured: {},
+		// A capture intent that cannot be executed has to be downgraded to a
+		// release, otherwise the task keeps its hold forever: it is neither
+		// charged nor refunded, and the worker re-claims it on every tick.
+		VideoBillingReleasePending: {},
 	},
 	VideoBillingReleasePending: {
-		VideoBillingReleased:     {},
-		VideoBillingManualReview: {},
-	},
-	VideoBillingManualReview: {
-		VideoBillingHeld:           {},
-		VideoBillingCapturePending: {},
-		VideoBillingReleasePending: {},
+		VideoBillingReleased: {},
 	},
 }
 

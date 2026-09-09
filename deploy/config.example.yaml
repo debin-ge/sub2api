@@ -262,6 +262,8 @@ gateway:
     # Environment: GATEWAY_VIDEO_CREATION_ENABLED
     creation_enabled: false
     submit_timeout_seconds: 180
+    # Automatic reconciliation window for an upstream submission whose response was lost.
+    submission_reconciliation_minutes: 30
     # Fixed interval between upstream status checks. Environment variable:
     # GATEWAY_VIDEO_POLL_INTERVAL_SECONDS
     poll_interval_seconds: 10
@@ -269,8 +271,6 @@ gateway:
     worker_batch_size: 32
     worker_concurrency: 4
     worker_request_timeout_seconds: 30
-    manual_review_threshold_usd: 100
-    submission_unknown_quarantine_minutes: 60
     # Environment: GATEWAY_VIDEO_DISCLOSURE_POLICY
     disclosure_policy: identity # none | identity | task_access | dedicated_credentials
     spool:

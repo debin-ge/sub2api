@@ -25,8 +25,6 @@ func NewVideoTaskRepository(db *sql.DB, billing *usageBillingRepository) service
 }
 
 type videoTaskRow struct {
-	BillingReviewID         *int64                            `json:"billing_review_id"`
-	SubmissionReviewID      *int64                            `json:"submission_review_id"`
 	ID                      int64                             `json:"id"`
 	PublicID                string                            `json:"public_id"`
 	Source                  string                            `json:"source"`
@@ -102,9 +100,7 @@ type videoTaskRow struct {
 
 func (row videoTaskRow) task() *service.VideoTask {
 	task := &service.VideoTask{
-		BillingReviewID:    row.BillingReviewID,
-		SubmissionReviewID: row.SubmissionReviewID,
-		ID:                 row.ID, PublicID: row.PublicID, Source: row.Source,
+		ID: row.ID, PublicID: row.PublicID, Source: row.Source,
 		APIKeyID: row.APIKeyID, GroupID: row.GroupID, ChannelID: row.ChannelID,
 		AccountID: row.AccountID, AccountOwnerUserID: row.AccountOwnerUserID,
 		Provider: row.Provider, Operation: row.Operation, ParentTaskID: row.ParentTaskID,
@@ -194,17 +190,11 @@ func (r *videoTaskRepository) GetVideoOperationalSnapshot(ctx context.Context) (
 	}
 	if err := r.db.QueryRowContext(ctx, `
 		SELECT
-			COUNT(*) FILTER (WHERE generation_state = 'submission_unknown'),
-			COALESCE(SUM(hold_amount) FILTER (WHERE generation_state = 'submission_unknown'), 0),
-			COALESCE(SUM(hold_amount) FILTER (WHERE billing_state IN ('held','capture_pending','release_pending','manual_review')), 0),
+			COALESCE(SUM(hold_amount) FILTER (WHERE billing_state IN ('held','capture_pending','release_pending')), 0),
 			MIN(COALESCE((
 				SELECT MAX(vte.created_at) FROM video_task_events vte
 				WHERE vte.task_id = vt.id AND vte.to_billing_state = vt.billing_state
 			), vt.updated_at)) FILTER (WHERE billing_state IN ('capture_pending','release_pending')),
-			MIN(COALESCE((
-				SELECT MAX(vte.created_at) FROM video_task_events vte
-				WHERE vte.task_id = vt.id AND vte.to_billing_state = vt.billing_state
-			), vt.updated_at)) FILTER (WHERE billing_state = 'manual_review'),
 			COUNT(*) FILTER (WHERE delete_state IN ('requested','deleting','delete_failed')),
 			MIN(COALESCE((
 				SELECT MIN(vte.created_at) FROM video_task_events vte
@@ -212,11 +202,8 @@ func (r *videoTaskRepository) GetVideoOperationalSnapshot(ctx context.Context) (
 			), vt.updated_at)) FILTER (WHERE delete_state IN ('requested','deleting','delete_failed'))
 		FROM video_tasks vt
 	`).Scan(
-		&snapshot.SubmissionUnknown,
-		&snapshot.UnknownHoldAmount,
 		&snapshot.HeldAmount,
 		&snapshot.OldestSettlementPending,
-		&snapshot.OldestManualReview,
 		&snapshot.DeletePending,
 		&snapshot.OldestDeletePending,
 	); err != nil {
@@ -366,7 +353,7 @@ func (r *videoTaskRepository) CreateHeldVideoTask(ctx context.Context, params se
 			SELECT COUNT(*) FROM video_tasks
 			WHERE account_id = $1
 			  AND (
-				generation_state IN ('submitting', 'submission_unknown', 'queued', 'in_progress')
+				generation_state IN ('submitting', 'queued', 'in_progress')
 				OR billing_state = 'held'
 				OR billing_state = 'capture_pending'
 			  )
@@ -966,23 +953,6 @@ func saveVideoProviderAcceptedTx(ctx context.Context, tx *sql.Tx, publicID strin
 	return task, nil
 }
 
-func (r *videoTaskRepository) MarkVideoSubmissionUnknown(ctx context.Context, publicID string, providerError *service.VideoProviderError, nextActionAt time.Time) (*service.VideoTask, error) {
-	kind, code, message := "transport", "submission_unknown", "video provider submission outcome is unknown"
-	if providerError != nil {
-		kind, code, message = providerError.Kind, providerError.Code, providerError.Message
-	}
-	task, err := r.TransitionVideoTask(ctx, publicID, service.VideoTaskTransition{
-		GenerationState: service.VideoGenerationSubmissionUnknown,
-		NextActionAt:    &nextActionAt, SubmissionUnknown: true, IncrementSubmitAttempts: true,
-		ErrorKind: kind, ErrorCode: code, ErrorMessage: message,
-		EventType: "submission_unknown",
-	})
-	if err != nil {
-		return nil, err
-	}
-	return task, nil
-}
-
 func (r *videoTaskRepository) ClaimVideoTask(ctx context.Context, publicID, workerID string, lease time.Duration) (*service.VideoTask, error) {
 	publicID = strings.TrimSpace(publicID)
 	workerID = strings.TrimSpace(workerID)
@@ -1001,7 +971,7 @@ func (r *videoTaskRepository) ClaimVideoTask(ctx context.Context, publicID, work
 				  AND (lease_owner IS NULL OR lease_expires_at <= clock_timestamp())
 				  AND (
 					(generation_state IN ('held','submitting') AND billing_state = 'held')
-				OR (generation_state IN ('submission_unknown','queued','in_progress') AND billing_state = 'held')
+				OR (generation_state IN ('queued','in_progress') AND billing_state = 'held')
 					OR billing_state IN ('capture_pending','release_pending')
 					OR (generation_state IN ('completed','failed','cancelled','expired') AND billing_state = 'held')
 				OR (delete_state IN ('requested','deleting','delete_failed')
@@ -1045,7 +1015,7 @@ func (r *videoTaskRepository) ClaimDueVideoTasks(ctx context.Context, workerID s
 				  AND (
 					(generation_state IN ('held','submitting') AND billing_state = 'held')
 				OR
-				(generation_state IN ('submission_unknown','queued','in_progress') AND billing_state = 'held')
+				(generation_state IN ('queued','in_progress') AND billing_state = 'held')
 					OR billing_state IN ('capture_pending','release_pending')
 					OR (generation_state IN ('completed','failed','cancelled','expired') AND billing_state = 'held')
 				OR (delete_state IN ('requested','deleting','delete_failed')

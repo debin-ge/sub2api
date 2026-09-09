@@ -9,7 +9,6 @@ const (
 	VideoActionRecoverTerminalBilling VideoTaskAction = "recover_terminal_billing"
 	VideoActionRecoverHeld            VideoTaskAction = "recover_held"
 	VideoActionRecoverSubmitting      VideoTaskAction = "recover_submitting"
-	VideoActionQuarantineUnknown      VideoTaskAction = "quarantine_unknown"
 	VideoActionDeleteContent          VideoTaskAction = "delete_content"
 )
 
@@ -29,8 +28,6 @@ func NextVideoAction(task *VideoTask) VideoTaskAction {
 			return VideoActionRecoverHeld
 		case VideoGenerationSubmitting:
 			return VideoActionRecoverSubmitting
-		case VideoGenerationSubmissionUnknown:
-			return VideoActionQuarantineUnknown
 		case VideoGenerationQueued, VideoGenerationInProgress:
 			return VideoActionObserve
 		}

@@ -8,10 +8,10 @@ import (
 
 func nativeVideoReleasePolicyApplies(c *gin.Context) bool {
 	if target, resolved := service.ResolvedTargetPlatformFromContext(c.Request.Context()); resolved {
-		return target == service.PlatformOpenAI
+		return target == service.PlatformOpenAI || target == service.PlatformByteDance
 	}
 	key, ok := middleware.GetAPIKeyFromContext(c)
 	// Composite multipart requests are classified after parsing. Preserve the
 	// existing Grok forwarder and apply the policy before any native intent.
-	return !ok || key == nil || key.Group == nil || key.Group.Platform == service.PlatformOpenAI
+	return !ok || key == nil || key.Group == nil || key.Group.Platform == service.PlatformOpenAI || key.Group.Platform == service.PlatformByteDance
 }

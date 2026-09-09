@@ -90,7 +90,10 @@ func TestVideoRepairAffinityRequiresCurrentGroupCandidate(t *testing.T) {
 		ID: 11, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true,
 		GroupIDs: []int64{99}, Credentials: map[string]any{"api_key": "test-only"},
 	}}
-	_, _, _, err := svc.selectVideoAccount(context.Background(), 42, 7, OpenAIVideoModelSora2, 11, nil, false)
+	_, _, _, err := svc.selectVideoAccount(
+		context.Background(), 42, 7, PlatformOpenAI, VideoProviderOpenAI,
+		OpenAIVideoModelSora2, 11, nil, false,
+	)
 	require.ErrorIs(t, err, ErrVideoNoAccountAvailable)
 }
 

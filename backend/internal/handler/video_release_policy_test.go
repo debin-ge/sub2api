@@ -9,10 +9,36 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func TestNativeVideoReleasePolicyAppliesToDirectAndCompositeByteDance(t *testing.T) {
+	for _, scenario := range []struct {
+		name, groupPlatform, targetPlatform string
+		resolved                            bool
+		want                                bool
+	}{
+		{name: "direct_bytedance", groupPlatform: service.PlatformByteDance, want: true},
+		{name: "composite_bytedance", groupPlatform: service.PlatformComposite, targetPlatform: service.PlatformByteDance, resolved: true, want: true},
+		{name: "composite_openai", groupPlatform: service.PlatformComposite, targetPlatform: service.PlatformOpenAI, resolved: true, want: true},
+		{name: "composite_grok", groupPlatform: service.PlatformComposite, targetPlatform: service.PlatformGrok, resolved: true, want: false},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			ctx, _ := newVideoHandlerTestContext(http.MethodPost, "/v1/videos", "application/json", strings.NewReader(`{}`))
+			key, ok := middleware.GetAPIKeyFromContext(ctx)
+			require.True(t, ok)
+			key.Group = &service.Group{ID: 8, Platform: scenario.groupPlatform}
+			if scenario.resolved {
+				ctx.Request = ctx.Request.WithContext(service.WithResolvedTargetPlatform(ctx.Request.Context(), scenario.targetPlatform))
+			}
+
+			require.Equal(t, scenario.want, nativeVideoReleasePolicyApplies(ctx))
+		})
+	}
+}
 
 func TestVideoReleaseAllowsExtensionAndCharacterReads(t *testing.T) {
 	task := videoHandlerTask()

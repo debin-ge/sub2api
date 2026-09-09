@@ -6,8 +6,8 @@ evaluation_interval: 1m
 tests:
   - interval: 1m
     input_series:
-      - series: 'video_platform_submission_unknown_hold_amount{job="sub2api"}'
-        values: '10x30'
+      - series: 'video_platform_submissions_total{job="sub2api",provider="openai",operation="generate",result="submission_unknown"}'
+        values: '0+1x30'
       - series: 'video_platform_oldest_settlement_pending_age_seconds{job="sub2api"}'
         values: '600x30'
       - series: 'video_platform_spool_utilization_ratio{job="sub2api"}'
@@ -30,12 +30,12 @@ tests:
         values: '0+1x30'
     alert_rule_test:
       - eval_time: 20m
-        alertname: VideoSubmissionUnknownFrozenAmount
+        alertname: VideoSubmissionUnknownRate
         exp_alerts:
-          - exp_labels: {job: sub2api, severity: critical}
+          - exp_labels: {job: sub2api, severity: warning}
             exp_annotations:
-              summary: "Video submissions have an unknown outcome with frozen balance"
-              runbook: "deploy/monitoring/video-runbook.md#videosubmissionunknownfrozenamount"
+              summary: "Video submissions are ending with an unconfirmed upstream outcome"
+              runbook: "deploy/monitoring/video-runbook.md#videosubmissionunknownrate"
       - eval_time: 20m
         alertname: VideoSettlementPendingTooOld
         exp_alerts:
@@ -101,7 +101,7 @@ tests:
 
   - interval: 1m
     input_series:
-      - series: 'video_platform_submission_unknown_hold_amount{job="sub2api"}'
+      - series: 'video_platform_submissions_total{job="sub2api",provider="openai",operation="generate",result="submission_unknown"}'
         values: '0x30'
       - series: 'video_platform_oldest_settlement_pending_age_seconds{job="sub2api"}'
         values: '30x30'
@@ -125,7 +125,7 @@ tests:
         values: '0x30'
     alert_rule_test:
       - eval_time: 20m
-        alertname: VideoSubmissionUnknownFrozenAmount
+        alertname: VideoSubmissionUnknownRate
         exp_alerts: []
       - eval_time: 20m
         alertname: VideoSettlementPendingTooOld

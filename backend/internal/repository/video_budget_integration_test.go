@@ -123,8 +123,8 @@ func TestVideoBudgetConcurrentAccountsCannotOversubscribe(t *testing.T) {
 	}
 }
 
-func TestVideoBudgetRolloverKeepsUnknownAndReviewReservations(t *testing.T) {
-	for _, billing := range []string{service.VideoBillingHeld, service.VideoBillingCapturePending, service.VideoBillingReleasePending, service.VideoBillingManualReview} {
+func TestVideoBudgetRolloverKeepsUnsettledReservations(t *testing.T) {
+	for _, billing := range []string{service.VideoBillingHeld, service.VideoBillingCapturePending, service.VideoBillingReleasePending} {
 		t.Run(billing, func(t *testing.T) {
 			ctx := context.Background()
 			repo, _, _, user, key, account := newVideoRepositoryFixture(t, 100)
@@ -132,7 +132,7 @@ func TestVideoBudgetRolloverKeepsUnknownAndReviewReservations(t *testing.T) {
 			require.NoError(t, err)
 			task, _, err := repo.CreateHeldVideoTask(ctx, videoCreateParams(user, key, account, service.NewVideoTaskID(), "old-intent", "old-body", 4))
 			require.NoError(t, err)
-			_, err = integrationDB.ExecContext(ctx, `UPDATE video_tasks SET generation_state = 'submission_unknown', billing_state = $2, created_at = NOW() - INTERVAL '60 days', deleted_at = NOW() WHERE id = $1`, task.ID, billing)
+			_, err = integrationDB.ExecContext(ctx, `UPDATE video_tasks SET generation_state = 'failed', billing_state = $2, created_at = NOW() - INTERVAL '60 days', deleted_at = NOW() WHERE id = $1`, task.ID, billing)
 			require.NoError(t, err)
 			_, err = integrationDB.ExecContext(ctx, `UPDATE api_keys SET usage_5h = 99, window_5h_start = NOW() - INTERVAL '10 hours' WHERE id = $1`, key.ID)
 			require.NoError(t, err)

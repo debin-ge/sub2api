@@ -18,6 +18,7 @@ export type Platform =
   | 'glm'
   | 'windsurf'
   | 'opencode'
+  | 'bytedance'
   | 'composite'
 
 // ── Badge (bg + text + border, for inline badges with border) ───────
@@ -34,6 +35,7 @@ const BADGE: Record<Platform, string> = {
   glm: 'bg-rose-500/10 text-rose-600 border-rose-500/30 dark:text-rose-400',
   windsurf: 'bg-teal-500/10 text-teal-700 border-teal-500/30 dark:text-teal-300',
   opencode: 'bg-slate-500/10 text-slate-700 border-slate-500/30 dark:text-slate-300',
+  bytedance: 'bg-red-500/10 text-red-700 border-red-500/30 dark:text-red-300',
   composite: 'bg-cyan-500/10 text-cyan-700 border-cyan-500/30 dark:text-cyan-300',
 }
 const BADGE_DEFAULT = 'bg-slate-500/10 text-slate-600 border-slate-500/30 dark:text-slate-400'
@@ -52,6 +54,7 @@ const BADGE_LIGHT: Record<Platform, string> = {
   glm: 'bg-rose-500/10 text-rose-600 dark:bg-rose-500/10 dark:text-rose-300',
   windsurf: 'bg-teal-500/10 text-teal-700 dark:bg-teal-500/10 dark:text-teal-300',
   opencode: 'bg-slate-500/10 text-slate-700 dark:bg-slate-500/10 dark:text-slate-300',
+  bytedance: 'bg-red-500/10 text-red-700 dark:bg-red-500/10 dark:text-red-300',
   composite: 'bg-cyan-500/10 text-cyan-700 dark:bg-cyan-500/10 dark:text-cyan-300',
 }
 
@@ -69,6 +72,7 @@ const BORDER: Record<Platform, string> = {
   glm: 'border-rose-500/20 dark:border-rose-500/20',
   windsurf: 'border-teal-500/20 dark:border-teal-500/20',
   opencode: 'border-slate-500/20 dark:border-slate-500/20',
+  bytedance: 'border-red-500/20 dark:border-red-500/20',
   composite: 'border-cyan-500/20 dark:border-cyan-500/20',
 }
 const BORDER_DEFAULT = 'border-gray-200 dark:border-dark-700'
@@ -87,6 +91,7 @@ const BORDER_STRONG: Record<Platform, string> = {
   glm: 'border-rose-500/35 dark:border-rose-500/30',
   windsurf: 'border-teal-500/35 dark:border-teal-500/30',
   opencode: 'border-slate-500/35 dark:border-slate-500/30',
+  bytedance: 'border-red-500/35 dark:border-red-500/30',
   composite: 'border-cyan-500/35 dark:border-cyan-500/30',
 }
 const BORDER_STRONG_DEFAULT = 'border-gray-300 dark:border-dark-600'
@@ -106,6 +111,7 @@ const ACCENT: Record<Platform, string> = {
   glm: '#f43f5e', // rose-500
   windsurf: '#14b8a6', // teal-500
   opencode: '#64748b', // slate-500
+  bytedance: '#ef4444', // red-500
   composite: '#06b6d4', // cyan-500
 }
 const ACCENT_DEFAULT = '#14b8a6' // primary-500 (teal)
@@ -124,6 +130,7 @@ const ACCENT_BAR: Record<Platform, string> = {
   glm: 'bg-gradient-to-r from-rose-400 to-rose-500',
   windsurf: 'bg-gradient-to-r from-teal-400 to-teal-500',
   opencode: 'bg-gradient-to-r from-slate-400 to-slate-500',
+  bytedance: 'bg-gradient-to-r from-red-500 to-rose-600',
   composite: 'bg-gradient-to-r from-slate-500 to-cyan-500',
 }
 const ACCENT_BAR_DEFAULT = 'bg-gradient-to-r from-primary-400 to-primary-500'
@@ -142,6 +149,7 @@ const TEXT: Record<Platform, string> = {
   glm: 'text-rose-600 dark:text-rose-400',
   windsurf: 'text-teal-700 dark:text-teal-300',
   opencode: 'text-slate-700 dark:text-slate-300',
+  bytedance: 'text-red-700 dark:text-red-300',
   composite: 'text-cyan-700 dark:text-cyan-300',
 }
 const TEXT_DEFAULT = 'text-primary-600 dark:text-primary-400'
@@ -160,6 +168,7 @@ const ICON: Record<Platform, string> = {
   glm: 'text-rose-500 dark:text-rose-400',
   windsurf: 'text-teal-500 dark:text-teal-300',
   opencode: 'text-slate-500 dark:text-slate-300',
+  bytedance: 'text-red-500 dark:text-red-300',
   composite: 'text-cyan-600 dark:text-cyan-300',
 }
 const ICON_DEFAULT = 'text-primary-500 dark:text-primary-400'
@@ -178,6 +187,7 @@ const BUTTON: Record<Platform, string> = {
   glm: 'bg-rose-600 text-white hover:bg-rose-700 active:bg-rose-800 dark:bg-rose-600/80 dark:hover:bg-rose-600',
   windsurf: 'bg-teal-600 text-white hover:bg-teal-700 active:bg-teal-800 dark:bg-teal-600/80 dark:hover:bg-teal-600',
   opencode: 'bg-slate-700 text-white hover:bg-slate-800 active:bg-slate-900 dark:bg-slate-600/80 dark:hover:bg-slate-600',
+  bytedance: 'bg-red-600 text-white hover:bg-red-700 active:bg-red-800 dark:bg-red-600/80 dark:hover:bg-red-600',
   composite: 'bg-cyan-700 text-white hover:bg-cyan-800 active:bg-cyan-900 dark:bg-cyan-600 dark:hover:bg-cyan-500',
 }
 const BUTTON_DEFAULT = 'bg-primary-500 text-white hover:bg-primary-600 dark:bg-primary-600 dark:hover:bg-primary-500'
@@ -196,6 +206,7 @@ const DISCOUNT: Record<Platform, string> = {
   glm: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
   windsurf: 'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300',
   opencode: 'bg-slate-100 text-slate-700 dark:bg-slate-800/60 dark:text-slate-300',
+  bytedance: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
   composite: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-300',
 }
 const DISCOUNT_DEFAULT = 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
@@ -214,6 +225,7 @@ const GRADIENT: Record<Platform, string> = {
   glm: 'from-rose-500 to-rose-600',
   windsurf: 'from-teal-500 to-teal-600',
   opencode: 'from-slate-500 to-slate-600',
+  bytedance: 'from-red-500 to-rose-600',
   composite: 'from-slate-600 to-cyan-600',
 }
 const GRADIENT_DEFAULT = 'from-primary-500 to-primary-600'
@@ -232,6 +244,7 @@ const GRADIENT_TEXT: Record<Platform, string> = {
   glm: 'text-rose-100',
   windsurf: 'text-teal-100',
   opencode: 'text-slate-100',
+  bytedance: 'text-red-100',
   composite: 'text-cyan-100',
 }
 const GRADIENT_TEXT_DEFAULT = 'text-primary-100'
@@ -249,6 +262,7 @@ const GRADIENT_SUBTEXT: Record<Platform, string> = {
   glm: 'text-rose-200',
   windsurf: 'text-teal-200',
   opencode: 'text-slate-200',
+  bytedance: 'text-red-200',
   composite: 'text-cyan-200',
 }
 const GRADIENT_SUBTEXT_DEFAULT = 'text-primary-200'
@@ -269,6 +283,7 @@ function isPlatform(p: string): p is Platform {
     p === 'glm' ||
     p === 'windsurf' ||
     p === 'opencode' ||
+    p === 'bytedance' ||
     p === 'composite'
   )
 }
@@ -339,6 +354,7 @@ export function platformLabel(p: string): string {
     case 'minimax': return 'MiniMax'
     case 'windsurf': return 'Windsurf'
     case 'opencode': return 'OpenCode'
+    case 'bytedance': return 'ByteDance'
     case 'composite': return 'Composite'
     default: return p || 'API'
   }

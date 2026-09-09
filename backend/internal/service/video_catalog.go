@@ -9,7 +9,54 @@ import (
 const (
 	OpenAIVideoModelSora2    = "sora-2"
 	OpenAIVideoModelSora2Pro = "sora-2-pro"
+
+	// Ark model identifiers are fully hyphenated and carry a release-date
+	// suffix. The output resolution is a request parameter, so it never appears
+	// in the identifier.
+	ByteDanceVideoModelSeedance10Lite = "doubao-seedance-1-0-lite-t2v-250428"
+	ByteDanceVideoModelSeedance10Pro  = "doubao-seedance-1-0-pro-250528"
 )
+
+// DefaultByteDanceVideoCapabilities is the built-in snapshot for Ark video.
+//
+// SupportedModels is descriptive, not a routing whitelist: an account's
+// model_mapping decides which upstream models may be reached, and an entry here
+// only declares the per-model request constraints this build knows. Newer
+// Seedance releases therefore work without a code change, and their duration
+// limits can be declared through the runtime capability catalog.
+func DefaultByteDanceVideoCapabilities() VideoCapabilities {
+	models := []string{ByteDanceVideoModelSeedance10Lite, ByteDanceVideoModelSeedance10Pro}
+	supportedModels := make(map[string]bool, len(models))
+	supportedSeconds := make(map[string][]int, len(models))
+	defaultSeconds := make(map[string]int, len(models))
+	for _, model := range models {
+		supportedModels[model] = true
+		supportedSeconds[model] = []int{5, 10}
+		defaultSeconds[model] = 5
+	}
+	return VideoCapabilities{
+		DefaultModel:   ByteDanceVideoModelSeedance10Pro,
+		DefaultSeconds: defaultSeconds,
+		// Ark exposes asynchronous generation only. Edits, extensions and
+		// characters have no counterpart in the API, and DELETE is a cancel.
+		Operations: map[VideoCapability]bool{
+			VideoCapabilityCreate: true, VideoCapabilityInputReference: true, VideoCapabilityCancel: true,
+		},
+		InputRolesByOperation: map[string]map[VideoInputRole]bool{
+			VideoOperationGenerate: {VideoInputRoleReferenceImage: true},
+		},
+		InputMIMETypes: map[VideoInputRole]map[string]bool{
+			VideoInputRoleReferenceImage: {"image/jpeg": true, "image/png": true, "image/webp": true},
+		},
+		// An image reference is inlined into the JSON body as a data URI, so the
+		// upload cap is the inline cap rather than a multipart limit.
+		MaxInputBytes:        map[VideoInputRole]int64{VideoInputRoleReferenceImage: byteDanceMaxInlineImageBytes},
+		MaxInputsByOperation: map[string]int{VideoOperationGenerate: 1},
+		ContentVariants:      map[string]bool{"video": true},
+		SupportedModels:      supportedModels,
+		SupportedSeconds:     supportedSeconds,
+	}
+}
 
 // DefaultOpenAIVideoCapabilities is the built-in safe snapshot. Runtime
 // catalog overrides can replace it after validation without changing the
@@ -151,6 +198,10 @@ func ValidateVideoCreateCapabilities(caps VideoCapabilities, request VideoCreate
 		}
 		if input.Role == VideoInputRoleReferenceImage {
 			_, width, height, ok := parseVideoDimensions(request.Size)
+			model := canonicalOpenAIVideoModel(firstNonEmptyString(request.RequestedModel, request.Model))
+			if len(caps.SupportedSizes[model]) == 0 && strings.TrimSpace(request.Size) == "" {
+				continue
+			}
 			if !ok || input.Width <= 0 || input.Height <= 0 || int64(input.Width) != width || int64(input.Height) != height {
 				return fmt.Errorf("%w: input_reference dimensions must match size %q", ErrVideoInputUnsupported, request.Size)
 			}

@@ -118,6 +118,12 @@ var migrationChecksumCompatibilityRules = map[string]migrationChecksumCompatibil
 	"219_group_search_price_per_1k.sql":              newMigrationChecksumCompatibilityRule("e86786ebcc3b14206fd2d321380a4e50e80cdadbfcf4962c639255e6a14008db", "df6ffd71b97e30ec2c8fe7b95e15783042dea58c553e32701ee7c42a5619af80"),
 	"218_group_audio_voice_pricing.sql":              newMigrationChecksumCompatibilityRule("40ee9f3a2af0e0a5e99dabc878fd0fe98be1011f26bcfcefcac7197f7081f0e7", "c2a5e5b4ffd6968ad1c10593289fbc11192cdea19fec3ed9bce3a84eff9a8351"),
 	"186_registration_email_suffix_blacklist.sql":    newMigrationChecksumCompatibilityRule("4aa7cd53e2d7d6e9a4895f232a9f92b0ffc82662de03ae00ecee1e549f7f063d", "13371a7c85985afa557c8e9679c596c1af119558274145831dc8b484865f6f29"),
+	// 269 首版应用后才发现三处缺陷：回填事件的 from_* 取自 UPDATE 之后的行、
+	// ByteDance 冻结规格 Bug 留下的粘性冲突标记没有清理、两条 CHECK 在已持有
+	// ACCESS EXCLUSIVE 的事务里又叠加了一次全表校验。已应用首版的库保留其历史
+	// checksum 并跳过 269；缺失的标记清理由 271 单独补齐，另外两项只影响 269 自身
+	// 已经执行完的动作，既无法也无需回溯。
+	"269_drop_video_manual_review.sql": newMigrationChecksumCompatibilityRule("00e601e6ff1994f3e142b216e72abd3c426574db718d4fc3037605e422f602f9", "92e6fb7a1926ad560e03572f0583c0827df7c7c1423641f83eada7cd41c76c1b"),
 }
 
 // ApplyMigrations 将嵌入的 SQL 迁移文件应用到指定的数据库。

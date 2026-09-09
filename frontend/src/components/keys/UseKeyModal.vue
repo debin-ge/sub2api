@@ -1250,6 +1250,7 @@ function generateRoutedCodexFiles(
     glm: 'GLM (Legacy)',
     windsurf: 'Windsurf',
     opencode: 'OpenCode',
+    bytedance: 'ByteDance',
     composite: 'Composite'
   }
   const label = labels[platform]

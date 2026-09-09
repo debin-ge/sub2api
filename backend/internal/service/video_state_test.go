@@ -8,8 +8,8 @@ import (
 
 func TestVideoGenerationTransitionsAreMonotonic(t *testing.T) {
 	require.True(t, CanTransitionVideoGeneration(VideoGenerationPreparing, VideoGenerationHeld))
-	require.True(t, CanTransitionVideoGeneration(VideoGenerationSubmitting, VideoGenerationSubmissionUnknown))
-	require.True(t, CanTransitionVideoGeneration(VideoGenerationSubmissionUnknown, VideoGenerationCompleted))
+	require.True(t, CanTransitionVideoGeneration(VideoGenerationSubmitting, VideoGenerationQueued))
+	require.True(t, CanTransitionVideoGeneration(VideoGenerationSubmitting, VideoGenerationFailed))
 	require.False(t, CanTransitionVideoGeneration(VideoGenerationCompleted, VideoGenerationInProgress))
 	require.False(t, CanTransitionVideoGeneration(VideoGenerationFailed, VideoGenerationQueued))
 }
@@ -19,6 +19,17 @@ func TestVideoBillingCaptureAndReleaseAreMutuallyExclusive(t *testing.T) {
 	require.True(t, CanTransitionVideoBilling(VideoBillingHeld, VideoBillingReleasePending))
 	require.False(t, CanTransitionVideoBilling(VideoBillingCaptured, VideoBillingReleasePending))
 	require.False(t, CanTransitionVideoBilling(VideoBillingReleased, VideoBillingCapturePending))
+}
+
+// A capture intent that turns out to be unexecutable must be able to fall back
+// to a release. Without this edge the worker's settlement rewrite is rejected by
+// the repository and the task keeps its hold forever, neither charged nor
+// refunded, while the claim predicate re-queues it on every tick.
+func TestVideoBillingCapturePendingCanDowngradeToRelease(t *testing.T) {
+	require.True(t, CanTransitionVideoBilling(VideoBillingCapturePending, VideoBillingReleasePending))
+	// The downgrade is one-way: a release intent is the last chance to avoid
+	// charging, so it must never be promoted back into a capture.
+	require.False(t, CanTransitionVideoBilling(VideoBillingReleasePending, VideoBillingCapturePending))
 }
 
 func TestProjectVideoStatusWaitsForCapture(t *testing.T) {

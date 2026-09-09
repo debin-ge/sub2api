@@ -4,9 +4,11 @@ Thresholds in `video-alerts.yml` are conservative defaults. Recalibrate them aft
 
 The native release exposes only create/list/get/content/delete. Webhooks and callbacks are disabled; do not enable them or configure a signing secret to resolve a video incident. Assign an alert receiver and an incident owner before enabling creation. Alert rules must be installed in the existing Prometheus configuration; this repository does not deploy or configure the production receiver automatically.
 
-## VideoSubmissionUnknownFrozenAmount
+## VideoSubmissionUnknownRate
 
-Disable new video creation if the count grows. Use the admin unknown queue and exact Provider evidence to choose confirmed-created or confirmed-not-created. Never retry Create or release a hold without exact evidence.
+An unconfirmed submission outcome is settled automatically: the task lands on `failed` with `last_error_code = submission_unknown`, the hold is released in full, and `submission_unknown_at` records that the outcome was never confirmed upstream. There is no operator decision to make and no queue to drain — this alert is a rate signal, not a stuck-money signal.
+
+Investigate the cause rather than the individual tasks: check Provider Create latency and error rates, the submit timeout, and network egress. Disable new video creation if the rate keeps climbing, because every unconfirmed submission may have created an upstream job that this platform will never poll or bill. Cross-check with the Provider console before assuming nothing was created; do not retry Create automatically.
 
 ## VideoSettlementPendingTooOld
 

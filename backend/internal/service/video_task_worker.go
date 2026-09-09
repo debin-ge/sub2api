@@ -242,8 +242,6 @@ func (w *VideoTaskWorker) processTask(ctx context.Context, task *VideoTask) erro
 		err = w.recoverAbandonedHeld(ctx, task)
 	case VideoActionRecoverSubmitting:
 		err = w.recoverStaleSubmitting(ctx, task)
-	case VideoActionQuarantineUnknown:
-		err = w.quarantineUnknown(ctx, task)
 	case VideoActionDeleteContent:
 		_, err = w.service.RetryDeleteTask(ctx, task)
 	}
@@ -310,21 +308,34 @@ func (w *VideoTaskWorker) recoverTerminalBilling(ctx context.Context, task *Vide
 }
 
 func (w *VideoTaskWorker) recoverStaleSubmitting(ctx context.Context, task *VideoTask) error {
-	delay := 60 * time.Minute
-	if w.cfg != nil && w.cfg.Gateway.Video.SubmissionUnknownQuarantineMinutes > 0 {
-		delay = time.Duration(w.cfg.Gateway.Video.SubmissionUnknownQuarantineMinutes) * time.Minute
+	if task == nil || w.service == nil {
+		return ErrVideoInvalidRequest
 	}
-	next := time.Now().UTC().Add(delay)
-	_, err := w.tasks.TransitionVideoTask(videoTaskWriteContext(ctx, task), task.PublicID, VideoTaskTransition{
-		GenerationState:   VideoGenerationSubmissionUnknown,
-		NextActionAt:      &next,
-		SubmissionUnknown: true,
-		ErrorKind:         "submission",
-		ErrorCode:         "stale_submitting",
-		ErrorMessage:      "provider submission may have been accepted before local persistence completed",
-		EventType:         "stale_submitting_recovered",
-	})
-	return err
+	if task.SubmissionUnknownAt == nil {
+		now := time.Now().UTC()
+		updated, err := w.tasks.TransitionVideoTask(videoTaskWriteContext(ctx, task), task.PublicID, VideoTaskTransition{
+			GenerationState: VideoGenerationSubmitting, BillingState: VideoBillingHeld,
+			NextActionAt: &now, ErrorKind: "submission", ErrorCode: "submission_reconciling",
+			ErrorMessage: "video provider submission outcome is being reconciled automatically",
+			EventType:    "submission_reconciliation_started", SubmissionUnknown: true,
+		})
+		if err != nil {
+			return err
+		}
+		task = updated
+	}
+	updated, err := w.service.reconcileSubmitting(ctx, task)
+	if err != nil {
+		return err
+	}
+	if updated != nil && IsVideoGenerationTerminal(updated.GenerationState) &&
+		(updated.BillingState == VideoBillingCapturePending || updated.BillingState == VideoBillingReleasePending) {
+		// A reconciliation lookup can recover a task that already finished
+		// upstream. Settle it in the same worker pass so a successful lookup
+		// cannot strand a capture/release intent without another queue event.
+		return w.settle(ctx, updated)
+	}
+	return nil
 }
 
 func (w *VideoTaskWorker) poll(ctx context.Context, task *VideoTask) error {
@@ -342,12 +353,16 @@ func (w *VideoTaskWorker) poll(ctx context.Context, task *VideoTask) error {
 		var providerErr *VideoProviderError
 		if errors.As(err, &providerErr) && !providerErr.Retryable {
 			providerErr = sanitizedVideoProviderError(providerErr, "upstream", "poll_failed", "video provider poll failed")
-			_, transitionErr := w.tasks.TransitionVideoTask(videoTaskWriteContext(ctx, task), task.PublicID, VideoTaskTransition{
-				BillingState: VideoBillingManualReview, Quarantine: true,
-				ErrorKind: providerErr.Kind, ErrorCode: providerErr.Code,
-				ErrorMessage: providerErr.Message, IncrementPollAttempts: true, EventType: "poll_manual_review",
+			now := time.Now().UTC()
+			updated, transitionErr := w.tasks.TransitionVideoTask(videoTaskWriteContext(ctx, task), task.PublicID, VideoTaskTransition{
+				GenerationState: VideoGenerationFailed, BillingState: VideoBillingReleasePending,
+				NextActionAt: &now, ErrorKind: providerErr.Kind, ErrorCode: providerErr.Code,
+				ErrorMessage: providerErr.Message, IncrementPollAttempts: true, EventType: "poll_failed_terminal",
 			})
-			return transitionErr
+			if transitionErr != nil {
+				return transitionErr
+			}
+			return w.settle(ctx, updated)
 		}
 		return w.recordRetryablePollFailure(ctx, task, err)
 	}
@@ -386,21 +401,6 @@ type videoTaskScheduledRetry struct {
 func (e *videoTaskScheduledRetry) Error() string { return e.cause.Error() }
 func (e *videoTaskScheduledRetry) Unwrap() error { return e.cause }
 
-func (w *VideoTaskWorker) quarantineUnknown(ctx context.Context, task *VideoTask) error {
-	if task.NextActionAt != nil && time.Now().UTC().Before(*task.NextActionAt) {
-		return nil
-	}
-	_, err := w.tasks.TransitionVideoTask(videoTaskWriteContext(ctx, task), task.PublicID, VideoTaskTransition{
-		GenerationState: VideoGenerationSubmissionUnknown,
-		BillingState:    VideoBillingManualReview,
-		Quarantine:      true,
-		ErrorKind:       "submission", ErrorCode: "submission_unknown_quarantined",
-		ErrorMessage: "provider submission outcome requires exact manual reconciliation",
-		EventType:    "submission_unknown_quarantined",
-	})
-	return err
-}
-
 func (w *VideoTaskWorker) settle(ctx context.Context, task *VideoTask) (returnErr error) {
 	ctx = videoTaskWriteContext(ctx, task)
 	actionLabel := "release"
@@ -426,7 +426,7 @@ func (w *VideoTaskWorker) settle(ctx context.Context, task *VideoTask) (returnEr
 		return errors.New("video balance settlement repository is not configured")
 	}
 	if task.APIKeyID == nil || task.AccountID == nil || task.HoldAmount == nil {
-		return w.markSettlementReview(ctx, task, "video settlement identity is incomplete")
+		return errors.New("video settlement identity is incomplete")
 	}
 	if recovery, supported := w.settlements.(VideoBalanceSettlementRecovery); supported {
 		result, command, found, err := recovery.ResumeVideoBalanceSettlement(ctx, task)
@@ -437,29 +437,6 @@ func (w *VideoTaskWorker) settle(ctx context.Context, task *VideoTask) (returnEr
 			return w.finalizeVideoSettlement(ctx, task, command, result)
 		}
 	}
-	var review *VideoBillingReview
-	if task.BillingReviewID != nil {
-		authorizer, available := w.tasks.(VideoBillingReviewAuthorizationRepository)
-		if !available {
-			return ErrVideoReviewRequired
-		}
-		var err error
-		review, err = authorizer.VerifyVideoBillingReview(ctx, task)
-		if err != nil {
-			if errors.Is(err, ErrVideoReviewConflict) || errors.Is(err, ErrVideoReviewRequired) {
-				return w.markSettlementReview(ctx, task, "approved billing review no longer matches the current task facts")
-			}
-			return err
-		}
-	}
-	if task.BillingState == VideoBillingCapturePending {
-		if err := videoCheckObservedSpecification(task, task.ResponseMetadata); err != nil {
-			canHonorFrozenQuote := errors.Is(err, ErrVideoSourceSpecConflict) && review != nil && review.HonorFrozenQuote
-			if !canHonorFrozenQuote {
-				return w.markSettlementReview(ctx, task, "provider output conflicts with the frozen execution specification")
-			}
-		}
-	}
 	action := BalanceSettlementRelease
 	requestID := VideoTaskReleaseRequestID(task.PublicID)
 	actualAmount = 0.0
@@ -467,7 +444,8 @@ func (w *VideoTaskWorker) settle(ctx context.Context, task *VideoTask) (returnEr
 	var usageLog *UsageLog
 	if task.BillingState == VideoBillingCapturePending {
 		if task.ActualCost == nil || *task.ActualCost < 0 || math.IsNaN(*task.ActualCost) || math.IsInf(*task.ActualCost, 0) {
-			return w.markSettlementReview(ctx, task, "video actual cost is missing")
+			return w.rewriteSettlementIntent(ctx, task, task.BillingUnit != nil && *task.BillingUnit == VideoBillingUnitRequest,
+				"usage_missing", "video actual cost is missing")
 		}
 		action = BalanceSettlementCapture
 		requestID = VideoTaskCaptureRequestID(task.PublicID)
@@ -475,14 +453,13 @@ func (w *VideoTaskWorker) settle(ctx context.Context, task *VideoTask) (returnEr
 		var buildErr error
 		command, usageLog, buildErr = buildVideoUsageSettlement(task, requestID, actualAmount)
 		if buildErr != nil {
-			return w.markSettlementReview(ctx, task, buildErr.Error())
+			return w.rewriteSettlementIntent(ctx, task, false, "settlement_invalid", buildErr.Error())
 		}
 	}
 	settlement := &BalanceSettlementCommand{
 		TaskID: task.ID, Action: action,
 		Hold: BalanceHoldCommand{
-			BillingReviewID: valueOrZero(task.BillingReviewID),
-			RequestID:       requestID, APIKeyID: *task.APIKeyID,
+			RequestID: requestID, APIKeyID: *task.APIKeyID,
 			RequestPayloadHash: task.RequestHash, UserID: task.UserID,
 			Scope: BalanceHoldScopeVideoTask, RefID: task.PublicID,
 			HoldAmount: *task.HoldAmount, ActualAmount: actualAmount,
@@ -556,10 +533,8 @@ func (w *VideoTaskWorker) refreshOperationalMetrics(ctx context.Context) {
 				})
 			}
 			observability.DefaultVideoMetrics().UpdateOperational(observability.VideoOperationalMetrics{
-				TaskStates: states, SubmissionUnknown: snapshot.SubmissionUnknown,
-				UnknownHoldAmount: snapshot.UnknownHoldAmount, HeldAmount: snapshot.HeldAmount,
+				TaskStates: states, HeldAmount: snapshot.HeldAmount,
 				OldestSettlementPending: snapshot.OldestSettlementPending,
-				OldestManualReview:      snapshot.OldestManualReview,
 				DeletePending:           snapshot.DeletePending,
 				OldestDeletePending:     snapshot.OldestDeletePending,
 			}, now)
@@ -595,13 +570,32 @@ func (w *VideoTaskWorker) enqueueTerminalCallback(ctx context.Context, publicID 
 	return err
 }
 
-func (w *VideoTaskWorker) markSettlementReview(ctx context.Context, task *VideoTask, message string) error {
-	_, err := w.tasks.TransitionVideoTask(videoTaskWriteContext(ctx, task), task.PublicID, VideoTaskTransition{
-		BillingState: VideoBillingManualReview, Quarantine: true,
-		ErrorKind: "billing", ErrorCode: "settlement_invalid", ErrorMessage: message,
-		EventType: "settlement_manual_review",
+// rewriteSettlementIntent repairs a settlement intent that cannot be executed
+// as written and immediately retries it. When allowCapture is set the intent
+// falls back to the quote frozen at hold time; otherwise — and whenever that
+// quote is itself unusable — the hold is released rather than charged at a
+// guessed amount. Either way the task settles without operator involvement.
+func (w *VideoTaskWorker) rewriteSettlementIntent(ctx context.Context, task *VideoTask, allowCapture bool, code, message string) error {
+	decision := videoTerminalBillingDecision{
+		state: VideoBillingReleasePending, errorKind: "billing", errorCode: code, errorMessage: message,
+	}
+	if allowCapture {
+		decision = videoFrozenQuoteBilling(task, "billing", code, message)
+	}
+	if decision.actualUnits == nil || decision.actualCost == nil {
+		zero := 0.0
+		decision.actualUnits, decision.actualCost = &zero, &zero
+	}
+	now := time.Now().UTC()
+	updated, err := w.tasks.TransitionVideoTask(videoTaskWriteContext(ctx, task), task.PublicID, VideoTaskTransition{
+		BillingState: decision.state, ActualUnits: decision.actualUnits, ActualCost: decision.actualCost,
+		NextActionAt: &now, ErrorKind: decision.errorKind, ErrorCode: decision.errorCode,
+		ErrorMessage: decision.errorMessage, EventType: "settlement_intent_rewritten",
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	return w.settle(ctx, updated)
 }
 
 func (w *VideoTaskWorker) controlDependencies(ctx context.Context, task *VideoTask) (*Account, VideoProvider, ProviderTaskRef, error) {

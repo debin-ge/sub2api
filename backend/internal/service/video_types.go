@@ -13,7 +13,8 @@ import (
 )
 
 const (
-	VideoProviderOpenAI = "openai"
+	VideoProviderOpenAI    = "openai"
+	VideoProviderByteDance = "bytedance"
 
 	VideoOperationGenerate        = "generate"
 	VideoOperationEdit            = "edit"
@@ -53,8 +54,6 @@ type VideoTask struct {
 	StableClientToken     *string
 	GenerationState       string
 	BillingState          string
-	BillingReviewID       *int64
-	SubmissionReviewID    *int64
 	DeleteState           string
 	Version               int64
 	Progress              *float64
@@ -296,7 +295,6 @@ type VideoTaskRepository interface {
 	ListVideoTasksForOwner(ctx context.Context, userID int64, filter VideoTaskFilter) (*VideoTaskPage, error)
 	TransitionVideoTask(ctx context.Context, publicID string, transition VideoTaskTransition) (*VideoTask, error)
 	SaveVideoProviderAccepted(ctx context.Context, publicID string, acceptance VideoProviderAcceptance) (*VideoTask, error)
-	MarkVideoSubmissionUnknown(ctx context.Context, publicID string, providerError *VideoProviderError, nextActionAt time.Time) (*VideoTask, error)
 	ClaimVideoTask(ctx context.Context, publicID, workerID string, lease time.Duration) (*VideoTask, error)
 	ClaimDueVideoTasks(ctx context.Context, workerID string, limit int, lease time.Duration) ([]*VideoTask, error)
 	RenewVideoTaskLease(ctx context.Context, lease VideoTaskLease, duration time.Duration) (time.Time, error)
@@ -322,11 +320,8 @@ type VideoOperationalSnapshot struct {
 	DeletePending           int64
 	OldestDeletePending     *time.Time
 	TaskStates              []VideoTaskStateSnapshot
-	SubmissionUnknown       int64
-	UnknownHoldAmount       float64
 	HeldAmount              float64
 	OldestSettlementPending *time.Time
-	OldestManualReview      *time.Time
 }
 
 // VideoOperationalMetricsReader is optional so narrow repositories and test

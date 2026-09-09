@@ -392,15 +392,9 @@ func (r *videoAdminRepository) GetVideoAdminOverview(ctx context.Context) (*serv
 		return nil, err
 	}
 	if err := r.db.QueryRowContext(ctx, `
-		SELECT COUNT(*), COALESCE(SUM(hold_amount), 0)
-		FROM video_tasks WHERE generation_state = 'submission_unknown'
-	`).Scan(&overview.SubmissionUnknown, &overview.UnknownHoldAmount); err != nil {
-		return nil, err
-	}
-	if err := r.db.QueryRowContext(ctx, `
 		SELECT COALESCE(SUM(hold_amount), 0)
 		FROM video_tasks
-		WHERE billing_state IN ('held','capture_pending','release_pending','manual_review')
+		WHERE billing_state IN ('held','capture_pending','release_pending')
 	`).Scan(&overview.HeldAmount); err != nil {
 		return nil, err
 	}
@@ -410,7 +404,7 @@ func (r *videoAdminRepository) GetVideoAdminOverview(ctx context.Context) (*serv
 	if err := scanNullableTime(r.db.QueryRowContext(ctx, `
 		SELECT MIN(next_action_at) FROM video_tasks
 		WHERE next_action_at IS NOT NULL AND (
-			generation_state IN ('submission_unknown','queued','in_progress')
+			generation_state IN ('queued','in_progress')
 			OR billing_state IN ('capture_pending','release_pending')
 			OR delete_state IN ('requested','deleting','delete_failed')
 		)
@@ -424,15 +418,6 @@ func (r *videoAdminRepository) GetVideoAdminOverview(ctx context.Context) (*serv
 		), vt.updated_at))
 		FROM video_tasks vt WHERE billing_state IN ('capture_pending','release_pending')
 	`), &overview.OldestBillingAt); err != nil {
-		return nil, err
-	}
-	if err := scanNullableTime(r.db.QueryRowContext(ctx, `
-		SELECT MIN(COALESCE((
-			SELECT MAX(vte.created_at) FROM video_task_events vte
-			WHERE vte.task_id = vt.id AND vte.to_billing_state = vt.billing_state
-		), vt.updated_at))
-		FROM video_tasks vt WHERE billing_state = 'manual_review'
-	`), &overview.OldestManualReviewAt); err != nil {
 		return nil, err
 	}
 	if err := scanNullableTime(r.db.QueryRowContext(ctx, `

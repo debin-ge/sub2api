@@ -19,7 +19,7 @@ const videoBudgetReservationsSQL = `
 		COALESCE(BOOL_OR((api_key_id = $2 OR provider = $3) AND
 			(hold_amount IS NULL OR hold_amount < 0 OR hold_amount::text IN ('NaN', 'Infinity', '-Infinity'))), false) AS invalid
 	FROM video_tasks
-	WHERE user_id = $1 AND billing_state IN ('held', 'capture_pending', 'release_pending', 'manual_review')
+	WHERE user_id = $1 AND billing_state IN ('held', 'capture_pending', 'release_pending')
 `
 
 type videoBudgetOwner struct {

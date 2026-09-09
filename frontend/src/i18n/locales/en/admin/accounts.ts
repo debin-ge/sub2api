@@ -138,6 +138,7 @@ export default {
         kimi: 'Kimi',
         zhipu: 'Zhipu GLM',
         deepseek: 'DeepSeek',
+        bytedance: 'ByteDance',
       },
       cnProviders: {
         accountMode: {
@@ -736,6 +737,19 @@ export default {
         testModeDefault: 'Default request',
         testModeCompact: 'Compact probe',
         modelRestrictionDisabledByPassthrough: 'Automatic passthrough is enabled: model whitelist/mapping will not take effect.',
+      },
+      bytedance: {
+        protocolMode: {
+          title: 'Upstream protocol',
+          native: 'Volcengine Ark native',
+          nativeDesc:
+            "Calls Ark's asynchronous task API (/contents/generations/tasks) directly. Leave the base URL blank to use the official Ark host.",
+          openaiCompatible: 'OpenAI-compatible relay',
+          openaiCompatibleDesc:
+            'A third-party relay forwards Seedance in OpenAI shape (/v1/videos). The relay base URL is required.',
+          baseUrlRequired:
+            'An OpenAI-compatible relay has no official host, so its base URL is required — without it the account can never be scheduled.'
+        }
       },
       grok: {
         baseUrlHint: 'Grok OAuth accounts forward to the official xAI API base URL.',

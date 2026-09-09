@@ -112,6 +112,11 @@ type resolvedVideoSubmission struct {
 
 const videoSubmitRecoveryGrace = 5 * time.Second
 
+const (
+	videoSubmissionReconciliationPollInterval  = 10 * time.Second
+	videoDefaultSubmissionReconciliationWindow = 30 * time.Minute
+)
+
 func (s *VideoTaskService) Submit(ctx context.Context, request VideoSubmitRequest) (result *VideoSubmitResult, returnErr error) {
 	startedAt := time.Now()
 	providerName := ""
@@ -252,9 +257,16 @@ func videoSubmissionMetricResult(result *VideoSubmitResult, err error) string {
 	if errors.Is(err, ErrVideoSubmissionUnknown) {
 		return "submission_unknown"
 	}
+	// Classify exactly as handleSubmissionError does, so the counter is the one
+	// signal that an upstream job may exist that this platform will never poll.
+	// Errors raised before the provider was called are not provider errors and
+	// stay in the generic bucket.
 	var providerErr *VideoProviderError
-	if errors.As(err, &providerErr) && providerErr.Certainty == VideoSubmissionRejected {
-		return "rejected"
+	if errors.As(err, &providerErr) {
+		if providerErr.Certainty == VideoSubmissionRejected {
+			return "rejected"
+		}
+		return "submission_unknown"
 	}
 	return "error"
 }
@@ -293,11 +305,18 @@ func (s *VideoTaskService) resolveSubmission(ctx context.Context, request VideoS
 	if forcedAccountID == 0 {
 		forcedAccountID = sourceAccountID
 	}
-	if requestedModel == "" {
-		if request.Operation == VideoOperationEdit && sourceTask == nil && len(request.Inputs) > 0 {
-			return nil, ErrVideoInvalidRequest
+	if requestedModel == "" && sourceTask != nil {
+		requestedModel, err = s.defaultVideoModel(sourceTask, sourceTask.Provider)
+		if err != nil {
+			return nil, err
 		}
-		requestedModel, err = s.defaultVideoModel(sourceTask)
+		publicModel = requestedModel
+	}
+	if requestedModel == "" && request.Operation == VideoOperationEdit && sourceTask == nil && len(request.Inputs) > 0 {
+		return nil, ErrVideoInvalidRequest
+	}
+	if requestedModel == "" && group.Platform != PlatformComposite {
+		requestedModel, err = s.defaultVideoModel(nil, group.Platform)
 		if err != nil {
 			return nil, err
 		}
@@ -307,9 +326,19 @@ func (s *VideoTaskService) resolveSubmission(ctx context.Context, request VideoS
 	if targetPlatform == PlatformComposite {
 		decision, resolved := CompositeRouteDecisionFromContext(ctx)
 		if resolved {
+			if requestedModel == "" {
+				requestedModel = strings.TrimSpace(decision.PublicModel)
+				publicModel = requestedModel
+			}
 			if !decision.Matched || decision.GroupID != group.ID || decision.Endpoint != endpoint || decision.PublicModel != requestedModel {
 				return nil, ErrVideoNoAccountAvailable
 			}
+		} else if pinnedPlatform, pinned := ResolvedTargetPlatformFromContext(ctx); pinned {
+			if sourceTask == nil {
+				return nil, ErrVideoNoAccountAvailable
+			}
+			targetPlatform = pinnedPlatform
+			publicModel = firstNonEmptyString(sourceTask.UpstreamModel, sourceTask.PublicModel, requestedModel)
 		} else {
 			if s.composite == nil {
 				return nil, ErrVideoNoAccountAvailable
@@ -322,10 +351,31 @@ func (s *VideoTaskService) resolveSubmission(ctx context.Context, request VideoS
 				return nil, ErrVideoNoAccountAvailable
 			}
 		}
-		targetPlatform, publicModel = decision.TargetPlatform, decision.UpstreamModel
+		if resolved || decision.Matched {
+			targetPlatform, publicModel = decision.TargetPlatform, decision.UpstreamModel
+		}
 	}
-	if targetPlatform != PlatformOpenAI {
+	providerName, supported := managedVideoProviderForPlatform(targetPlatform)
+	if !supported {
 		return nil, ErrVideoNoAccountAvailable
+	}
+	if requestedModel == "" {
+		if request.Operation == VideoOperationEdit && sourceTask == nil && len(request.Inputs) > 0 {
+			return nil, ErrVideoInvalidRequest
+		}
+		requestedModel, err = s.defaultVideoModel(sourceTask, targetPlatform)
+		if err != nil {
+			return nil, err
+		}
+		publicModel = requestedModel
+	}
+	if source != nil && source.Provider != providerName {
+		return nil, ErrVideoCapabilityUnsupported
+	}
+	for i := range characters {
+		if characters[i].Provider != providerName {
+			return nil, ErrVideoCapabilityUnsupported
+		}
 	}
 	resolvedCtx := WithResolvedTargetPlatform(ctx, targetPlatform)
 	channelModel := publicModel
@@ -344,7 +394,8 @@ func (s *VideoTaskService) resolveSubmission(ctx context.Context, request VideoS
 
 	requiresOwnedAccount := request.InputReference != nil && strings.TrimSpace(request.InputReference.FileID) != ""
 	account, upstreamModel, provider, err := s.selectVideoAccount(
-		ctx, request.APIKey.UserID, group.ID, channelModel, forcedAccountID, excludedAccounts, requiresOwnedAccount,
+		ctx, request.APIKey.UserID, group.ID, targetPlatform, providerName, channelModel, forcedAccountID,
+		excludedAccounts, requiresOwnedAccount,
 	)
 	if err != nil {
 		return nil, err
@@ -392,7 +443,8 @@ func (s *VideoTaskService) resolveSubmission(ctx context.Context, request VideoS
 	inputType := videoPricingInputType(request)
 	attrs := VideoPricingAttributes{
 		Provider: provider.Name(), Model: upstreamModel, Operation: request.Operation,
-		Size: request.Size, Seconds: request.Seconds, InputType: inputType,
+		Size: request.Size, Resolution: executionSpec.Resolution,
+		Seconds: request.Seconds, InputType: inputType,
 		MaximumOutputSeconds: videoMaximumOutputSeconds(request, providerRequest),
 		OutputSpecUnverified: executionSpec.OutputUnverified,
 		InputHasVideo:        videoInputHasVideo(request), InputVideoSeconds: trustedVideoInputSeconds(request, sourceTask),
@@ -465,21 +517,6 @@ func (s *VideoTaskService) replayedSubmitResult(ctx context.Context, request Vid
 		return nil, err
 	}
 	result.Resource = resource
-	if task.BillingState == VideoBillingManualReview &&
-		(videoStringValue(task.LastErrorCode) == "resource_persistence_pending" || videoStringValue(task.LastErrorCode) == "resource_persistence_failed") &&
-		task.ActualUnits != nil && task.ActualCost != nil {
-		now := s.now().UTC()
-		updated, transitionErr := s.tasks.TransitionVideoTask(videoTaskWriteContext(ctx, task), task.PublicID, VideoTaskTransition{
-			GenerationState: task.GenerationState, BillingState: VideoBillingCapturePending,
-			ActualUnits: task.ActualUnits, ActualCost: task.ActualCost, NextActionAt: &now,
-			EventType: "resource_persistence_recovered",
-		})
-		if transitionErr != nil {
-			return nil, transitionErr
-		}
-		result.Task = updated
-		s.enqueueBestEffort(ctx, updated.PublicID)
-	}
 	return result, nil
 }
 
@@ -530,11 +567,37 @@ func (s *VideoTaskService) recoverCharacterResource(ctx context.Context, request
 	return nil, createErr
 }
 
-func (s *VideoTaskService) selectVideoAccount(ctx context.Context, userID, groupID int64, model string, forcedAccountID int64, excludedAccounts map[int64]struct{}, requiresOwnedAccount bool) (*Account, string, VideoProvider, error) {
+func managedVideoProviderForPlatform(platform string) (string, bool) {
+	switch strings.TrimSpace(platform) {
+	case PlatformOpenAI:
+		return VideoProviderOpenAI, true
+	case PlatformByteDance:
+		return VideoProviderByteDance, true
+	default:
+		return "", false
+	}
+}
+
+// providerRequestResolution reports the output resolution a provider was asked
+// to produce. Ark takes resolution as its own request parameter, so it can only
+// be read back from the request — a model identifier does not encode it.
+// OpenAI expresses the same thing through size and reports no resolution.
+func providerRequestResolution(provider string, request VideoCreateRequest) string {
+	if provider != VideoProviderByteDance {
+		return ""
+	}
+	options, err := byteDanceGenerationOptions(request)
+	if err != nil {
+		return ""
+	}
+	return options.Resolution
+}
+
+func (s *VideoTaskService) selectVideoAccount(ctx context.Context, userID, groupID int64, targetPlatform, providerName, model string, forcedAccountID int64, excludedAccounts map[int64]struct{}, requiresOwnedAccount bool) (*Account, string, VideoProvider, error) {
 	if s.accounts == nil {
 		return nil, "", nil, ErrVideoNoAccountAvailable
 	}
-	candidates, err := s.accounts.ListSchedulableByGroupIDAndPlatform(ctx, groupID, PlatformOpenAI)
+	candidates, err := s.accounts.ListSchedulableByGroupIDAndPlatform(ctx, groupID, targetPlatform)
 	if err != nil {
 		return nil, "", nil, err
 	}
@@ -544,7 +607,7 @@ func (s *VideoTaskService) selectVideoAccount(ctx context.Context, userID, group
 		}
 		return candidates[i].ID < candidates[j].ID
 	})
-	provider, ok := s.providers.Get(VideoProviderOpenAI)
+	provider, ok := s.providers.Get(providerName)
 	if !ok {
 		return nil, "", nil, ErrVideoProviderUnsupported
 	}
@@ -658,21 +721,21 @@ func (s *VideoTaskService) submitToProvider(ctx context.Context, resolved *resol
 	case VideoOperationEdit:
 		editor, ok := resolved.provider.(VideoEditor)
 		if !ok {
-			return nil, nil, ErrVideoCapabilityUnsupported
+			return nil, nil, videoCapabilityRejection()
 		}
 		providerTask, err := editor.Edit(ctx, resolved.account, VideoEditRequest{VideoCreateRequest: providerRequest, SourceTask: resolved.source}, request.Inputs)
 		return providerTask, nil, err
 	case VideoOperationExtend:
 		extender, ok := resolved.provider.(VideoExtender)
 		if !ok || resolved.source == nil {
-			return nil, nil, ErrVideoCapabilityUnsupported
+			return nil, nil, videoCapabilityRejection()
 		}
 		providerTask, err := extender.Extend(ctx, resolved.account, VideoExtendRequest{VideoCreateRequest: providerRequest, SourceTask: *resolved.source})
 		return providerTask, nil, err
 	case VideoOperationCharacterCreate:
 		characterProvider, ok := resolved.provider.(VideoCharacterProvider)
 		if !ok || len(request.Inputs) != 1 {
-			return nil, nil, ErrVideoCapabilityUnsupported
+			return nil, nil, videoCapabilityRejection()
 		}
 		name, _ := request.ProviderOptions["name"].(string)
 		resource, err := characterProvider.CreateCharacter(ctx, resolved.account, VideoCharacterRequest{
@@ -681,31 +744,61 @@ func (s *VideoTaskService) submitToProvider(ctx context.Context, resolved *resol
 		}, request.Inputs[0])
 		return nil, resource, err
 	default:
-		return nil, nil, ErrVideoCapabilityUnsupported
+		return nil, nil, videoCapabilityRejection()
 	}
 }
 
+// videoCapabilityRejection reports a capability mismatch that submitToProvider
+// detects before it calls the provider. The outcome is certain — nothing was
+// submitted — so it has to be classified as a rejection: a bare sentinel here
+// would fall through handleSubmissionError's unknown branch and stamp the task
+// as an unconfirmed submission, which is the one signal that means an upstream
+// job may exist. The sentinel stays in the chain, and the code and status match
+// ErrVideoCapabilityUnsupported, so the client-facing error is unchanged.
+func videoCapabilityRejection() *VideoProviderError {
+	rejection := rejectedVideoProviderError("validation", "video_capability_unsupported",
+		"video capability is not supported", http.StatusBadRequest)
+	rejection.Cause = ErrVideoCapabilityUnsupported
+	return rejection
+}
+
+// handleSubmissionError keeps an unobserved upstream outcome in the submitting
+// state so the worker can reconcile it by client token. Only a certain provider
+// rejection is released immediately; every other error may have happened after
+// the provider accepted the request and therefore remains held until the
+// deterministic reconciliation window expires.
 func (s *VideoTaskService) handleSubmissionError(ctx context.Context, task *VideoTask, providerErr error) (*VideoSubmitResult, error) {
 	var typed *VideoProviderError
+	event := "provider_rejected"
 	if !errors.As(providerErr, &typed) || typed.Certainty != VideoSubmissionRejected {
 		if typed == nil {
 			typed = unknownVideoProviderError("transport", "submission_unknown", "video provider submission outcome is unknown", providerErr)
 		}
 		typed = sanitizedVideoProviderError(typed, "transport", "submission_unknown", "video provider submission outcome is unknown")
-		next := s.now().UTC().Add(time.Duration(s.cfg.Gateway.Video.SubmissionUnknownQuarantineMinutes) * time.Minute)
-		updated, err := s.tasks.MarkVideoSubmissionUnknown(videoTaskWriteContext(ctx, task), task.PublicID, typed, next)
+		event = "provider_submission_reconciling"
+	} else {
+		typed = sanitizedVideoProviderError(typed, "upstream", "submission_rejected", "video provider rejected the submission")
+	}
+	now := s.now().UTC()
+	if event == "provider_submission_reconciling" {
+		next := now.Add(videoSubmissionReconciliationPollInterval)
+		updated, err := s.tasks.TransitionVideoTask(videoTaskWriteContext(ctx, task), task.PublicID, VideoTaskTransition{
+			GenerationState: VideoGenerationSubmitting, BillingState: VideoBillingHeld,
+			NextActionAt: &next, ErrorKind: typed.Kind, ErrorCode: "submission_reconciling",
+			ErrorMessage: "video provider submission outcome is being reconciled automatically",
+			EventType:    "provider_submission_reconciling", SubmissionUnknown: true,
+		})
 		if err != nil {
 			return nil, errors.Join(providerErr, err)
 		}
-		s.enqueueBestEffort(ctx, updated.PublicID)
+		// The task remains held and is returned as an accepted asynchronous task.
+		// The worker owns the automatic reconciliation and eventual settlement.
 		return &VideoSubmitResult{Task: updated, Created: true}, nil
 	}
-	typed = sanitizedVideoProviderError(typed, "upstream", "submission_rejected", "video provider rejected the submission")
-	now := s.now().UTC()
 	updated, err := s.tasks.TransitionVideoTask(videoTaskWriteContext(ctx, task), task.PublicID, VideoTaskTransition{
 		GenerationState: VideoGenerationFailed, BillingState: VideoBillingReleasePending,
 		NextActionAt: &now, ErrorKind: typed.Kind, ErrorCode: typed.Code,
-		ErrorMessage: typed.Message, EventType: "provider_rejected",
+		ErrorMessage: typed.Message, EventType: event,
 	})
 	if err != nil {
 		return nil, errors.Join(providerErr, err)
@@ -716,6 +809,85 @@ func (s *VideoTaskService) handleSubmissionError(ctx context.Context, task *Vide
 		return &VideoSubmitResult{Task: settled, Created: true}, errors.Join(providerErr, settleErr)
 	}
 	return &VideoSubmitResult{Task: settled, Created: true}, providerErr
+}
+
+func videoSubmissionReconciliationWindow(cfg *config.Config) time.Duration {
+	if cfg != nil && cfg.Gateway.Video.SubmissionReconciliationMinutes > 0 {
+		return time.Duration(cfg.Gateway.Video.SubmissionReconciliationMinutes) * time.Minute
+	}
+	return videoDefaultSubmissionReconciliationWindow
+}
+
+func (s *VideoTaskService) reconcileSubmitting(ctx context.Context, task *VideoTask) (*VideoTask, error) {
+	if s == nil || task == nil || task.AccountID == nil || task.ProviderTaskID != nil || s.accounts == nil || s.providers == nil {
+		return task, ErrVideoInvalidRequest
+	}
+	now := s.now().UTC()
+	startedAt := task.SubmissionUnknownAt
+	if startedAt == nil {
+		startedAt = &now
+	}
+	deadline := startedAt.Add(videoSubmissionReconciliationWindow(s.cfg))
+	if !now.Before(deadline) {
+		updated, err := s.tasks.TransitionVideoTask(videoTaskWriteContext(ctx, task), task.PublicID, VideoTaskTransition{
+			GenerationState: VideoGenerationFailed, BillingState: VideoBillingReleasePending,
+			NextActionAt: &now, ErrorKind: "submission", ErrorCode: "submission_reconciliation_expired",
+			ErrorMessage: "video provider submission could not be reconciled within the automatic reconciliation window",
+			EventType:    "submission_reconciliation_expired",
+		})
+		if err != nil {
+			return nil, err
+		}
+		return s.releaseConfirmedVideoFailure(ctx, updated)
+	}
+
+	account, err := s.accounts.GetByID(ctx, *task.AccountID)
+	if err != nil {
+		return task, err
+	}
+	provider, ok := s.providers.Get(task.Provider)
+	if !ok {
+		return task, ErrVideoProviderUnsupported
+	}
+	searcher, supported := provider.(VideoTaskSearcher)
+	if supported && strings.TrimSpace(videoStringValue(task.StableClientToken)) != "" {
+		observed, searchErr := searcher.SearchByClientToken(ctx, account, videoStringValue(task.StableClientToken))
+		if searchErr == nil && observed != nil && validVideoProviderIdentifier(observed.ProviderTaskID) {
+			acceptance, acceptanceErr := s.videoProviderAcceptance(observed)
+			if acceptanceErr != nil {
+				return task, acceptanceErr
+			}
+			s.applyTerminalBillingToAcceptance(task, observed, &acceptance)
+			updated, saveErr := s.tasks.SaveVideoProviderAccepted(videoTaskWriteContext(ctx, task), task.PublicID, acceptance)
+			if saveErr != nil {
+				return nil, saveErr
+			}
+			if updated.GenerationState == VideoGenerationFailed {
+				return s.releaseConfirmedVideoFailure(ctx, updated)
+			}
+			return updated, nil
+		}
+		if searchErr != nil {
+			var providerErr *VideoProviderError
+			if !errors.As(searchErr, &providerErr) || !providerErr.Retryable {
+				// A lookup failure is not proof that the task was not created. Keep
+				// retrying until the deterministic reconciliation deadline.
+				searchErr = nil
+			}
+		}
+	}
+
+	next := now.Add(videoSubmissionReconciliationPollInterval)
+	updated, err := s.tasks.TransitionVideoTask(videoTaskWriteContext(ctx, task), task.PublicID, VideoTaskTransition{
+		GenerationState: VideoGenerationSubmitting, BillingState: VideoBillingHeld,
+		NextActionAt: &next, ErrorKind: "submission", ErrorCode: "submission_reconciling",
+		ErrorMessage: "video provider submission outcome is being reconciled automatically",
+		EventType:    "submission_reconciliation_retry", SubmissionUnknown: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return updated, &videoTaskScheduledRetry{cause: errors.New("video submission reconciliation pending"), next: next}
 }
 
 func (s *VideoTaskService) finishTaskSubmission(ctx context.Context, task *VideoTask, resolved *resolvedVideoSubmission, providerTask *ProviderVideoTask) (*VideoSubmitResult, error) {
@@ -804,39 +976,6 @@ func (s *VideoTaskService) encryptProviderVideoURL(raw string) (string, error) {
 	return s.encryptor.Encrypt(normalized)
 }
 
-func (s *VideoTaskService) ResolveSubmissionUnknownNotCreated(ctx context.Context, publicID string) (*VideoTask, error) {
-	return nil, ErrVideoReviewRequired
-}
-
-func (s *VideoTaskService) ResolveSubmissionUnknownCreated(ctx context.Context, publicID, providerTaskID string) (*VideoTask, error) {
-	if s == nil || s.tasks == nil || !validVideoProviderIdentifier(providerTaskID) {
-		return nil, ErrVideoInvalidRequest
-	}
-	providerTaskID = strings.TrimSpace(providerTaskID)
-	task, err := s.tasks.GetVideoTaskByPublicID(ctx, strings.TrimSpace(publicID))
-	if err != nil {
-		return nil, err
-	}
-	if err := validateVideoAdminExpectedVersion(ctx, task); err != nil {
-		return nil, err
-	}
-	if task.Operation == VideoOperationCharacterCreate && task.GenerationState == VideoGenerationCompleted &&
-		task.BillingState == VideoBillingManualReview &&
-		(videoStringValue(task.LastErrorCode) == "resource_persistence_pending" || videoStringValue(task.LastErrorCode) == "resource_persistence_failed") {
-		if task.ProviderTaskID == nil || strings.TrimSpace(*task.ProviderTaskID) != providerTaskID {
-			return nil, ErrVideoInvalidRequest
-		}
-		result, replayErr := s.replayedSubmitResult(ctx, VideoSubmitRequest{
-			APIKey: &APIKey{UserID: task.UserID}, Operation: VideoOperationCharacterCreate,
-		}, task)
-		if replayErr != nil {
-			return nil, replayErr
-		}
-		return result.Task, nil
-	}
-	return nil, ErrVideoReviewRequired
-}
-
 func (s *VideoTaskService) finishCharacterSubmission(ctx context.Context, task *VideoTask, name string, providerResource *ProviderVideoResource) (*VideoSubmitResult, error) {
 	if task == nil || task.AccountID == nil || providerResource == nil {
 		return nil, ErrVideoInvalidRequest
@@ -853,60 +992,41 @@ func (s *VideoTaskService) finishCharacterSubmission(ctx context.Context, task *
 	if err != nil {
 		return s.handleSubmissionError(ctx, task, unknownVideoProviderError("upstream", "access_encryption_failed", "video character access could not be secured", err))
 	}
-	decision := videoTerminalBillingFor(task, VideoGenerationCompleted, providerTask)
-	acceptance.ActualUnits = decision.actualUnits
-	acceptance.ActualCost = decision.actualCost
-	acceptance.BillingState = VideoBillingManualReview
-	acceptance.NextActionAt = nil
-	acceptance.Quarantine = true
-	if decision.state == VideoBillingManualReview {
-		acceptance.ErrorKind = decision.errorKind
-		acceptance.ErrorCode = decision.errorCode
-		acceptance.ErrorMessage = decision.errorMessage
-	} else {
-		acceptance.ErrorKind = "persistence"
-		acceptance.ErrorCode = "resource_persistence_pending"
-		acceptance.ErrorMessage = "character metadata must be persisted before settlement"
-	}
-	updated, err := s.tasks.SaveVideoProviderAccepted(videoTaskWriteContext(ctx, task), task.PublicID, acceptance)
-	if err != nil {
-		return nil, err
-	}
 	if strings.TrimSpace(name) == "" {
 		name, _ = providerResource.Metadata["name"].(string)
 	}
+	// The character resource is persisted before the task is accepted, so a
+	// completed character task can never settle without its local metadata.
 	resource, err := s.resources.CreateVideoResource(ctx, VideoCreateResourceParams{
 		Owner:    VideoOwner{UserID: task.UserID, APIKeyID: valueOrZero(task.APIKeyID), GroupID: task.GroupID},
 		Provider: task.Provider, ChannelID: task.ChannelID, AccountID: *task.AccountID,
-		SourceTaskID: &updated.ID, ProviderResourceID: providerResource.ProviderResourceID,
+		SourceTaskID: &task.ID, ProviderResourceID: providerResource.ProviderResourceID,
 		Model: task.UpstreamModel, Status: "ready", Metadata: map[string]any{"name": strings.TrimSpace(name)},
 		ExpiresAt: providerResource.ExpiresAt,
 	})
 	if err != nil {
-		_, _ = s.tasks.TransitionVideoTask(videoTaskWriteContext(ctx, task), task.PublicID, VideoTaskTransition{
-			GenerationState: VideoGenerationCompleted,
-			BillingState:    VideoBillingManualReview, ErrorKind: "persistence",
-			ErrorCode: "resource_persistence_failed", ErrorMessage: "character metadata could not be persisted",
-			EventType: "resource_persistence_failed",
+		now := s.now().UTC()
+		failed, transitionErr := s.tasks.TransitionVideoTask(videoTaskWriteContext(ctx, task), task.PublicID, VideoTaskTransition{
+			GenerationState: VideoGenerationFailed, BillingState: VideoBillingReleasePending,
+			NextActionAt: &now, ErrorKind: "persistence", ErrorCode: "resource_persistence_failed",
+			ErrorMessage: "character metadata could not be persisted",
+			EventType:    "resource_persistence_failed",
 		})
+		if transitionErr != nil {
+			return nil, errors.Join(err, transitionErr)
+		}
+		if _, settleErr := s.releaseConfirmedVideoFailure(ctx, failed); settleErr != nil {
+			s.enqueueBestEffort(ctx, failed.PublicID)
+		}
 		return nil, err
 	}
-	result := &VideoSubmitResult{Task: updated, Resource: resource, Created: true}
-	if decision.state == VideoBillingManualReview {
-		return result, nil
-	}
-	now := s.now().UTC()
-	updated, err = s.tasks.TransitionVideoTask(videoTaskWriteContext(ctx, updated), updated.PublicID, VideoTaskTransition{
-		GenerationState: VideoGenerationCompleted, BillingState: decision.state,
-		ActualUnits: decision.actualUnits, ActualCost: decision.actualCost, NextActionAt: &now,
-		EventType: "resource_persisted",
-	})
+	s.applyTerminalBillingToAcceptance(task, providerTask, &acceptance)
+	updated, err := s.tasks.SaveVideoProviderAccepted(videoTaskWriteContext(ctx, task), task.PublicID, acceptance)
 	if err != nil {
 		return nil, err
 	}
-	result.Task = updated
 	s.enqueueBestEffort(ctx, updated.PublicID)
-	return result, nil
+	return &VideoSubmitResult{Task: updated, Resource: resource, Created: true}, nil
 }
 
 type videoTerminalBillingDecision struct {
@@ -916,19 +1036,37 @@ type videoTerminalBillingDecision struct {
 	errorKind    string
 	errorCode    string
 	errorMessage string
-	quarantine   bool
 }
 
-func updatedBillingCanResume(task *VideoTask) bool {
-	return task != nil && task.GenerationState == VideoGenerationSubmissionUnknown &&
-		task.BillingState == VideoBillingManualReview
+// videoFrozenQuoteBilling settles a completed task at the quote frozen when the
+// hold was taken. It is the fallback whenever provider evidence cannot produce a
+// trustworthy usage-based amount; the hold is released instead when the frozen
+// quote itself is unusable, so an unpriceable task is never charged.
+func videoFrozenQuoteBilling(task *VideoTask, kind, code, message string) videoTerminalBillingDecision {
+	decision := videoTerminalBillingDecision{errorKind: kind, errorCode: code, errorMessage: message}
+	if task == nil || task.BillingUnit == nil || *task.BillingUnit != VideoBillingUnitRequest {
+		zero := 0.0
+		decision.state, decision.actualUnits, decision.actualCost = VideoBillingReleasePending, &zero, &zero
+		return decision
+	}
+	if task == nil || task.EstimatedUnits == nil || task.HoldAmount == nil ||
+		!finiteNonNegative(*task.EstimatedUnits) || !finiteNonNegative(*task.HoldAmount) {
+		zero := 0.0
+		decision.state, decision.actualUnits, decision.actualCost = VideoBillingReleasePending, &zero, &zero
+		return decision
+	}
+	units, cost := *task.EstimatedUnits, *task.HoldAmount
+	decision.state, decision.actualUnits, decision.actualCost = VideoBillingCapturePending, &units, &cost
+	return decision
 }
 
 func videoTerminalBillingFor(task *VideoTask, target string, providerTask *ProviderVideoTask) videoTerminalBillingDecision {
 	if task == nil || !IsVideoGenerationTerminal(target) {
 		return videoTerminalBillingDecision{}
 	}
-	if target == VideoGenerationFailed {
+	if target != VideoGenerationCompleted {
+		// Nothing was delivered, so the hold is released in full and the task
+		// records an explicit zero rather than an absent charge.
 		zero := 0.0
 		return videoTerminalBillingDecision{
 			state: VideoBillingReleasePending, actualUnits: &zero, actualCost: &zero,
@@ -939,24 +1077,20 @@ func videoTerminalBillingFor(task *VideoTask, target string, providerTask *Provi
 		metadata = videoObservedMetadata(task, providerTask.Metadata)
 	}
 	if err := videoCheckObservedSpecification(task, metadata); err != nil {
-		return videoTerminalBillingDecision{state: VideoBillingManualReview, errorKind: "specification",
-			errorCode: "execution_spec_conflict", errorMessage: "provider output conflicts with the frozen execution specification", quarantine: true}
+		zero := 0.0
+		return videoTerminalBillingDecision{state: VideoBillingReleasePending, actualUnits: &zero, actualCost: &zero,
+			errorKind: "specification", errorCode: "execution_spec_conflict",
+			errorMessage: "provider output conflicts with the frozen execution specification"}
 	}
 	candidate := *task
 	candidate.GenerationState = target
-	if target == VideoGenerationCompleted {
-		units, cost, err := videoActualCost(&candidate, providerTask)
-		if err != nil {
-			return videoTerminalBillingDecision{
-				state: VideoBillingManualReview, errorKind: "billing", errorCode: "usage_missing",
-				errorMessage: err.Error(), quarantine: true,
-			}
-		}
-		return videoTerminalBillingDecision{
-			state: VideoBillingCapturePending, actualUnits: &units, actualCost: &cost,
-		}
+	units, cost, err := videoActualCost(&candidate, providerTask)
+	if err != nil {
+		return videoFrozenQuoteBilling(task, "billing", "usage_missing", err.Error())
 	}
-	return videoTerminalBillingDecision{state: VideoBillingReleasePending}
+	return videoTerminalBillingDecision{
+		state: VideoBillingCapturePending, actualUnits: &units, actualCost: &cost,
+	}
 }
 
 func (s *VideoTaskService) applyTerminalBillingToAcceptance(task *VideoTask, providerTask *ProviderVideoTask, acceptance *VideoProviderAcceptance) {
@@ -967,7 +1101,7 @@ func (s *VideoTaskService) applyTerminalBillingToAcceptance(task *VideoTask, pro
 	if !IsVideoGenerationTerminal(acceptance.GenerationState) {
 		return
 	}
-	decision := videoObservedBillingDecision(task, acceptance.GenerationState, providerTask)
+	decision := videoTerminalBillingFor(task, acceptance.GenerationState, providerTask)
 	acceptance.BillingState = decision.state
 	acceptance.ActualUnits = decision.actualUnits
 	acceptance.ActualCost = decision.actualCost
@@ -976,22 +1110,8 @@ func (s *VideoTaskService) applyTerminalBillingToAcceptance(task *VideoTask, pro
 		acceptance.ErrorCode = decision.errorCode
 		acceptance.ErrorMessage = decision.errorMessage
 	}
-	acceptance.Quarantine = decision.quarantine
 	now := s.now().UTC()
 	acceptance.NextActionAt = &now
-	if decision.state == VideoBillingManualReview {
-		acceptance.NextActionAt = nil
-	}
-}
-
-func videoObservedBillingDecision(task *VideoTask, target string, providerTask *ProviderVideoTask) videoTerminalBillingDecision {
-	decision := videoTerminalBillingFor(task, target, providerTask)
-	if task != nil && task.BillingState == VideoBillingManualReview && IsVideoGenerationTerminal(task.GenerationState) &&
-		target != VideoGenerationFailed && task.Operation != VideoOperationCharacterCreate && decision.state != VideoBillingManualReview {
-		return videoTerminalBillingDecision{state: VideoBillingManualReview, errorKind: "billing", errorCode: "billing_review_required",
-			errorMessage: "provider evidence was refreshed; an audited billing review is required", quarantine: true}
-	}
-	return decision
 }
 
 // prepareTerminalBilling repairs tasks written by older binaries that reached a
@@ -1006,16 +1126,12 @@ func (s *VideoTaskService) prepareTerminalBilling(ctx context.Context, task *Vid
 		decision.errorCode = videoStringValue(task.LastErrorCode)
 		decision.errorMessage = videoStringValue(task.LastErrorMessage)
 	}
-	var next *time.Time
-	if decision.state != VideoBillingManualReview {
-		now := s.now().UTC()
-		next = &now
-	}
+	now := s.now().UTC()
 	return s.tasks.TransitionVideoTask(videoTaskWriteContext(ctx, task), task.PublicID, VideoTaskTransition{
 		GenerationState: task.GenerationState, BillingState: decision.state,
-		ActualUnits: decision.actualUnits, ActualCost: decision.actualCost, NextActionAt: next,
+		ActualUnits: decision.actualUnits, ActualCost: decision.actualCost, NextActionAt: &now,
 		ErrorKind: decision.errorKind, ErrorCode: decision.errorCode, ErrorMessage: decision.errorMessage,
-		Quarantine: decision.quarantine, EventType: "terminal_billing_recovered",
+		EventType: "terminal_billing_recovered",
 	})
 }
 
@@ -1072,7 +1188,7 @@ func (s *VideoTaskService) ReconcileProviderObservation(ctx context.Context, tas
 		IncrementPollAttempts: eventType == "provider_polled",
 	}
 	if IsVideoGenerationTerminal(target) {
-		decision := videoObservedBillingDecision(task, target, observed)
+		decision := videoTerminalBillingFor(task, target, observed)
 		transition.BillingState = decision.state
 		transition.ActualUnits = decision.actualUnits
 		transition.ActualCost = decision.actualCost
@@ -1081,11 +1197,8 @@ func (s *VideoTaskService) ReconcileProviderObservation(ctx context.Context, tas
 			transition.ErrorCode = decision.errorCode
 			transition.ErrorMessage = decision.errorMessage
 		}
-		transition.Quarantine = decision.quarantine
-		if decision.state != VideoBillingManualReview {
-			now := s.now().UTC()
-			transition.NextActionAt = &now
-		}
+		now := s.now().UTC()
+		transition.NextActionAt = &now
 	}
 	updated, err := s.tasks.TransitionVideoTask(videoTaskWriteContext(ctx, task), task.PublicID, transition)
 	if err != nil {
@@ -1654,7 +1767,7 @@ func (s *VideoTaskService) DeleteForOwner(ctx context.Context, userID int64, pub
 	if err != nil {
 		return nil, err
 	}
-	if task.GenerationState == VideoGenerationSubmitting || task.GenerationState == VideoGenerationSubmissionUnknown {
+	if task.GenerationState == VideoGenerationSubmitting {
 		return nil, ErrVideoDeleteConflict
 	}
 	if task.DeleteState == VideoDeleteDeleted {
@@ -1802,8 +1915,7 @@ func (s *VideoTaskService) RetryDeleteTask(ctx context.Context, task *VideoTask)
 	if !IsVideoGenerationTerminal(generation) {
 		generation = VideoGenerationCancelled
 		if billing == VideoBillingHeld {
-			// Cancellation can still be billable; do not release without usage evidence.
-			billing = VideoBillingManualReview
+			billing = VideoBillingReleasePending
 		}
 	} else if generation != VideoGenerationCompleted && billing == VideoBillingHeld {
 		billing = VideoBillingReleasePending

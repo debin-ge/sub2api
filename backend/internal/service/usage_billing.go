@@ -311,7 +311,6 @@ var (
 // BalanceHoldCommand describes an idempotent reserve, capture, or release
 // operation. Scope and RefID bind the money movement to one durable owner.
 type BalanceHoldCommand struct {
-	BillingReviewID    int64
 	RequestID          string
 	APIKeyID           int64
 	RequestFingerprint string
@@ -344,10 +343,6 @@ func (c *BalanceHoldCommand) Validate() error {
 	if c.RequestID == "" {
 		return ErrUsageBillingRequestIDRequired
 	}
-	if c.BillingReviewID < 0 || (c.BillingReviewID > 0 && (c.Scope != BalanceHoldScopeVideoTask ||
-		(c.RequestID != VideoTaskCaptureRequestID(c.RefID) && c.RequestID != VideoTaskReleaseRequestID(c.RefID)))) {
-		return ErrUsageBillingPayloadInvalid
-	}
 	switch c.Scope {
 	case BalanceHoldScopeBatchImage, BalanceHoldScopeVideoTask:
 	default:
@@ -379,9 +374,6 @@ func buildBalanceHoldFingerprint(c *BalanceHoldCommand) string {
 	)
 	if payloadHash := strings.TrimSpace(c.RequestPayloadHash); payloadHash != "" {
 		raw += "|" + payloadHash
-	}
-	if c.BillingReviewID > 0 {
-		raw += fmt.Sprintf("|billing_review:%d", c.BillingReviewID)
 	}
 	sum := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(sum[:])

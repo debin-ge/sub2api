@@ -162,12 +162,37 @@
           </div>
         </template>
         <template v-else>
+        <div v-if="account.platform === 'bytedance'">
+          <label class="input-label">{{ t('admin.accounts.bytedance.protocolMode.title') }}</label>
+          <select
+            v-model="editByteDanceProtocolMode"
+            data-testid="edit-bytedance-protocol-mode"
+            class="input"
+          >
+            <option value="native">{{ t('admin.accounts.bytedance.protocolMode.native') }}</option>
+            <option value="openai_compatible">
+              {{ t('admin.accounts.bytedance.protocolMode.openaiCompatible') }}
+            </option>
+          </select>
+          <p class="input-hint">
+            {{
+              editByteDanceProtocolMode === 'openai_compatible'
+                ? t('admin.accounts.bytedance.protocolMode.openaiCompatibleDesc')
+                : t('admin.accounts.bytedance.protocolMode.nativeDesc')
+            }}
+          </p>
+        </div>
         <div v-if="!isCNApiKeyAccount || editApiProtocol !== 'adaptive'">
-          <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
+          <label class="input-label">
+            {{ t('admin.accounts.baseUrl') }}
+            <span v-if="editByteDanceNeedsBaseUrl" class="text-red-500">*</span>
+          </label>
           <input
             v-model="editBaseUrl"
+            data-testid="edit-api-key-base-url"
             type="text"
             class="input"
+            :required="editByteDanceNeedsBaseUrl"
             :placeholder="
               account.platform === 'openai'
                 ? 'https://api.openai.com'
@@ -177,10 +202,17 @@
                     ? 'https://cloudcode-pa.googleapis.com'
                     : account.platform === 'grok'
                       ? 'https://api.x.ai/v1'
+                      : account.platform === 'bytedance'
+                        ? editByteDanceNeedsBaseUrl
+                          ? 'https://relay.example.com/v1'
+                          : 'https://ark.cn-beijing.volces.com/api/v3'
                   : 'https://api.anthropic.com'
             "
             @input="syncOpenAIVideoCapabilityForBaseURL"
           />
+          <p v-if="editByteDanceNeedsBaseUrl" class="input-hint text-amber-600 dark:text-amber-400">
+            {{ t('admin.accounts.bytedance.protocolMode.baseUrlRequired') }}
+          </p>
           <p v-if="baseUrlHint" class="input-hint">{{ baseUrlHint }}</p>
           <GrokBaseUrlPresets
             v-if="account.platform === 'grok'"
@@ -286,6 +318,7 @@
           <label class="input-label">{{ t('admin.accounts.apiKey') }}</label>
           <input
             v-model="editApiKey"
+            data-testid="edit-api-key-value"
             type="password"
             class="input font-mono"
             autocomplete="new-password"
@@ -309,6 +342,7 @@
         </template>
 
         <div
+          v-if="account.platform !== 'bytedance'"
           class="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800/60 dark:bg-amber-900/20"
         >
           <div class="flex items-center justify-between gap-4">
@@ -1743,7 +1777,7 @@
             }}
           </p>
           <div
-            v-if="account?.type === 'apikey'"
+            v-if="account?.type === 'apikey' && account.platform !== 'bytedance'"
             class="mt-3 flex items-center justify-between gap-3"
           >
             <div class="min-w-0">
@@ -2049,7 +2083,7 @@
       </div>
 
       <div
-        v-if="account?.type === 'apikey'"
+        v-if="account?.type === 'apikey' && account.platform !== 'bytedance'"
         class="flex items-center justify-between gap-4 border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div>
@@ -3207,6 +3241,10 @@ import {
   cnSupportsNativeResponses,
   defaultCNAdaptiveBaseUrls,
   defaultCNBaseUrl,
+  applyByteDanceProtocolMode,
+  byteDanceProtocolRequiresBaseUrl,
+  readByteDanceProtocolMode,
+  type ByteDanceProtocolMode,
   type CnAccountMode,
   type CnApiProtocol,
   type CnNativeApiProtocol,
@@ -3328,6 +3366,14 @@ const editGLMAnthropicBaseUrl = ref(GLM_ANTHROPIC_BASE_URL)
 const editGLMOpenAIBaseUrl = ref(GLM_OPENAI_BASE_URL)
 const editWindsurfBaseUrl = ref(WINDSURF_BASE_URL)
 const editOpenCodeBaseUrl = ref(OPENCODE_BASE_URL)
+
+// ByteDance 上游线格式；缺省 native，与后端 byteDanceProtocolMode 的回落一致。
+const editByteDanceProtocolMode = ref<ByteDanceProtocolMode>('native')
+const editByteDanceNeedsBaseUrl = computed(
+  () =>
+    props.account?.platform === 'bytedance' &&
+    byteDanceProtocolRequiresBaseUrl(editByteDanceProtocolMode.value)
+)
 const editSyncCredentials = computed(() => {
   const account = props.account
   if (!account || account.type !== 'apikey') return undefined
@@ -3347,6 +3393,7 @@ const editSyncCredentials = computed(() => {
     case 'openai':
     case 'gemini':
     case 'grok':
+    case 'bytedance':
       baseUrl = editBaseUrl.value
       break
     case 'windsurf':
@@ -4041,6 +4088,7 @@ const defaultBaseUrl = computed(() => {
   if (props.account?.platform === 'windsurf') return WINDSURF_BASE_URL
   if (props.account?.platform === 'opencode') return OPENCODE_BASE_URL
   if (props.account?.platform === 'grok') return 'https://api.x.ai/v1'
+  if (props.account?.platform === 'bytedance') return ''
   // CN 供应商：按当前模式/协议回落到官方预设（清空输入框提交时使用），
   // 不能落到 anthropic 默认值（会被当 CC base 拼出错误端点）。
   if (
@@ -4199,7 +4247,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
 		typeof extra?.auto_reset_credit_5h_threshold === 'number' ? extra.auto_reset_credit_5h_threshold * 100 : 100
 	autoResetCredit7dThreshold.value =
 		typeof extra?.auto_reset_credit_7d_threshold === 'number' ? extra.auto_reset_credit_7d_threshold * 100 : 100
-	upstreamBillingAutoProbeEnabled.value = extra?.upstream_billing_probe_enabled === true
+	upstreamBillingAutoProbeEnabled.value =
+		newAccount.platform !== 'bytedance' && extra?.upstream_billing_probe_enabled === true
   upstreamBillingRateSyncEnabled.value =
     upstreamBillingAutoProbeEnabled.value && extra?.upstream_billing_rate_sync_enabled === true
 
@@ -4407,6 +4456,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   internalRelayEnabled.value =
     newAccount.type === 'apikey' &&
     newAccount.extra?.internal_relay === true
+  // 缺省即 native，凭据里读到已存模式时再覆盖，避免切换账号时残留上一个账号的选择。
+  editByteDanceProtocolMode.value = 'native'
   if (newAccount.type === 'apikey' && newAccount.credentials) {
     const credentials = newAccount.credentials as Record<string, unknown>
     // 国产供应商：读取 account_mode 与 api_protocol 作为可编辑初始值
@@ -4462,7 +4513,9 @@ const syncFormFromAccount = (newAccount: Account | null) => {
       }
     }
     const platformDefaultUrl =
-      newAccount.platform === 'openai'
+      newAccount.platform === 'bytedance'
+        ? ''
+        : newAccount.platform === 'openai'
         ? 'https://api.openai.com'
         : newAccount.platform === 'gemini'
           ? 'https://generativelanguage.googleapis.com'
@@ -4496,6 +4549,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
       editWindsurfBaseUrl.value = (credentials.base_url as string) || WINDSURF_BASE_URL
     } else if (newAccount.platform === 'opencode') {
       editOpenCodeBaseUrl.value = (credentials.base_url as string) || OPENCODE_BASE_URL
+    } else if (newAccount.platform === 'bytedance') {
+      editByteDanceProtocolMode.value = readByteDanceProtocolMode(credentials)
     }
     editBaseUrl.value = isCNApiKeyAccount.value && editApiProtocol.value === 'adaptive'
       ? editAdaptiveBaseUrls.value.chat_completions
@@ -4562,7 +4617,9 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     loadModelRestrictionFromMapping(credentials.model_mapping as Record<string, unknown> | undefined)
   } else {
     const platformDefaultUrl =
-      newAccount.platform === 'openai'
+      newAccount.platform === 'bytedance'
+        ? ''
+        : newAccount.platform === 'openai'
         ? 'https://api.openai.com'
         : newAccount.platform === 'gemini'
           ? 'https://generativelanguage.googleapis.com'
@@ -5265,6 +5322,16 @@ const handleSubmit = async () => {
         newCredentials.base_url = editBaseUrl.value.trim() || defaultBaseUrl.value
       }
 
+      // ByteDance 线格式；转发模式没有官方地址，缺 base_url 的账号后端判不可调度，
+      // 所以在保存前拦住，而不是留下一个永远轮不到的账号。
+      if (props.account.platform === 'bytedance') {
+        if (editByteDanceNeedsBaseUrl.value && !editBaseUrl.value.trim()) {
+          appStore.showError(t('admin.accounts.bytedance.protocolMode.baseUrlRequired'))
+          return
+        }
+        applyByteDanceProtocolMode(newCredentials, editByteDanceProtocolMode.value, 'edit')
+      }
+
       // 国产供应商：模式与协议写入凭据（决定额度/余额探测与转发端点/格式）。
       if (isCNApiKeyAccount.value) {
         newCredentials.account_mode = editAccountMode.value
@@ -5891,7 +5958,7 @@ const handleSubmit = async () => {
       updatePayload.extra = newExtra
     }
 
-    if (props.account.type === 'apikey') {
+    if (props.account.type === 'apikey' && props.account.platform !== 'bytedance') {
       const currentExtra = (updatePayload.extra as Record<string, unknown>) ||
         (props.account.extra as Record<string, unknown>) || {}
       const newExtra: Record<string, unknown> = { ...currentExtra }
@@ -5906,6 +5973,9 @@ const handleSubmit = async () => {
       const currentExtra = (updatePayload.extra as Record<string, unknown>) ||
         (props.account.extra as Record<string, unknown>) || {}
       const newExtra: Record<string, unknown> = { ...currentExtra }
+      if (props.account.platform === 'bytedance') {
+        delete newExtra.internal_relay
+      }
       // 上游倍率自动探测对全部 API-key 平台开放（sub2api 上游即可应答），
       // Bedrock 凭证无静态 Key 不参与。
       if (props.account.type === 'apikey') {

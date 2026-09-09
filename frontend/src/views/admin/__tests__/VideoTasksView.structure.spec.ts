@@ -15,23 +15,27 @@ describe('VideoTasksView recovery surface', () => {
   })
 
   it('covers every operational queue and keeps Create replay absent', () => {
-    for (const tab of ['tasks', 'unknown', 'resources', 'unmatched', 'callbacks']) {
+    for (const tab of ['tasks', 'resources', 'unmatched', 'callbacks']) {
       expect(source).toContain(`'${tab}'`)
     }
-    expect(source).toContain('resolveCreated')
-    expect(source).toContain('resolveNotCreated')
     expect(source).toContain('retryGet')
     expect(source).toContain('retrySettlement')
     expect(source).toContain('retryDelete')
 	expect(source).toContain('retryCallback')
 	expect(source).toContain('canRetryCallback')
-		expect(source).toContain('resolveBillingCapture')
-		expect(source).toContain('resolveBillingRelease')
-		expect(source).toContain('repairCharacterResource')
-		expect(source).toContain('isCharacterPersistenceReview')
-		expect(source).toContain("t('admin.videos.actions.repairResource')")
     expect(source).not.toContain('retryCreate')
     expect(source).not.toContain('replayCreate')
+  })
+
+  it('exposes no manual review surface at all', () => {
+    for (const removed of [
+      "'manual_review'", "'submission_unknown'", 'billingReviews', 'submissionReviews',
+      'resolveCreated', 'resolveNotCreated', 'resolveBillingCapture', 'resolveBillingRelease',
+      'decideBillingReview', 'decideSubmissionReview', 'repairCharacterResource',
+      'honorFrozenQuote', 'reviewEvidence', 'reviewDecisionReason', 'admin.videos.billingReview.',
+    ]) {
+      expect(source).not.toContain(removed)
+    }
   })
 
   it('renders only access metadata fields supplied by the safe admin DTO', () => {

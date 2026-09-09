@@ -12,6 +12,20 @@ import {
 } from '../useModelWhitelist'
 
 describe('useModelWhitelist', () => {
+  // 模型 ID 必须与后端 video_catalog.go 的 Ark 常量逐字一致：分辨率由请求参数
+  // resolution 决定，不写进 ID，所以列表里不能出现任何 "-480p" 之类的后缀。
+  it('ByteDance 模型列表只包含火山方舟真实的 Seedance 视频模型 ID', () => {
+    const models = getModelsByPlatform('bytedance')
+
+    expect(models).toEqual([
+      'doubao-seedance-1-0-pro-250528',
+      'doubao-seedance-1-0-lite-t2v-250428'
+    ])
+    expect(models.every((model) => model.startsWith('doubao-seedance-1-0-'))).toBe(true)
+    expect(models.some((model) => /-\d+(p|k)$/.test(model))).toBe(false)
+    expect(models).not.toContain('doubao-pro-256k')
+  })
+
   it('openai 模型列表包含 GPT-5.4 官方快照', () => {
     const models = getModelsByPlatform('openai')
 

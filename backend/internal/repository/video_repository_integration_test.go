@@ -53,10 +53,6 @@ func cleanupVideoIntegrationFixture(t *testing.T, userID, apiKeyID, accountID in
 			argument  int64
 		}{
 			{`DELETE FROM video_create_intents WHERE user_id = $1`, userID},
-			{`DELETE FROM video_billing_review_actions WHERE task_id IN (SELECT id FROM video_tasks WHERE user_id = $1)`, userID},
-			{`DELETE FROM video_billing_reviews WHERE task_id IN (SELECT id FROM video_tasks WHERE user_id = $1)`, userID},
-			{`DELETE FROM video_submission_review_actions WHERE task_id IN (SELECT id FROM video_tasks WHERE user_id = $1)`, userID},
-			{`DELETE FROM video_submission_reviews WHERE task_id IN (SELECT id FROM video_tasks WHERE user_id = $1)`, userID},
 			{`DELETE FROM video_callback_deliveries WHERE task_id IN (SELECT id FROM video_tasks WHERE user_id = $1)`, userID},
 			{`DELETE FROM video_resources WHERE user_id = $1`, userID},
 			{`DELETE FROM video_task_events WHERE task_id IN (SELECT id FROM video_tasks WHERE user_id = $1)`, userID},

@@ -316,12 +316,12 @@ func TestVideoHandlerCreateJSONProjectsSafeTask(t *testing.T) {
 
 func TestVideoHandlerCreateJSONAcceptsStructuredReferenceVideos(t *testing.T) {
 	task := videoHandlerTask()
-	task.PublicModel = "doubao-seedance-2.0-mini-480p"
+	task.PublicModel = "doubao-seedance-1-0-lite-t2v-250428"
 	fake := &videoTaskAPIFake{submitResult: &service.VideoSubmitResult{Task: task, Created: true}}
 	handler := newVideoHandler(fake, nil, videoHandlerTestConfig(t))
 	referenceURL := "https://media.example.com/reference.mp4?preview=1&auth_key=signed"
 	ctx, recorder := newVideoHandlerTestContext(http.MethodPost, "/v1/videos", "application/json", strings.NewReader(`{
-		"model":"doubao-seedance-2.0-mini-480p","prompt":"A sports car",
+		"model":"doubao-seedance-1-0-lite-t2v-250428","prompt":"A sports car",
 		"seconds":"10","reference_videos":["`+referenceURL+`"]
 	}`))
 
@@ -335,11 +335,11 @@ func TestVideoHandlerCreateJSONAcceptsStructuredReferenceVideos(t *testing.T) {
 
 func TestVideoHandlerCreateJSONNormalizesVolcengineContentReferences(t *testing.T) {
 	task := videoHandlerTask()
-	task.PublicModel = "doubao-seedance-2.0-fast-720p"
+	task.PublicModel = "doubao-seedance-1-0-pro-250528"
 	fake := &videoTaskAPIFake{submitResult: &service.VideoSubmitResult{Task: task, Created: true}}
 	handler := newVideoHandler(fake, nil, videoHandlerTestConfig(t))
 	ctx, recorder := newVideoHandlerTestContext(http.MethodPost, "/v1/videos", "application/json", strings.NewReader(`{
-		"model":"doubao-seedance-2.0-fast-720p",
+		"model":"doubao-seedance-1-0-pro-250528",
 		"seconds":10,
 		"ratio":"16:9",
 		"content":[
@@ -364,7 +364,7 @@ func TestVideoHandlerCreateJSONNormalizesVolcengineFirstAndLastFrames(t *testing
 	fake := &videoTaskAPIFake{submitResult: &service.VideoSubmitResult{Task: videoHandlerTask(), Created: true}}
 	handler := newVideoHandler(fake, nil, videoHandlerTestConfig(t))
 	ctx, recorder := newVideoHandlerTestContext(http.MethodPost, "/v1/videos", "application/json", strings.NewReader(`{
-		"model":"doubao-seedance-2.0-mini-480p","seconds":"8",
+		"model":"doubao-seedance-1-0-lite-t2v-250428","seconds":"8",
 		"content":[
 			{"type":"text","text":"Transition from day to night"},
 			{"type":"image_url","role":"first_frame","image_url":"https://media.example.com/first.png"},
@@ -381,11 +381,11 @@ func TestVideoHandlerCreateJSONNormalizesVolcengineFirstAndLastFrames(t *testing
 
 func TestVideoHandlerRejectsVolcengineContentConflictsAndUnknownFields(t *testing.T) {
 	for _, body := range []string{
-		`{"model":"doubao-seedance-2.0-mini-480p","prompt":"top-level","seconds":8,"content":[{"type":"text","text":"content"}]}`,
-		`{"model":"doubao-seedance-2.0-mini-480p","prompt":"top-level","seconds":8,"content":[]}`,
-		`{"model":"doubao-seedance-2.0-mini-480p","prompt":"top-level","seconds":8,"content":null}`,
-		`{"model":"doubao-seedance-2.0-mini-480p","seconds":8,"content":[{"type":"text","text":"content","unknown":true}]}`,
-		`{"model":"doubao-seedance-2.0-mini-480p","seconds":8,"content":[{"type":"video_url","role":"first_frame","video_url":"https://media.example.com/ref.mp4"}]}`,
+		`{"model":"doubao-seedance-1-0-lite-t2v-250428","prompt":"top-level","seconds":8,"content":[{"type":"text","text":"content"}]}`,
+		`{"model":"doubao-seedance-1-0-lite-t2v-250428","prompt":"top-level","seconds":8,"content":[]}`,
+		`{"model":"doubao-seedance-1-0-lite-t2v-250428","prompt":"top-level","seconds":8,"content":null}`,
+		`{"model":"doubao-seedance-1-0-lite-t2v-250428","seconds":8,"content":[{"type":"text","text":"content","unknown":true}]}`,
+		`{"model":"doubao-seedance-1-0-lite-t2v-250428","seconds":8,"content":[{"type":"video_url","role":"first_frame","video_url":"https://media.example.com/ref.mp4"}]}`,
 	} {
 		fake := &videoTaskAPIFake{}
 		ctx, recorder := newVideoHandlerTestContext(http.MethodPost, "/v1/videos", "application/json", strings.NewReader(body))

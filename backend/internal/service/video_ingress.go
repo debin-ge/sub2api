@@ -47,7 +47,10 @@ func (s *VideoTaskService) ResolveVideoIngress(ctx context.Context, key *APIKey,
 	if strings.TrimSpace(idempotencyKey) != "" {
 		task, err := s.tasks.GetVideoTaskByIdempotency(ctx, key.UserID, endpoint, strings.TrimSpace(idempotencyKey))
 		if err == nil {
-			if task == nil || task.UserID != key.UserID || task.Provider != VideoProviderOpenAI {
+			if task == nil || task.UserID != key.UserID {
+				return nil, ErrVideoInvalidRequest
+			}
+			if _, supported := managedVideoProviderForPlatform(task.Provider); !supported {
 				return nil, ErrVideoInvalidRequest
 			}
 			return &VideoIngressRoute{ManagedReplay: true, Decision: CompositeRouteDecision{
@@ -64,17 +67,17 @@ func (s *VideoTaskService) ResolveVideoIngress(ctx context.Context, key *APIKey,
 		if err != nil {
 			return nil, err
 		}
-		if task.Provider != VideoProviderOpenAI {
+		if _, supported := managedVideoProviderForPlatform(task.Provider); !supported {
 			return nil, ErrVideoProviderUnsupported
 		}
 		return &VideoIngressRoute{ResolveAfterParsing: true, Decision: CompositeRouteDecision{
-			Matched: true, TargetPlatform: PlatformOpenAI,
+			Matched: true, TargetPlatform: task.Provider,
 		}}, nil
 	}
 	model = strings.TrimSpace(model)
 	if model == "" {
 		var err error
-		model, err = s.defaultVideoModel(nil)
+		model, err = s.defaultVideoModel(nil, PlatformOpenAI)
 		if err != nil {
 			return nil, err
 		}
@@ -86,7 +89,7 @@ func (s *VideoTaskService) ResolveVideoIngress(ctx context.Context, key *APIKey,
 	if err != nil {
 		return nil, err
 	}
-	if !decision.Matched || (decision.TargetPlatform != PlatformOpenAI && decision.TargetPlatform != PlatformGrok) {
+	if !decision.Matched || (decision.TargetPlatform != PlatformOpenAI && decision.TargetPlatform != PlatformByteDance && decision.TargetPlatform != PlatformGrok) {
 		return nil, ErrVideoNoAccountAvailable
 	}
 	if operation == VideoOperationCharacterCreate && decision.TargetPlatform != PlatformOpenAI {
@@ -121,7 +124,7 @@ func (s *VideoTaskService) replayAfterVideoCreationFailure(ctx context.Context, 
 	return nil, cause
 }
 
-func (s *VideoTaskService) defaultVideoModel(source *VideoTask) (string, error) {
+func (s *VideoTaskService) defaultVideoModel(source *VideoTask, targetPlatform string) (string, error) {
 	if source != nil {
 		if model := firstNonEmptyString(source.RequestedModel, source.PublicModel, source.UpstreamModel); model != "" {
 			return model, nil
@@ -130,7 +133,11 @@ func (s *VideoTaskService) defaultVideoModel(source *VideoTask) (string, error) 
 	if s.providers == nil {
 		return "", ErrVideoProviderUnsupported
 	}
-	provider, ok := s.providers.Get(VideoProviderOpenAI)
+	providerName, supported := managedVideoProviderForPlatform(targetPlatform)
+	if !supported {
+		return "", ErrVideoProviderUnsupported
+	}
+	provider, ok := s.providers.Get(providerName)
 	if !ok {
 		return "", ErrVideoProviderUnsupported
 	}

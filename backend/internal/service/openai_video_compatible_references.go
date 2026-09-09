@@ -20,8 +20,6 @@ var openAIVideoCompatibleRatios = map[string]struct{}{
 	"landscape": {}, "portrait": {}, "square": {},
 }
 
-const openAICompatibleSeedance20Prefix = "doubao-seedance-2.0-"
-
 func (references ProviderVideoReferenceMedia) Empty() bool {
 	return strings.TrimSpace(references.Ratio) == "" && strings.TrimSpace(references.AspectRatio) == "" &&
 		strings.TrimSpace(references.ImageURL) == "" && strings.TrimSpace(references.FirstImageURL) == "" &&
@@ -143,44 +141,6 @@ func normalizeOpenAICompatibleVideoReferenceFraming(references ProviderVideoRefe
 		references.AspectRatio = ""
 	}
 	return references
-}
-
-func validateOpenAICompatibleSeedance20Request(request VideoCreateRequest) error {
-	seedance := false
-	for _, candidate := range []string{request.Model, request.RequestedModel} {
-		model := strings.TrimSpace(candidate)
-		lower := strings.ToLower(model)
-		if !strings.HasPrefix(lower, openAICompatibleSeedance20Prefix) {
-			continue
-		}
-		seedance = true
-		if model != lower || !validOpenAICompatibleSeedance20Model(lower) {
-			return errors.New("seedance 2.0 model is not supported")
-		}
-	}
-	if seedance && normalizeVideoOperation(request.Operation) == VideoOperationGenerate && (request.Seconds < 4 || request.Seconds > 15) {
-		return errors.New("seedance 2.0 seconds must be between 4 and 15")
-	}
-	return nil
-}
-
-func validOpenAICompatibleSeedance20Model(model string) bool {
-	parts := strings.Split(strings.TrimPrefix(model, openAICompatibleSeedance20Prefix), "-")
-	if len(parts) != 2 {
-		return false
-	}
-	variant, resolution := parts[0], parts[1]
-	if variant != "mini" && variant != "fast" && variant != "pro" {
-		return false
-	}
-	switch resolution {
-	case "480p", "720p", "1080p":
-		return true
-	case "4k":
-		return variant == "pro"
-	default:
-		return false
-	}
 }
 
 func normalizeOpenAIVideoMediaReferences(values []string, maximum int, kind string, allowData bool) ([]string, error) {

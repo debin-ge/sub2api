@@ -77,12 +77,16 @@ func TestVideoExecutionContractDetectsReturnedConflicts(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			task := baseVideoWorkerTask()
+			task.EstimatedUnits = floatPointer(8)
 			bindVideoExecutionSpecForTest(t, task, 0)
 			observed := &ProviderVideoTask{Status: VideoGenerationCompleted, Metadata: test.metadata, Usage: map[string]any{"seconds": 8}}
 			decision := videoTerminalBillingFor(task, VideoGenerationCompleted, observed)
-			require.Equal(t, VideoBillingManualReview, decision.state)
+			// A conflict is recorded as an error and releases the hold. Charging a
+			// frozen quote would bill output that failed the execution contract.
+			require.Equal(t, VideoBillingReleasePending, decision.state)
 			require.Equal(t, "execution_spec_conflict", decision.errorCode)
-			require.Nil(t, decision.actualCost)
+			require.Zero(t, *decision.actualCost)
+			require.Zero(t, *decision.actualUnits)
 			clean := videoObservedMetadata(task, observed.Metadata)
 			require.Equal(t, float64(1), clean["execution_spec_conflict"])
 			encoded, err := json.Marshal(clean)
@@ -140,8 +144,12 @@ func TestVideoExecutionContractKeepsPollingButNeverForgetsConflict(t *testing.T)
 		Metadata: map[string]any{"model": OpenAIVideoModelSora2, "size": "1280x720", "seconds": "8"}}
 	completed, err := svc.ReconcileProviderObservation(context.Background(), created.Task, observed, "provider_polled")
 	require.NoError(t, err)
-	require.Equal(t, VideoBillingManualReview, completed.BillingState)
+	require.Contains(t, []string{VideoBillingCapturePending, VideoBillingReleasePending}, completed.BillingState)
+	require.NotNil(t, completed.NextActionAt)
+	require.Equal(t, VideoActionSettle, NextVideoAction(completed))
 	require.Equal(t, float64(1), completed.ResponseMetadata["execution_spec_conflict"])
+	require.NotNil(t, completed.LastErrorCode)
+	require.Equal(t, "execution_spec_conflict", *completed.LastErrorCode)
 }
 
 func TestVideoExecutionContractExtensionUsesCombinedOutputNotBillableSegment(t *testing.T) {
@@ -152,8 +160,14 @@ func TestVideoExecutionContractExtensionUsesCombinedOutputNotBillableSegment(t *
 	decision := videoTerminalBillingFor(task, VideoGenerationCompleted, valid)
 	require.Equal(t, VideoBillingCapturePending, decision.state)
 	require.Equal(t, 8.0, *decision.actualUnits)
+	// Without a usable frozen quote the conflict must release the hold, never
+	// invent a charge.
+	require.Nil(t, task.EstimatedUnits)
 	invalid := videoTerminalBillingFor(task, VideoGenerationCompleted, &ProviderVideoTask{Metadata: map[string]any{"seconds": 8}})
-	require.Equal(t, VideoBillingManualReview, invalid.state)
+	require.Equal(t, VideoBillingReleasePending, invalid.state)
+	require.Equal(t, "execution_spec_conflict", invalid.errorCode)
+	require.Zero(t, *invalid.actualUnits)
+	require.Zero(t, *invalid.actualCost)
 }
 
 func TestVideoExecutionContractEnforcesExtensionDepthAndTotalDuration(t *testing.T) {
@@ -343,11 +357,16 @@ func TestVideoExecutionContractSettlementGuardPreservesDurableIntent(t *testing.
 	task := baseVideoWorkerTask()
 	task.GenerationState, task.BillingState, task.ActualCost = VideoGenerationCompleted, VideoBillingCapturePending, floatPointer(8)
 	bindVideoExecutionSpecForTest(t, task, 0)
+	// A recorded conflict marker is audit metadata only; it must not block or
+	// divert the settlement that was already decided at the terminal transition.
 	task.ResponseMetadata = map[string]any{"model": OpenAIVideoModelSora2Pro}
 	worker, tasks, settlements, _ := newVideoWorkerForTest(task, nil)
 	require.NoError(t, worker.settle(context.Background(), task))
-	require.Equal(t, VideoBillingManualReview, tasks.task.BillingState)
-	require.Nil(t, settlements.settlement)
+	require.Equal(t, VideoBillingCapturePending, tasks.task.BillingState)
+	require.NotNil(t, settlements.settlement)
+	require.Equal(t, BalanceSettlementCapture, settlements.settlement.Action)
+	require.InDelta(t, 8, settlements.settlement.Hold.ActualAmount, 0.000001)
+	settlements.settlement = nil
 	task.BillingState = VideoBillingCapturePending
 	frozen := &UsageBillingCommand{RequestID: VideoTaskCaptureRequestID(task.PublicID), ActualCost: 7}
 	worker.settlements = &videoSpecRecoveryStub{videoSettlementRepoStub: settlements, command: frozen}

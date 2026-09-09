@@ -24,11 +24,8 @@ type VideoMetrics struct {
 	stateTransitions  *prometheus.CounterVec
 	taskCurrent       *prometheus.GaugeVec
 	taskStateAge      *prometheus.GaugeVec
-	submissionUnknown prometheus.Gauge
-	unknownHoldAmount prometheus.Gauge
 	heldAmount        prometheus.Gauge
 	oldestSettlement  prometheus.Gauge
-	manualReviewAge   prometheus.Gauge
 	deletePending     prometheus.Gauge
 	oldestDelete      prometheus.Gauge
 	holds             *prometheus.CounterVec
@@ -73,11 +70,8 @@ type VideoOperationalMetrics struct {
 	DeletePending           int64
 	OldestDeletePending     *time.Time
 	TaskStates              []VideoTaskStateMetric
-	SubmissionUnknown       int64
-	UnknownHoldAmount       float64
 	HeldAmount              float64
 	OldestSettlementPending *time.Time
-	OldestManualReview      *time.Time
 }
 
 func DefaultVideoMetrics() *VideoMetrics {
@@ -126,14 +120,6 @@ func NewVideoMetrics(registerer prometheus.Registerer) (*VideoMetrics, error) {
 			Namespace: videoMetricsNamespace, Name: "task_state_oldest_age_seconds",
 			Help: "Age of the oldest video task in each bounded provider, operation, and generation state.",
 		}, []string{"provider", "operation", "state"}),
-		submissionUnknown: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: videoMetricsNamespace, Name: "submission_unknown_current",
-			Help: "Current number of video tasks with an unknown submission outcome.",
-		}),
-		unknownHoldAmount: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: videoMetricsNamespace, Name: "submission_unknown_hold_amount",
-			Help: "Current frozen balance amount attached to unknown video submissions.",
-		}),
 		heldAmount: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: videoMetricsNamespace, Name: "held_amount",
 			Help: "Current frozen balance amount attached to unsettled video tasks.",
@@ -141,10 +127,6 @@ func NewVideoMetrics(registerer prometheus.Registerer) (*VideoMetrics, error) {
 		oldestSettlement: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: videoMetricsNamespace, Name: "oldest_settlement_pending_age_seconds",
 			Help: "Age of the oldest pending video capture or release.",
-		}),
-		manualReviewAge: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: videoMetricsNamespace, Name: "oldest_manual_review_age_seconds",
-			Help: "Age of the oldest video billing task in manual review.",
 		}),
 		deletePending: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: videoMetricsNamespace, Name: "delete_pending_current", Help: "Video tasks awaiting content deletion.",
@@ -273,8 +255,8 @@ func NewVideoMetrics(registerer prometheus.Registerer) (*VideoMetrics, error) {
 	collectors := []prometheus.Collector{
 		metrics.submissions, metrics.submitDuration, metrics.providerGets, metrics.pollDuration,
 		metrics.stateTransitions, metrics.taskCurrent, metrics.taskStateAge,
-		metrics.submissionUnknown, metrics.unknownHoldAmount, metrics.heldAmount,
-		metrics.oldestSettlement, metrics.manualReviewAge, metrics.deletePending, metrics.oldestDelete, metrics.holds, metrics.holdAmounts,
+		metrics.heldAmount,
+		metrics.oldestSettlement, metrics.deletePending, metrics.oldestDelete, metrics.holds, metrics.holdAmounts,
 		metrics.settlements, metrics.settlementAmounts, metrics.overCaptures, metrics.overCaptureAmount,
 		metrics.workerRecoveries, metrics.workerItems, metrics.queueDepth,
 		metrics.spoolBytes, metrics.spoolMaxBytes, metrics.spoolUtilization,
@@ -521,20 +503,19 @@ func (m *VideoMetrics) UpdateOperational(snapshot VideoOperationalMetrics, now t
 		m.taskCurrent.WithLabelValues(labels...).Set(float64(maxInt64(state.Count, 0)))
 		m.taskStateAge.WithLabelValues(labels...).Set(videoAgeSeconds(now, state.OldestEnteredAt))
 	}
-	m.submissionUnknown.Set(float64(maxInt64(snapshot.SubmissionUnknown, 0)))
-	m.unknownHoldAmount.Set(nonNegativeFloat(snapshot.UnknownHoldAmount))
 	m.heldAmount.Set(nonNegativeFloat(snapshot.HeldAmount))
 	m.oldestSettlement.Set(videoAgeSeconds(now, snapshot.OldestSettlementPending))
-	m.manualReviewAge.Set(videoAgeSeconds(now, snapshot.OldestManualReview))
 	m.deletePending.Set(float64(maxInt64(snapshot.DeletePending, 0)))
 	m.oldestDelete.Set(videoAgeSeconds(now, snapshot.OldestDeletePending))
 }
 
 func videoProviderLabel(value string) string {
-	if strings.EqualFold(strings.TrimSpace(value), "openai") {
-		return "openai"
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "openai", "bytedance":
+		return strings.ToLower(strings.TrimSpace(value))
+	default:
+		return "other"
 	}
-	return "other"
 }
 
 func videoOperationLabel(value string) string {
@@ -574,7 +555,7 @@ func videoCallerLabel(value string) string {
 func videoStateLabel(value string) string {
 	value = strings.ToLower(strings.TrimSpace(value))
 	switch value {
-	case "preparing", "held", "submitting", "submission_unknown", "queued", "in_progress", "completed", "failed", "cancelled", "expired":
+	case "preparing", "held", "submitting", "queued", "in_progress", "completed", "failed", "cancelled", "expired":
 		return value
 	default:
 		return "other"

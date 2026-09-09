@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestVideoExecutionSpecPersistsAndQuarantinesConflictingObservation(t *testing.T) {
+func TestVideoExecutionSpecPersistsConflictAndSettlesAtTheFrozenQuote(t *testing.T) {
 	for _, failure := range []string{"provider_model", "snapshot_hash"} {
 		t.Run(failure, func(t *testing.T) {
 			ctx := context.Background()
@@ -53,9 +53,16 @@ func TestVideoExecutionSpecPersistsAndQuarantinesConflictingObservation(t *testi
 			observed.Status, observed.Metadata["model"] = service.VideoGenerationCompleted, service.OpenAIVideoModelSora2
 			task, err = svc.ReconcileProviderObservation(ctx, task, observed, "provider_polled")
 			require.NoError(t, err)
-			require.Equal(t, service.VideoBillingManualReview, task.BillingState)
+			// The conflict is durable audit evidence, but it never parks the task:
+			// the terminal transition settles it at the quote frozen on creation.
+			require.Equal(t, service.VideoBillingCapturePending, task.BillingState)
 			require.NotNil(t, task.LastErrorCode)
 			require.Equal(t, "execution_spec_conflict", *task.LastErrorCode)
+			require.NotNil(t, task.NextActionAt)
+			require.NotNil(t, task.ActualUnits)
+			require.NotNil(t, task.ActualCost)
+			require.InDelta(t, *task.EstimatedUnits, *task.ActualUnits, 0.000001)
+			require.InDelta(t, *task.HoldAmount, *task.ActualCost, 0.000001)
 			assertVideoBudgetTotals(t, user.ID, 1, 96, 4)
 			var intents int
 			require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM usage_billing_outbox WHERE api_key_id = $1`, key.ID).Scan(&intents))

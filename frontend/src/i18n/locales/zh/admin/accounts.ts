@@ -341,6 +341,7 @@ export default {
         kimi: 'Kimi',
         zhipu: 'Zhipu GLM',
         deepseek: 'DeepSeek',
+        bytedance: 'ByteDance',
       },
       cnProviders: {
         accountMode: {
@@ -809,6 +810,18 @@ export default {
         testModeDefault: '常规请求',
         testModeCompact: 'Compact 探测',
         modelRestrictionDisabledByPassthrough: '已开启自动透传：模型白名单/映射不会生效。',
+      },
+      bytedance: {
+        protocolMode: {
+          title: '上游协议',
+          native: '火山方舟原生（Ark）',
+          nativeDesc:
+            '直连火山方舟异步任务接口（/contents/generations/tasks）。Base URL 留空即使用方舟官方地址。',
+          openaiCompatible: 'OpenAI 兼容转发',
+          openaiCompatibleDesc:
+            '第三方中转以 OpenAI 形态（/v1/videos）转发 Seedance。必须填写中转站 Base URL。',
+          baseUrlRequired: 'OpenAI 兼容转发没有官方地址，必须填写中转站 Base URL，否则该账号无法被调度。'
+        }
       },
       grok: {
         baseUrlHint: 'Grok OAuth 账号会转发到官方 xAI API Base URL。',

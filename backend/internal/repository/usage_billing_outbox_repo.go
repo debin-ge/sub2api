@@ -76,6 +76,9 @@ type usageBillingCommandPayloadV1 struct {
 }
 
 type balanceSettlementPayloadV2 struct {
+	// BillingReviewID is only ever read. Manual billing review has been removed,
+	// so no new payload carries it; the field stays so v4 rows still in flight
+	// during a rolling upgrade decode and settle instead of failing.
 	BillingReviewID    int64                           `json:"billing_review_id,omitempty"`
 	TaskID             int64                           `json:"video_task_id"`
 	Action             service.BalanceSettlementAction `json:"action"`
@@ -224,7 +227,6 @@ func balanceSettlementToPayloadV2(settlement *service.BalanceSettlementCommand) 
 	}
 	settlement.Normalize()
 	payload := balanceSettlementPayloadV2{
-		BillingReviewID:    settlement.Hold.BillingReviewID,
 		TaskID:             settlement.TaskID,
 		Action:             settlement.Action,
 		SettlementScope:    settlement.Hold.Scope,
@@ -253,7 +255,6 @@ func (p balanceSettlementPayloadV2) settlement() *service.BalanceSettlementComma
 		TaskID: p.TaskID,
 		Action: p.Action,
 		Hold: service.BalanceHoldCommand{
-			BillingReviewID:    p.BillingReviewID,
 			RequestID:          p.RequestID,
 			APIKeyID:           p.APIKeyID,
 			RequestFingerprint: p.RequestFingerprint,
@@ -1142,7 +1143,7 @@ func marshalBalanceSettlementOutboxPayload(
 	settlement.Hold.Normalize()
 	if settlement.Billing != nil {
 		sanitizeUsageBillingCommandText(settlement.Billing)
-		if settlement.Billing.QuotaTime != nil || settlement.Hold.BillingReviewID > 0 {
+		if settlement.Billing.QuotaTime != nil {
 			settlement.Billing.RequestFingerprint = ""
 		}
 		settlement.Billing.Normalize()
@@ -1339,7 +1340,11 @@ func decodeUsageBillingOutboxEventV2(
 		return service.UsageBillingOutboxEvent{}, fmt.Errorf("decode balance settlement payload: %w", err)
 	}
 	settlement := payload.settlement()
-	if (payloadVersion == usageBillingOutboxPayloadVersionV4) != (settlement.Hold.BillingReviewID > 0) {
+	// v4 was the reviewed-video-settlement version. It is no longer produced, but
+	// a row enqueued before the upgrade must stay recognisable: the review id and
+	// the version have to agree, exactly as they did when it was written.
+	legacyReviewed := payloadVersion == usageBillingOutboxPayloadVersionV4
+	if legacyReviewed != (payload.BillingReviewID > 0) {
 		return service.UsageBillingOutboxEvent{}, fmt.Errorf("%w: reviewed video settlement requires payload v4", service.ErrUsageBillingPayloadInvalid)
 	}
 	if payloadVersion == usageBillingOutboxPayloadVersionV4 && settlement.Billing != nil {
@@ -1371,7 +1376,10 @@ func decodeUsageBillingOutboxEventV2(
 	recomputed.RequestFingerprint = ""
 	recomputed.Normalize()
 	payloadValidationError := usageBillingPayloadNumericError(payload.InvalidNumerics, nil)
-	if payloadValidationError == "" && recomputed.RequestFingerprint != fingerprint {
+	// A legacy v4 fingerprint was salted with the review id, which the current
+	// hold fingerprint no longer carries, so it cannot be recomputed. Its
+	// payload-against-column identity is still checked just above.
+	if payloadValidationError == "" && !legacyReviewed && recomputed.RequestFingerprint != fingerprint {
 		return service.UsageBillingOutboxEvent{}, errors.New("balance settlement outbox payload identity mismatch")
 	}
 	if payload.AllowOverCapture != (settlement.Hold.Scope == service.BalanceHoldScopeVideoTask) {
@@ -1528,9 +1536,6 @@ func (r *usageBillingRepository) SettleVideoBalance(
 	payloadVersion := usageBillingOutboxPayloadVersionV2
 	if settlement.Billing != nil && settlement.Billing.QuotaTime != nil {
 		payloadVersion = usageBillingOutboxPayloadVersionV3
-	}
-	if settlement.Hold.BillingReviewID > 0 {
-		payloadVersion = usageBillingOutboxPayloadVersionV4
 	}
 	event, err := r.enqueueAndClaimUsageBillingOutboxPayload(
 		ctx,
@@ -2237,9 +2242,6 @@ func (r *usageBillingRepository) completeVideoBalanceSettlementTx(
 	}
 	if result.QuotaPostedAt != nil {
 		eventFacts["quota_posted_at"] = result.QuotaPostedAt
-	}
-	if settlement.Hold.BillingReviewID > 0 {
-		eventFacts["billing_review_id"] = settlement.Hold.BillingReviewID
 	}
 	eventPayload, err := json.Marshal(eventFacts)
 	if err != nil {

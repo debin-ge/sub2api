@@ -40,6 +40,8 @@ func TestVideoCreateIntentMiddlewareMediaAdmission(t *testing.T) {
 		{"grok_encoding_is_not_reinterpreted", "application/json", "gzip", "key", service.PlatformGrok, 0, 0, 200},
 		{"native_json_uses_intent", "application/json", "", "key", service.PlatformOpenAI, 0, 1, 503},
 		{"native_encoded_json_rejected", "application/json", "gzip", "key", service.PlatformOpenAI, 0, 0, 400},
+		{"bytedance_json_uses_intent", "application/json", "", "key", service.PlatformByteDance, 0, 1, 503},
+		{"bytedance_encoded_json_rejected", "application/json", "gzip", "key", service.PlatformByteDance, 0, 0, 400},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			api := &videoCreateMiddlewareAPI{}

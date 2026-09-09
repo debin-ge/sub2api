@@ -71,6 +71,27 @@ func NewOpenAIVideoProvider(httpUpstream HTTPUpstream, tlsProfiles *TLSFingerpri
 
 func (p *OpenAIVideoProvider) Name() string { return VideoProviderOpenAI }
 
+func (p *OpenAIVideoProvider) baseURL(account *Account) string {
+	if account == nil {
+		return ""
+	}
+	return strings.TrimSpace(account.GetOpenAIBaseURL())
+}
+
+func (p *OpenAIVideoProvider) apiKey(account *Account) string {
+	if account == nil {
+		return ""
+	}
+	return strings.TrimSpace(account.GetOpenAIApiKey())
+}
+
+func (p *OpenAIVideoProvider) userAgent(account *Account) string {
+	if account == nil {
+		return ""
+	}
+	return strings.TrimSpace(account.GetOpenAIUserAgent())
+}
+
 func (p *OpenAIVideoProvider) Capabilities() VideoCapabilities {
 	if p == nil {
 		return VideoCapabilities{}
@@ -84,7 +105,10 @@ func (p *OpenAIVideoProvider) Capabilities() VideoCapabilities {
 }
 
 func (p *OpenAIVideoProvider) SupportsAccount(account *Account) bool {
-	return account != nil && account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityVideos)
+	if account == nil {
+		return false
+	}
+	return account.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityVideos)
 }
 
 func (p *OpenAIVideoProvider) ProbeCapability(ctx context.Context, account *Account, capability VideoCapability) (*VideoCapabilityProbeResult, error) {
@@ -102,7 +126,7 @@ func (p *OpenAIVideoProvider) ProbeCapability(ctx context.Context, account *Acco
 		Provider: VideoProviderOpenAI, Capability: string(OpenAIEndpointCapabilityVideos),
 		Status: VideoCapabilityProbeUnknown, CheckedAt: checkedAt,
 	}
-	baseURL := strings.TrimSpace(account.GetOpenAIBaseURL())
+	baseURL := p.baseURL(account)
 	parsed, err := url.Parse(baseURL)
 	if err != nil || !strings.EqualFold(parsed.Hostname(), "api.openai.com") {
 		result.ErrorSummary = "custom_base_url_requires_override"
@@ -124,9 +148,9 @@ func (p *OpenAIVideoProvider) ProbeCapability(ctx context.Context, account *Acco
 	query := req.URL.Query()
 	query.Set("limit", "1")
 	req.URL.RawQuery = query.Encode()
-	req.Header.Set("Authorization", "Bearer "+account.GetOpenAIApiKey())
+	req.Header.Set("Authorization", "Bearer "+p.apiKey(account))
 	req.Header.Set("Accept", "application/json")
-	if userAgent := account.GetOpenAIUserAgent(); userAgent != "" {
+	if userAgent := p.userAgent(account); userAgent != "" {
 		req.Header.Set("User-Agent", userAgent)
 	}
 	account.ApplyHeaderOverrides(req.Header)
@@ -327,6 +351,38 @@ func (p *OpenAIVideoProvider) Get(ctx context.Context, account *Account, ref Pro
 	return task, nil
 }
 
+// SearchByClientToken is used only by automatic submission reconciliation. It
+// never creates a task and returns nil,nil when the upstream has no match.
+func (p *OpenAIVideoProvider) SearchByClientToken(ctx context.Context, account *Account, clientToken string) (*ProviderVideoTask, error) {
+	clientToken = strings.TrimSpace(clientToken)
+	if p == nil || clientToken == "" {
+		return nil, ErrVideoInvalidRequest
+	}
+	endpoint := openAIVideosEndpoint + "?client_token=" + url.QueryEscape(clientToken)
+	response, err := p.do(ctx, account, http.MethodGet, endpoint, nil, "", false)
+	if err != nil {
+		return nil, controlVideoProviderError(err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode == http.StatusNotFound || response.StatusCode == http.StatusMethodNotAllowed {
+		return nil, nil
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return nil, p.responseError(response, account, false)
+	}
+	items, err := decodeOpenAIVideoTaskList(response.Body)
+	if err != nil {
+		return nil, controlVideoProviderError(err)
+	}
+	for _, item := range items {
+		if item == nil || !validVideoProviderIdentifier(item.ProviderTaskID) {
+			continue
+		}
+		return item, nil
+	}
+	return nil, nil
+}
+
 func (p *OpenAIVideoProvider) Delete(ctx context.Context, account *Account, ref ProviderTaskRef) error {
 	return p.delete(ctx, account, openAIVideosEndpoint+"/"+url.PathEscape(ref.ProviderTaskID))
 }
@@ -386,7 +442,7 @@ func (p *OpenAIVideoProvider) OpenContent(ctx context.Context, account *Account,
 			}
 			target, _ := url.Parse(normalized)
 			requestCtx := ctx
-			if videoContentURLMatchesAccount(target, account) {
+			if videoContentURLMatchesBaseURL(target, p.baseURL(account)) {
 				requestCtx = WithHTTPUpstreamRedirectsDisabled(WithHTTPUpstreamProfile(ctx, HTTPUpstreamProfileOpenAI))
 			} else {
 				if !strings.EqualFold(target.Scheme, "https") {
@@ -406,8 +462,8 @@ func (p *OpenAIVideoProvider) OpenContent(ctx context.Context, account *Account,
 				return nil, err
 			}
 			if len(initialAddresses) == 0 {
-				req.Header.Set("Authorization", "Bearer "+account.GetOpenAIApiKey())
-				if userAgent := account.GetOpenAIUserAgent(); userAgent != "" {
+				req.Header.Set("Authorization", "Bearer "+p.apiKey(account))
+				if userAgent := p.userAgent(account); userAgent != "" {
 					req.Header.Set("User-Agent", userAgent)
 				}
 				account.ApplyHeaderOverrides(req.Header)
@@ -496,11 +552,11 @@ func (p *OpenAIVideoProvider) executeContentRedirectsFrom(ctx context.Context, r
 	}
 }
 
-func videoContentURLMatchesAccount(target *url.URL, account *Account) bool {
-	if target == nil || account == nil {
+func videoContentURLMatchesBaseURL(target *url.URL, baseURL string) bool {
+	if target == nil {
 		return false
 	}
-	base, err := url.Parse(strings.TrimSpace(account.GetOpenAIBaseURL()))
+	base, err := url.Parse(strings.TrimSpace(baseURL))
 	if err != nil || base.Hostname() == "" {
 		return false
 	}
@@ -888,14 +944,14 @@ func (p *OpenAIVideoProvider) validateAccountAndRequest(account *Account, reques
 	if p == nil || p.httpUpstream == nil || !p.SupportsAccount(account) {
 		return rejectedVideoProviderError("permission", "unsupported_account", "account does not support OpenAI videos", http.StatusForbidden)
 	}
+	if hasByteDanceSeedanceModel(request) {
+		return rejectedVideoProviderError("validation", "unsupported_model", "Seedance models require the ByteDance video provider", http.StatusBadRequest)
+	}
 	if err := ValidateVideoCreateCapabilities(p.Capabilities(), request, inputs); err != nil {
 		return rejectedVideoProviderError("validation", "unsupported_capability", err.Error(), http.StatusBadRequest)
 	}
 	if strings.TrimSpace(request.Prompt) == "" {
 		return rejectedVideoProviderError("validation", "prompt_required", "video prompt is required", http.StatusBadRequest)
-	}
-	if err := validateOpenAICompatibleSeedance20Request(request); err != nil {
-		return rejectedVideoProviderError("validation", "invalid_seedance_request", err.Error(), http.StatusBadRequest)
 	}
 	if request.AudioEnabled != nil || strings.TrimSpace(request.ServiceTier) != "" || len(request.ProviderOptions) > 0 {
 		return rejectedVideoProviderError("validation", "unsupported_option", "OpenAI video request contains an unsupported option", http.StatusBadRequest)
@@ -973,20 +1029,10 @@ func openAIVideoCreateJSON(account *Account, request VideoCreateRequest) (map[st
 }
 
 func openAIVideoJSONSeconds(account *Account, request VideoCreateRequest) any {
-	if isOfficialOpenAIVideoAccount(account) || isOpenAICompatibleSeedance20Request(request) {
+	if isOfficialOpenAIVideoAccount(account) {
 		return strconv.Itoa(request.Seconds)
 	}
 	return request.Seconds
-}
-
-func isOpenAICompatibleSeedance20Request(request VideoCreateRequest) bool {
-	for _, candidate := range []string{request.Model, request.RequestedModel} {
-		model := strings.TrimSpace(candidate)
-		if model == strings.ToLower(model) && validOpenAICompatibleSeedance20Model(model) {
-			return true
-		}
-	}
-	return false
 }
 
 func openAIVideoMultipartFields(request VideoCreateRequest) map[string]string {
@@ -1128,19 +1174,19 @@ func (p *OpenAIVideoProvider) newRequest(ctx context.Context, account *Account, 
 	if !p.SupportsAccount(account) {
 		return nil, rejectedVideoProviderError("permission", "unsupported_account", "account does not support OpenAI videos", http.StatusForbidden)
 	}
-	baseURL := account.GetOpenAIBaseURL()
+	baseURL := p.baseURL(account)
 	target := buildOpenAIEndpointURL(baseURL, endpoint)
 	requestCtx := WithHTTPUpstreamRedirectsDisabled(WithHTTPUpstreamProfile(ctx, HTTPUpstreamProfileOpenAI))
 	req, err := http.NewRequestWithContext(requestCtx, method, target, body)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+account.GetOpenAIApiKey())
+	req.Header.Set("Authorization", "Bearer "+p.apiKey(account))
 	req.Header.Set("Accept", "application/json")
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
-	if userAgent := account.GetOpenAIUserAgent(); userAgent != "" {
+	if userAgent := p.userAgent(account); userAgent != "" {
 		req.Header.Set("User-Agent", userAgent)
 	}
 	account.ApplyHeaderOverrides(req.Header)
@@ -1233,6 +1279,38 @@ func decodeOpenAIVideoTask(reader io.Reader, submission bool) (*ProviderVideoTas
 	return task, nil
 }
 
+func decodeOpenAIVideoTaskList(reader io.Reader) ([]*ProviderVideoTask, error) {
+	raw, err := io.ReadAll(io.LimitReader(reader, openAIVideoMaxJSONResponse+1))
+	if err != nil || int64(len(raw)) > openAIVideoMaxJSONResponse {
+		return nil, errors.New("OpenAI video search response is too large")
+	}
+	var envelope struct {
+		Data []json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err == nil && envelope.Data != nil {
+		items := make([]*ProviderVideoTask, 0, len(envelope.Data))
+		for _, itemRaw := range envelope.Data {
+			item, itemErr := decodeOpenAIVideoTask(bytes.NewReader(itemRaw), false)
+			if itemErr == nil {
+				items = append(items, item)
+			}
+		}
+		return items, nil
+	}
+	var array []json.RawMessage
+	if err := json.Unmarshal(raw, &array); err != nil {
+		return nil, err
+	}
+	items := make([]*ProviderVideoTask, 0, len(array))
+	for _, itemRaw := range array {
+		item, itemErr := decodeOpenAIVideoTask(bytes.NewReader(itemRaw), false)
+		if itemErr == nil {
+			items = append(items, item)
+		}
+	}
+	return items, nil
+}
+
 func normalizeProviderVideoURL(raw string) (string, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -1278,7 +1356,7 @@ func (p *OpenAIVideoProvider) responseError(response *http.Response, account *Ac
 	body, _ := io.ReadAll(io.LimitReader(response.Body, openAIVideoMaxErrorResponse))
 	secret := ""
 	if account != nil {
-		secret = account.GetOpenAIApiKey()
+		secret = p.apiKey(account)
 	}
 	message, code := parseOpenAIVideoError(body)
 	message = boundedProviderMessage(message, append([]string{secret}, sensitiveValues...)...)

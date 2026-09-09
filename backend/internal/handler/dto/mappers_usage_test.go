@@ -351,7 +351,7 @@ func TestUsageLogFromService_IncludesVideoBillingMetadataForUserAndAdmin(t *test
 	duration := 7
 	mediaType := "video"
 	log := &service.UsageLog{
-		RequestID: "video:capture:test", Model: "doubao-seedance-2.0-mini-480p",
+		RequestID: "video:capture:test", Model: "doubao-seedance-1-0-lite-t2v-250428",
 		BillingMode: &billingMode, BillingTier: &billingUnit, MediaType: &mediaType,
 		OutputTokens: 125_000, OutputCost: 0.25, TotalCost: 0.25, ActualCost: 0.375,
 		VideoCount: 1, VideoResolution: &resolution, VideoDurationSeconds: &duration,

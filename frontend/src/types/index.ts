@@ -671,7 +671,7 @@ export interface PaginationConfig {
 
 // ==================== API Key & Group Types ====================
 
-export type GroupPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'grok' | 'kimi' | 'zhipu' | 'deepseek' | 'minimax' | 'glm' | 'windsurf' | 'opencode' | 'composite'
+export type GroupPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'grok' | 'kimi' | 'zhipu' | 'deepseek' | 'minimax' | 'glm' | 'windsurf' | 'opencode' | 'bytedance' | 'composite'
 
 export type VideoModelPrices = Record<string, Record<string, number>>
 
@@ -834,6 +834,10 @@ export type CompositeRouteEndpoint =
   | 'chat_completions'
   | 'embeddings'
   | 'images'
+  | 'videos'
+  | 'video_edits'
+  | 'video_extensions'
+  | 'video_characters'
   | 'gemini'
 
 export type CompositeRouteSource = 'route' | 'detector' | string
@@ -1088,7 +1092,7 @@ export interface UpdateGroupRequest {
 
 // ==================== Account & Proxy Types ====================
 
-export type AccountPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'grok' | 'kimi' | 'zhipu' | 'deepseek' | 'minimax' | 'glm' | 'windsurf' | 'opencode'
+export type AccountPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'grok' | 'kimi' | 'zhipu' | 'deepseek' | 'minimax' | 'glm' | 'windsurf' | 'opencode' | 'bytedance'
 export type AccountType = 'oauth' | 'setup-token' | 'apikey' | 'upstream' | 'bedrock' | 'service_account'
 export type OAuthAddMethod = 'oauth' | 'setup-token'
 export type ProxyProtocol = 'http' | 'https' | 'socks5' | 'socks5h'

@@ -21,29 +21,65 @@ func TestOpenAICompatibleVideoReferenceFields(t *testing.T) {
 	require.Equal(t, []string{"data:audio/mpeg;base64,YXVkaW8="}, fields["reference_audios"])
 }
 
-func TestOpenAICompatibleSeedance20Validation(t *testing.T) {
+func TestByteDanceSeedanceValidation(t *testing.T) {
+	for _, model := range []string{
+		ByteDanceVideoModelSeedance10Lite,
+		ByteDanceVideoModelSeedance10Pro,
+		// An Ark release this build has never heard of still validates: the
+		// account model_mapping is the routing whitelist, not this snapshot.
+		"doubao-seedance-1-1-pro-260101",
+	} {
+		require.NoError(t, validateByteDanceSeedanceRequest(VideoCreateRequest{
+			Operation: VideoOperationGenerate, Model: model, Seconds: 10,
+		}))
+	}
+	for name, request := range map[string]VideoCreateRequest{
+		"uppercase model": {Operation: VideoOperationGenerate, Model: "Doubao-Seedance-1-0-Pro-250528", Seconds: 10},
+		"missing model":   {Operation: VideoOperationGenerate, Seconds: 10},
+		"missing seconds": {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro},
+		"absurd seconds":  {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Seconds: 600},
+		// Ark derives the frame size from resolution plus ratio, so an OpenAI
+		// "WxH" would have to be guessed at — and a wrong guess bills one
+		// resolution while generating another.
+		"size":   {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Seconds: 10, Size: "1280x720"},
+		"width":  {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Seconds: 10, Width: 1280},
+		"height": {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Seconds: 10, Height: 720},
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.Error(t, validateByteDanceSeedanceRequest(request))
+		})
+	}
+}
+
+// The Seedance guard keys off a fully qualified Ark prefix. A bare variant name
+// must not be mistaken for a Seedance model, or an unrelated model would be
+// diverted away from the OpenAI provider.
+func TestHasByteDanceSeedanceModelRequiresArkPrefix(t *testing.T) {
+	require.True(t, hasByteDanceSeedanceModel(VideoCreateRequest{Model: ByteDanceVideoModelSeedance10Pro}))
+	require.True(t, hasByteDanceSeedanceModel(VideoCreateRequest{RequestedModel: "DOUBAO-SEEDANCE-1-0-PRO-250528"}))
+	for _, model := range []string{"mini-480p", "pro-720p", "seedance-1-0-pro", "sora-2", ""} {
+		require.False(t, hasByteDanceSeedanceModel(VideoCreateRequest{Model: model, RequestedModel: model}), model)
+	}
+}
+
+func TestLegacyOpenAICompatibleSeedance20Request(t *testing.T) {
 	for _, model := range []string{
 		"doubao-seedance-2.0-mini-480p",
 		"doubao-seedance-2.0-fast-720p",
 		"doubao-seedance-2.0-pro-1080p",
 		"doubao-seedance-2.0-pro-4k",
 	} {
-		require.NoError(t, validateOpenAICompatibleSeedance20Request(VideoCreateRequest{
-			Operation: VideoOperationGenerate, Model: model, Seconds: 10,
-		}))
+		require.True(t, isLegacyOpenAICompatibleSeedance20Request(VideoCreateRequest{Model: model}), model)
 	}
-	for _, request := range []VideoCreateRequest{
-		{Operation: VideoOperationGenerate, Model: "doubao-seedance-2.0-mini-4k", Seconds: 10},
-		{Operation: VideoOperationGenerate, Model: "doubao-seedance-2.0-pro-720p", Seconds: 3},
-		{Operation: VideoOperationGenerate, Model: "doubao-seedance-2.0-pro-720p", Seconds: 16},
-		{Operation: VideoOperationGenerate, Model: "Doubao-Seedance-2.0-Pro-720p", Seconds: 10},
+	for _, model := range []string{
+		"mini-480p",
+		"doubao-seedance-2.0-mini-4k",
+		"doubao-seedance-2.0-pro-1440p",
+		"Doubao-Seedance-2.0-Pro-720p",
+		ByteDanceVideoModelSeedance10Pro,
 	} {
-		require.Error(t, validateOpenAICompatibleSeedance20Request(request))
+		require.False(t, isLegacyOpenAICompatibleSeedance20Request(VideoCreateRequest{Model: model}), model)
 	}
-	require.Error(t, validateOpenAICompatibleSeedance20Request(VideoCreateRequest{
-		Operation: VideoOperationGenerate, Model: OpenAIVideoModelSora2,
-		RequestedModel: "doubao-seedance-2.0-pro-720p", Seconds: 16,
-	}))
 }
 
 func TestOpenAICompatibleVideoReferenceFieldsRejectsInvalidCombinations(t *testing.T) {

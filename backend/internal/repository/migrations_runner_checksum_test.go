@@ -1,8 +1,12 @@
 package repository
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/migrations"
 	"github.com/stretchr/testify/require"
 )
 
@@ -170,4 +174,53 @@ func TestIsMigrationChecksumCompatible(t *testing.T) {
 		)
 		require.True(t, ok)
 	})
+
+	t.Run("269首版checksum兼容修订版", func(t *testing.T) {
+		ok := isMigrationChecksumCompatible(
+			"269_drop_video_manual_review.sql",
+			"92e6fb7a1926ad560e03572f0583c0827df7c7c1423641f83eada7cd41c76c1b",
+			"00e601e6ff1994f3e142b216e72abd3c426574db718d4fc3037605e422f602f9",
+		)
+		require.True(t, ok)
+	})
+}
+
+// migrationChecksumRulesWithKnownDrift 记录 fileChecksum 已经和文件内容对不上的
+// 历史规则。它们随上游发布合并进来，规则常量没有跟着更新，后果是：持有该规则所列
+// 历史 checksum 的库启动会直接失败（isMigrationChecksumCompatible 要求当前文件
+// checksum 也落在集合内）。逐条修复需要知道各环境在野的真实 checksum，不在本次
+// 变更范围内，因此显式登记而不是让不变量失效。
+var migrationChecksumRulesWithKnownDrift = map[string]struct{}{
+	"109_auth_identity_compat_backfill.sql":                   {},
+	"110_pending_auth_and_provider_default_grants.sql":        {},
+	"112_add_payment_order_provider_key_snapshot.sql":         {},
+	"118_wechat_dual_mode_and_auth_source_defaults.sql":       {},
+	"123_fix_legacy_auth_source_grant_on_signup_defaults.sql": {},
+	"195_channel_monitor_mode.sql":                            {},
+	"218_group_audio_voice_pricing.sql":                       {},
+	"219_group_search_price_per_1k.sql":                       {},
+	"220_clear_non_grok_video_generation_config.sql":          {},
+}
+
+// 兼容规则里的 fileChecksum 是手抄进来的常量。一旦有人再改一次迁移而忘记同步，
+// 症状是应用在生产启动时 checksum mismatch 崩溃循环——这正是 269 的事故形态。
+// 把常量与嵌入文件的真实内容绑死，让它退化成一条本地就能发现的失败。
+func TestMigrationChecksumCompatibilityRulesMatchEmbeddedFiles(t *testing.T) {
+	for name, rule := range migrationChecksumCompatibilityRules {
+		content, err := migrations.FS.ReadFile(name)
+		if err != nil {
+			// 历史迁移可能已随功能下线一并删除，规则留着只为老库能继续启动。
+			continue
+		}
+		sum := sha256.Sum256([]byte(strings.TrimSpace(string(content))))
+		actual := hex.EncodeToString(sum[:])
+		if _, drifted := migrationChecksumRulesWithKnownDrift[name]; drifted {
+			// 反向断言：修好某条后测试会提示把它从登记表里删掉，避免清单越留越久。
+			require.NotEqualf(t, rule.fileChecksum, actual,
+				"%s 的 fileChecksum 已经对齐，请从 migrationChecksumRulesWithKnownDrift 中移除", name)
+			continue
+		}
+		require.Equalf(t, rule.fileChecksum, actual,
+			"%s 的内容与兼容规则里的 fileChecksum 不一致：改动已应用的迁移后必须同步该常量，否则已应用旧版本的库会拒绝启动", name)
+	}
 }

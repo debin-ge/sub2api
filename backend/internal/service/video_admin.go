@@ -68,22 +68,19 @@ type VideoAdminCallbackPage struct {
 }
 
 type VideoAdminOverview struct {
-	TasksByGeneration    map[string]int64         `json:"tasks_by_generation"`
-	TasksByBilling       map[string]int64         `json:"tasks_by_billing"`
-	TasksByDelete        map[string]int64         `json:"tasks_by_delete"`
-	CallbacksByStatus    map[string]int64         `json:"callbacks_by_status"`
-	TaskStates           []VideoTaskStateSnapshot `json:"task_states"`
-	SubmissionUnknown    int64                    `json:"submission_unknown"`
-	UnknownHoldAmount    float64                  `json:"unknown_hold_amount"`
-	HeldAmount           float64                  `json:"held_amount"`
-	UnmatchedWebhooks    int64                    `json:"unmatched_webhooks"`
-	OldestTaskPendingAt  *time.Time               `json:"oldest_task_pending_at,omitempty"`
-	OldestBillingAt      *time.Time               `json:"oldest_billing_at,omitempty"`
-	OldestManualReviewAt *time.Time               `json:"oldest_manual_review_at,omitempty"`
-	OldestCallbackAt     *time.Time               `json:"oldest_callback_at,omitempty"`
-	Queue                *VideoTaskQueueStats     `json:"queue,omitempty"`
-	QueueStatus          string                   `json:"queue_status"`
-	Spool                VideoSpoolHealth         `json:"spool"`
+	TasksByGeneration   map[string]int64         `json:"tasks_by_generation"`
+	TasksByBilling      map[string]int64         `json:"tasks_by_billing"`
+	TasksByDelete       map[string]int64         `json:"tasks_by_delete"`
+	CallbacksByStatus   map[string]int64         `json:"callbacks_by_status"`
+	TaskStates          []VideoTaskStateSnapshot `json:"task_states"`
+	HeldAmount          float64                  `json:"held_amount"`
+	UnmatchedWebhooks   int64                    `json:"unmatched_webhooks"`
+	OldestTaskPendingAt *time.Time               `json:"oldest_task_pending_at,omitempty"`
+	OldestBillingAt     *time.Time               `json:"oldest_billing_at,omitempty"`
+	OldestCallbackAt    *time.Time               `json:"oldest_callback_at,omitempty"`
+	Queue               *VideoTaskQueueStats     `json:"queue,omitempty"`
+	QueueStatus         string                   `json:"queue_status"`
+	Spool               VideoSpoolHealth         `json:"spool"`
 }
 
 type VideoAdminRepository interface {
@@ -231,14 +228,6 @@ func (s *VideoAdminService) Overview(ctx context.Context) (*VideoAdminOverview, 
 	return overview, nil
 }
 
-func (s *VideoAdminService) ResolveNotCreated(ctx context.Context, publicID string) (*VideoTask, error) {
-	return s.proposeSubmissionReview(ctx, strings.TrimSpace(publicID), VideoSubmissionNotCreated, "")
-}
-
-func (s *VideoAdminService) ResolveCreated(ctx context.Context, publicID, providerTaskID string) (*VideoTask, error) {
-	return s.proposeSubmissionReview(ctx, strings.TrimSpace(publicID), VideoSubmissionCreated, providerTaskID)
-}
-
 func (s *VideoAdminService) RetryProviderGet(ctx context.Context, publicID string) (*VideoTask, error) {
 	if s == nil || s.taskSvc == nil || !IsValidVideoTaskID(publicID) {
 		return nil, ErrVideoInvalidRequest
@@ -247,7 +236,7 @@ func (s *VideoAdminService) RetryProviderGet(ctx context.Context, publicID strin
 	if err != nil {
 		return nil, err
 	}
-	if task.BillingState != VideoBillingHeld && task.BillingState != VideoBillingManualReview {
+	if task.BillingState != VideoBillingHeld {
 		return nil, ErrVideoInvalidTransition
 	}
 	return s.taskSvc.RefreshProviderTask(ctx, task)
@@ -276,20 +265,6 @@ func (s *VideoAdminService) RetrySettlement(ctx context.Context, publicID string
 		_, _ = s.queue.Enqueue(context.WithoutCancel(ctx), task.PublicID)
 	}
 	return task, err
-}
-
-func (s *VideoAdminService) ResolveBillingCapture(ctx context.Context, publicID string, actualUnits float64) (*VideoTask, error) {
-	if s == nil || !IsValidVideoTaskID(publicID) {
-		return nil, ErrVideoInvalidRequest
-	}
-	return s.proposeBillingReview(ctx, publicID, BalanceSettlementCapture, actualUnits)
-}
-
-func (s *VideoAdminService) ResolveBillingRelease(ctx context.Context, publicID string) (*VideoTask, error) {
-	if s == nil || !IsValidVideoTaskID(publicID) {
-		return nil, ErrVideoInvalidRequest
-	}
-	return s.proposeBillingReview(ctx, publicID, BalanceSettlementRelease, 0)
 }
 
 func (s *VideoAdminService) RetryDelete(ctx context.Context, publicID string) (*VideoTask, error) {

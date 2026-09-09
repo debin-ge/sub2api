@@ -58,14 +58,14 @@
             />
           </div>
         </label>
-        <label v-if="activeTab === 'tasks' || activeTab === 'unknown'" class="w-full lg:w-44">
+        <label v-if="activeTab === 'tasks'" class="w-full lg:w-44">
           <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">{{ t('admin.videos.filters.generation') }}</span>
-          <select v-model="filters.generation_state" class="input h-9 w-full" :disabled="activeTab === 'unknown'">
+          <select v-model="filters.generation_state" class="input h-9 w-full">
             <option value="">{{ t('admin.videos.filters.all') }}</option>
             <option v-for="state in generationStates" :key="state" :value="state">{{ stateLabel(state) }}</option>
           </select>
         </label>
-        <label v-if="activeTab === 'tasks' || activeTab === 'unknown'" class="w-full lg:w-44">
+        <label v-if="activeTab === 'tasks'" class="w-full lg:w-44">
           <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">{{ t('admin.videos.filters.billing') }}</span>
           <select v-model="filters.billing_state" class="input h-9 w-full">
             <option value="">{{ t('admin.videos.filters.all') }}</option>
@@ -79,7 +79,7 @@
             <option v-for="state in currentStatusOptions" :key="state" :value="state">{{ stateLabel(state) }}</option>
           </select>
         </label>
-        <label v-if="activeTab === 'tasks' || activeTab === 'unknown' || activeTab === 'resources'" class="w-full lg:w-32">
+        <label v-if="activeTab === 'tasks' || activeTab === 'resources'" class="w-full lg:w-32">
           <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">{{ t('admin.videos.filters.account') }}</span>
           <input v-model.trim="filters.account_id" inputmode="numeric" class="input h-9 w-full" placeholder="ID" @keyup.enter="applyFilters" />
         </label>
@@ -96,7 +96,7 @@
           {{ error }}
         </div>
         <div class="overflow-x-auto">
-          <table v-if="activeTab === 'tasks' || activeTab === 'unknown'" class="w-full min-w-[1080px] text-sm">
+          <table v-if="activeTab === 'tasks'" class="w-full min-w-[1080px] text-sm">
             <thead class="bg-gray-50 text-left text-xs text-gray-500 dark:bg-dark-800 dark:text-gray-400">
               <tr>
                 <th class="px-4 py-3 font-medium">{{ t('admin.videos.columns.task') }}</th>
@@ -198,72 +198,6 @@
           <p class="font-medium">{{ selectedTask.last_error_code || selectedTask.last_error_kind }}</p><p class="mt-1 break-words">{{ selectedTask.last_error_message }}</p>
         </div>
 
-		<div v-if="selectedTask.generation_state === 'submission_unknown'" class="space-y-3 border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/50 dark:bg-amber-950/20">
-          <p class="text-sm font-medium text-amber-900 dark:text-amber-200">{{ t('admin.videos.unknown.title') }}</p>
-          <p class="text-xs">{{ t('admin.videos.unknown.reviewHelp') }}</p>
-          <input v-model.trim="reviewReason" class="input" maxlength="512" :placeholder="t('admin.videos.billingReview.reason')" />
-          <input v-model.trim="reviewEvidence" class="input font-mono" maxlength="128" :placeholder="t('admin.videos.billingReview.evidenceRef')" />
-          <div class="flex flex-col gap-2 sm:flex-row">
-            <input v-model.trim="providerTaskID" class="input h-9 min-w-0 flex-1 font-mono" :placeholder="t('admin.videos.unknown.providerIdPlaceholder')" />
-			<button type="button" class="btn btn-primary" :disabled="actionLoading || !providerTaskID || !reviewEvidenceReady || hasPendingSubmissionReview" @click="resolveCreated">{{ t('admin.videos.actions.confirmCreated') }}</button>
-			<button type="button" class="btn btn-secondary" :disabled="actionLoading || !reviewEvidenceReady || hasPendingSubmissionReview" @click="resolveNotCreated">{{ t('admin.videos.actions.confirmNotCreated') }}</button>
-		  </div>
-		</div>
-
-		<div v-if="selectedTask.billing_state === 'manual_review' && selectedTask.generation_state !== 'submission_unknown'" class="space-y-3 border border-red-200 bg-red-50 p-4 dark:border-red-900/50 dark:bg-red-950/20">
-		  <p class="text-sm font-medium text-red-900 dark:text-red-200">{{ t('admin.videos.billingReview.title') }}</p>
-		  <p class="text-xs text-gray-600 dark:text-gray-400">{{ t('admin.videos.billingReview.evidenceHelp') }}</p>
-		  <input v-model.trim="reviewReason" class="input" maxlength="512" :placeholder="t('admin.videos.billingReview.reason')" />
-		  <input v-model.trim="reviewEvidence" class="input font-mono" maxlength="128" :placeholder="t('admin.videos.billingReview.evidenceRef')" />
-		  <label class="flex items-center gap-2 text-xs"><input v-model="honorFrozenQuote" type="checkbox" />{{ t('admin.videos.billingReview.honorQuote') }}</label>
-		  <div class="flex flex-col gap-2 sm:flex-row">
-			<input
-			  v-if="!isCharacterPersistenceReview(selectedTask)"
-			  v-model.trim="manualActualUnits"
-			  class="input h-9 min-w-0 flex-1 font-mono"
-			  inputmode="decimal"
-			  :placeholder="t('admin.videos.billingReview.actualUnitsPlaceholder')"
-			/>
-			<button v-if="isCharacterPersistenceReview(selectedTask)" type="button" class="btn btn-primary" :disabled="actionLoading" @click="repairCharacterResource">{{ t('admin.videos.actions.repairResource') }}</button>
-			<button v-else type="button" class="btn btn-primary" :disabled="actionLoading || !canResolveBillingCapture(selectedTask)" @click="resolveBillingCapture">{{ t('admin.videos.actions.resolveCapture') }}</button>
-			<button v-if="selectedTask.generation_state !== 'completed'" type="button" class="btn btn-secondary" :disabled="actionLoading || !reviewEvidenceReady || hasPendingBillingReview" @click="resolveBillingRelease">{{ t('admin.videos.actions.resolveRelease') }}</button>
-		  </div>
-		</div>
-
-		<section v-if="submissionReviews.length" class="space-y-3 rounded-lg border border-amber-200 p-4 dark:border-amber-900" data-test="video-submission-reviews">
-		  <h3 class="font-medium">{{ t('admin.videos.unknown.reviewHistory') }}</h3>
-		  <input v-model.trim="reviewDecisionReason" class="input" maxlength="512" :placeholder="t('admin.videos.billingReview.decisionReason')" />
-		  <div v-for="review in submissionReviews" :key="review.id" class="space-y-2 border-t pt-3 text-sm">
-		    <p class="font-mono">#{{ review.id }} · {{ review.action }} · {{ review.status }} · {{ review.provider_task_id || '-' }}</p>
-		    <p>{{ t('admin.videos.billingReview.proposer') }}: {{ review.proposed_by }} · {{ t('admin.videos.billingReview.decider') }}: {{ review.decided_by ?? '-' }}</p>
-		    <p class="break-words">{{ review.reason }} · {{ review.evidence_ref }}</p>
-		    <p v-if="review.decision_reason" class="break-words">{{ review.decision_reason }}</p>
-		    <details><summary>{{ t('admin.videos.billingReview.frozenFacts') }}</summary><pre class="max-h-60 overflow-auto whitespace-pre-wrap text-xs">{{ JSON.stringify(review.facts, null, 2) }}</pre></details>
-		    <div v-if="review.status === 'pending'" class="flex gap-2">
-		      <button class="btn btn-primary" :disabled="actionLoading || reviewDecisionReason.length < 4 || authStore.user?.id === review.proposed_by" @click="decideSubmissionReview(review, true)">{{ t('admin.videos.billingReview.approve') }}</button>
-		      <button class="btn btn-secondary" :disabled="actionLoading || reviewDecisionReason.length < 4" @click="decideSubmissionReview(review, false)">{{ t('admin.videos.billingReview.reject') }}</button>
-		    </div>
-		  </div>
-		</section>
-
-		<section v-if="billingReviews.length" class="space-y-3 rounded-lg border border-gray-200 p-4 dark:border-dark-600">
-		  <h3 class="font-medium">{{ t('admin.videos.billingReview.history') }}</h3>
-		  <input v-model.trim="reviewDecisionReason" class="input" maxlength="512" :placeholder="t('admin.videos.billingReview.decisionReason')" />
-		  <div v-for="review in billingReviews" :key="review.id" class="space-y-1 border-t border-gray-100 pt-3 text-sm dark:border-dark-600">
-		    <p class="font-mono">#{{ review.id }} · {{ review.action }} · {{ review.status }} · {{ review.actual_cost.toFixed(8) }} {{ selectedTask.currency }}</p>
-		    <p>{{ t('admin.videos.billingReview.proposer') }} #{{ review.proposed_by }} · {{ review.evidence_ref }}</p>
-		    <p class="break-words">{{ review.reason }}</p>
-		    <details><summary>{{ t('admin.videos.billingReview.snapshot') }}</summary><pre class="max-h-64 overflow-auto whitespace-pre-wrap break-all text-xs">{{ JSON.stringify(review.facts, null, 2) }}</pre></details>
-		    <p v-if="review.honor_frozen_quote" class="text-amber-700 dark:text-amber-300">{{ t('admin.videos.billingReview.honorQuote') }}</p>
-		    <p v-if="review.decision_reason" class="break-words">#{{ review.decided_by }} · {{ review.decision_reason }}</p>
-		    <div v-if="review.status === 'pending'" class="flex flex-wrap gap-2">
-		      <span class="text-xs text-amber-700 dark:text-amber-300">{{ t('admin.videos.billingReview.pending') }}</span>
-		      <button class="btn btn-primary" :disabled="actionLoading || review.proposed_by === authStore.user?.id || reviewDecisionReason.length < 4" @click="decideBillingReview(review, true)">{{ t('admin.videos.billingReview.approve') }}</button>
-		      <button class="btn btn-secondary" :disabled="actionLoading || reviewDecisionReason.length < 4" @click="decideBillingReview(review, false)">{{ t('admin.videos.billingReview.reject') }}</button>
-		    </div>
-		  </div>
-		</section>
-
 		<div class="flex flex-wrap gap-2">
           <button v-if="canRetryGet(selectedTask)" type="button" class="btn btn-secondary" :disabled="actionLoading" @click="runTaskAction(selectedTask, 'get')"><Icon name="refresh" size="sm" class="mr-2" />{{ t('admin.videos.actions.retryGet') }}</button>
           <button v-if="canRetrySettlement(selectedTask)" type="button" class="btn btn-secondary" :disabled="actionLoading" @click="runTaskAction(selectedTask, 'settlement')"><Icon name="dollar" size="sm" class="mr-2" />{{ t('admin.videos.actions.retrySettlement') }}</button>
@@ -293,23 +227,19 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { useAppStore } from '@/stores/app'
-import { useAuthStore } from '@/stores/auth'
 import videosAPI, {
   type VideoAdminCallback,
   type VideoAdminEvent,
   type VideoAdminOverview,
   type VideoAdminResource,
   type VideoAdminTask,
-  type VideoBillingReview,
-  type VideoSubmissionReview,
 } from '@/api/admin/videos'
 
-type TabKey = 'tasks' | 'unknown' | 'resources' | 'unmatched' | 'callbacks'
+type TabKey = 'tasks' | 'resources' | 'unmatched' | 'callbacks'
 type TaskAction = 'get' | 'settlement' | 'delete'
 
 const { t } = useI18n()
 const appStore = useAppStore()
-const authStore = useAuthStore()
 const activeTab = ref<TabKey>('tasks')
 const loading = ref(false)
 const actionLoading = ref(false)
@@ -322,18 +252,6 @@ const eventRows = ref<VideoAdminEvent[]>([])
 const callbackRows = ref<VideoAdminCallback[]>([])
 const selectedTask = ref<VideoAdminTask | null>(null)
 const taskEvents = ref<VideoAdminEvent[]>([])
-const providerTaskID = ref('')
-const manualActualUnits = ref('')
-const billingReviews = ref<VideoBillingReview[]>([])
-const submissionReviews = ref<VideoSubmissionReview[]>([])
-const hasPendingSubmissionReview = computed(() => submissionReviews.value.some(review => review.status === 'pending'))
-const reviewReason = ref('')
-const reviewEvidence = ref('')
-const honorFrozenQuote = ref(false)
-const reviewDecisionReason = ref('')
-const reviewOperation = ref({ signature: '', key: '' })
-const hasPendingBillingReview = computed(() => billingReviews.value.some(review => review.status === 'pending'))
-const reviewEvidenceReady = computed(() => reviewReason.value.length >= 4 && /^[A-Za-z0-9][A-Za-z0-9._:/-]{2,127}$/.test(reviewEvidence.value) && !reviewEvidence.value.includes('://'))
 const pagination = reactive({ page: 1, page_size: 20, total: 0 })
 const filters = reactive({ q: '', generation_state: '', billing_state: '', status: '', account_id: '' })
 let overviewRequest = 0
@@ -341,14 +259,13 @@ let rowsRequest = 0
 let detailRequest = 0
 let disposed = false
 
-const generationStates = ['preparing', 'held', 'submitting', 'submission_unknown', 'queued', 'in_progress', 'completed', 'failed', 'cancelled', 'expired']
-const billingStates = ['none', 'held', 'capture_pending', 'captured', 'release_pending', 'released', 'manual_review']
+const generationStates = ['preparing', 'held', 'submitting', 'queued', 'in_progress', 'completed', 'failed', 'cancelled', 'expired']
+const billingStates = ['none', 'held', 'capture_pending', 'captured', 'release_pending', 'released']
 const resourceStates = ['creating', 'ready', 'failed', 'expired', 'deleted']
 const callbackStates = ['pending', 'delivering', 'delivered', 'failed', 'quarantined']
 
 const tabs = computed(() => [
   { key: 'tasks' as const, label: t('admin.videos.tabs.tasks'), icon: 'chart' as const, count: taskTotal.value },
-  { key: 'unknown' as const, label: t('admin.videos.tabs.unknown'), icon: 'exclamationTriangle' as const, count: overview.value?.submission_unknown ?? 0 },
   { key: 'resources' as const, label: t('admin.videos.tabs.resources'), icon: 'cube' as const },
   { key: 'unmatched' as const, label: t('admin.videos.tabs.unmatched'), icon: 'link' as const, count: overview.value?.unmatched_webhooks ?? 0 },
   { key: 'callbacks' as const, label: t('admin.videos.tabs.callbacks'), icon: 'sync' as const, count: callbackAttention.value },
@@ -356,11 +273,10 @@ const tabs = computed(() => [
 
 const taskTotal = computed(() => Object.values(overview.value?.tasks_by_generation ?? {}).reduce((sum, value) => sum + value, 0))
 const activeTasks = computed(() => (overview.value?.tasks_by_generation?.queued ?? 0) + (overview.value?.tasks_by_generation?.in_progress ?? 0) + (overview.value?.tasks_by_generation?.submitting ?? 0))
-const pendingBilling = computed(() => (overview.value?.tasks_by_billing?.capture_pending ?? 0) + (overview.value?.tasks_by_billing?.release_pending ?? 0) + (overview.value?.tasks_by_billing?.manual_review ?? 0))
+const pendingBilling = computed(() => (overview.value?.tasks_by_billing?.capture_pending ?? 0) + (overview.value?.tasks_by_billing?.release_pending ?? 0))
 const callbackAttention = computed(() => (overview.value?.callbacks_by_status?.failed ?? 0) + (overview.value?.callbacks_by_status?.quarantined ?? 0))
 const overviewMetrics = computed(() => [
   { key: 'active', label: t('admin.videos.metrics.active'), value: formatNumber(activeTasks.value), meta: relativeAge(overview.value?.oldest_task_pending_at) },
-  { key: 'unknown', label: t('admin.videos.metrics.unknown'), value: formatNumber(overview.value?.submission_unknown ?? 0), meta: formatMoney(overview.value?.unknown_hold_amount ?? 0, 'USD') },
   { key: 'billing', label: t('admin.videos.metrics.billing'), value: formatNumber(pendingBilling.value), meta: relativeAge(overview.value?.oldest_billing_at) },
   { key: 'callbacks', label: t('admin.videos.metrics.callbacks'), value: formatNumber(callbackAttention.value), meta: relativeAge(overview.value?.oldest_callback_at) },
   { key: 'unmatched', label: t('admin.videos.metrics.unmatched'), value: formatNumber(overview.value?.unmatched_webhooks ?? 0), meta: t('admin.videos.metrics.requiresReview') },
@@ -483,9 +399,9 @@ async function loadRows() {
   loading.value = true
   error.value = ''
   try {
-    if (tab === 'tasks' || tab === 'unknown') {
-      const query = { page: pagination.page, page_size: pagination.page_size, q: filters.q || undefined, generation_state: tab === 'unknown' ? undefined : filters.generation_state || undefined, billing_state: filters.billing_state || undefined, account_id: numericFilter(filters.account_id) }
-      const page = tab === 'unknown' ? await videosAPI.listUnknown(query) : await videosAPI.listTasks(query)
+    if (tab === 'tasks') {
+      const query = { page: pagination.page, page_size: pagination.page_size, q: filters.q || undefined, generation_state: filters.generation_state || undefined, billing_state: filters.billing_state || undefined, account_id: numericFilter(filters.account_id) }
+      const page = await videosAPI.listTasks(query)
       if (disposed || request !== rowsRequest) return
       taskRows.value = page.items
       setPagination(page)
@@ -528,7 +444,6 @@ function selectTab(tab: TabKey) {
 	filters.generation_state = ''
 	filters.billing_state = ''
   filters.status = ''
-  if (tab === 'unknown') filters.generation_state = 'submission_unknown'
   void loadRows()
 }
 
@@ -541,20 +456,10 @@ async function openTask(task: VideoAdminTask) {
 	const request = ++detailRequest
 	selectedTask.value = task
 	taskEvents.value = []
-	billingReviews.value = []
-	submissionReviews.value = []
-	reviewReason.value = ''; reviewEvidence.value = ''; honorFrozenQuote.value = false; reviewDecisionReason.value = ''
-	reviewOperation.value = { signature: '', key: '' }
-	providerTaskID.value = ''
-	manualActualUnits.value = task.actual_units == null ? '' : String(task.actual_units)
   try {
-    const [detail, events, reviews, submissions] = await Promise.all([videosAPI.getTask(task.public_id), videosAPI.listEvents(task.public_id), videosAPI.listBillingReviews(task.public_id), videosAPI.listSubmissionReviews(task.public_id)])
+    const [detail, events] = await Promise.all([videosAPI.getTask(task.public_id), videosAPI.listEvents(task.public_id)])
 		if (disposed || request !== detailRequest) return
-		billingReviews.value = reviews
-		submissionReviews.value = submissions
 		selectedTask.value = detail
-		providerTaskID.value = isCharacterPersistenceReview(detail) ? (detail.provider_task_id || '') : providerTaskID.value
-		manualActualUnits.value = detail.actual_units == null ? (detail.billing_unit === 'request' ? '1' : '') : String(detail.actual_units)
     taskEvents.value = events.items
   } catch (cause) {
     if (!disposed && request === detailRequest) appStore.showError(errorMessage(cause))
@@ -563,8 +468,7 @@ async function openTask(task: VideoAdminTask) {
 
 function closeTask() {
   detailRequest++
-  selectedTask.value = null; taskEvents.value = []; billingReviews.value = []; submissionReviews.value = []
-  providerTaskID.value = ''; manualActualUnits.value = ''
+  selectedTask.value = null; taskEvents.value = []
 }
 
 async function refreshSelectedTask(task: VideoAdminTask, request: number) {
@@ -599,121 +503,7 @@ async function retryCallback(callback: VideoAdminCallback) {
 	}
 }
 
-async function resolveCreated() {
-  if (!selectedTask.value || !providerTaskID.value || !reviewEvidenceReady.value || hasPendingSubmissionReview.value) return
-  if (!window.confirm(t('admin.videos.unknown.confirmCreatedWarning'))) return
-  actionLoading.value = true
-  const request = detailRequest
-  try {
-    const evidence = { reason: reviewReason.value, evidence_ref: reviewEvidence.value }
-    const key = billingReviewOperationKey(['submission-created', selectedTask.value.public_id, selectedTask.value.version, providerTaskID.value, evidence])
-    const updated = await videosAPI.resolveCreated(selectedTask.value.public_id, providerTaskID.value, selectedTask.value.version, evidence, key)
-    appStore.showSuccess(t('admin.videos.unknown.resolved'))
-    await refreshSelectedTask(updated, request); await refresh()
-  } catch (cause) { appStore.showError(errorMessage(cause)) } finally { actionLoading.value = false }
-}
-
-async function resolveNotCreated() {
-  if (!selectedTask.value || !reviewEvidenceReady.value || hasPendingSubmissionReview.value || !window.confirm(t('admin.videos.unknown.confirmNotCreatedWarning'))) return
-  actionLoading.value = true
-  const request = detailRequest
-  try {
-    const evidence = { reason: reviewReason.value, evidence_ref: reviewEvidence.value }
-    const key = billingReviewOperationKey(['submission-not-created', selectedTask.value.public_id, selectedTask.value.version, evidence])
-    const updated = await videosAPI.resolveNotCreated(selectedTask.value.public_id, selectedTask.value.version, evidence, key)
-    appStore.showSuccess(t('admin.videos.unknown.resolved'))
-    await refreshSelectedTask(updated, request); await refresh()
-  } catch (cause) { appStore.showError(errorMessage(cause)) } finally { actionLoading.value = false }
-}
-
-function canResolveBillingCapture(task: VideoAdminTask) {
-	if (task.billing_state !== 'manual_review') return false
-	if (isCharacterPersistenceReview(task)) return false
-	if (!reviewEvidenceReady.value || hasPendingBillingReview.value || manualActualUnits.value === '') return false
-	const units = Number(manualActualUnits.value)
-	return Number.isFinite(units) && units >= 0 && (task.billing_unit !== 'request' || units === 0 || units === 1)
-}
-
-function isCharacterPersistenceReview(task: VideoAdminTask) {
-	return task.operation === 'character_create' && ['resource_persistence_pending', 'resource_persistence_failed'].includes(task.last_error_code || '')
-}
-
-async function repairCharacterResource() {
-	if (!selectedTask.value || !selectedTask.value.provider_task_id) return
-	if (!window.confirm(t('admin.videos.unknown.repairWarning'))) return
-	actionLoading.value = true
-	const request = detailRequest
-	try {
-		const updated = await videosAPI.retryCharacterResource(selectedTask.value.public_id, selectedTask.value.version)
-		appStore.showSuccess(t('admin.videos.billingReview.resolved'))
-		await refreshSelectedTask(updated, request); await refresh()
-	} catch (cause) { appStore.showError(errorMessage(cause)) } finally { actionLoading.value = false }
-}
-
-async function resolveBillingCapture() {
-	if (!selectedTask.value || !canResolveBillingCapture(selectedTask.value)) return
-	if (!window.confirm(t('admin.videos.billingReview.confirmCaptureWarning'))) return
-	actionLoading.value = true
-	const request = detailRequest
-	try {
-		const units = Number(manualActualUnits.value)
-		const evidence = { reason: reviewReason.value, evidence_ref: reviewEvidence.value, honor_frozen_quote: honorFrozenQuote.value }
-		const key = billingReviewOperationKey(['capture', selectedTask.value.public_id, selectedTask.value.version, units, evidence])
-		const updated = await videosAPI.resolveBillingCapture(selectedTask.value.public_id, units, selectedTask.value.version, evidence, key)
-		appStore.showSuccess(t('admin.videos.billingReview.resolved'))
-		await refreshSelectedTask(updated, request); await refresh()
-	} catch (cause) { appStore.showError(errorMessage(cause)) } finally { actionLoading.value = false }
-}
-
-async function resolveBillingRelease() {
-	if (!selectedTask.value || selectedTask.value.generation_state === 'completed' || !reviewEvidenceReady.value || hasPendingBillingReview.value) return
-	if (!window.confirm(t('admin.videos.billingReview.confirmReleaseWarning'))) return
-	actionLoading.value = true
-	const request = detailRequest
-	try {
-		const evidence = { reason: reviewReason.value, evidence_ref: reviewEvidence.value }
-		const key = billingReviewOperationKey(['release', selectedTask.value.public_id, selectedTask.value.version, evidence])
-		const updated = await videosAPI.resolveBillingRelease(selectedTask.value.public_id, selectedTask.value.version, evidence, key)
-		appStore.showSuccess(t('admin.videos.billingReview.resolved'))
-		await refreshSelectedTask(updated, request); await refresh()
-	} catch (cause) { appStore.showError(errorMessage(cause)) } finally { actionLoading.value = false }
-}
-
-function billingReviewOperationKey(payload: unknown): string {
-	const signature = JSON.stringify(payload)
-	if (reviewOperation.value.signature !== signature) reviewOperation.value = { signature, key: crypto.randomUUID() }
-	return reviewOperation.value.key
-}
-
-async function decideSubmissionReview(review: VideoSubmissionReview, approve: boolean) {
-	if (!selectedTask.value || reviewDecisionReason.value.length < 4 || (approve && authStore.user?.id === review.proposed_by)) return
-	if (!window.confirm(t('admin.videos.billingReview.decisionWarning'))) return
-	actionLoading.value = true
-	const request = detailRequest
-	try {
-		const task = selectedTask.value
-		const key = billingReviewOperationKey(['submission-decision', task.public_id, task.version, review.id, approve, reviewDecisionReason.value])
-		const updated = await videosAPI.decideSubmissionReview(task.public_id, review.id, approve, reviewDecisionReason.value, task.version, key)
-		appStore.showSuccess(t('admin.videos.unknown.decisionSaved'))
-		await refreshSelectedTask(updated, request); await refresh()
-	} catch (cause) { appStore.showError(errorMessage(cause)) } finally { actionLoading.value = false }
-}
-
-async function decideBillingReview(review: VideoBillingReview, approve: boolean) {
-	if (!selectedTask.value || reviewDecisionReason.value.length < 4) return
-	if (!window.confirm(t('admin.videos.billingReview.decisionWarning'))) return
-	actionLoading.value = true
-	const request = detailRequest
-	try {
-		const task = selectedTask.value
-		const key = billingReviewOperationKey(['decision', task.public_id, task.version, review.id, approve, reviewDecisionReason.value])
-		const updated = await videosAPI.decideBillingReview(task.public_id, review.id, approve, reviewDecisionReason.value, task.version, key)
-		appStore.showSuccess(t('admin.videos.billingReview.resolved'))
-		await refreshSelectedTask(updated, request); await refresh()
-	} catch (cause) { appStore.showError(errorMessage(cause)) } finally { actionLoading.value = false }
-}
-
-function canRetryGet(task: VideoAdminTask) { return Boolean(task.provider_task_id) && ['held', 'manual_review'].includes(task.billing_state) && (['queued', 'in_progress'].includes(task.generation_state) || task.billing_state === 'manual_review') }
+function canRetryGet(task: VideoAdminTask) { return Boolean(task.provider_task_id) && task.billing_state === 'held' && ['queued', 'in_progress'].includes(task.generation_state) }
 function canRetrySettlement(task: VideoAdminTask) { return task.billing_state === 'capture_pending' || task.billing_state === 'release_pending' }
 function canRetryDelete(task: VideoAdminTask) { return ['requested', 'deleting', 'delete_failed'].includes(task.delete_state) }
 function canRetryCallback(callback: VideoAdminCallback) { return ['failed', 'quarantined'].includes(callback.status) && new Date(callback.expires_at).getTime() > Date.now() }
@@ -722,7 +512,7 @@ function stateLabel(state: string) { return t(`admin.videos.states.${state}`, st
 function statusClass(state: string) {
   const base = 'inline-flex min-h-6 items-center rounded px-2 py-0.5 text-xs font-medium'
 	  if (['completed', 'captured', 'released', 'ready', 'delivered', 'success', 'done', 'billed', 'waived', 'approved', 'already_durable'].includes(state)) return `${base} bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300`
-	  if (['failed', 'delete_failed', 'quarantined', 'manual_review', 'submission_unknown', 'error'].includes(state)) return `${base} bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-300`
+	  if (['failed', 'delete_failed', 'quarantined', 'error'].includes(state)) return `${base} bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-300`
   if (['queued', 'held', 'pending', 'billing', 'capture_pending', 'release_pending', 'retry_billing'].includes(state)) return `${base} bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300`
   return `${base} bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-300`
 }

@@ -22,7 +22,6 @@ type videoTaskRepoStub struct {
 	create             VideoCreateTaskParams
 	transitions        []VideoTaskTransition
 	accepted           *VideoProviderAcceptance
-	unknown            int
 	sources            map[string]*VideoTask
 	eventCreated       *bool
 	events             []VideoTaskEvent
@@ -179,6 +178,10 @@ func (r *videoTaskRepoStub) TransitionVideoTask(_ context.Context, _ string, tra
 	if transition.IncrementPollAttempts {
 		r.task.PollAttempts++
 	}
+	if transition.SubmissionUnknown && r.task.SubmissionUnknownAt == nil {
+		now := time.Now().UTC()
+		r.task.SubmissionUnknownAt = &now
+	}
 	return r.task, nil
 }
 func (r *videoTaskRepoStub) SaveVideoProviderAccepted(_ context.Context, _ string, acceptance VideoProviderAcceptance) (*VideoTask, error) {
@@ -209,11 +212,6 @@ func (r *videoTaskRepoStub) SaveVideoProviderAccepted(_ context.Context, _ strin
 	if acceptance.ErrorMessage != "" {
 		r.task.LastErrorMessage = &acceptance.ErrorMessage
 	}
-	return r.task, nil
-}
-func (r *videoTaskRepoStub) MarkVideoSubmissionUnknown(_ context.Context, _ string, _ *VideoProviderError, _ time.Time) (*VideoTask, error) {
-	r.unknown++
-	r.task.GenerationState = VideoGenerationSubmissionUnknown
 	return r.task, nil
 }
 func (r *videoTaskRepoStub) ClaimVideoTask(context.Context, string, string, time.Duration) (*VideoTask, error) {
@@ -393,6 +391,9 @@ type videoProviderStub struct {
 	characterGets    int
 	validationErr    error
 	validationCalls  int
+	searchResult     *ProviderVideoTask
+	searchErr        error
+	searchCalls      int
 }
 
 func (p *videoProviderStub) Name() string {
@@ -454,6 +455,10 @@ func (p *videoProviderStub) Get(context.Context, *Account, ProviderTaskRef) (*Pr
 	p.getCalls++
 	return p.result, p.err
 }
+func (p *videoProviderStub) SearchByClientToken(context.Context, *Account, string) (*ProviderVideoTask, error) {
+	p.searchCalls++
+	return p.searchResult, p.searchErr
+}
 func (p *videoProviderStub) OpenContent(_ context.Context, _ *Account, request ProviderContentRequest) (*ProviderContent, error) {
 	p.contentCalls++
 	p.contentReq = request
@@ -508,7 +513,7 @@ func newVideoTaskServiceForTest(provider *videoProviderStub, group *Group, resou
 	}
 	cfg := &config.Config{Gateway: config.GatewayConfig{Video: config.GatewayVideoConfig{
 		Enabled: true, CreationEnabled: true, SubmitTimeoutSeconds: 10,
-		PollIntervalSeconds: 10, SubmissionUnknownQuarantineMinutes: 60,
+		PollIntervalSeconds: 10,
 	}}}
 	service := NewVideoTaskService(
 		taskRepo,
@@ -691,7 +696,7 @@ func TestVideoTaskServiceAppliesOpenAIDefaultsBeforeHoldAndSubmission(t *testing
 }
 
 func TestVideoTaskServiceUsesModelPriceVideoProfileWhenGroupAndChannelHaveNoPrice(t *testing.T) {
-	const model = "doubao-seedance-2.0-mini-480p"
+	const model = "doubao-seedance-1-0-lite-t2v-250428"
 	provider := &videoProviderStub{result: &ProviderVideoTask{
 		ProviderTaskID: "video_seedance", Status: VideoGenerationQueued,
 		RawStatus: "queued", SuggestedPollInterval: 10 * time.Second,
@@ -730,7 +735,7 @@ func TestVideoTaskServiceUsesModelPriceVideoProfileWhenGroupAndChannelHaveNoPric
 }
 
 func TestVideoTaskServicePricesCompatibleReferenceVideoAsVideoInput(t *testing.T) {
-	const model = "doubao-seedance-2.0-mini-480p"
+	const model = "doubao-seedance-1-0-lite-t2v-250428"
 	provider := &videoProviderStub{result: &ProviderVideoTask{
 		ProviderTaskID: "video_seedance_reference", Status: VideoGenerationQueued, RawStatus: "queued",
 	}}
@@ -963,15 +968,7 @@ func TestVideoTaskServiceCharacterCreationPersistsResource(t *testing.T) {
 	require.NotEmpty(t, queue.enqueued)
 }
 
-func TestVideoTaskServiceCharacterReplayRecoversFailedResourcePersistence(t *testing.T) {
-	unit := VideoBillingUnitRequest
-	price := 0.25
-	group := videoGroupForTest(SubscriptionTypeStandard)
-	group.ModelPricing[0].Intervals = []PricingInterval{{ID: 8, TierLabel: "character", PerRequestPrice: &price, BillingUnit: &unit}}
-	provider := &videoProviderStub{character: &ProviderVideoResource{ProviderResourceID: "char_upstream", Status: "ready"}}
-	svc, tasks, queue := newVideoTaskServiceForTest(provider, group, nil)
-	resources := svc.resources.(*videoResourceRepoStub)
-	resources.createErr = errors.New("database unavailable")
+func videoCharacterSubmitRequestForTest() VideoSubmitRequest {
 	request := videoSubmitRequestForTest()
 	request.Operation = VideoOperationCharacterCreate
 	request.Prompt = ""
@@ -979,86 +976,64 @@ func TestVideoTaskServiceCharacterReplayRecoversFailedResourcePersistence(t *tes
 	request.Inputs = []VideoInput{{VideoInputManifestEntry: VideoInputManifestEntry{
 		Role: VideoInputRoleCharacterClip, FileName: "character.mp4", MIMEType: "video/mp4", Size: 4, SHA256: "abcd",
 	}}}
+	return request
+}
 
-	result, err := svc.Submit(context.Background(), request)
+func videoCharacterServiceForTest(t *testing.T) (*VideoTaskService, *videoTaskRepoStub, *videoQueueStub, *videoProviderStub) {
+	t.Helper()
+	unit := VideoBillingUnitRequest
+	price := 0.25
+	group := videoGroupForTest(SubscriptionTypeStandard)
+	group.ModelPricing[0].Intervals = []PricingInterval{{ID: 8, TierLabel: "character", PerRequestPrice: &price, BillingUnit: &unit}}
+	provider := &videoProviderStub{character: &ProviderVideoResource{ProviderResourceID: "char_upstream", Status: "ready"}}
+	svc, tasks, queue := newVideoTaskServiceForTest(provider, group, nil)
+	return svc, tasks, queue, provider
+}
+
+// The character resource is written before the task is accepted, so a character
+// task that cannot persist its metadata never reaches a completed, billable
+// state that is missing the resource it names.
+func TestVideoTaskServiceCharacterResourcePersistenceFailureFailsAndReleasesHold(t *testing.T) {
+	svc, tasks, queue, _ := videoCharacterServiceForTest(t)
+	resources := svc.resources.(*videoResourceRepoStub)
+	resources.createErr = errors.New("database unavailable")
+
+	result, err := svc.Submit(context.Background(), videoCharacterSubmitRequestForTest())
+
 	require.EqualError(t, err, "database unavailable")
 	require.Nil(t, result)
-	require.NotNil(t, tasks.task)
+	require.Equal(t, VideoGenerationFailed, tasks.task.GenerationState)
+	require.Equal(t, VideoBillingReleased, tasks.task.BillingState)
+	require.Equal(t, "resource_persistence_failed", *tasks.task.LastErrorCode)
+	settlements := svc.settlements.(*videoSettlementRepoStub)
+	require.Equal(t, BalanceSettlementRelease, settlements.settlement.Action)
+	require.Zero(t, settlements.settlement.Hold.ActualAmount)
+	require.Empty(t, queue.enqueued)
+}
 
-	resources.createErr = nil
+// Rows written by older binaries can be completed without a local resource. A
+// replay still rebuilds that resource from the frozen account rather than
+// creating a second character upstream.
+func TestVideoTaskServiceCharacterReplayRebuildsAMissingResource(t *testing.T) {
+	svc, tasks, queue, provider := videoCharacterServiceForTest(t)
+	request := videoCharacterSubmitRequestForTest()
+
+	created, err := svc.Submit(context.Background(), request)
+	require.NoError(t, err)
+	require.NotNil(t, created.Resource)
+	require.Equal(t, 1, provider.createCalls)
+
+	resources := svc.resources.(*videoResourceRepoStub)
+	delete(resources.bySource, tasks.task.ID)
 	tasks.preflightExisting = tasks.task
 	replayed, err := svc.Submit(context.Background(), request)
 
 	require.NoError(t, err)
 	require.NotNil(t, replayed.Resource)
+	require.Equal(t, "char_upstream", replayed.Resource.ProviderResourceID)
+	require.Equal(t, 1, provider.createCalls)
 	require.Equal(t, 1, provider.characterGets)
 	require.NotEmpty(t, queue.enqueued)
-}
-
-func TestVideoTaskServiceLegacyUnknownReleaseRequiresReview(t *testing.T) {
-	provider := &videoProviderStub{}
-	svc, tasks, queue := newVideoTaskServiceForTest(provider, videoGroupForTest(SubscriptionTypeStandard), nil)
-	task := baseVideoWorkerTask()
-	task.GenerationState = VideoGenerationSubmissionUnknown
-	task.BillingState = VideoBillingManualReview
-	tasks.task = task
-
-	updated, err := svc.ResolveSubmissionUnknownNotCreated(context.Background(), task.PublicID)
-
-	require.ErrorIs(t, err, ErrVideoReviewRequired)
-	require.Nil(t, updated)
-	require.Equal(t, VideoGenerationSubmissionUnknown, tasks.task.GenerationState)
-	require.Empty(t, queue.enqueued)
-	require.Zero(t, provider.createCalls)
-}
-
-func TestVideoTaskServiceLegacyUnknownBindingRequiresReview(t *testing.T) {
-	provider := &videoProviderStub{result: &ProviderVideoTask{
-		ProviderTaskID: "video_confirmed", Status: VideoGenerationQueued,
-		RawStatus: "queued", SuggestedPollInterval: 10 * time.Second,
-	}}
-	svc, tasks, queue := newVideoTaskServiceForTest(provider, videoGroupForTest(SubscriptionTypeStandard), nil)
-	task := baseVideoWorkerTask()
-	task.ProviderTaskID = nil
-	task.GenerationState = VideoGenerationSubmissionUnknown
-	task.BillingState = VideoBillingManualReview
-	tasks.task = task
-
-	updated, err := svc.ResolveSubmissionUnknownCreated(context.Background(), task.PublicID, "video_confirmed")
-
-	require.ErrorIs(t, err, ErrVideoReviewRequired)
-	require.Nil(t, updated)
-	require.Equal(t, VideoGenerationSubmissionUnknown, tasks.task.GenerationState)
-	require.Zero(t, provider.getCalls)
-	require.Zero(t, provider.createCalls)
-	require.Empty(t, queue.enqueued)
-}
-
-func TestVideoTaskServiceLegacyUnknownCharacterRequiresReview(t *testing.T) {
-	provider := &videoProviderStub{character: &ProviderVideoResource{
-		ProviderResourceID: "char_confirmed", Status: "ready", Metadata: map[string]any{"name": "Mossy"},
-	}}
-	svc, tasks, queue := newVideoTaskServiceForTest(provider, videoGroupForTest(SubscriptionTypeStandard), nil)
-	task := baseVideoWorkerTask()
-	task.Operation = VideoOperationCharacterCreate
-	task.ProviderTaskID = nil
-	task.GenerationState = VideoGenerationSubmissionUnknown
-	task.BillingState = VideoBillingManualReview
-	billingUnit := VideoBillingUnitRequest
-	task.BillingUnit = &billingUnit
-	tasks.task = task
-
-	updated, err := svc.ResolveSubmissionUnknownCreated(context.Background(), task.PublicID, "char_confirmed")
-
-	require.ErrorIs(t, err, ErrVideoReviewRequired)
-	require.Nil(t, updated)
-	require.Equal(t, VideoGenerationSubmissionUnknown, tasks.task.GenerationState)
-	require.Zero(t, provider.characterGets)
-	require.Zero(t, provider.getCalls)
-	require.Zero(t, provider.createCalls)
-	require.Empty(t, queue.enqueued)
-	resource := svc.resources.(*videoResourceRepoStub).bySource[task.ID]
-	require.Nil(t, resource)
 }
 
 func TestVideoTaskServiceSubmitRejectedReleasesHold(t *testing.T) {
@@ -1096,18 +1071,26 @@ func TestVideoTaskServiceSubmitImmediateFailureReturnsDetailsAndReleasesHold(t *
 	require.Empty(t, queue.enqueued)
 }
 
-func TestVideoTaskServiceSubmitUnknownKeepsHoldAndDoesNotRetry(t *testing.T) {
-	provider := &videoProviderStub{err: &VideoProviderError{Kind: "transport", Code: "timeout", Message: "timeout", Certainty: VideoSubmissionUnknown}}
+func TestVideoTaskServiceSubmitUnknownStartsAutomaticReconciliation(t *testing.T) {
+	providerErr := &VideoProviderError{Kind: "transport", Code: "timeout", Message: "timeout", Certainty: VideoSubmissionUnknown}
+	provider := &videoProviderStub{err: providerErr}
 	svc, _, queue := newVideoTaskServiceForTest(provider, videoGroupForTest(SubscriptionTypeStandard), nil)
+
 	result, err := svc.Submit(context.Background(), videoSubmitRequestForTest())
+
 	require.NoError(t, err)
-	require.Equal(t, VideoGenerationSubmissionUnknown, result.Task.GenerationState)
+	require.Equal(t, VideoGenerationSubmitting, result.Task.GenerationState)
 	require.Equal(t, VideoBillingHeld, result.Task.BillingState)
+	require.Equal(t, "submission_reconciling", *result.Task.LastErrorCode)
 	require.Equal(t, 1, provider.createCalls)
-	require.NotEmpty(t, queue.enqueued)
+	tasks := svc.tasks.(*videoTaskRepoStub)
+	require.Equal(t, "provider_submission_reconciling", tasks.transitions[len(tasks.transitions)-1].EventType)
+	settlements := svc.settlements.(*videoSettlementRepoStub)
+	require.Nil(t, settlements.settlement)
+	require.Empty(t, queue.enqueued)
 }
 
-func TestVideoTaskServiceSubmitAcceptedErrorKeepsHoldForReconciliation(t *testing.T) {
+func TestVideoTaskServiceSubmitAcceptedErrorFailsAndReleasesHold(t *testing.T) {
 	provider := &videoProviderStub{err: &VideoProviderError{
 		Kind: "transport", Code: "response_lost", Message: "provider accepted before connection closed",
 		Certainty: VideoSubmissionAccepted,
@@ -1117,12 +1100,14 @@ func TestVideoTaskServiceSubmitAcceptedErrorKeepsHoldForReconciliation(t *testin
 	result, err := svc.Submit(context.Background(), videoSubmitRequestForTest())
 
 	require.NoError(t, err)
-	require.Equal(t, VideoGenerationSubmissionUnknown, result.Task.GenerationState)
+	require.Equal(t, VideoGenerationSubmitting, result.Task.GenerationState)
 	require.Equal(t, VideoBillingHeld, result.Task.BillingState)
-	require.NotEmpty(t, queue.enqueued)
+	require.Equal(t, "submission_reconciling", *result.Task.LastErrorCode)
+	require.Nil(t, svc.settlements.(*videoSettlementRepoStub).settlement)
+	require.Empty(t, queue.enqueued)
 }
 
-func TestVideoTaskServiceInvalidAcceptedProviderIDBecomesSubmissionUnknown(t *testing.T) {
+func TestVideoTaskServiceInvalidAcceptedProviderIDFailsAndReleasesHold(t *testing.T) {
 	provider := &videoProviderStub{result: &ProviderVideoTask{
 		ProviderTaskID: strings.Repeat("x", 256), Status: VideoGenerationQueued, RawStatus: "queued",
 	}}
@@ -1131,9 +1116,11 @@ func TestVideoTaskServiceInvalidAcceptedProviderIDBecomesSubmissionUnknown(t *te
 	result, err := svc.Submit(context.Background(), videoSubmitRequestForTest())
 
 	require.NoError(t, err)
-	require.Equal(t, VideoGenerationSubmissionUnknown, result.Task.GenerationState)
+	require.Equal(t, VideoGenerationSubmitting, result.Task.GenerationState)
 	require.Equal(t, VideoBillingHeld, result.Task.BillingState)
-	require.NotEmpty(t, queue.enqueued)
+	require.Equal(t, "submission_reconciling", *result.Task.LastErrorCode)
+	require.Nil(t, svc.settlements.(*videoSettlementRepoStub).settlement)
+	require.Empty(t, queue.enqueued)
 }
 
 func TestVideoTaskServiceSanitizesGenericProviderAcceptance(t *testing.T) {
@@ -2012,7 +1999,6 @@ func TestVideoTaskServiceDeleteGuardsUnknownAndUnsettledCompletion(t *testing.T)
 		want       error
 	}{
 		{name: "submitting", generation: VideoGenerationSubmitting, billing: VideoBillingHeld, want: ErrVideoDeleteConflict},
-		{name: "submission unknown", generation: VideoGenerationSubmissionUnknown, billing: VideoBillingHeld, want: ErrVideoDeleteConflict},
 		{name: "queued", generation: VideoGenerationQueued, billing: VideoBillingHeld, want: ErrVideoDeleteConflict},
 		{name: "in progress", generation: VideoGenerationInProgress, billing: VideoBillingHeld, want: ErrVideoDeleteConflict},
 		{name: "completed settlement pending", generation: VideoGenerationCompleted, billing: VideoBillingCapturePending, want: ErrVideoSettlementPending},
@@ -2149,15 +2135,85 @@ func TestVideoTaskServiceRepeatedDeleteDoesNotInvalidateRunningDeletion(t *testi
 	}
 }
 
+// The pricing key may be an internal placeholder ("resolution-1"). It stays in
+// the snapshot for rule traceability, but usage reporting must show a real
+// resolution, which the last-resort fallback reads off a model name that
+// encodes one. The fixture is deliberately vendor-neutral: this covers the
+// suffix fallback itself, not any particular platform's naming.
 func TestVideoPriceSnapshotStoresUsageResolutionInsteadOfInternalPricingKey(t *testing.T) {
 	snapshot := videoPriceSnapshot(&VideoPriceQuote{
-		BillingModel: "doubao-seedance-2.0-mini-480p",
+		BillingModel: "video-gen-480p",
 		Attributes: VideoPricingAttributes{
-			Model:      "doubao-seedance-2.0-mini-480p",
+			Model:      "video-gen-480p",
 			Resolution: "resolution-1",
 		},
 	})
 
 	require.Equal(t, "resolution-1", snapshot["resolution"])
 	require.Equal(t, "480p", snapshot["usage_resolution"])
+}
+
+// Ark encodes no resolution in the model ID — it is a request parameter — so
+// there is nothing to fall back to. The placeholder must still not be reported
+// as if it were a resolution, and none may be invented.
+func TestVideoPriceSnapshotOmitsUsageResolutionForByteDanceModels(t *testing.T) {
+	snapshot := videoPriceSnapshot(&VideoPriceQuote{
+		BillingModel: ByteDanceVideoModelSeedance10Pro,
+		Attributes: VideoPricingAttributes{
+			Model:      ByteDanceVideoModelSeedance10Pro,
+			Resolution: "resolution-1",
+		},
+	})
+
+	require.Equal(t, "resolution-1", snapshot["resolution"])
+	require.NotContains(t, snapshot, "usage_resolution")
+}
+
+// When the resolution actually was requested, it is a real label and travels
+// through unchanged — no placeholder, no model-name guessing.
+func TestVideoPriceSnapshotUsesRequestedByteDanceResolution(t *testing.T) {
+	snapshot := videoPriceSnapshot(&VideoPriceQuote{
+		BillingModel: ByteDanceVideoModelSeedance10Pro,
+		Attributes: VideoPricingAttributes{
+			Model:      ByteDanceVideoModelSeedance10Pro,
+			Resolution: "720p",
+		},
+	})
+
+	require.Equal(t, "720p", snapshot["usage_resolution"])
+}
+
+// The submission counter is the only durable signal that an upstream job may
+// exist for a task this platform never recorded, so every provider error that
+// is not an explicit rejection has to land in the submission_unknown bucket.
+// Failures raised before the provider was called stay generic.
+func TestVideoSubmissionMetricResultClassifiesUnconfirmedProviderErrors(t *testing.T) {
+	require.Equal(t, "accepted", videoSubmissionMetricResult(&VideoSubmitResult{Created: true}, nil))
+	require.Equal(t, "replayed", videoSubmissionMetricResult(&VideoSubmitResult{}, nil))
+	require.Equal(t, "rejected", videoSubmissionMetricResult(nil, &VideoProviderError{Certainty: VideoSubmissionRejected}))
+	require.Equal(t, "submission_unknown", videoSubmissionMetricResult(nil, unknownVideoProviderError("transport", "submission_unknown", "unknown", nil)))
+	require.Equal(t, "submission_unknown", videoSubmissionMetricResult(nil, errors.Join(
+		unknownVideoProviderError("upstream", "missing_task", "no task", nil),
+		errors.New("settlement failed"),
+	)))
+	require.Equal(t, "error", videoSubmissionMetricResult(nil, ErrVideoPricingMissing))
+}
+
+// A capability mismatch is detected before the provider is called, so the
+// outcome is certain and must never be recorded as an unconfirmed submission.
+// The sentinel has to survive in the chain, because the HTTP layer maps the
+// client-facing status and code from it.
+func TestVideoCapabilityRejectionIsCertainAndKeepsItsSentinel(t *testing.T) {
+	rejection := videoCapabilityRejection()
+	require.Equal(t, VideoSubmissionRejected, rejection.Certainty)
+	require.Equal(t, http.StatusBadRequest, rejection.StatusCode)
+	require.Equal(t, "video_capability_unsupported", rejection.Code)
+	require.True(t, errors.Is(rejection, ErrVideoCapabilityUnsupported))
+	require.Equal(t, "rejected", videoSubmissionMetricResult(nil, error(rejection)))
+
+	// handleSubmissionError classifies from Certainty, so the task records a
+	// rejection rather than stamping submission_unknown_at.
+	var typed *VideoProviderError
+	require.True(t, errors.As(error(rejection), &typed))
+	require.NotEqual(t, VideoSubmissionUnknown, typed.Certainty)
 }

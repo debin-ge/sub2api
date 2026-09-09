@@ -57,7 +57,7 @@ func (fake *videoIngressAPIFake) ResolveVideoIngress(_ context.Context, _ *servi
 }
 
 func TestVideoCompositeIngressPreservesManagedBodyButRewritesLegacyGrokBody(t *testing.T) {
-	for _, platform := range []string{service.PlatformOpenAI, service.PlatformGrok} {
+	for _, platform := range []string{service.PlatformOpenAI, service.PlatformByteDance, service.PlatformGrok} {
 		t.Run(platform, func(t *testing.T) {
 			body := []byte(` { "model": "video-alias", "prompt": "test prompt", "seconds": 8 } `)
 			fake := &videoIngressAPIFake{route: &service.VideoIngressRoute{Decision: service.CompositeRouteDecision{
@@ -74,7 +74,7 @@ func TestVideoCompositeIngressPreservesManagedBodyButRewritesLegacyGrokBody(t *t
 			require.False(t, ctx.IsAborted())
 			actual, err := io.ReadAll(ctx.Request.Body)
 			require.NoError(t, err)
-			if platform == service.PlatformOpenAI {
+			if platform == service.PlatformOpenAI || platform == service.PlatformByteDance {
 				require.Equal(t, body, actual)
 			} else {
 				require.Equal(t, "native-model", gjson.GetBytes(actual, "model").String())
@@ -118,24 +118,26 @@ func TestVideoCompositeMultipartRoutesParsedRequestToGrok(t *testing.T) {
 	require.Equal(t, "grok-upstream", service.ParseGrokMediaRequest(grok.contentType, grok.body).Model)
 }
 
-func TestVideoCompositeReplayAndSourceRoutesPinEditingToOpenAI(t *testing.T) {
-	for _, sourceRoute := range []bool{false, true} {
-		fake := &videoIngressAPIFake{route: &service.VideoIngressRoute{ManagedReplay: !sourceRoute, ResolveAfterParsing: sourceRoute,
-			Decision: service.CompositeRouteDecision{TargetPlatform: service.PlatformOpenAI}}}
-		body := `{"prompt":"test","video":{"id":"video_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}`
-		ctx, recorder := newVideoHandlerTestContext(http.MethodPost, "/videos/edits", "application/json", strings.NewReader(body))
-		key, _ := middleware.GetAPIKeyFromContext(ctx)
-		key.Group = &service.Group{ID: 8, Platform: service.PlatformComposite}
-		newVideoHandler(fake, nil, nil).PrepareCompositeVideoRoute(ctx)
-		require.False(t, ctx.IsAborted(), recorder.Body.String())
-		require.Equal(t, http.StatusOK, recorder.Code)
-		platform, ok := service.ResolvedTargetPlatformFromContext(ctx.Request.Context())
-		require.True(t, ok)
-		require.Equal(t, service.PlatformOpenAI, platform)
-		_, resolved := service.CompositeRouteDecisionFromContext(ctx.Request.Context())
-		require.False(t, resolved)
-		require.Equal(t, "video_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", fake.source)
-		require.Equal(t, service.VideoOperationEdit, fake.operation)
+func TestVideoCompositeReplayAndSourceRoutesPinManagedProvider(t *testing.T) {
+	for _, targetPlatform := range []string{service.PlatformOpenAI, service.PlatformByteDance} {
+		for _, sourceRoute := range []bool{false, true} {
+			fake := &videoIngressAPIFake{route: &service.VideoIngressRoute{ManagedReplay: !sourceRoute, ResolveAfterParsing: sourceRoute,
+				Decision: service.CompositeRouteDecision{TargetPlatform: targetPlatform}}}
+			body := `{"prompt":"test","video":{"id":"video_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}`
+			ctx, recorder := newVideoHandlerTestContext(http.MethodPost, "/videos/edits", "application/json", strings.NewReader(body))
+			key, _ := middleware.GetAPIKeyFromContext(ctx)
+			key.Group = &service.Group{ID: 8, Platform: service.PlatformComposite}
+			newVideoHandler(fake, nil, nil).PrepareCompositeVideoRoute(ctx)
+			require.False(t, ctx.IsAborted(), recorder.Body.String())
+			require.Equal(t, http.StatusOK, recorder.Code)
+			platform, ok := service.ResolvedTargetPlatformFromContext(ctx.Request.Context())
+			require.True(t, ok)
+			require.Equal(t, targetPlatform, platform)
+			_, resolved := service.CompositeRouteDecisionFromContext(ctx.Request.Context())
+			require.False(t, resolved)
+			require.Equal(t, "video_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", fake.source)
+			require.Equal(t, service.VideoOperationEdit, fake.operation)
+		}
 	}
 }
 

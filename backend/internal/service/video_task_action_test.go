@@ -17,7 +17,7 @@ func TestNextVideoActionDoesNotLetDeletionSkipFinancialObligations(t *testing.T)
 			{VideoGenerationCompleted, VideoBillingHeld, VideoActionRecoverTerminalBilling},
 			{VideoGenerationCompleted, VideoBillingCapturePending, VideoActionSettle},
 			{VideoGenerationFailed, VideoBillingReleasePending, VideoActionSettle},
-			{VideoGenerationFailed, VideoBillingManualReview, VideoActionNone},
+			{VideoGenerationFailed, VideoBillingNone, VideoActionNone},
 			{VideoGenerationCompleted, VideoBillingCaptured, VideoActionDeleteContent},
 			{VideoGenerationFailed, VideoBillingReleased, VideoActionDeleteContent},
 		} {

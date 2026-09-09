@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -749,6 +750,22 @@ func validateDataAccount(item DataAccount) error {
 		baseURL, _ := item.Credentials["base_url"].(string)
 		if strings.TrimSpace(baseURL) == "" {
 			return errors.New("opencode account base_url is required")
+		}
+	}
+	if item.Platform == service.PlatformByteDance {
+		if item.Type != service.AccountTypeAPIKey {
+			return errors.New("bytedance account type must be apikey")
+		}
+		apiKey, _ := item.Credentials["api_key"].(string)
+		if strings.TrimSpace(apiKey) == "" {
+			return errors.New("bytedance account api_key is required")
+		}
+		if baseURL, _ := item.Credentials["base_url"].(string); strings.TrimSpace(baseURL) != "" {
+			parsed, err := url.Parse(strings.TrimSpace(baseURL))
+			if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" ||
+				(parsed.Scheme != "http" && parsed.Scheme != "https") {
+				return errors.New("bytedance account base_url is invalid")
+			}
 		}
 	}
 	if item.RateMultiplier != nil && *item.RateMultiplier < 0 {

@@ -202,12 +202,18 @@ func ProvideBatchImageCleanupService(repo BatchImageRepository, accountRepo Acco
 	return svc
 }
 
-func ProvideVideoProviderRegistry(openAI *OpenAIVideoProvider) *VideoProviderRegistry {
-	return NewVideoProviderRegistry(openAI)
+func ProvideVideoProviderRegistry(openAI *OpenAIVideoProvider, byteDance *ByteDanceVideoProvider) *VideoProviderRegistry {
+	return NewVideoProviderRegistry(openAI, byteDance)
 }
 
 func ProvideOpenAIVideoProvider(httpUpstream HTTPUpstream, tlsProfiles *TLSFingerprintProfileService, catalog *VideoCapabilityCatalog) *OpenAIVideoProvider {
 	provider := NewOpenAIVideoProvider(httpUpstream, tlsProfiles)
+	provider.catalog = catalog
+	return provider
+}
+
+func ProvideByteDanceVideoProvider(httpUpstream HTTPUpstream, tlsProfiles *TLSFingerprintProfileService, catalog *VideoCapabilityCatalog) *ByteDanceVideoProvider {
+	provider := NewByteDanceVideoProvider(httpUpstream, tlsProfiles)
 	provider.catalog = catalog
 	return provider
 }
@@ -1044,6 +1050,7 @@ var ProviderSet = wire.NewSet(
 	NewVideoCapabilityCatalog,
 	ProvideOpenAIVideoProvider,
 	ProvideVideoProviderRegistry,
+	ProvideByteDanceVideoProvider,
 	NewVideoCapabilityProbeService,
 	ProvideVideoCapabilityProbeRuntime,
 	NewVideoPricingResolver,

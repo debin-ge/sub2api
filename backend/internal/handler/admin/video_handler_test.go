@@ -18,17 +18,21 @@ import (
 
 type videoAdminHandlerStub struct {
 	videoAdminController
-	task               *service.VideoTask
-	resolvedProviderID string
-	resolvedUnits      float64
-	resolvedRelease    bool
-	catalog            service.VideoCapabilityCatalogDocument
-	capabilityAccount  int64
-	capabilityProbed   bool
+	task              *service.VideoTask
+	retriedGet        string
+	retriedSettlement string
+	catalog           service.VideoCapabilityCatalogDocument
+	capabilityAccount int64
+	capabilityProbed  bool
 }
 
-func (s *videoAdminHandlerStub) ResolveBillingCapture(_ context.Context, _ string, actualUnits float64) (*service.VideoTask, error) {
-	s.resolvedUnits = actualUnits
+func (s *videoAdminHandlerStub) RetryProviderGet(_ context.Context, publicID string) (*service.VideoTask, error) {
+	s.retriedGet = publicID
+	return s.task, nil
+}
+
+func (s *videoAdminHandlerStub) RetrySettlement(_ context.Context, publicID string) (*service.VideoTask, error) {
+	s.retriedSettlement = publicID
 	return s.task, nil
 }
 
@@ -43,22 +47,12 @@ func (s *videoAdminHandlerStub) ProbeAccountCapability(_ context.Context, accoun
 	return &service.VideoAccountCapabilityStatus{AccountID: accountID}, nil
 }
 
-func (s *videoAdminHandlerStub) ResolveBillingRelease(context.Context, string) (*service.VideoTask, error) {
-	s.resolvedRelease = true
-	return s.task, nil
-}
-
 func (s *videoAdminHandlerStub) UpdateCapabilityCatalog(_ context.Context, document service.VideoCapabilityCatalogDocument) (*service.VideoCapabilityCatalogView, error) {
 	s.catalog = document
 	return &service.VideoCapabilityCatalogView{VideoCapabilityCatalogDocument: document, Source: "settings", LoadedAt: time.Now().UTC()}, nil
 }
 
 func (s *videoAdminHandlerStub) GetTask(context.Context, string) (*service.VideoTask, error) {
-	return s.task, nil
-}
-
-func (s *videoAdminHandlerStub) ResolveCreated(_ context.Context, _ string, providerTaskID string) (*service.VideoTask, error) {
-	s.resolvedProviderID = providerTaskID
 	return s.task, nil
 }
 
@@ -72,7 +66,6 @@ func performVideoAdminRequest(handler gin.HandlerFunc, method, route, path strin
 	router.Handle(method, route, handler)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(method, path, bytes.NewReader(body))
-	request.Header.Set("Idempotency-Key", "review:test")
 	value := `"0"`
 	if len(ifMatch) > 0 {
 		value = ifMatch[0]
@@ -89,7 +82,7 @@ func TestVideoAdminTaskMutationRequiresExplicitVersion(t *testing.T) {
 	for _, header := range []string{"", "*", `W/"0"`, `"-1"`, `"not-a-version"`} {
 		t.Run(header, func(t *testing.T) {
 			stub := &videoAdminHandlerStub{task: task}
-			recorder := performVideoAdminRequest(newVideoHandler(stub).ResolveCreated, http.MethodPost, "/tasks/:id/resolve-created", "/tasks/"+task.PublicID+"/resolve-created", []byte(`{"provider_task_id":"exact"}`), header)
+			recorder := performVideoAdminRequest(newVideoHandler(stub).RetryProviderGet, http.MethodPost, "/tasks/:id/retry-get", "/tasks/"+task.PublicID+"/retry-get", nil, header)
 			if header == "" {
 				require.Equal(t, http.StatusPreconditionRequired, recorder.Code)
 			} else {
@@ -129,7 +122,7 @@ func TestVideoAdminTaskProjectionNeverReturnsEncryptedSecrets(t *testing.T) {
 	require.NotContains(t, recorder.Body.String(), "callback_url_enc")
 }
 
-func TestVideoAdminResolveCreatedUsesStrictExactProviderID(t *testing.T) {
+func TestVideoAdminTaskRetriesAcceptOnlyAnEmptyBody(t *testing.T) {
 	task := &service.VideoTask{
 		PublicID:        "video_0123456789abcdef0123456789abcdef",
 		GenerationState: service.VideoGenerationQueued, BillingState: service.VideoBillingHeld,
@@ -137,12 +130,16 @@ func TestVideoAdminResolveCreatedUsesStrictExactProviderID(t *testing.T) {
 	}
 	stub := &videoAdminHandlerStub{task: task}
 	handler := newVideoHandler(stub)
-	recorder := performVideoAdminRequest(handler.ResolveCreated, http.MethodPost, "/tasks/:id/resolve-created", "/tasks/"+task.PublicID+"/resolve-created", []byte(`{"provider_task_id":"video_exact","reason":"Verified original submission","evidence_ref":"ticket:UNKNOWN"}`))
-	require.Equal(t, http.StatusOK, recorder.Code)
-	require.Equal(t, "video_exact", stub.resolvedProviderID)
 
-	bad := performVideoAdminRequest(handler.ResolveCreated, http.MethodPost, "/tasks/:id/resolve-created", "/tasks/"+task.PublicID+"/resolve-created", []byte(`{"provider_task_id":"video_exact","replay_create":true}`))
+	// The surviving admin mutations are pure retries: they carry no operator
+	// decision, so any payload is rejected outright.
+	recorder := performVideoAdminRequest(handler.RetryProviderGet, http.MethodPost, "/tasks/:id/retry-get", "/tasks/"+task.PublicID+"/retry-get", nil)
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Equal(t, task.PublicID, stub.retriedGet)
+
+	bad := performVideoAdminRequest(handler.RetrySettlement, http.MethodPost, "/tasks/:id/retry-settlement", "/tasks/"+task.PublicID+"/retry-settlement", []byte(`{"actual_units":3.5}`))
 	require.Equal(t, http.StatusBadRequest, bad.Code)
+	require.Empty(t, stub.retriedSettlement)
 }
 
 func TestVideoAdminUpdateCapabilityCatalogUsesStrictJSON(t *testing.T) {
@@ -157,58 +154,6 @@ func TestVideoAdminUpdateCapabilityCatalogUsesStrictJSON(t *testing.T) {
 
 	duplicate := performVideoAdminRequest(handler.UpdateCapabilityCatalog, http.MethodPut, "/capabilities", "/capabilities", []byte(`{"version":1,"version":1,"providers":{}}`))
 	require.Equal(t, http.StatusBadRequest, duplicate.Code)
-}
-
-func TestVideoAdminBillingResolutionEndpoints(t *testing.T) {
-	task := &service.VideoTask{PublicID: "video_0123456789abcdef0123456789abcdef", GenerationState: service.VideoGenerationFailed, BillingState: service.VideoBillingManualReview}
-	stub := &videoAdminHandlerStub{task: task}
-	handler := newVideoHandler(stub)
-
-	capture := performVideoAdminRequest(handler.ResolveBillingCapture, http.MethodPost, "/tasks/:id/resolve-billing-capture", "/tasks/"+task.PublicID+"/resolve-billing-capture", []byte(`{"actual_units":3.5,"reason":"Verified provider evidence","evidence_ref":"ticket:TEST"}`))
-	require.Equal(t, http.StatusOK, capture.Code)
-	require.InDelta(t, 3.5, stub.resolvedUnits, 0.000001)
-
-	bad := performVideoAdminRequest(handler.ResolveBillingCapture, http.MethodPost, "/tasks/:id/resolve-billing-capture", "/tasks/"+task.PublicID+"/resolve-billing-capture", []byte(`{"actual_units":3.5,"actual_cost":1}`))
-	require.Equal(t, http.StatusBadRequest, bad.Code)
-
-	release := performVideoAdminRequest(handler.ResolveBillingRelease, http.MethodPost, "/tasks/:id/resolve-billing-release", "/tasks/"+task.PublicID+"/resolve-billing-release", []byte(`{"reason":"Verified zero usage","evidence_ref":"ticket:TEST"}`))
-	require.Equal(t, http.StatusOK, release.Code)
-	require.True(t, stub.resolvedRelease)
-}
-
-func TestVideoAdminBillingReviewRequiresActorEvidenceAndIdempotency(t *testing.T) {
-	for _, missing := range []string{"actor", "key", "evidence", "reason"} {
-		t.Run(missing, func(t *testing.T) {
-			stub := &videoAdminHandlerStub{task: &service.VideoTask{PublicID: "video_0123456789abcdef0123456789abcdef"}}
-			router := gin.New()
-			if missing != "actor" {
-				router.Use(func(c *gin.Context) { c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 99}) })
-			}
-			router.POST("/tasks/:id/capture", newVideoHandler(stub).ResolveBillingCapture)
-			payload := map[string]any{"actual_units": 3, "reason": "Verified provider invoice", "evidence_ref": "ticket:TEST"}
-			if missing == "evidence" {
-				delete(payload, "evidence_ref")
-			}
-			if missing == "reason" {
-				delete(payload, "reason")
-			}
-			body, err := json.Marshal(payload)
-			require.NoError(t, err)
-			request := httptest.NewRequest(http.MethodPost, "/tasks/"+stub.task.PublicID+"/capture", bytes.NewReader(body))
-			request.Header.Set("If-Match", `"0"`)
-			if missing != "key" {
-				request.Header.Set("Idempotency-Key", "review:TEST")
-			}
-			recorder := httptest.NewRecorder()
-			router.ServeHTTP(recorder, request)
-			if missing == "actor" {
-				require.Equal(t, http.StatusUnauthorized, recorder.Code)
-			} else {
-				require.Equal(t, http.StatusBadRequest, recorder.Code)
-			}
-			require.Zero(t, stub.resolvedUnits)
-		})
-	}
 }
 
 func TestVideoAdminAccountCapabilityEndpoints(t *testing.T) {

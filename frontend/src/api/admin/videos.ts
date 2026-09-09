@@ -20,7 +20,6 @@ export interface VideoAccessMetadata {
 }
 
 export interface VideoAdminTask {
-	billing_review_id?: number
 	version: number
 	lease_epoch: number
 	lease_expires_at?: string
@@ -155,13 +154,10 @@ export interface VideoAdminOverview {
   tasks_by_billing: Record<string, number>
   tasks_by_delete: Record<string, number>
   callbacks_by_status: Record<string, number>
-  submission_unknown: number
-  unknown_hold_amount: number
 	held_amount: number
   unmatched_webhooks: number
   oldest_task_pending_at?: string
   oldest_billing_at?: string
-	oldest_manual_review_at?: string
   oldest_callback_at?: string
 	queue_status: string
 	queue?: {
@@ -296,11 +292,6 @@ export async function listVideoTasks(query: VideoTaskQuery = {}): Promise<VideoA
   return data
 }
 
-export async function listUnknownVideoTasks(query: VideoTaskQuery = {}): Promise<VideoAdminPage<VideoAdminTask>> {
-  const { data } = await apiClient.get<VideoAdminPage<VideoAdminTask>>(`${ADMIN_VIDEOS_PATH}/tasks/unknown`, { params: query })
-  return data
-}
-
 export async function getVideoTask(id: string): Promise<VideoAdminTask> {
   const { data } = await apiClient.get<VideoAdminTask>(`${ADMIN_VIDEOS_PATH}/tasks/${encodeURIComponent(id)}`)
   return data
@@ -335,19 +326,6 @@ function videoTaskVersionHeaders(version: number) {
 	return { headers: { 'If-Match': `"${version}"` } }
 }
 
-export async function resolveVideoNotCreated(id: string, version: number, evidence: VideoBillingReviewEvidence, operationKey: string): Promise<VideoAdminTask> {
-  const { data } = await apiClient.post<VideoAdminTask>(`${ADMIN_VIDEOS_PATH}/tasks/${encodeURIComponent(id)}/resolve-not-created`, { reason: evidence.reason, evidence_ref: evidence.evidence_ref }, videoReviewHeaders(version, operationKey))
-  return data
-}
-
-export async function resolveVideoCreated(id: string, providerTaskId: string, version: number, evidence: VideoBillingReviewEvidence, operationKey: string): Promise<VideoAdminTask> {
-  const { data } = await apiClient.post<VideoAdminTask>(`${ADMIN_VIDEOS_PATH}/tasks/${encodeURIComponent(id)}/resolve-created`, {
-    provider_task_id: providerTaskId,
-    reason: evidence.reason, evidence_ref: evidence.evidence_ref,
-  }, videoReviewHeaders(version, operationKey))
-  return data
-}
-
 export async function retryVideoGet(id: string, version: number): Promise<VideoAdminTask> {
   const { data } = await apiClient.post<VideoAdminTask>(`${ADMIN_VIDEOS_PATH}/tasks/${encodeURIComponent(id)}/retry-get`, undefined, videoTaskVersionHeaders(version))
   return data
@@ -356,93 +334,6 @@ export async function retryVideoGet(id: string, version: number): Promise<VideoA
 export async function retryVideoSettlement(id: string, version: number): Promise<VideoAdminTask> {
   const { data } = await apiClient.post<VideoAdminTask>(`${ADMIN_VIDEOS_PATH}/tasks/${encodeURIComponent(id)}/retry-settlement`, undefined, videoTaskVersionHeaders(version))
   return data
-}
-
-export interface VideoBillingReviewEvidence {
-	reason: string
-	evidence_ref: string
-	honor_frozen_quote?: boolean
-}
-
-export interface VideoBillingReview {
-	submission_review_id?: number
-	facts: Record<string, unknown>
-	id: number
-	task_id: number
-	action: 'capture' | 'release'
-	status: 'pending' | 'approved' | 'rejected'
-	proposed_by: number
-	decided_by?: number
-	actual_units: number
-	actual_cost: number
-	hold_amount: number
-	reason: string
-	evidence_ref: string
-	honor_frozen_quote: boolean
-	requires_second_actor: boolean
-	decision_reason?: string
-	created_at: string
-}
-
-function videoReviewHeaders(version: number, operationKey: string) {
-	return { headers: { ...videoTaskVersionHeaders(version).headers, 'Idempotency-Key': operationKey } }
-}
-
-export interface VideoSubmissionReview {
-	id: number
-	task_id: number
-	action: 'created' | 'not_created'
-	provider_task_id?: string
-	status: 'pending' | 'approved' | 'rejected'
-	proposed_by: number
-	decided_by?: number
-	account_identity_version: number
-	reason: string
-	evidence_ref: string
-	facts: Record<string, unknown>
-	provider_observation?: Record<string, unknown>
-	decision_reason?: string
-	created_at: string
-}
-
-export async function listVideoSubmissionReviews(id: string): Promise<VideoSubmissionReview[]> {
-	const { data } = await apiClient.get<VideoSubmissionReview[]>(`${ADMIN_VIDEOS_PATH}/tasks/${encodeURIComponent(id)}/submission-reviews`)
-	return data
-}
-
-export async function decideVideoSubmissionReview(id: string, reviewId: number, approve: boolean, reason: string, version: number, operationKey: string): Promise<VideoAdminTask> {
-	const { data } = await apiClient.post<VideoAdminTask>(`${ADMIN_VIDEOS_PATH}/tasks/${encodeURIComponent(id)}/submission-reviews/${reviewId}/${approve ? 'approve' : 'reject'}`, { reason }, videoReviewHeaders(version, operationKey))
-	return data
-}
-
-export async function retryVideoCharacterResource(id: string, version: number): Promise<VideoAdminTask> {
-	const { data } = await apiClient.post<VideoAdminTask>(`${ADMIN_VIDEOS_PATH}/tasks/${encodeURIComponent(id)}/retry-character-resource`, undefined, videoTaskVersionHeaders(version))
-	return data
-}
-
-export async function resolveVideoBillingCapture(id: string, actualUnits: number, version: number, evidence: VideoBillingReviewEvidence, operationKey: string): Promise<VideoAdminTask> {
-	const { data } = await apiClient.post<VideoAdminTask>(`${ADMIN_VIDEOS_PATH}/tasks/${encodeURIComponent(id)}/resolve-billing-capture`, {
-		actual_units: actualUnits,
-		...evidence,
-	}, videoReviewHeaders(version, operationKey))
-	return data
-}
-
-export async function resolveVideoBillingRelease(id: string, version: number, evidence: VideoBillingReviewEvidence, operationKey: string): Promise<VideoAdminTask> {
-	const { data } = await apiClient.post<VideoAdminTask>(`${ADMIN_VIDEOS_PATH}/tasks/${encodeURIComponent(id)}/resolve-billing-release`, {
-		reason: evidence.reason, evidence_ref: evidence.evidence_ref,
-	}, videoReviewHeaders(version, operationKey))
-	return data
-}
-
-export async function listVideoBillingReviews(id: string): Promise<VideoBillingReview[]> {
-	const { data } = await apiClient.get<VideoBillingReview[]>(`${ADMIN_VIDEOS_PATH}/tasks/${encodeURIComponent(id)}/billing-reviews`)
-	return data
-}
-
-export async function decideVideoBillingReview(id: string, reviewId: number, approve: boolean, reason: string, version: number, operationKey: string): Promise<VideoAdminTask> {
-	const { data } = await apiClient.post<VideoAdminTask>(`${ADMIN_VIDEOS_PATH}/tasks/${encodeURIComponent(id)}/billing-reviews/${reviewId}/${approve ? 'approve' : 'reject'}`, { reason }, videoReviewHeaders(version, operationKey))
-	return data
 }
 
 export async function retryVideoDelete(id: string, version: number): Promise<VideoAdminTask> {
@@ -462,23 +353,13 @@ const videosAdminAPI = {
 	getAccountCapability: getVideoAccountCapability,
 	probeAccountCapability: probeVideoAccountCapability,
   listTasks: listVideoTasks,
-  listUnknown: listUnknownVideoTasks,
   getTask: getVideoTask,
   listEvents: listVideoTaskEvents,
   listResources: listVideoResources,
   listUnmatchedEvents: listUnmatchedVideoEvents,
   listCallbacks: listVideoCallbacks,
-  resolveNotCreated: resolveVideoNotCreated,
-  resolveCreated: resolveVideoCreated,
   retryGet: retryVideoGet,
   retrySettlement: retryVideoSettlement,
-	resolveBillingCapture: resolveVideoBillingCapture,
-	resolveBillingRelease: resolveVideoBillingRelease,
-	listBillingReviews: listVideoBillingReviews,
-	decideBillingReview: decideVideoBillingReview,
-	listSubmissionReviews: listVideoSubmissionReviews,
-	decideSubmissionReview: decideVideoSubmissionReview,
-	retryCharacterResource: retryVideoCharacterResource,
   retryDelete: retryVideoDelete,
   retryCallback: retryVideoCallback,
 }

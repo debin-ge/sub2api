@@ -13,7 +13,8 @@ const concretePlatforms = [
   'glm',
   'deepseek',
   'windsurf',
-  'opencode'
+  'opencode',
+  'bytedance'
 ]
 
 describe('platform option catalogs', () => {

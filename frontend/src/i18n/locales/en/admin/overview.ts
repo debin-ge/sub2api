@@ -974,6 +974,7 @@ export default {
         kimi: 'Kimi',
         zhipu: 'Zhipu GLM',
         deepseek: 'DeepSeek',
+        bytedance: 'ByteDance',
         composite: 'Composite',
       },
       deleteConfirm:
@@ -1014,7 +1015,7 @@ export default {
       videoPricing: {
         title: 'Video Generation Pricing',
         description:
-          'Configure Grok video generation prices in USD per second of output video. Leave empty to use the default per-second rates (grok-imagine-video: $0.05/s 480p, $0.07/s 720p; video-1.5: $0.08/s 480p, $0.14/s 720p, $0.25/s 1080p).',
+          'Configure video generation prices in USD per second of output video. ByteDance Seedance resolution is derived from the selected model.',
         modelOverridesTitle: 'Per-model video price overrides',
         modelOverridesDescription: 'Each populated cell overrides the flat resolution price for that model family. Preview and legacy aliases for video-1.5 use the same family; empty cells fall back to the flat resolution price.',
         independentMultiplier: 'Use independent video multiplier',
@@ -1129,6 +1130,10 @@ export default {
           chatCompletions: 'Chat Completions',
           embeddings: 'Embeddings',
           images: 'Images',
+          videos: 'Videos',
+          videoEdits: 'Video Edits',
+          videoExtensions: 'Video Extensions',
+          videoCharacters: 'Video Characters',
           gemini: 'Gemini Native'
         },
         match: {

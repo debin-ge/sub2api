@@ -2,6 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { platformBadgeClass, platformButtonClass, platformLabel } from '../platformColors'
 
 describe('platformColors', () => {
+  it('returns ByteDance labels and a distinct red visual style', () => {
+    expect(platformLabel('bytedance')).toBe('ByteDance')
+    expect(platformBadgeClass('bytedance')).toContain('red')
+    expect(platformButtonClass('bytedance')).toContain('red')
+    expect(platformBadgeClass('bytedance')).not.toBe(platformBadgeClass('openai'))
+  })
+
   it('returns MiniMax labels and a distinct cyan visual style', () => {
     expect(platformLabel('minimax')).toBe('MiniMax')
     expect(platformBadgeClass('minimax')).toContain('cyan')

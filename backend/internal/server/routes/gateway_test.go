@@ -184,6 +184,7 @@ func TestGatewayRoutesUsageIsAvailableForAllPlatforms(t *testing.T) {
 		service.PlatformDeepSeek,
 		service.PlatformWindsurf,
 		service.PlatformOpenCode,
+		service.PlatformByteDance,
 	} {
 		router := newGatewayRoutesTestRouterForPlatform(platform)
 
@@ -375,6 +376,44 @@ func TestGatewayRoutesOpenAIVideosDispatchToVideoHandler(t *testing.T) {
 		router.ServeHTTP(w, request)
 		require.Contains(t, w.Body.String(), "video_disabled")
 		require.NotContains(t, w.Body.String(), "not supported for this platform")
+	}
+}
+
+func TestGatewayRoutesByteDanceVideosDispatchToManagedVideoHandler(t *testing.T) {
+	handlers := defaultGatewayRoutesTestHandlers(service.PlatformByteDance)
+	handlers.Video = &handler.VideoHandler{}
+	router := newGatewayRoutesTestRouterForPlatformWithHandlers(service.PlatformByteDance, handlers)
+	for _, request := range []*http.Request{
+		httptest.NewRequest(http.MethodPost, "/v1/videos", strings.NewReader(`{"model":"doubao-seedance-1-0-lite-t2v-250428","prompt":"waves","seconds":8}`)),
+		httptest.NewRequest(http.MethodPost, "/v1/videos/edits", strings.NewReader(`{"model":"doubao-seedance-1-0-lite-t2v-250428","prompt":"edit","video":{"id":"video_0123456789abcdef0123456789abcdef"}}`)),
+		httptest.NewRequest(http.MethodPost, "/v1/videos/extensions", strings.NewReader(`{"model":"doubao-seedance-1-0-lite-t2v-250428","prompt":"extend","video":{"id":"video_0123456789abcdef0123456789abcdef"}}`)),
+		httptest.NewRequest(http.MethodGet, "/v1/videos/video_0123456789abcdef0123456789abcdef", nil),
+	} {
+		request.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, request)
+		require.NotContains(t, w.Body.String(), "not supported for this platform", "path=%s", request.URL.Path)
+		require.NotContains(t, w.Body.String(), "ByteDance gateway supports only", "path=%s", request.URL.Path)
+	}
+}
+
+func TestGatewayRoutesByteDanceRejectsNonVideoProtocols(t *testing.T) {
+	router := newGatewayRoutesTestRouterForPlatform(service.PlatformByteDance)
+	for _, request := range []*http.Request{
+		httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"claude","messages":[]}`)),
+		httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens", strings.NewReader(`{"model":"claude","messages":[]}`)),
+		httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"gpt","input":"hello"}`)),
+		httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt","messages":[]}`)),
+		httptest.NewRequest(http.MethodPost, "/v1/embeddings", strings.NewReader(`{"model":"embed","input":"hello"}`)),
+		httptest.NewRequest(http.MethodPost, "/responses", strings.NewReader(`{"model":"gpt","input":"hello"}`)),
+		httptest.NewRequest(http.MethodPost, "/chat/completions", strings.NewReader(`{"model":"gpt","messages":[]}`)),
+		httptest.NewRequest(http.MethodPost, "/backend-api/codex/responses", strings.NewReader(`{"model":"gpt","input":"hello"}`)),
+	} {
+		request.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, request)
+		require.Equal(t, http.StatusNotFound, w.Code, "path=%s", request.URL.Path)
+		require.Contains(t, w.Body.String(), "ByteDance gateway supports only the Videos API", "path=%s", request.URL.Path)
 	}
 }
 

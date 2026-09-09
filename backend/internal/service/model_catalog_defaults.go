@@ -29,6 +29,8 @@ func DefaultModelCatalogIDs(platform string) []string {
 		}
 	case PlatformGrok:
 		ids = xai.DefaultModelIDs()
+	case PlatformByteDance:
+		ids = []string{ByteDanceVideoModelSeedance10Lite, ByteDanceVideoModelSeedance10Pro}
 	case PlatformComposite:
 		for _, concretePlatform := range compositeModelCatalogPlatforms {
 			ids = append(ids, DefaultModelCatalogIDs(concretePlatform)...)

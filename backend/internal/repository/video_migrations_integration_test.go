@@ -37,8 +37,17 @@ func TestVideoPlatformMigrationsSchema(t *testing.T) {
 	requireIndex(t, tx, "video_tasks", "uq_video_tasks_provider_task")
 	requireIndex(t, tx, "video_tasks", "idx_video_tasks_next_action")
 	requireIndex(t, tx, "video_tasks", "idx_video_tasks_account_active_v2")
-	requireConstraintDefinitionContains(t, tx, "video_tasks", "video_tasks_generation_state_check", "submission_unknown", "completed")
-	requireConstraintDefinitionContains(t, tx, "video_tasks", "video_tasks_billing_state_check", "capture_pending", "release_pending", "manual_review")
+	requireConstraintDefinitionContains(t, tx, "video_tasks", "video_tasks_generation_state_check", "in_progress", "completed")
+	requireConstraintDefinitionContains(t, tx, "video_tasks", "video_tasks_billing_state_check", "capture_pending", "release_pending")
+	// Migration 269 removed manual review: neither state may be reachable again.
+	requireConstraintDefinitionExcludes(t, tx, "video_tasks", "video_tasks_generation_state_check", "submission_unknown")
+	requireConstraintDefinitionExcludes(t, tx, "video_tasks", "video_tasks_billing_state_check", "manual_review")
+	requireMissingColumn(t, tx, "video_tasks", "billing_review_id")
+	requireMissingColumn(t, tx, "video_tasks", "submission_review_id")
+	for _, table := range []string{"video_billing_reviews", "video_billing_review_actions", "video_submission_reviews", "video_submission_review_actions"} {
+		requireMissingTable(t, tx, table)
+	}
+	requireIndex(t, tx, "video_tasks", "idx_video_tasks_budget_reservations_v2")
 	requireColumn(t, tx, "video_create_intents", "native_task_id", "bigint", 0, true)
 	requireColumn(t, tx, "video_create_intents", "lease_epoch", "bigint", 0, false)
 	requireConstraintDefinitionContains(t, tx, "video_create_intents", "video_create_intents_request_contract_check", "canonical_json_v1", "canonical_multipart_v1", "native_task_v1")
@@ -140,7 +149,12 @@ func TestVideoPlatformMigrationsExcludeRemovedGrokObjects(t *testing.T) {
 		 'dispatch_contract_version','grok_group_id','grok_billing_snapshot','review_version','resolution_review_id',
 		 'dispatched_at','completed_at','account_identity_version')`,
 		`SELECT COUNT(*) FROM schema_migrations WHERE filename ~ '^(25[5-9]|26[0-3]|26[5-9])_'
-		 AND filename NOT IN ('265_video_failed_auto_release.sql', '266_video_task_provider_url.sql')`,
+			 AND filename NOT IN (
+				'265_video_failed_auto_release.sql',
+				'266_video_task_provider_url.sql',
+				'267_user_platform_quotas_add_bytedance.sql',
+				'268_composite_routes_add_bytedance.sql'
+			 )`,
 	} {
 		var count int
 		require.NoError(t, tx.QueryRowContext(ctx, query).Scan(&count))

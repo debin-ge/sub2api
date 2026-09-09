@@ -236,7 +236,7 @@ func (h *VideoHandler) routeParsedCompositeMultipart(c *gin.Context, apiKey *ser
 			return true
 		}
 		if route.ManagedReplay || route.ResolveAfterParsing {
-			c.Request = c.Request.WithContext(service.WithResolvedTargetPlatform(c.Request.Context(), service.PlatformOpenAI))
+			c.Request = c.Request.WithContext(service.WithResolvedTargetPlatform(c.Request.Context(), route.Decision.TargetPlatform))
 		} else {
 			c.Request = c.Request.WithContext(service.WithCompositeRouteDecision(c.Request.Context(), route.Decision))
 			if upstreamModel := strings.TrimSpace(route.Decision.UpstreamModel); route.Decision.TargetPlatform == service.PlatformGrok && upstreamModel != "" {
@@ -249,7 +249,7 @@ func (h *VideoHandler) routeParsedCompositeMultipart(c *gin.Context, apiKey *ser
 		videoError(c, service.ErrVideoNoAccountAvailable)
 		return true
 	}
-	if platform == service.PlatformOpenAI {
+	if platform == service.PlatformOpenAI || platform == service.PlatformByteDance {
 		return false
 	}
 	if platform != service.PlatformGrok || request.Operation == service.VideoOperationCharacterCreate || h.grok == nil {

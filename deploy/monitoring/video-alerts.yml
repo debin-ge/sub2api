@@ -2,14 +2,14 @@ groups:
   - name: video-platform
     interval: 30s
     rules:
-      - alert: VideoSubmissionUnknownFrozenAmount
-        expr: sum by (job) (video_platform_submission_unknown_hold_amount) > 0
+      - alert: VideoSubmissionUnknownRate
+        expr: sum by (job) (increase(video_platform_submissions_total{result="submission_unknown"}[15m])) > 0
         for: 10m
         labels:
-          severity: critical
+          severity: warning
         annotations:
-          summary: "Video submissions have an unknown outcome with frozen balance"
-          runbook: "deploy/monitoring/video-runbook.md#videosubmissionunknownfrozenamount"
+          summary: "Video submissions are ending with an unconfirmed upstream outcome"
+          runbook: "deploy/monitoring/video-runbook.md#videosubmissionunknownrate"
 
       - alert: VideoSettlementPendingTooOld
         expr: max by (job) (video_platform_oldest_settlement_pending_age_seconds) > 300

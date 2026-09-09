@@ -764,7 +764,7 @@ let abortController: AbortController | null = null
 
 // ── Platform config ──
 // Composite pricing/mapping may target every concrete schedulable provider.
-const compositePlatforms: GroupPlatform[] = ['anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'kimi', 'zhipu', 'deepseek', 'minimax', 'glm', 'windsurf', 'opencode']
+const compositePlatforms: GroupPlatform[] = ['anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'kimi', 'zhipu', 'deepseek', 'minimax', 'glm', 'windsurf', 'opencode', 'bytedance']
 const platformOrder: GroupPlatform[] = [...compositePlatforms]
 
 // ── Helpers ──

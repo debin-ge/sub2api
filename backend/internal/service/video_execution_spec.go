@@ -14,6 +14,7 @@ type ResolvedVideoExecutionSpec struct {
 	Operation         string  `json:"operation"`
 	Model             string  `json:"model"`
 	Size              string  `json:"size"`
+	Resolution        string  `json:"resolution,omitempty"`
 	Seconds           int     `json:"seconds"`
 	DurationSemantics string  `json:"duration_semantics"`
 	SourceTaskID      int64   `json:"source_task_id,omitempty"`
@@ -35,7 +36,8 @@ func resolveVideoExecutionSpec(request VideoCreateRequest, accountID int64, prov
 	}
 	spec := ResolvedVideoExecutionSpec{
 		Version: 2, Provider: provider, AccountID: accountID, Operation: request.Operation,
-		Model: request.Model, Size: request.Size, Seconds: request.Seconds, DurationSemantics: "output",
+		Model: request.Model, Size: request.Size, Resolution: providerRequestResolution(provider, request),
+		Seconds: request.Seconds, DurationSemantics: "output",
 	}
 	if source == nil {
 		if request.Operation == VideoOperationEdit {
@@ -57,7 +59,15 @@ func resolveVideoExecutionSpec(request VideoCreateRequest, accountID int64, prov
 	}
 	size := videoSourceOutputSize(source)
 	seconds := videoSourceOutputSeconds(source)
-	if size == "" || !finitePositive(seconds) {
+	// ByteDance offers generate only, so no ByteDance task may serve as the
+	// source of a derived edit or extension specification.
+	if provider == VideoProviderByteDance {
+		return request, spec, ErrVideoSourceSpecUnavailable
+	}
+	if size == "" {
+		return request, spec, ErrVideoSourceSpecUnavailable
+	}
+	if !finitePositive(seconds) {
 		return request, spec, ErrVideoSourceSpecUnavailable
 	}
 	if strings.TrimSpace(request.Size) != "" {
@@ -97,7 +107,7 @@ func resolveVideoExecutionSpec(request VideoCreateRequest, accountID int64, prov
 		return request, spec, ErrVideoInvalidRequest
 	}
 	request.Model, request.Size = model, size
-	spec.Model, spec.Size, spec.Seconds = model, size, request.Seconds
+	spec.Model, spec.Size, spec.Resolution, spec.Seconds = model, size, videoSourceOutputResolution(source), request.Seconds
 	spec.SourceTaskID, spec.SourceVersion, spec.SourceSeconds = source.ID, source.Version, seconds
 	return request, spec, nil
 }
@@ -189,6 +199,12 @@ func videoCheckObservedSpecification(task *VideoTask, metadata map[string]any) e
 			return ErrVideoSourceSpecConflict
 		}
 	}
+	if value, exists := metadata["resolution"]; exists && value != nil && value != "" {
+		resolution, ok := value.(string)
+		if !ok || (spec.Resolution != "" && !strings.EqualFold(strings.TrimSpace(resolution), spec.Resolution)) {
+			return ErrVideoSourceSpecConflict
+		}
+	}
 	if value, exists := metadata["seconds"]; exists {
 		seconds, valid := numericMapValue(map[string]any{"seconds": value}, "seconds")
 		if !valid || !finitePositive(seconds) {
@@ -264,6 +280,21 @@ func videoSourceOutputSize(task *VideoTask) string {
 				return ""
 			}
 			return normalized
+		}
+	}
+	return ""
+}
+
+func videoSourceOutputResolution(task *VideoTask) string {
+	if task == nil {
+		return ""
+	}
+	for _, attributes := range []map[string]any{task.ResponseMetadata, task.RequestAttributes} {
+		if raw, ok := attributes["resolution"].(string); ok {
+			resolution := strings.ToLower(strings.TrimSpace(raw))
+			if resolution != "" {
+				return resolution
+			}
 		}
 	}
 	return ""

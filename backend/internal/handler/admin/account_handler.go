@@ -11,6 +11,7 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -1319,6 +1320,9 @@ func validateCreateAccountRequest(req CreateAccountRequest) error {
 			return fmt.Errorf("%s account base_url is required", req.Platform)
 		}
 	}
+	if err := validateOptionalAccountBaseURL(req.Platform, req.Credentials); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1351,12 +1355,33 @@ func validateUpdateAccountRequest(account *service.Account, req UpdateAccountReq
 			return fmt.Errorf("%s account base_url is required", account.Platform)
 		}
 	}
+	if err := validateOptionalAccountBaseURL(account.Platform, credentials); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateOptionalAccountBaseURL(platform string, credentials map[string]any) error {
+	if platform != service.PlatformByteDance || credentials == nil {
+		return nil
+	}
+	baseURL, _ := credentials["base_url"].(string)
+	baseURL = strings.TrimSpace(baseURL)
+	if baseURL == "" {
+		return nil
+	}
+	parsed, err := url.Parse(baseURL)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" ||
+		(parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return fmt.Errorf("%s account base_url is invalid", platform)
+	}
 	return nil
 }
 
 func requiresAPIKeyAccount(platform string) bool {
 	switch service.CanonicalCNPlatform(platform) {
-	case service.PlatformZhipu, service.PlatformKimi, service.PlatformDeepSeek, service.PlatformWindsurf, service.PlatformOpenCode:
+	case service.PlatformZhipu, service.PlatformKimi, service.PlatformDeepSeek, service.PlatformWindsurf,
+		service.PlatformOpenCode, service.PlatformByteDance:
 		return true
 	default:
 		return false

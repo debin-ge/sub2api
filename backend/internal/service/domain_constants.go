@@ -67,6 +67,7 @@ const (
 	PlatformGLM       = domain.PlatformGLM
 	PlatformWindsurf  = domain.PlatformWindsurf
 	PlatformOpenCode  = domain.PlatformOpenCode
+	PlatformByteDance = domain.PlatformByteDance
 	PlatformComposite = domain.PlatformComposite
 	// PlatformKiro is retained for unsupported-platform threshold tests and legacy
 	// account rows. Scheduling-threshold evaluation never pauses kiro accounts.
@@ -136,6 +137,7 @@ var AllowedQuotaPlatforms = []string{
 	PlatformKimi,
 	PlatformZhipu,
 	PlatformDeepseek,
+	PlatformByteDance,
 }
 
 // AllowedSchedulingThresholdPlatforms 是允许设置账号自动停调阈值的平台列表。

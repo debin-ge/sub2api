@@ -111,7 +111,7 @@ const ModelWhitelistSelectorStub = defineComponent({
       <button
         type="button"
         data-testid="select-models"
-        @click="$emit('update:modelValue', platform === 'zhipu' || platform === 'glm' ? ['GLM-4.7'] : platform === 'kimi' ? ['kimi-for-coding'] : platform === 'deepseek' ? ['deepseek-v4-pro'] : platform === 'windsurf' ? ['claude-sonnet-4.6'] : platform === 'opencode' ? ['opencode/gpt5-nano'] : ['gpt-5.2'])"
+        @click="$emit('update:modelValue', platform === 'zhipu' || platform === 'glm' ? ['GLM-4.7'] : platform === 'kimi' ? ['kimi-for-coding'] : platform === 'deepseek' ? ['deepseek-v4-pro'] : platform === 'windsurf' ? ['claude-sonnet-4.6'] : platform === 'opencode' ? ['opencode/gpt5-nano'] : platform === 'bytedance' ? ['doubao-seedance-1-0-pro-250528'] : ['gpt-5.2'])"
       >
         select
       </button>
@@ -277,6 +277,95 @@ describe('CreateAccountModal', () => {
       warnings: []
     })
     createOpenAICodexPATMock.mockReset().mockResolvedValue({})
+  })
+
+  it('creates ByteDance as an API-key account with an optional base URL and Seedance whitelist', async () => {
+    const wrapper = mountModal()
+
+    await wrapper.get('[data-testid="create-platform-bytedance"]').trigger('click')
+    await wrapper.get('[data-tour="account-form-name"]').setValue('Seedance account')
+    expect((wrapper.get('[data-testid="api-key-base-url"]').element as HTMLInputElement).value).toBe('')
+    await wrapper.get('[data-testid="api-key-value"]').setValue('ark-secret')
+
+    const selector = wrapper.findComponent(ModelWhitelistSelectorStub)
+    expect(selector.props('platform')).toBe('bytedance')
+    expect(selector.props('syncCredentials')).toEqual(expect.objectContaining({
+      platform: 'bytedance',
+      type: 'apikey',
+      base_url: undefined,
+      api_key: 'ark-secret'
+    }))
+    expect(Object.keys(selector.props('syncCredentials')?.model_mapping ?? {})).toEqual(
+      expect.arrayContaining([
+        'doubao-seedance-1-0-pro-250528',
+        'doubao-seedance-1-0-lite-t2v-250428'
+      ])
+    )
+    await wrapper.get('[data-testid="select-models"]').trigger('click')
+    expect(wrapper.find('[data-testid="openai-internal-relay-toggle"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="upstream-billing-auto-probe"]').exists()).toBe(false)
+
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock).toHaveBeenCalledTimes(1)
+    const payload = createAccountMock.mock.calls[0]?.[0]
+    expect(payload).toEqual(expect.objectContaining({
+      name: 'Seedance account',
+      platform: 'bytedance',
+      type: 'apikey',
+      upstream_billing_probe_enabled: false,
+      credentials: expect.objectContaining({
+        api_key: 'ark-secret',
+        base_url: '',
+        model_mapping: {
+          'doubao-seedance-1-0-pro-250528': 'doubao-seedance-1-0-pro-250528'
+        }
+      })
+    }))
+    expect(payload.extra?.internal_relay).toBeUndefined()
+    // native 是后端缺省值，不写进凭据，保持凭据最小化。
+    expect(payload.credentials?.protocol_mode).toBeUndefined()
+    expect(probeUpstreamBillingMock).not.toHaveBeenCalled()
+  })
+
+  it('ByteDance 选择 OpenAI 兼容转发时写入 protocol_mode 并保留中转站地址', async () => {
+    const wrapper = mountModal()
+
+    await wrapper.get('[data-testid="create-platform-bytedance"]').trigger('click')
+    await wrapper.get('[data-tour="account-form-name"]').setValue('Seedance relay')
+    await wrapper.get('[data-testid="bytedance-protocol-mode"]').setValue('openai_compatible')
+    await wrapper.get('[data-testid="api-key-base-url"]').setValue('https://relay.example.com/v1')
+    await wrapper.get('[data-testid="api-key-value"]').setValue('relay-secret')
+    await wrapper.get('[data-testid="select-models"]').trigger('click')
+
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock).toHaveBeenCalledTimes(1)
+    expect(createAccountMock.mock.calls[0]?.[0]?.credentials).toEqual(expect.objectContaining({
+      api_key: 'relay-secret',
+      base_url: 'https://relay.example.com/v1',
+      protocol_mode: 'openai_compatible'
+    }))
+  })
+
+  // 后端对缺 base_url 的 openai_compatible 账号直接判不可调度，放行只会得到一个
+  // 永远轮不到的账号，所以必须在提交前拦住。
+  it('ByteDance OpenAI 兼容转发缺少 Base URL 时拒绝提交', async () => {
+    const wrapper = mountModal()
+
+    await wrapper.get('[data-testid="create-platform-bytedance"]').trigger('click')
+    await wrapper.get('[data-tour="account-form-name"]').setValue('Seedance relay')
+    await wrapper.get('[data-testid="bytedance-protocol-mode"]').setValue('openai_compatible')
+    await wrapper.get('[data-testid="api-key-value"]').setValue('relay-secret')
+    await wrapper.get('[data-testid="select-models"]').trigger('click')
+
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock).not.toHaveBeenCalled()
+    expect(showErrorMock).toHaveBeenCalledWith('admin.accounts.bytedance.protocolMode.baseUrlRequired')
   })
 
   it('submits MiniMax Token Plan API key credentials with both upstream base URLs', async () => {

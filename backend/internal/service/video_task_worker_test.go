@@ -211,16 +211,23 @@ func TestVideoTaskWorkerPollRetryUsesFixedIntervalAndHonorsRetryAfter(t *testing
 	require.Equal(t, 45*time.Second, videoPollInterval(worker.cfg, 45*time.Second))
 }
 
-func TestVideoTaskWorkerCountsPermanentPollFailureBeforeReview(t *testing.T) {
+func TestVideoTaskWorkerReleasesPermanentPollFailureInSamePoll(t *testing.T) {
 	task := baseVideoWorkerTask()
 	worker, tasks, settlements, _ := newVideoWorkerForTest(task, nil)
 	provider := worker.providers.providers[VideoProviderOpenAI].(*videoProviderStub)
 	provider.err = &VideoProviderError{Kind: "permission", Code: "forbidden", Message: "forbidden", Retryable: false}
 
+	// A poll that can never succeed is terminal: the task fails and the hold is
+	// released in the same pass, with nothing left for an operator to resolve.
 	require.NoError(t, worker.processTask(context.Background(), task))
 	require.Equal(t, 1, tasks.task.PollAttempts)
-	require.Equal(t, VideoBillingManualReview, tasks.task.BillingState)
-	require.Nil(t, settlements.settlement)
+	require.Equal(t, VideoGenerationFailed, tasks.task.GenerationState)
+	require.Equal(t, VideoBillingReleased, tasks.task.BillingState)
+	require.Equal(t, "forbidden", *tasks.task.LastErrorCode)
+	require.Equal(t, "poll_failed_terminal", tasks.transitions[0].EventType)
+	require.NotNil(t, settlements.settlement)
+	require.Equal(t, BalanceSettlementRelease, settlements.settlement.Action)
+	require.Zero(t, settlements.settlement.Hold.ActualAmount)
 }
 
 func TestVideoTaskWorkerReleasesFailedObservationInSamePoll(t *testing.T) {
@@ -295,36 +302,77 @@ func TestVideoTaskReconcileTreatsConcurrentTerminalAdvanceAsIgnored(t *testing.T
 	require.Equal(t, "concurrent_state_advanced", repo.events[0].Payload["reason"])
 }
 
-func TestVideoTaskWorkerQuarantinesSubmissionUnknownWithoutSettlement(t *testing.T) {
-	task := baseVideoWorkerTask()
-	task.GenerationState = VideoGenerationSubmissionUnknown
-	past := time.Now().UTC().Add(-time.Minute)
-	task.NextActionAt = &past
-	worker, tasks, settlements, _ := newVideoWorkerForTest(task, nil)
-	require.NoError(t, worker.processTask(context.Background(), task))
-	require.Equal(t, VideoGenerationSubmissionUnknown, tasks.task.GenerationState)
-	require.Equal(t, VideoBillingManualReview, tasks.task.BillingState)
-	require.Nil(t, settlements.settlement)
-}
-
-func TestVideoTaskWorkerConvertsStaleSubmittingWithoutReplayingCreate(t *testing.T) {
+func TestVideoTaskWorkerReconcilesStaleSubmittingWithoutReplayingCreate(t *testing.T) {
 	task := baseVideoWorkerTask()
 	task.ProviderTaskID = nil
 	task.GenerationState = VideoGenerationSubmitting
+	stableClientToken := task.PublicID
+	task.StableClientToken = &stableClientToken
 	past := time.Now().UTC().Add(-time.Minute)
 	task.NextActionAt = &past
 	worker, tasks, settlements, _ := newVideoWorkerForTest(task, nil)
 
-	require.NoError(t, worker.processTask(context.Background(), task))
-	require.Equal(t, VideoGenerationSubmissionUnknown, tasks.task.GenerationState)
-	require.Equal(t, VideoBillingHeld, tasks.task.BillingState)
-	require.Equal(t, "stale_submitting", *tasks.task.LastErrorCode)
-	require.NotNil(t, tasks.task.NextActionAt)
-	require.True(t, tasks.task.NextActionAt.After(time.Now().UTC()))
 	provider := worker.providers.providers[VideoProviderOpenAI].(*videoProviderStub)
+	provider.searchResult = &ProviderVideoTask{ProviderTaskID: "video_reconciled", Status: VideoGenerationQueued, RawStatus: "queued"}
+	require.NoError(t, worker.processTask(context.Background(), task))
+	require.Equal(t, VideoGenerationQueued, tasks.task.GenerationState)
+	require.Equal(t, VideoBillingHeld, tasks.task.BillingState)
+	require.Equal(t, "video_reconciled", *tasks.task.ProviderTaskID)
 	require.Zero(t, provider.createCalls)
 	require.Zero(t, provider.getCalls)
+	require.Equal(t, 1, provider.searchCalls)
 	require.Nil(t, settlements.settlement)
+}
+
+func TestVideoTaskWorkerReconciledCompletedSubmissionSettlesWithoutAnotherQueuePass(t *testing.T) {
+	task := baseVideoWorkerTask()
+	task.ProviderTaskID = nil
+	task.GenerationState = VideoGenerationSubmitting
+	stableClientToken := task.PublicID
+	task.StableClientToken = &stableClientToken
+	past := time.Now().UTC().Add(-time.Minute)
+	task.NextActionAt = &past
+	worker, tasks, settlements, _ := newVideoWorkerForTest(task, nil)
+
+	provider := worker.providers.providers[VideoProviderOpenAI].(*videoProviderStub)
+	provider.searchResult = &ProviderVideoTask{
+		ProviderTaskID: "video_reconciled_completed", Status: VideoGenerationCompleted, RawStatus: "completed",
+		Metadata: map[string]any{"seconds": 8}, Usage: map[string]any{"seconds": 8}, ContentVariants: []string{"video"},
+	}
+
+	require.NoError(t, worker.processTask(context.Background(), task))
+	require.Equal(t, VideoGenerationCompleted, tasks.task.GenerationState)
+	require.Equal(t, VideoBillingCapturePending, tasks.task.BillingState)
+	require.NotNil(t, settlements.settlement)
+	require.Equal(t, BalanceSettlementCapture, settlements.settlement.Action)
+	require.Equal(t, 1, provider.searchCalls)
+	require.Zero(t, provider.createCalls)
+	require.Zero(t, provider.getCalls)
+}
+
+func TestVideoTaskWorkerKeepsHoldWhenReconciliationFindsNoTask(t *testing.T) {
+	task := baseVideoWorkerTask()
+	task.ProviderTaskID = nil
+	task.GenerationState = VideoGenerationSubmitting
+	stableClientToken := task.PublicID
+	task.StableClientToken = &stableClientToken
+	past := time.Now().UTC().Add(-time.Minute)
+	task.NextActionAt = &past
+	worker, tasks, settlements, queue := newVideoWorkerForTest(task, nil)
+
+	provider := worker.providers.providers[VideoProviderOpenAI].(*videoProviderStub)
+	provider.searchResult = nil
+
+	err := worker.processTask(context.Background(), task)
+
+	var scheduled *videoTaskScheduledRetry
+	require.ErrorAs(t, err, &scheduled)
+	require.Equal(t, VideoGenerationSubmitting, tasks.task.GenerationState)
+	require.Equal(t, VideoBillingHeld, tasks.task.BillingState)
+	require.Equal(t, "submission_reconciling", *tasks.task.LastErrorCode)
+	require.Nil(t, settlements.settlement)
+	require.Equal(t, 1, provider.searchCalls)
+	require.NotEmpty(t, queue.requeued)
 }
 
 func TestVideoTaskWorkerRunsProviderAccessCleanupBeforeClaim(t *testing.T) {
@@ -341,13 +389,15 @@ func TestVideoTaskWorkerUsesRedisReservationWithDatabaseLease(t *testing.T) {
 	task.GenerationState = VideoGenerationSubmitting
 	past := time.Now().UTC().Add(-time.Minute)
 	task.NextActionAt = &past
+	unknownAt := time.Now().UTC().Add(-31 * time.Minute)
+	task.SubmissionUnknownAt = &unknownAt
 	worker, tasks, _, queue := newVideoWorkerForTest(task, nil)
 	tasks.claimedByID = task
 	queue.reserved = []string{task.PublicID}
 
 	require.NoError(t, worker.ProcessBatch(context.Background(), 1))
 	require.Equal(t, 1, tasks.claimByIDCalls)
-	require.Equal(t, VideoGenerationSubmissionUnknown, tasks.task.GenerationState)
+	require.Equal(t, VideoGenerationFailed, tasks.task.GenerationState)
 	require.Contains(t, queue.acked, task.PublicID)
 }
 
@@ -357,13 +407,15 @@ func TestVideoTaskWorkerFallsBackToDatabaseSweepWhenRedisFails(t *testing.T) {
 	task.GenerationState = VideoGenerationSubmitting
 	past := time.Now().UTC().Add(-time.Minute)
 	task.NextActionAt = &past
+	unknownAt := time.Now().UTC().Add(-31 * time.Minute)
+	task.SubmissionUnknownAt = &unknownAt
 	worker, tasks, _, queue := newVideoWorkerForTest(task, nil)
 	tasks.dueTasks = []*VideoTask{task}
 	queue.reserveErr = errors.New("redis unavailable")
 
 	require.NoError(t, worker.ProcessBatch(context.Background(), 1))
 	require.Zero(t, tasks.claimByIDCalls)
-	require.Equal(t, VideoGenerationSubmissionUnknown, tasks.task.GenerationState)
+	require.Equal(t, VideoGenerationFailed, tasks.task.GenerationState)
 }
 
 func TestVideoTaskWorkerCaptureSettlementUsesHoldBackedV2Command(t *testing.T) {
@@ -419,9 +471,11 @@ func TestBuildVideoUsageSettlementRecordsVideoTokenPriceAndUsage(t *testing.T) {
 	require.Equal(t, 7, *usageLog.VideoDurationSeconds)
 }
 
+// Vendor-neutral on purpose: this covers the model-name suffix fallback, which
+// only fires for platforms that encode a resolution in the model ID.
 func TestBuildVideoUsageSettlementDoesNotPersistInternalResolutionKey(t *testing.T) {
 	task := baseVideoWorkerTask()
-	task.UpstreamModel = "doubao-seedance-2.0-mini-480p"
+	task.UpstreamModel = "video-gen-480p"
 	task.ChannelModel = task.UpstreamModel
 	task.RequestedModel = task.UpstreamModel
 	task.ResponseMetadata = map[string]any{}

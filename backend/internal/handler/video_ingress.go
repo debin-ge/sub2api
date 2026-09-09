@@ -90,7 +90,7 @@ func (h *VideoHandler) PrepareCompositeVideoRoute(c *gin.Context) {
 		return
 	}
 	if route.ManagedReplay || route.ResolveAfterParsing {
-		c.Request = c.Request.WithContext(service.WithResolvedTargetPlatform(c.Request.Context(), service.PlatformOpenAI))
+		c.Request = c.Request.WithContext(service.WithResolvedTargetPlatform(c.Request.Context(), route.Decision.TargetPlatform))
 	} else {
 		c.Request = c.Request.WithContext(service.WithCompositeRouteDecision(c.Request.Context(), route.Decision))
 	}

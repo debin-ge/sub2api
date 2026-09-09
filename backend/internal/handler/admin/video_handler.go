@@ -27,17 +27,8 @@ type videoAdminController interface {
 	ListUnmatchedEvents(context.Context, int, int) (*service.VideoAdminEventPage, error)
 	ListCallbacks(context.Context, service.VideoAdminCallbackFilter) (*service.VideoAdminCallbackPage, error)
 	Overview(context.Context) (*service.VideoAdminOverview, error)
-	ResolveNotCreated(context.Context, string) (*service.VideoTask, error)
-	ResolveCreated(context.Context, string, string) (*service.VideoTask, error)
 	RetryProviderGet(context.Context, string) (*service.VideoTask, error)
 	RetrySettlement(context.Context, string) (*service.VideoTask, error)
-	ResolveBillingCapture(context.Context, string, float64) (*service.VideoTask, error)
-	ResolveBillingRelease(context.Context, string) (*service.VideoTask, error)
-	ListBillingReviews(context.Context, string) ([]*service.VideoBillingReview, error)
-	DecideBillingReview(context.Context, string, int64, bool) (*service.VideoTask, error)
-	ListSubmissionReviews(context.Context, string) ([]*service.VideoSubmissionReview, error)
-	DecideSubmissionReview(context.Context, string, int64, bool) (*service.VideoTask, error)
-	RetryCharacterResource(context.Context, string) (*service.VideoTask, error)
 	RetryDelete(context.Context, string) (*service.VideoTask, error)
 	RetryCallback(context.Context, int64) (*service.VideoCallbackDelivery, error)
 	GetCapabilityCatalog(context.Context) (*service.VideoCapabilityCatalogView, error)
@@ -121,8 +112,6 @@ type videoAdminTaskResponse struct {
 	ActualCost           *float64                          `json:"actual_cost,omitempty"`
 	CallbackConfigured   bool                              `json:"callback_configured"`
 	CallbackIntentState  string                            `json:"callback_intent_state"`
-	BillingReviewID      *int64                            `json:"billing_review_id,omitempty"`
-	SubmissionReviewID   *int64                            `json:"submission_review_id,omitempty"`
 	NextActionAt         *time.Time                        `json:"next_action_at,omitempty"`
 	PollAttempts         int                               `json:"poll_attempts"`
 	SubmitAttempts       int                               `json:"submit_attempts"`
@@ -164,8 +153,6 @@ func videoAdminTask(task *service.VideoTask) *videoAdminTaskResponse {
 		HoldID: stringValue(task.HoldID), HoldAmount: task.HoldAmount, ActualCost: task.ActualCost,
 		CallbackConfigured: task.CallbackURLEnc != nil, NextActionAt: task.NextActionAt,
 		CallbackIntentState: task.CallbackIntentState,
-		BillingReviewID:     task.BillingReviewID,
-		SubmissionReviewID:  task.SubmissionReviewID,
 		PollAttempts:        task.PollAttempts, SubmitAttempts: task.SubmitAttempts,
 		LastErrorKind: stringValue(task.LastErrorKind), LastErrorCode: stringValue(task.LastErrorCode), LastErrorMessage: stringValue(task.LastErrorMessage),
 		CreatedAt: task.CreatedAt, UpdatedAt: task.UpdatedAt, SubmittedAt: task.SubmittedAt, StartedAt: task.StartedAt,
@@ -387,25 +374,6 @@ func (h *VideoHandler) ListTasks(c *gin.Context) {
 	response.Success(c, gin.H{"items": items, "total": page.Total, "page": page.Page, "page_size": page.PageSize})
 }
 
-func (h *VideoHandler) ListUnknown(c *gin.Context) {
-	filter, err := videoAdminTaskFilter(c)
-	if err != nil {
-		response.BadRequest(c, err.Error())
-		return
-	}
-	filter.GenerationState = service.VideoGenerationSubmissionUnknown
-	page, err := h.requireController().ListTasks(c.Request.Context(), filter)
-	if err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-	items := make([]*videoAdminTaskResponse, 0, len(page.Tasks))
-	for _, task := range page.Tasks {
-		items = append(items, videoAdminTask(task))
-	}
-	response.Success(c, gin.H{"items": items, "total": page.Total, "page": page.Page, "page_size": page.PageSize})
-}
-
 func (h *VideoHandler) GetTask(c *gin.Context) {
 	task, err := h.requireController().GetTask(c.Request.Context(), c.Param("id"))
 	videoAdminRespond(c, videoAdminTask(task), err)
@@ -462,183 +430,12 @@ func (h *VideoHandler) ListCallbacks(c *gin.Context) {
 	response.Success(c, gin.H{"items": items, "total": result.Total, "page": result.Page, "page_size": result.PageSize})
 }
 
-func (h *VideoHandler) ResolveNotCreated(c *gin.Context) {
-	if !requireVideoAdminVersion(c) {
-		return
-	}
-	var request struct {
-		Reason      string `json:"reason"`
-		EvidenceRef string `json:"evidence_ref"`
-	}
-	if err := decodeStrictVideoAdminJSON(c, &request); err != nil {
-		response.BadRequest(c, "review evidence is required")
-		return
-	}
-	if !requireVideoReviewAudit(c, service.VideoBillingReviewRequest{Action: service.BalanceSettlementRelease, Reason: request.Reason, EvidenceRef: request.EvidenceRef}, false) {
-		return
-	}
-	task, err := h.requireController().ResolveNotCreated(c.Request.Context(), c.Param("id"))
-	videoAdminRespond(c, videoAdminTask(task), err)
-}
-
-type videoAdminResolveCreatedRequest struct {
-	ProviderTaskID string `json:"provider_task_id"`
-	Reason         string `json:"reason"`
-	EvidenceRef    string `json:"evidence_ref"`
-}
-
-func (h *VideoHandler) ResolveCreated(c *gin.Context) {
-	if !requireVideoAdminVersion(c) {
-		return
-	}
-	var request videoAdminResolveCreatedRequest
-	if err := decodeStrictVideoAdminJSON(c, &request); err != nil || strings.TrimSpace(request.ProviderTaskID) == "" {
-		response.BadRequest(c, "provider_task_id is required")
-		return
-	}
-	if !requireVideoReviewAudit(c, service.VideoBillingReviewRequest{Action: service.BalanceSettlementRelease, Reason: request.Reason, EvidenceRef: request.EvidenceRef}, false) {
-		return
-	}
-	task, err := h.requireController().ResolveCreated(c.Request.Context(), c.Param("id"), request.ProviderTaskID)
-	videoAdminRespond(c, videoAdminTask(task), err)
-}
-
 func (h *VideoHandler) RetryProviderGet(c *gin.Context) {
 	h.retryEmptyTaskAction(c, h.requireController().RetryProviderGet)
 }
 
-func (h *VideoHandler) RetryCharacterResource(c *gin.Context) {
-	h.retryEmptyTaskAction(c, h.requireController().RetryCharacterResource)
-}
-
-func (h *VideoHandler) ListSubmissionReviews(c *gin.Context) {
-	reviews, err := h.requireController().ListSubmissionReviews(c.Request.Context(), c.Param("id"))
-	videoAdminRespond(c, reviews, err)
-}
-
-func (h *VideoHandler) ApproveSubmissionReview(c *gin.Context) { h.decideSubmissionReview(c, true) }
-func (h *VideoHandler) RejectSubmissionReview(c *gin.Context)  { h.decideSubmissionReview(c, false) }
-
-func (h *VideoHandler) decideSubmissionReview(c *gin.Context, approve bool) {
-	if !requireVideoAdminVersion(c) {
-		return
-	}
-	reviewID, err := strconv.ParseInt(c.Param("review_id"), 10, 64)
-	if err != nil || reviewID <= 0 {
-		response.BadRequest(c, "invalid submission review id")
-		return
-	}
-	var request struct {
-		Reason string `json:"reason"`
-	}
-	if err := decodeStrictVideoAdminJSON(c, &request); err != nil {
-		response.BadRequest(c, "decision reason is required")
-		return
-	}
-	if !requireVideoReviewAudit(c, service.VideoBillingReviewRequest{Reason: request.Reason}, true) {
-		return
-	}
-	task, err := h.requireController().DecideSubmissionReview(c.Request.Context(), c.Param("id"), reviewID, approve)
-	videoAdminRespond(c, videoAdminTask(task), err)
-}
-
 func (h *VideoHandler) RetrySettlement(c *gin.Context) {
 	h.retryEmptyTaskAction(c, h.requireController().RetrySettlement)
-}
-
-type videoAdminResolveBillingCaptureRequest struct {
-	ActualUnits      *float64 `json:"actual_units"`
-	Reason           string   `json:"reason"`
-	EvidenceRef      string   `json:"evidence_ref"`
-	HonorFrozenQuote bool     `json:"honor_frozen_quote,omitempty"`
-}
-
-func (h *VideoHandler) ResolveBillingCapture(c *gin.Context) {
-	if !requireVideoAdminVersion(c) {
-		return
-	}
-	var request videoAdminResolveBillingCaptureRequest
-	if err := decodeStrictVideoAdminJSON(c, &request); err != nil || request.ActualUnits == nil {
-		response.BadRequest(c, "actual_units is invalid")
-		return
-	}
-	if !requireVideoReviewAudit(c, service.VideoBillingReviewRequest{Action: service.BalanceSettlementCapture, ActualUnits: *request.ActualUnits,
-		Reason: request.Reason, EvidenceRef: request.EvidenceRef, HonorFrozenQuote: request.HonorFrozenQuote}, false) {
-		return
-	}
-	task, err := h.requireController().ResolveBillingCapture(c.Request.Context(), c.Param("id"), *request.ActualUnits)
-	videoAdminRespond(c, videoAdminTask(task), err)
-}
-
-func (h *VideoHandler) ResolveBillingRelease(c *gin.Context) {
-	if !requireVideoAdminVersion(c) {
-		return
-	}
-	var request struct {
-		Reason      string `json:"reason"`
-		EvidenceRef string `json:"evidence_ref"`
-	}
-	if err := decodeStrictVideoAdminJSON(c, &request); err != nil {
-		response.BadRequest(c, "review evidence is required")
-		return
-	}
-	if !requireVideoReviewAudit(c, service.VideoBillingReviewRequest{Action: service.BalanceSettlementRelease, Reason: request.Reason, EvidenceRef: request.EvidenceRef}, false) {
-		return
-	}
-	task, err := h.requireController().ResolveBillingRelease(c.Request.Context(), c.Param("id"))
-	videoAdminRespond(c, videoAdminTask(task), err)
-}
-
-func requireVideoReviewAudit(c *gin.Context, request service.VideoBillingReviewRequest, decision bool) bool {
-	request.ActorID, request.OperationKey = getAdminIDFromContext(c), strings.TrimSpace(c.GetHeader("Idempotency-Key"))
-	request.ApprovalThresholdUSD = service.VideoBillingReviewDefaultThresholdUSD
-	if request.ActorID <= 0 {
-		response.Error(c, http.StatusUnauthorized, "an individually authenticated administrator is required")
-		return false
-	}
-	var err error
-	if decision {
-		err = service.ValidateVideoBillingReviewDecision(service.VideoBillingReviewDecision{ActorID: request.ActorID, OperationKey: request.OperationKey, Reason: request.Reason})
-	} else {
-		err = service.ValidateVideoBillingReviewRequest(request)
-	}
-	if err != nil {
-		response.ErrorFrom(c, err)
-		return false
-	}
-	c.Request = c.Request.WithContext(service.WithVideoBillingReviewRequest(c.Request.Context(), request))
-	return true
-}
-
-func (h *VideoHandler) ListBillingReviews(c *gin.Context) {
-	reviews, err := h.requireController().ListBillingReviews(c.Request.Context(), c.Param("id"))
-	videoAdminRespond(c, reviews, err)
-}
-
-func (h *VideoHandler) ApproveBillingReview(c *gin.Context) { h.decideBillingReview(c, true) }
-func (h *VideoHandler) RejectBillingReview(c *gin.Context)  { h.decideBillingReview(c, false) }
-
-func (h *VideoHandler) decideBillingReview(c *gin.Context, approve bool) {
-	if !requireVideoAdminVersion(c) {
-		return
-	}
-	reviewID, err := strconv.ParseInt(c.Param("review_id"), 10, 64)
-	if err != nil || reviewID <= 0 {
-		response.BadRequest(c, "invalid billing review id")
-		return
-	}
-	var request struct {
-		Reason string `json:"reason"`
-	}
-	if err := decodeStrictVideoAdminJSON(c, &request); err != nil {
-		response.BadRequest(c, "decision reason is required")
-		return
-	}
-	if !requireVideoReviewAudit(c, service.VideoBillingReviewRequest{Reason: request.Reason}, true) {
-		return
-	}
-	task, err := h.requireController().DecideBillingReview(c.Request.Context(), c.Param("id"), reviewID, approve)
-	videoAdminRespond(c, videoAdminTask(task), err)
 }
 
 func (h *VideoHandler) RetryDelete(c *gin.Context) {
@@ -699,13 +496,6 @@ func (h *VideoHandler) requireController() videoAdminController {
 
 type unavailableVideoAdminController struct{}
 
-func (unavailableVideoAdminController) ListBillingReviews(context.Context, string) ([]*service.VideoBillingReview, error) {
-	return nil, service.ErrVideoDisabled
-}
-func (unavailableVideoAdminController) DecideBillingReview(context.Context, string, int64, bool) (*service.VideoTask, error) {
-	return nil, service.ErrVideoDisabled
-}
-
 func (unavailableVideoAdminController) ListTasks(context.Context, service.VideoAdminTaskFilter) (*service.VideoAdminTaskPage, error) {
 	return nil, service.ErrVideoDisabled
 }
@@ -730,32 +520,10 @@ func (unavailableVideoAdminController) ListCallbacks(context.Context, service.Vi
 func (unavailableVideoAdminController) Overview(context.Context) (*service.VideoAdminOverview, error) {
 	return nil, service.ErrVideoDisabled
 }
-func (unavailableVideoAdminController) ResolveNotCreated(context.Context, string) (*service.VideoTask, error) {
-	return nil, service.ErrVideoDisabled
-}
-func (unavailableVideoAdminController) ResolveCreated(context.Context, string, string) (*service.VideoTask, error) {
-	return nil, service.ErrVideoDisabled
-}
-
-func (unavailableVideoAdminController) ListSubmissionReviews(context.Context, string) ([]*service.VideoSubmissionReview, error) {
-	return nil, service.ErrVideoInvalidRequest
-}
-func (unavailableVideoAdminController) DecideSubmissionReview(context.Context, string, int64, bool) (*service.VideoTask, error) {
-	return nil, service.ErrVideoInvalidRequest
-}
-func (unavailableVideoAdminController) RetryCharacterResource(context.Context, string) (*service.VideoTask, error) {
-	return nil, service.ErrVideoInvalidRequest
-}
 func (unavailableVideoAdminController) RetryProviderGet(context.Context, string) (*service.VideoTask, error) {
 	return nil, service.ErrVideoDisabled
 }
 func (unavailableVideoAdminController) RetrySettlement(context.Context, string) (*service.VideoTask, error) {
-	return nil, service.ErrVideoDisabled
-}
-func (unavailableVideoAdminController) ResolveBillingCapture(context.Context, string, float64) (*service.VideoTask, error) {
-	return nil, service.ErrVideoDisabled
-}
-func (unavailableVideoAdminController) ResolveBillingRelease(context.Context, string) (*service.VideoTask, error) {
 	return nil, service.ErrVideoDisabled
 }
 func (unavailableVideoAdminController) RetryDelete(context.Context, string) (*service.VideoTask, error) {

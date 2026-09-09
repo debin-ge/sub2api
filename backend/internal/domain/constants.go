@@ -33,6 +33,7 @@ const (
 	PlatformGLM       = "glm"
 	PlatformWindsurf  = "windsurf"
 	PlatformOpenCode  = "opencode"
+	PlatformByteDance = "bytedance"
 	PlatformComposite = "composite"
 )
 

@@ -199,6 +199,15 @@ const doubaoModels = [
   'doubao-1.5-pro-vision-32k', 'doubao-1.5-thinking-pro'
 ]
 
+// 火山方舟的 Seedance 模型 ID 带版本与发布日期后缀，分辨率不写进 ID
+// （由请求参数 resolution 决定），必须与后端 video_catalog.go 的常量一致：
+// 白名单会写进账号 model_mapping，而 model_mapping 才是真正的路由白名单，
+// 名字对不上就是一个永远调不通的账号。
+const byteDanceVideoModels = [
+  'doubao-seedance-1-0-pro-250528',
+  'doubao-seedance-1-0-lite-t2v-250428'
+]
+
 // MiniMax
 const minimaxModels = [
   'MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.7-highspeed',
@@ -362,6 +371,7 @@ const allModelsList: string[] = [
   ...yiModels,
   ...moonshotModels,
   ...doubaoModels,
+  ...byteDanceVideoModels,
   ...minimaxModels,
   ...glmModels,
   ...kimiModels,
@@ -611,6 +621,7 @@ export function getModelsByPlatform(platform: string): string[] {
     case 'moonshot':
     case 'kimi': return moonshotModels
     case 'doubao': return doubaoModels
+    case 'bytedance': return byteDanceVideoModels
     case 'minimax': return minimaxModels
     case 'baidu': return baiduModels
     case 'spark': return sparkModels

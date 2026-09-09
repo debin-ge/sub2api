@@ -57,6 +57,13 @@ func openAIVideoTestAccount() *Account {
 	}
 }
 
+func byteDanceVideoTestAccount() *Account {
+	return &Account{
+		ID: 21, Platform: PlatformByteDance, Type: AccountTypeAPIKey, Concurrency: 3,
+		Credentials: map[string]any{"api_key": "ark-video-secret"},
+	}
+}
+
 func openAIVideoResponseForTest(status int, body string, headers http.Header) *http.Response {
 	if headers == nil {
 		headers = make(http.Header)
@@ -144,64 +151,20 @@ func TestOpenAIVideoProviderCreateJSON(t *testing.T) {
 	require.NotNil(t, task.ProviderCreatedAt)
 }
 
-func TestOpenAIVideoProviderCustomBaseURLForwardsReferenceVideos(t *testing.T) {
-	account := openAIVideoTestAccount()
-	account.Credentials["base_url"] = "https://video-upstream.example/v1"
-	referenceURL := "https://media.example.com/reference.mp4?preview=1&auth_key=signed"
-	provider := NewOpenAIVideoProvider(&openAIVideoHTTPStub{do: func(req *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
-		require.Equal(t, "https://video-upstream.example/v1/videos", req.URL.String())
-		var payload map[string]any
-		require.NoError(t, json.NewDecoder(req.Body).Decode(&payload))
-		require.Equal(t, "10", payload["seconds"], "Seedance-compatible upstream requires a string")
-		require.Equal(t, []any{referenceURL}, payload["reference_videos"])
-		return openAIVideoResponseForTest(http.StatusOK, `{"id":"video_seedance_1","status":"queued"}`, nil), nil
-	}}, nil)
+// ByteDance provider behaviour is covered in bytedance_video_provider_test.go.
 
-	task, err := provider.Create(context.Background(), account, VideoCreateRequest{
-		ClientToken: "video_local", Operation: VideoOperationGenerate,
-		Model: "doubao-seedance-2.0-mini-480p", Prompt: "A sports car", Seconds: 10,
-		ReferenceMedia: ProviderVideoReferenceMedia{ReferenceVideos: []string{referenceURL}},
-	}, nil)
-
-	require.NoError(t, err)
-	require.Equal(t, "video_seedance_1", task.ProviderTaskID)
-}
-
-func TestOpenAIVideoProviderCustomBaseURLIgnoresRatioWhenMediaDeterminesFraming(t *testing.T) {
-	account := openAIVideoTestAccount()
-	account.Credentials["base_url"] = "https://video-upstream.example/v1"
-	provider := NewOpenAIVideoProvider(&openAIVideoHTTPStub{do: func(req *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
-		var payload map[string]any
-		require.NoError(t, json.NewDecoder(req.Body).Decode(&payload))
-		require.NotContains(t, payload, "ratio")
-		require.NotContains(t, payload, "aspect_ratio")
-		require.Equal(t, "https://media.example.com/first.png", payload["image_url"])
-		return openAIVideoResponseForTest(http.StatusOK, `{"id":"video_seedance_2","status":"queued"}`, nil), nil
-	}}, nil)
-
-	_, err := provider.Create(context.Background(), account, VideoCreateRequest{
-		Operation: VideoOperationGenerate, Model: "doubao-seedance-2.0-mini-480p",
-		Prompt: "A sports car", Seconds: 10,
-		ReferenceMedia: ProviderVideoReferenceMedia{Ratio: "16:9", ImageURL: "https://media.example.com/first.png"},
-	}, nil)
-	require.NoError(t, err)
-}
-
-func TestOpenAIVideoProviderRejectsInvalidSeedance20BeforeUpstream(t *testing.T) {
-	account := openAIVideoTestAccount()
-	account.Credentials["base_url"] = "https://video-upstream.example/v1"
+func TestOpenAIVideoProviderRejectsSeedanceModels(t *testing.T) {
 	provider := NewOpenAIVideoProvider(&openAIVideoHTTPStub{do: func(*http.Request, string, int64, int) (*http.Response, error) {
-		t.Fatal("invalid Seedance request must fail before the upstream call")
+		t.Fatal("Seedance must not reach the OpenAI upstream")
 		return nil, nil
 	}}, nil)
-
-	_, err := provider.Create(context.Background(), account, VideoCreateRequest{
-		Operation: VideoOperationGenerate, Model: "doubao-seedance-2.0-mini-480p",
-		Prompt: "test", Seconds: 16,
+	_, err := provider.Create(context.Background(), openAIVideoTestAccount(), VideoCreateRequest{
+		Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro,
+		Prompt: "test", Seconds: 8,
 	}, nil)
 	var providerErr *VideoProviderError
 	require.ErrorAs(t, err, &providerErr)
-	require.Equal(t, "invalid_seedance_request", providerErr.Code)
+	require.Equal(t, "unsupported_model", providerErr.Code)
 }
 
 func TestOpenAIVideoProviderKeepsCompatibleReferencesOffOfficialEndpoint(t *testing.T) {

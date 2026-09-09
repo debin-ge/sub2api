@@ -32,6 +32,10 @@ func TestVideoPlatformMigrationsAreEmbeddedAndMetadataOnly(t *testing.T) {
 		"264_account_provider_principals.sql",
 		"265_video_failed_auto_release.sql",
 		"266_video_task_provider_url.sql",
+		"269_drop_video_manual_review.sql",
+		"269_drop_video_manual_review_notx.sql",
+		"270_validate_video_state_checks.sql",
+		"271_clear_bytedance_execution_spec_conflict.sql",
 	}
 	for _, name := range files {
 		t.Run(name, func(t *testing.T) {
@@ -51,6 +55,114 @@ func TestVideoFailedAutoReleaseMigrationRemovesReviewRequirement(t *testing.T) {
 	require.Contains(t, statement, "task.generation_state = 'failed' AND NEW.command_payload ->> 'action' = 'release'")
 	require.Contains(t, statement, "WHERE generation_state = 'failed' AND billing_state = 'manual_review'")
 	require.Contains(t, statement, "billing_review_id = NULL")
+}
+
+func TestVideoManualReviewMigrationSettlesBacklogAndDropsTheSchema(t *testing.T) {
+	content, err := FS.ReadFile("269_drop_video_manual_review.sql")
+	require.NoError(t, err)
+	statement := strings.Join(strings.Fields(string(content)), " ")
+
+	// The backlog must be settled before the states stop being representable.
+	require.Contains(t, statement, "WHERE generation_state = 'submission_unknown'")
+	require.Contains(t, statement, "WHERE billing_state = 'manual_review' AND generation_state = 'completed'")
+	require.Contains(t, statement, "actual_units = estimated_units, actual_cost = hold_amount")
+	settledAt := strings.Index(statement, "billing_state = 'manual_review'")
+	droppedAt := strings.Index(statement, "ADD CONSTRAINT video_tasks_billing_state_check")
+	require.Positive(t, settledAt)
+	require.Positive(t, droppedAt)
+	require.Less(t, settledAt, droppedAt, "the manual_review backlog must be settled before the state is rejected")
+
+	// Neither state may survive in the schema, and no review object may remain.
+	for _, removed := range []string{
+		"'submission_unknown',", "'manual_review',",
+		"guard_video_manual_billing_transition()", "guard_video_unknown_resolution()",
+	} {
+		require.NotContains(t, statement, "CHECK (generation_state IN ('preparing', 'held', 'submitting', 'queued', 'in_progress', 'completed', 'failed', 'cancelled', 'expired', "+removed)
+	}
+	require.Contains(t, statement, "CHECK (generation_state IN ( 'preparing', 'held', 'submitting', 'queued', 'in_progress', 'completed', 'failed', 'cancelled', 'expired' ))")
+	require.Contains(t, statement, "CHECK (billing_state IN ( 'none', 'held', 'capture_pending', 'captured', 'release_pending', 'released' ))")
+	require.Contains(t, statement, "DROP COLUMN IF EXISTS billing_review_id")
+	require.Contains(t, statement, "DROP COLUMN IF EXISTS submission_review_id")
+	for _, table := range []string{"video_billing_review_actions", "video_submission_review_actions", "video_billing_reviews", "video_submission_reviews"} {
+		require.Contains(t, statement, "DROP TABLE IF EXISTS "+table)
+	}
+
+	// The rebuilt guards keep immutability but no longer demand an approved review.
+	require.Contains(t, statement, "video execution and pricing snapshots are immutable")
+	require.Contains(t, statement, "video execution financial intent is immutable")
+	require.NotContains(t, statement, "requires an approved review")
+	require.NotContains(t, statement, "requires a reviewed financial intent")
+
+	// The ByteDance frozen-specification guard was a bug: it stamped every task
+	// with a conflict marker that the execution guard then makes permanent, so a
+	// stamped task would keep settling at the frozen quote long after the code
+	// was fixed. The marker can only be stripped while the guard is off.
+	clearedAt := strings.Index(statement, "response_metadata - 'execution_spec_conflict'")
+	require.Positive(t, clearedAt)
+	require.Less(t, strings.Index(statement, "DISABLE TRIGGER video_tasks_execution_guard"), clearedAt)
+	require.Less(t, clearedAt, strings.Index(statement, "ENABLE TRIGGER video_tasks_execution_guard"))
+	require.Contains(t, statement, "WHERE provider = 'bytedance'")
+
+	// Audit events must carry the states the rows actually came from. Both
+	// backfills read them from a snapshot CTE, because RETURNING yields the new
+	// value and the WHERE clause only pins one of the two columns.
+	require.Contains(t, statement, "targets.from_generation_state, 'failed', targets.from_billing_state, resolved.billing_state")
+	require.Contains(t, statement, "targets.from_generation_state, released.generation_state, 'manual_review', 'release_pending'")
+
+	// The tightened CHECKs skip their full-table scan: this transaction already
+	// holds ACCESS EXCLUSIVE on video_tasks. 270 validates the backlog under a
+	// lock that does not block reads or writes.
+	require.Contains(t, statement, "'queued', 'in_progress', 'completed', 'failed', 'cancelled', 'expired' )) NOT VALID")
+	require.Contains(t, statement, "'release_pending', 'released' )) NOT VALID")
+	validate, err := FS.ReadFile("270_validate_video_state_checks.sql")
+	require.NoError(t, err)
+	validateSQL := strings.Join(strings.Fields(string(validate)), " ")
+	require.Contains(t, validateSQL, "ALTER TABLE video_tasks VALIDATE CONSTRAINT %I")
+	require.Contains(t, validateSQL, "'video_tasks_generation_state_check', 'video_tasks_billing_state_check'")
+	// A database that applied the first version of 269 added both constraints
+	// already validated, and an older one may not carry them at all: validating a
+	// missing constraint is an error, and that database is the one that has to boot.
+	require.Contains(t, validateSQL, "AND NOT convalidated")
+
+	// The reservation index is rebuilt concurrently, outside the transaction.
+	concurrent, err := FS.ReadFile("269_drop_video_manual_review_notx.sql")
+	require.NoError(t, err)
+	concurrentSQL := strings.Join(strings.Fields(string(concurrent)), " ")
+	require.Contains(t, concurrentSQL, "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_video_tasks_budget_reservations_v2")
+	// A failed first attempt leaves an INVALID index of the same name that
+	// IF NOT EXISTS would silently accept, while the old index is dropped anyway.
+	require.Less(t,
+		strings.Index(concurrentSQL, "DROP INDEX CONCURRENTLY IF EXISTS idx_video_tasks_budget_reservations_v2"),
+		strings.Index(concurrentSQL, "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_video_tasks_budget_reservations_v2"))
+	require.Contains(t, concurrentSQL, "WHERE billing_state IN ('held', 'capture_pending', 'release_pending')")
+	require.NotContains(t, concurrentSQL, "manual_review")
+	require.NotContains(t, statement, "CREATE INDEX CONCURRENTLY")
+}
+
+// The first published version of 269 lacked the conflict-marker cleanup, and a
+// database that applied it skips 269 forever on its historical checksum. 271
+// carries the same cleanup so those rows are still reached; on a database that
+// ran the current 269 it matches nothing.
+func TestClearBytedanceExecutionSpecConflictMigrationRepeatsTheCleanup(t *testing.T) {
+	content, err := FS.ReadFile("271_clear_bytedance_execution_spec_conflict.sql")
+	require.NoError(t, err)
+	statement := strings.Join(strings.Fields(string(content)), " ")
+
+	clearedAt := strings.Index(statement, "response_metadata - 'execution_spec_conflict'")
+	require.Positive(t, clearedAt)
+	require.Less(t, strings.Index(statement, "DISABLE TRIGGER video_tasks_execution_guard"), clearedAt)
+	require.Less(t, clearedAt, strings.Index(statement, "ENABLE TRIGGER video_tasks_execution_guard"))
+
+	// Same blast radius as 269 step 4: other providers stamp the marker from a
+	// real observation, and a settled task has already moved money.
+	require.Contains(t, statement, "WHERE provider = 'bytedance'")
+	require.Contains(t, statement, "billing_state NOT IN ('captured', 'released')")
+	require.Contains(t, statement, "NOT (response_metadata ? 'specification_invalid')")
+
+	// The event hash is keyed to 271 so a database that ran both migrations keeps
+	// two distinct audit rows instead of silently dropping the second.
+	require.Contains(t, statement, "'video_execution_spec_conflict_cleared:271:' || id::TEXT")
+	require.NotContains(t, statement, ":269:")
 }
 
 func TestVideoPlatformMigrationsDoNotInstallRemovedGrokWorkflows(t *testing.T) {

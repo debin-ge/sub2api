@@ -260,6 +260,7 @@ func CatalogOverridePlatforms() []string {
 		PlatformDeepSeek,
 		PlatformWindsurf,
 		PlatformOpenCode,
+		PlatformByteDance,
 		PlatformComposite,
 	}
 }

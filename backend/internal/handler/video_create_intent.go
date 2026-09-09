@@ -82,11 +82,12 @@ func (h *VideoHandler) CreateIntentMiddleware(c *gin.Context) {
 		c.Next()
 		return
 	}
-	if key.Group.Platform != service.PlatformOpenAI && key.Group.Platform != service.PlatformComposite {
+	if key.Group.Platform != service.PlatformOpenAI && key.Group.Platform != service.PlatformByteDance && key.Group.Platform != service.PlatformComposite {
 		c.Next()
 		return
 	}
-	if target, resolved := service.ResolvedTargetPlatformFromContext(c.Request.Context()); resolved && target != service.PlatformOpenAI {
+	if target, resolved := service.ResolvedTargetPlatformFromContext(c.Request.Context()); resolved &&
+		target != service.PlatformOpenAI && target != service.PlatformByteDance {
 		c.Next()
 		return
 	}

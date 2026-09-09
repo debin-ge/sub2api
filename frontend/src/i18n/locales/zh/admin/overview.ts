@@ -907,6 +907,7 @@ export default {
         kimi: 'Kimi',
         zhipu: 'Zhipu GLM',
         deepseek: 'DeepSeek',
+        bytedance: 'ByteDance',
         composite: 'Composite',
       },
       saving: '保存中...',
@@ -1011,7 +1012,7 @@ export default {
       videoPricing: {
         title: '视频生成计费',
         description:
-          '配置 Grok 视频生成的每秒单价（USD/秒），留空则使用默认每秒价（grok-imagine-video：480p $0.05/s、720p $0.07/s；video-1.5：480p $0.08/s、720p $0.14/s、1080p $0.25/s）',
+          '配置视频生成的每秒单价（USD/秒）。ByteDance Seedance 的分辨率由所选模型确定。',
         modelOverridesTitle: '按模型覆盖视频价格',
         modelOverridesDescription: '已填写的单元格会覆盖该模型族的平面分辨率价格。video-1.5 的 preview 与 legacy 别名共用同一模型族；留空则回退到平面分辨率价格。',
         independentMultiplier: '视频倍率独立',
@@ -1125,6 +1126,10 @@ export default {
           chatCompletions: 'Chat Completions',
           embeddings: 'Embeddings',
           images: 'Images',
+          videos: 'Videos',
+          videoEdits: '视频编辑',
+          videoExtensions: '视频扩展',
+          videoCharacters: '视频角色',
           gemini: 'Gemini 原生'
         },
         match: {

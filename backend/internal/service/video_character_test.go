@@ -23,7 +23,7 @@ func characterAccessFixture() (*VideoTaskService, *videoTaskRepoStub, *videoProv
 }
 
 func TestVideoCharacterAccessRequiresSettledSource(t *testing.T) {
-	for _, billing := range []string{VideoBillingHeld, VideoBillingCapturePending, VideoBillingManualReview, VideoBillingReleased, VideoBillingCaptured} {
+	for _, billing := range []string{VideoBillingHeld, VideoBillingCapturePending, VideoBillingReleasePending, VideoBillingReleased, VideoBillingCaptured} {
 		t.Run(billing, func(t *testing.T) {
 			svc, _, _, resource, task := characterAccessFixture()
 			svc.cfg.Gateway.Video.DisclosurePolicy = config.VideoDisclosureIdentity
@@ -103,7 +103,7 @@ func TestVideoCharacterDeletionUsesDurableTaskAndCorrectProviderEndpoint(t *test
 
 func TestVideoCharacterDeleteCannotBypassSettlement(t *testing.T) {
 	svc, _, provider, resource, task := characterAccessFixture()
-	task.BillingState = VideoBillingManualReview
+	task.BillingState = VideoBillingCapturePending
 	require.ErrorIs(t, svc.DeleteCharacterForOwner(context.Background(), resource.UserID, resource.PublicID), ErrVideoSettlementPending)
 	require.Equal(t, VideoDeleteNone, task.DeleteState)
 	require.Zero(t, provider.characterDeletes)

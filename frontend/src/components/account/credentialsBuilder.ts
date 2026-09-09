@@ -42,7 +42,8 @@ export function isHeaderOverrideCapable(platform: string, type: string): boolean
     platform === 'openai' ||
     platform === 'kimi' ||
     platform === 'zhipu' ||
-    platform === 'deepseek'
+    platform === 'deepseek' ||
+    platform === 'bytedance'
   ) {
     return type === 'apikey'
   }
@@ -407,6 +408,49 @@ export function applyHeaderOverride(
   } else if (mode === 'edit') {
     delete credentials[HEADER_OVERRIDE_ENABLED_CREDENTIAL_KEY]
     delete credentials[HEADER_OVERRIDES_CREDENTIAL_KEY]
+  }
+}
+
+// ========== ByteDance 视频上游协议 ==========
+// native：Ark 自身的异步任务协议（/contents/generations/tasks）。
+// openai_compatible：第三方以 OpenAI 形态（/v1/videos）转发的 Seedance。
+// 两者是同一批模型的不同线格式，由账号凭据记录，缺省为 native。
+
+export const BYTEDANCE_PROTOCOL_MODE_CREDENTIAL_KEY = 'protocol_mode'
+
+export type ByteDanceProtocolMode = 'native' | 'openai_compatible'
+
+/** 仅接受已知模式；未知值回落 native 仅用于表单展示，保存时会显式清除脏值。 */
+export function readByteDanceProtocolMode(
+  credentials: Record<string, unknown> | undefined | null
+): ByteDanceProtocolMode {
+  return credentials?.[BYTEDANCE_PROTOCOL_MODE_CREDENTIAL_KEY] === 'openai_compatible'
+    ? 'openai_compatible'
+    : 'native'
+}
+
+/**
+ * openai_compatible 没有官方端点——Ark 自己的视频 API 就是 native 协议——
+ * 所以转发账号必须显式填写 base_url。后端 SupportsAccount 对缺地址的转发账号
+ * 直接判不可调度，因此这里要在建号时拦住，而不是等调度期静默跳过该账号。
+ */
+export function byteDanceProtocolRequiresBaseUrl(mode: ByteDanceProtocolMode): boolean {
+  return mode === 'openai_compatible'
+}
+
+/**
+ * 写入协议模式：native 为后端缺省值，建号时不落库（保持凭据最小化），
+ * 编辑时删除该键以回到缺省。
+ */
+export function applyByteDanceProtocolMode(
+  credentials: Record<string, unknown>,
+  mode: ByteDanceProtocolMode,
+  formMode: 'create' | 'edit'
+): void {
+  if (mode === 'openai_compatible') {
+    credentials[BYTEDANCE_PROTOCOL_MODE_CREDENTIAL_KEY] = 'openai_compatible'
+  } else if (formMode === 'edit') {
+    delete credentials[BYTEDANCE_PROTOCOL_MODE_CREDENTIAL_KEY]
   }
 }
 

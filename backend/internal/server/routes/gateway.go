@@ -51,6 +51,21 @@ func RegisterGatewayRoutes(
 	compositeTarget := compositeTargetPlatformMiddleware(compositeResolver, h.Video)
 	videoCreateIntent := gin.HandlerFunc(h.Video.CreateIntentMiddleware)
 	compositeGeminiTarget := compositeGeminiTargetPlatformMiddleware(compositeResolver)
+	byteDanceVideoOnly := func(c *gin.Context) {
+		if getGroupPlatform(c) != service.PlatformByteDance {
+			c.Next()
+			return
+		}
+		path := strings.TrimPrefix(c.Request.URL.Path, "/v1")
+		if path == "/models" || path == "/balance" || path == "/usage" || path == "/sub2api/billing" ||
+			path == "/videos" || strings.HasPrefix(path, "/videos/") {
+			c.Next()
+			return
+		}
+		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
+		writeByteDanceUnsupported(c)
+		c.Abort()
+	}
 
 	// 未分组 Key 拦截中间件（按协议格式区分错误响应）
 	requireGroupAnthropic := middleware.RequireGroupAssignment(settingService, middleware.AnthropicErrorWriter)
@@ -134,7 +149,7 @@ func RegisterGatewayRoutes(
 		switch getGroupPlatform(c) {
 		case service.PlatformGrok:
 			h.CompatibleGateway.GrokVideoGeneration(c)
-		case service.PlatformOpenAI, service.PlatformComposite:
+		case service.PlatformOpenAI, service.PlatformByteDance, service.PlatformComposite:
 			if h.Video == nil {
 				videoUnsupported(c)
 				return
@@ -157,7 +172,7 @@ func RegisterGatewayRoutes(
 			h.CompatibleGateway.GrokVideoStatus(c)
 			return
 		}
-		if platform != service.PlatformOpenAI && platform != service.PlatformComposite || h.Video == nil {
+		if platform != service.PlatformOpenAI && platform != service.PlatformByteDance && platform != service.PlatformComposite || h.Video == nil {
 			videoUnsupported(c)
 			return
 		}
@@ -169,7 +184,7 @@ func RegisterGatewayRoutes(
 			h.CompatibleGateway.GrokVideoContent(c)
 			return
 		}
-		if platform != service.PlatformOpenAI && platform != service.PlatformComposite || h.Video == nil {
+		if platform != service.PlatformOpenAI && platform != service.PlatformByteDance && platform != service.PlatformComposite || h.Video == nil {
 			videoUnsupported(c)
 			return
 		}
@@ -193,7 +208,7 @@ func RegisterGatewayRoutes(
 		switch getGroupPlatform(c) {
 		case service.PlatformGrok:
 			h.CompatibleGateway.GrokVideoEdit(c)
-		case service.PlatformOpenAI, service.PlatformComposite:
+		case service.PlatformOpenAI, service.PlatformByteDance, service.PlatformComposite:
 			if h.Video == nil {
 				videoUnsupported(c)
 				return
@@ -207,7 +222,7 @@ func RegisterGatewayRoutes(
 		switch getGroupPlatform(c) {
 		case service.PlatformGrok:
 			h.CompatibleGateway.GrokVideoExtension(c)
-		case service.PlatformOpenAI, service.PlatformComposite:
+		case service.PlatformOpenAI, service.PlatformByteDance, service.PlatformComposite:
 			if h.Video == nil {
 				videoUnsupported(c)
 				return
@@ -218,14 +233,14 @@ func RegisterGatewayRoutes(
 		}
 	}
 	videoListHandler := func(c *gin.Context) {
-		if (getGroupPlatform(c) == service.PlatformOpenAI || getGroupPlatform(c) == service.PlatformComposite) && h.Video != nil {
+		if (getGroupPlatform(c) == service.PlatformOpenAI || getGroupPlatform(c) == service.PlatformByteDance || getGroupPlatform(c) == service.PlatformComposite) && h.Video != nil {
 			h.Video.List(c)
 			return
 		}
 		videoUnsupported(c)
 	}
 	videoDeleteHandler := func(c *gin.Context) {
-		if (getGroupPlatform(c) == service.PlatformOpenAI || getGroupPlatform(c) == service.PlatformComposite) && h.Video != nil {
+		if (getGroupPlatform(c) == service.PlatformOpenAI || getGroupPlatform(c) == service.PlatformByteDance || getGroupPlatform(c) == service.PlatformComposite) && h.Video != nil {
 			h.Video.Delete(c)
 			return
 		}
@@ -292,6 +307,7 @@ func RegisterGatewayRoutes(
 	gateway.Use(gin.HandlerFunc(apiKeyAuth))
 	gateway.GET("/sub2api/billing", h.Gateway.KeyBillingInfo)
 	gateway.Use(compositeTarget)
+	gateway.Use(byteDanceVideoOnly)
 	gateway.Use(videoCreateIntent)
 	gateway.Use(requireGroupAnthropic)
 	{
@@ -526,6 +542,7 @@ func RegisterGatewayRoutes(
 	gemini.Use(endpointNorm)
 	gemini.Use(middleware.APIKeyAuthWithSubscriptionGoogle(apiKeyService, subscriptionService, cfg))
 	gemini.Use(compositeGeminiTarget)
+	gemini.Use(byteDanceVideoOnly)
 	gemini.Use(requireGroupGoogle)
 	{
 		gemini.GET("/models", h.Gateway.GeminiV1BetaListModels)
@@ -569,10 +586,10 @@ func RegisterGatewayRoutes(
 		}
 		h.Gateway.Responses(c)
 	}
-	r.POST("/responses", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, responsesHandler)
-	r.POST("/responses/*subpath", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, guardResponsesSubpath(responsesSubpathHandler))
-	r.POST("/alpha/search", textBodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, h.CompatibleGateway.AlphaSearch)
-	r.GET("/responses", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
+	r.POST("/responses", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, byteDanceVideoOnly, requireGroupAnthropic, responsesHandler)
+	r.POST("/responses/*subpath", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, byteDanceVideoOnly, requireGroupAnthropic, guardResponsesSubpath(responsesSubpathHandler))
+	r.POST("/alpha/search", textBodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, byteDanceVideoOnly, requireGroupAnthropic, h.CompatibleGateway.AlphaSearch)
+	r.GET("/responses", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, byteDanceVideoOnly, requireGroupAnthropic, func(c *gin.Context) {
 		if getGroupPlatform(c) == service.PlatformMiniMax {
 			writeMiniMaxUnsupported(c, h)
 			return
@@ -588,9 +605,9 @@ func RegisterGatewayRoutes(
 		h.CompatibleGateway.ResponsesWebSocket(c)
 	})
 	r.GET("/models", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, modelsHandler)
-	r.POST("/messages/count_tokens", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, countTokensHandler)
+	r.POST("/messages/count_tokens", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, byteDanceVideoOnly, requireGroupAnthropic, countTokensHandler)
 	codexDirect := r.Group("/backend-api/codex")
-	codexDirect.Use(bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic)
+	codexDirect.Use(bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, byteDanceVideoOnly, requireGroupAnthropic)
 	{
 		codexDirect.POST("/realtime/calls", h.CompatibleGateway.Live)
 		codexDirect.GET("/:call_id", h.CompatibleGateway.LiveSideband)
@@ -615,7 +632,7 @@ func RegisterGatewayRoutes(
 		codexDirect.GET("/models", codexModelsHandler)
 	}
 	// OpenAI Chat Completions API（不带v1前缀的别名）— auto-route based on group platform
-	r.POST("/chat/completions", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
+	r.POST("/chat/completions", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, byteDanceVideoOnly, requireGroupAnthropic, func(c *gin.Context) {
 		switch getGroupPlatform(c) {
 		case service.PlatformOpenAI, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM:
 			h.CompatibleGateway.ChatCompletions(c)
@@ -632,7 +649,7 @@ func RegisterGatewayRoutes(
 		}
 		h.Gateway.ChatCompletions(c)
 	})
-	r.POST("/embeddings", textBodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
+	r.POST("/embeddings", textBodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, byteDanceVideoOnly, requireGroupAnthropic, func(c *gin.Context) {
 		if !isOpenAIOnlyEndpointGatewayPlatform(c) {
 			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
 			c.JSON(http.StatusNotFound, gin.H{
@@ -787,6 +804,16 @@ func writeMiniMaxUnsupported(c *gin.Context, _ *handler.Handlers) {
 		"error": gin.H{
 			"type":    "not_found_error",
 			"message": "MiniMax gateway does not support this endpoint",
+		},
+	})
+}
+
+func writeByteDanceUnsupported(c *gin.Context) {
+	c.JSON(http.StatusNotFound, gin.H{
+		"type": "error",
+		"error": gin.H{
+			"type":    "not_found_error",
+			"message": "ByteDance gateway supports only the Videos API",
 		},
 	})
 }
@@ -983,7 +1010,8 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver,
 			if decision.Matched {
 				c.Request = c.Request.WithContext(service.WithCompositeRouteDecision(c.Request.Context(), decision))
 				_, managedVideo := service.ManagedVideoOperationForPath(c.Request.URL.Path)
-				preserveVideoModel := managedVideo && decision.TargetPlatform == service.PlatformOpenAI
+				preserveVideoModel := managedVideo &&
+					(decision.TargetPlatform == service.PlatformOpenAI || decision.TargetPlatform == service.PlatformByteDance)
 				if upstreamModel := strings.TrimSpace(decision.UpstreamModel); !preserveVideoModel && upstreamModel != "" && upstreamModel != model && gjson.ValidBytes(body) {
 					if _, modelPath := compositeJSONRequestModel(body); modelPath != "" {
 						if rewritten, rewriteErr := sjson.SetBytes(body, modelPath, upstreamModel); rewriteErr == nil {

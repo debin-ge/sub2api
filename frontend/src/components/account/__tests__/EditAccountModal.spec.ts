@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 
 const { updateAccountMock, checkMixedChannelRiskMock, showErrorMock, authIsSimpleMode } = vi.hoisted(() => ({
   updateAccountMock: vi.fn(),
@@ -313,6 +313,26 @@ function buildGrokAPIKeyAccount() {
   } as any
 }
 
+function buildByteDanceAccount() {
+  return {
+    ...buildAccount(),
+    id: 8,
+    name: 'Seedance Key',
+    platform: 'bytedance',
+    credentials: {
+      base_url: '',
+      model_mapping: {
+        'doubao-seedance-1-0-pro-250528': 'doubao-seedance-1-0-pro-250528'
+      }
+    },
+    credentials_status: { has_api_key: true },
+    extra: {
+      internal_relay: true,
+      custom_setting: 'keep-me'
+    }
+  } as any
+}
+
 function buildOpenAISetupTokenAccount() {
   return {
     ...buildAccount(),
@@ -361,6 +381,76 @@ describe('EditAccountModal', () => {
   beforeEach(() => {
     authIsSimpleMode.value = true
     showErrorMock.mockReset()
+  })
+
+  it('edits ByteDance credentials without exposing or preserving OpenAI relay and billing probes', async () => {
+    const account = buildByteDanceAccount()
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    const wrapper = mountModal(account)
+
+    const selector = wrapper.findComponent(ModelWhitelistSelectorStub)
+    expect(selector.props('platform')).toBe('bytedance')
+    expect(selector.props('syncCredentials')).toEqual({
+      platform: 'bytedance',
+      type: 'apikey',
+      base_url: undefined,
+      api_key: undefined
+    })
+    expect((wrapper.get('[data-testid="edit-api-key-base-url"]').element as HTMLInputElement).value).toBe('')
+    expect(wrapper.find('[data-testid="openai-internal-relay-toggle"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="upstream-billing-auto-probe"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="upstream-billing-rate-sync"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="edit-api-key-value"]').setValue('ark-secret-rotated')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await vi.waitFor(() => expect(updateAccountMock).toHaveBeenCalledTimes(1))
+
+    const payload = updateAccountMock.mock.calls[0]?.[1]
+    expect(payload.credentials).toEqual(expect.objectContaining({
+      api_key: 'ark-secret-rotated',
+      base_url: '',
+      model_mapping: {
+        'doubao-seedance-1-0-pro-250528': 'doubao-seedance-1-0-pro-250528'
+      }
+    }))
+    expect(payload.extra).toEqual(expect.objectContaining({ custom_setting: 'keep-me' }))
+    expect(payload.extra.internal_relay).toBeUndefined()
+    // 缺省 native 不落库；编辑时也不应凭空写出一个键。
+    expect('protocol_mode' in payload.credentials).toBe(false)
+  })
+
+  it('回填已存的 ByteDance 转发模式，改回原生时删除 protocol_mode', async () => {
+    const account = buildByteDanceAccount()
+    account.credentials.protocol_mode = 'openai_compatible'
+    account.credentials.base_url = 'https://relay.example.com/v1'
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    const wrapper = mountModal(account)
+
+    const selectEl = wrapper.get('[data-testid="edit-bytedance-protocol-mode"]')
+      .element as HTMLSelectElement
+    expect(selectEl.value).toBe('openai_compatible')
+
+    await wrapper.get('[data-testid="edit-bytedance-protocol-mode"]').setValue('native')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await vi.waitFor(() => expect(updateAccountMock).toHaveBeenCalledTimes(1))
+
+    const payload = updateAccountMock.mock.calls[0]?.[1]
+    expect('protocol_mode' in payload.credentials).toBe(false)
+    expect(payload.credentials.base_url).toBe('https://relay.example.com/v1')
+  })
+
+  it('ByteDance 改为 OpenAI 兼容转发但清空 Base URL 时拒绝保存', async () => {
+    const account = buildByteDanceAccount()
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    const wrapper = mountModal(account)
+
+    await wrapper.get('[data-testid="edit-bytedance-protocol-mode"]').setValue('openai_compatible')
+    await wrapper.get('[data-testid="edit-api-key-base-url"]').setValue('')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(updateAccountMock).not.toHaveBeenCalled()
+    expect(showErrorMock).toHaveBeenCalledWith('admin.accounts.bytedance.protocolMode.baseUrlRequired')
   })
 
   it('passes the current MiniMax OpenAI endpoint to live model sync', async () => {

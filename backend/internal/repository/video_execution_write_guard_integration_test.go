@@ -78,11 +78,17 @@ func TestVideoExecutionWriteGuardPreservesConflictAgainstOldWriters(t *testing.T
 			updated, err := repo.GetVideoTaskByPublicID(ctx, task.PublicID)
 			require.NoError(t, err)
 			require.Equal(t, float64(1), updated.ResponseMetadata["execution_spec_conflict"])
+			// The marker survives every rewrite, but it no longer gates settlement:
+			// manual review is gone, so a conflicting task still reaches a terminal
+			// billing intent on its own.
 			for _, state := range []string{service.VideoBillingCapturePending, service.VideoBillingReleasePending} {
 				_, err = integrationDB.ExecContext(ctx, `UPDATE video_tasks SET generation_state = 'failed', billing_state = $2,
 					actual_units = 3, actual_cost = 3 WHERE id = $1`, task.ID, state)
-				require.ErrorContains(t, err, "approved review")
+				require.NoError(t, err)
 			}
+			settled, err := repo.GetVideoTaskByPublicID(ctx, task.PublicID)
+			require.NoError(t, err)
+			require.Equal(t, float64(1), settled.ResponseMetadata["execution_spec_conflict"])
 			assertVideoBudgetTotals(t, task.UserID, 1, 96, 4)
 		})
 	}
@@ -91,9 +97,8 @@ func TestVideoExecutionWriteGuardPreservesConflictAgainstOldWriters(t *testing.T
 func TestVideoExecutionWriteGuardAllowsFailedZeroCostAutoRelease(t *testing.T) {
 	ctx := context.Background()
 	repo, task := newVideoExecutionWriteGuardFixture(t)
-	manual, err := repo.TransitionVideoTask(videoRepositoryWriteContext(t, repo, ctx, task.PublicID), task.PublicID, service.VideoTaskTransition{
+	conflicted, err := repo.TransitionVideoTask(videoRepositoryWriteContext(t, repo, ctx, task.PublicID), task.PublicID, service.VideoTaskTransition{
 		GenerationState: service.VideoGenerationFailed,
-		BillingState:    service.VideoBillingManualReview,
 		ResponseMetadata: map[string]any{
 			"execution_spec_conflict": 1,
 		},
@@ -101,7 +106,7 @@ func TestVideoExecutionWriteGuardAllowsFailedZeroCostAutoRelease(t *testing.T) {
 		EventType: "provider_failed_before_auto_release",
 	})
 	require.NoError(t, err)
-	task = manual
+	task = conflicted
 	zero := 0.0
 	pending, err := repo.TransitionVideoTask(videoRepositoryWriteContext(t, repo, ctx, task.PublicID), task.PublicID, service.VideoTaskTransition{
 		GenerationState: service.VideoGenerationFailed, BillingState: service.VideoBillingReleasePending,
@@ -132,11 +137,22 @@ func TestVideoExecutionWriteGuardAllowsFailedZeroCostAutoRelease(t *testing.T) {
 	assertVideoBudgetTotals(t, task.UserID, 1, 100, 0)
 }
 
-func legacyVideoExecutionSettlementFixture(t *testing.T, action service.BalanceSettlementAction) (*videoTaskRepository, *service.VideoTask, *service.BalanceSettlementCommand, *service.UsageLog) {
+// videoExecutionSettlementFixture drives a task to a terminal billing intent the
+// way the worker does, with no operator in the loop, and returns the settlement
+// payload the outbox would carry for it.
+func videoExecutionSettlementFixture(t *testing.T, action service.BalanceSettlementAction) (*videoTaskRepository, *service.VideoTask, *service.BalanceSettlementCommand, *service.UsageLog) {
 	t.Helper()
 	ctx := context.Background()
-	repo, _, task, _, _ := newVideoBillingReviewFixture(t, 5)
-	_, err := integrationDB.ExecContext(ctx, `UPDATE video_tasks SET billing_state = 'held' WHERE id = $1`, task.ID)
+	repo, _, _, user, key, account := newVideoRepositoryFixture(t, 1000)
+	params := videoCreateParams(user, key, account, service.NewVideoTaskID(), "execution-settlement", "execution-settlement-body", 5)
+	params.PriceSnapshot["unit_price"], params.PriceSnapshot["customer_multiplier"] = 0.5, 2
+	task, _, err := repo.CreateHeldVideoTask(ctx, params)
+	require.NoError(t, err)
+	task, err = repo.TransitionVideoTask(videoRepositoryWriteContext(t, repo, ctx, task.PublicID), task.PublicID,
+		service.VideoTaskTransition{GenerationState: service.VideoGenerationSubmitting})
+	require.NoError(t, err)
+	task, err = repo.TransitionVideoTask(videoRepositoryWriteContext(t, repo, ctx, task.PublicID), task.PublicID,
+		service.VideoTaskTransition{GenerationState: service.VideoGenerationFailed})
 	require.NoError(t, err)
 	state := service.VideoBillingCapturePending
 	cost, units := 3.0, 3.0
@@ -147,60 +163,61 @@ func legacyVideoExecutionSettlementFixture(t *testing.T, action service.BalanceS
 	require.NoError(t, err)
 	task, err = repo.GetVideoTaskByPublicID(ctx, task.PublicID)
 	require.NoError(t, err)
-	command, usage := reviewedVideoSettlement(task, &service.VideoBillingReview{Action: action, ActualCost: cost, ActualUnits: units})
+	command, usage := videoExecutionSettlement(task, action, cost, units)
 	return repo, task, command, usage
 }
 
-func TestVideoExecutionWriteGuardRejectsUnreviewedOldSettlement(t *testing.T) {
+func videoExecutionSettlement(task *service.VideoTask, action service.BalanceSettlementAction, cost, units float64) (*service.BalanceSettlementCommand, *service.UsageLog) {
+	requestID := service.VideoTaskCaptureRequestID(task.PublicID)
+	if action == service.BalanceSettlementRelease {
+		requestID = service.VideoTaskReleaseRequestID(task.PublicID)
+	}
+	settlement := &service.BalanceSettlementCommand{TaskID: task.ID, Action: action, Hold: service.BalanceHoldCommand{
+		RequestID: requestID, APIKeyID: *task.APIKeyID, UserID: task.UserID,
+		RequestPayloadHash: task.RequestHash, Scope: service.BalanceHoldScopeVideoTask, RefID: task.PublicID,
+		HoldAmount: *task.HoldAmount, ActualAmount: cost,
+	}}
+	if action == service.BalanceSettlementRelease {
+		return settlement, nil
+	}
+	baseCost := units * 0.5
+	settlement.Billing = &service.UsageBillingCommand{RequestID: requestID, APIKeyID: *task.APIKeyID, UserID: task.UserID, AccountID: *task.AccountID,
+		AccountType: service.AccountTypeAPIKey, Model: task.UpstreamModel, BillingType: service.BillingTypeBalance, MediaType: "video",
+		ActualCost: cost, TotalCost: baseCost, APIKeyQuotaCost: cost, APIKeyRateLimitCost: cost,
+		AccountQuotaCost: baseCost, Platform: task.Provider, PlatformQuotaCost: cost, OccurredAt: *task.FinishedAt}
+	rate := 1.0
+	usage := &service.UsageLog{RequestID: requestID, APIKeyID: *task.APIKeyID, UserID: task.UserID, AccountID: *task.AccountID,
+		Model: task.UpstreamModel, BillingType: service.BillingTypeBalance, ActualCost: cost, TotalCost: baseCost,
+		RateMultiplier: 2, AccountRateMultiplier: &rate, CreatedAt: *task.FinishedAt, VideoCount: 1}
+	return settlement, usage
+}
+
+func TestVideoExecutionWriteGuardSettlesConflictedTaskWithoutReview(t *testing.T) {
 	for _, action := range []service.BalanceSettlementAction{service.BalanceSettlementCapture, service.BalanceSettlementRelease} {
 		t.Run(string(action), func(t *testing.T) {
 			ctx := context.Background()
-			repo, task, command, usage := legacyVideoExecutionSettlementFixture(t, action)
+			repo, task, command, usage := videoExecutionSettlementFixture(t, action)
 			_, err := integrationDB.ExecContext(ctx, `UPDATE video_tasks SET response_metadata = '{"specification_invalid":1}' WHERE id = $1`, task.ID)
 			require.NoError(t, err)
 			if action == service.BalanceSettlementRelease {
-				// Failed zero-cost releases are intentionally exempt since migration 265.
-				// A cancelled task with conflicting evidence still requires review.
 				_, err = integrationDB.ExecContext(ctx, `UPDATE video_tasks SET generation_state = 'cancelled' WHERE id = $1`, task.ID)
 				require.NoError(t, err)
 			}
-			_, err = repo.billing.SettleVideoBalance(ctx, command, usage)
-			require.ErrorContains(t, err, "reviewed financial intent")
-			var intents int
-			require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM usage_billing_outbox WHERE api_key_id=$1`, task.APIKeyID).Scan(&intents))
-			require.Zero(t, intents)
-			assertVideoBudgetTotals(t, task.UserID, 1, 995, 5)
-		})
-	}
-}
 
-func TestVideoExecutionWriteGuardAllowsExplicitReviewedConflict(t *testing.T) {
-	for _, action := range []service.BalanceSettlementAction{service.BalanceSettlementCapture, service.BalanceSettlementRelease} {
-		t.Run(string(action), func(t *testing.T) {
-			ctx := context.Background()
-			repo, admin, task, proposer, approver := newVideoBillingReviewFixture(t, 5)
-			_, err := integrationDB.ExecContext(ctx, `UPDATE video_tasks SET response_metadata = '{"specification_invalid":1}' WHERE id = $1`, task.ID)
-			require.NoError(t, err)
-			task, err = repo.GetVideoTaskByPublicID(ctx, task.PublicID)
-			require.NoError(t, err)
-			request := videoBillingReviewRequest(task, proposer)
-			request.Action, request.HonorFrozenQuote = action, action == service.BalanceSettlementCapture
-			if action == service.BalanceSettlementRelease {
-				request.ActualUnits = 0
-			}
-			result, err := admin.ProposeVideoBillingReview(ctx, task.PublicID, request)
-			require.NoError(t, err)
-			if result.Review.RequiresSecondActor {
-				result, err = admin.DecideVideoBillingReview(ctx, task.PublicID, result.Review.ID, service.VideoBillingReviewDecision{
-					ActorID: approver, OperationKey: "execution:approve", ExpectedVersion: result.Task.Version, Approve: true, Reason: "Conflict evidence verified independently"})
-				require.NoError(t, err)
-			}
-			command, usage := reviewedVideoSettlement(result.Task, result.Review)
+			// Migration 269 removed the "conflict needs an approved review" gate: a
+			// conflicting task now produces its financial intent unattended.
 			paid, err := repo.billing.SettleVideoBalance(ctx, command, usage)
 			require.NoError(t, err)
 			require.True(t, paid.Applied)
-			assertVideoBudgetTotals(t, task.UserID, 1, 1000-result.Review.ActualCost, 0)
+			var intents int
+			require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM usage_billing_outbox WHERE api_key_id=$1`, task.APIKeyID).Scan(&intents))
+			require.Equal(t, 1, intents)
 			require.NoError(t, repo.billing.AcknowledgeVideoBalanceSettlement(ctx, paid.OutboxReceipt.WorkerID, paid.OutboxReceipt.ID))
+			if action == service.BalanceSettlementRelease {
+				assertVideoBudgetTotals(t, task.UserID, 1, 1000, 0)
+			} else {
+				assertVideoBudgetTotals(t, task.UserID, 1, 997, 0)
+			}
 		})
 	}
 }
@@ -230,7 +247,7 @@ func TestVideoExecutionWriteGuardMarkerContract(t *testing.T) {
 
 func TestVideoExecutionWriteGuardPreservesDurableLegacyIntent(t *testing.T) {
 	ctx := context.Background()
-	repo, task, command, usage := legacyVideoExecutionSettlementFixture(t, service.BalanceSettlementCapture)
+	repo, task, command, usage := videoExecutionSettlementFixture(t, service.BalanceSettlementCapture)
 	commandJSON, usageJSON, err := marshalBalanceSettlementOutboxPayload(command, usage)
 	require.NoError(t, err)
 	worker := "execution-before-crash"
@@ -268,7 +285,7 @@ func TestVideoExecutionWriteGuardPreservesDurableLegacyIntent(t *testing.T) {
 func TestVideoExecutionWriteGuardConcurrentEnqueueDoesNotDeadlock(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	repo, task, command, usage := legacyVideoExecutionSettlementFixture(t, service.BalanceSettlementCapture)
+	repo, task, command, usage := videoExecutionSettlementFixture(t, service.BalanceSettlementCapture)
 	commandJSON, usageJSON, err := marshalBalanceSettlementOutboxPayload(command, usage)
 	require.NoError(t, err)
 	var wait sync.WaitGroup

@@ -114,7 +114,7 @@ func killVideoReleaseChild(t *testing.T, mode string, task *service.VideoTask, p
 	require.Error(t, cmd.Wait(), "child must be killed rather than shut down gracefully")
 }
 
-func TestVideoReleaseProcessCrashAfterUpstreamSubmitKeepsHold(t *testing.T) {
+func TestVideoReleaseProcessCrashAfterUpstreamSubmitReleasesHoldOnce(t *testing.T) {
 	ctx := context.Background()
 	repo, _, _, user, key, account := newVideoRepositoryFixture(t, 10)
 	task, _, err := repo.CreateHeldVideoTask(ctx, videoCreateParams(user, key, account, service.NewVideoTaskID(), uuid.NewString(), "process-submit", 1))
@@ -125,16 +125,19 @@ func TestVideoReleaseProcessCrashAfterUpstreamSubmitKeepsHold(t *testing.T) {
 	killVideoReleaseChild(t, "submit", task, provider.URL)
 	time.Sleep(1100 * time.Millisecond)
 	cfg := &config.Config{Gateway: config.GatewayConfig{Video: config.GatewayVideoConfig{Enabled: true, LeaseSeconds: 3, WorkerConcurrency: 1}}}
-	worker := service.NewVideoTaskWorker(repo, nil, nil, service.NewVideoProviderRegistry(), nil, nil, nil, nil, cfg)
+	worker := service.NewVideoTaskWorker(repo, nil, nil, service.NewVideoProviderRegistry(), nil, repo.billing, nil, nil, cfg)
 	require.NoError(t, worker.ProcessBatch(ctx, 1))
 	updated, err := repo.GetVideoTaskForOwner(ctx, user.ID, task.PublicID)
 	require.NoError(t, err)
-	require.Equal(t, service.VideoGenerationSubmissionUnknown, updated.GenerationState)
+	// A submission whose outcome was never observed is closed out automatically:
+	// the create is not replayed and the caller is not charged for it.
+	require.Equal(t, service.VideoGenerationFailed, updated.GenerationState)
+	require.Equal(t, "stale_submitting", *updated.LastErrorCode)
 	require.Equal(t, int64(1), creates.Load())
 	var balance, frozen float64
 	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT balance,frozen_balance FROM users WHERE id=$1`, user.ID).Scan(&balance, &frozen))
-	require.Equal(t, 9.0, balance)
-	require.Equal(t, 1.0, frozen)
+	require.Equal(t, 10.0, balance)
+	require.Zero(t, frozen)
 }
 
 func TestVideoReleaseProcessCrashAfterSettlementDoesNotDoubleCharge(t *testing.T) {

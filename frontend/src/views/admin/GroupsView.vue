@@ -5086,6 +5086,10 @@ const compositeRouteEndpointOptions = computed(() => [
     label: t("admin.groups.compositeRoutes.endpoints.embeddings"),
   },
   { value: "images", label: t("admin.groups.compositeRoutes.endpoints.images") },
+  { value: "videos", label: t("admin.groups.compositeRoutes.endpoints.videos") },
+  { value: "video_edits", label: t("admin.groups.compositeRoutes.endpoints.videoEdits") },
+  { value: "video_extensions", label: t("admin.groups.compositeRoutes.endpoints.videoExtensions") },
+  { value: "video_characters", label: t("admin.groups.compositeRoutes.endpoints.videoCharacters") },
   { value: "gemini", label: t("admin.groups.compositeRoutes.endpoints.gemini") },
 ]);
 

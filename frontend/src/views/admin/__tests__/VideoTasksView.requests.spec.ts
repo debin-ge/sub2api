@@ -3,17 +3,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import VideoTasksView from '../VideoTasksView.vue'
 
 const { api, app } = vi.hoisted(() => ({
-  api: { overview: vi.fn(), listTasks: vi.fn(), listResources: vi.fn(), listCallbacks: vi.fn(), getTask: vi.fn(), listEvents: vi.fn(), listBillingReviews: vi.fn(), listSubmissionReviews: vi.fn(), retryGet: vi.fn(), retryCallback: vi.fn() },
+  api: { overview: vi.fn(), listTasks: vi.fn(), listResources: vi.fn(), listCallbacks: vi.fn(), getTask: vi.fn(), listEvents: vi.fn(), retryGet: vi.fn(), retryCallback: vi.fn() },
   app: { showError: vi.fn(), showSuccess: vi.fn() },
 }))
 vi.mock('@/api/admin/videos', () => ({ default: api }))
 vi.mock('@/stores/app', () => ({ useAppStore: () => app }))
-vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ user: { id: 99 } }) }))
 vi.mock('@/components/layout/AppLayout.vue', () => ({ default: { template: '<div><slot /></div>' } }))
 vi.mock('vue-i18n', async (importOriginal) => ({ ...await importOriginal<typeof import('vue-i18n')>(), useI18n: () => ({ t: (key: string) => key }) }))
 
 const task = { id: 1, public_id: 'video_a', version: 1, source: 'managed', user_id: 42,
-  provider: 'openai', operation: 'generate', generation_state: 'failed', billing_state: 'manual_review', delete_state: 'none',
+  provider: 'openai', operation: 'generate', generation_state: 'failed', billing_state: 'release_pending', delete_state: 'none',
   currency: 'USD', request_attributes: {}, price_snapshot: {}, provider_cost_snapshot: {}, usage_snapshot: {},
   response_metadata: {}, provider_access: { configured: false }, callback_configured: false }
 const second = { ...task, id: 2, public_id: 'video_b' }
@@ -58,8 +57,6 @@ describe('video task request ordering', () => {
     api.listCallbacks.mockResolvedValue({ items: [callback], total: 1, page: 1, page_size: 20 })
     api.getTask.mockImplementation((id: string) => Promise.resolve(id === task.public_id ? task : second))
     api.listEvents.mockResolvedValue({ items: [] })
-    api.listBillingReviews.mockResolvedValue([])
-    api.listSubmissionReviews.mockResolvedValue([])
   })
 
   it('coalesces repeated task actions while a mutation is pending', async () => {

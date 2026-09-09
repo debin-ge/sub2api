@@ -40,6 +40,7 @@ var modelCatalogPlatforms = [...]string{
 	PlatformDeepSeek,
 	PlatformWindsurf,
 	PlatformOpenCode,
+	PlatformByteDance,
 	PlatformComposite,
 	modelCatalogPlatformUnknown,
 }
@@ -56,6 +57,7 @@ var compositeModelCatalogPlatforms = [...]string{
 	PlatformMiniMax,
 	PlatformWindsurf,
 	PlatformOpenCode,
+	PlatformByteDance,
 }
 
 var modelCatalogFallbackReasons = [...]string{

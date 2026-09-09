@@ -192,7 +192,7 @@ func TestModelPriceOverrideVideoValidationIncludesActionableMetadata(t *testing.
 func TestModelPriceOverrideSupportsVideoOnlyReplacementInheritanceAndShadow(t *testing.T) {
 	catalogProfile := seedanceVideoPricing()
 	catalog := &ModelPriceEntry{VideoPricing: catalogProfile, PricePresenceKnown: true, TokenPricingAbsent: true}
-	svc := &PricingService{catalogData: map[string]*ModelPriceEntry{"doubao-seedance-2.0-mini-480p": catalog}}
+	svc := &PricingService{catalogData: map[string]*ModelPriceEntry{"doubao-seedance-1-0-lite-t2v-250428": catalog}}
 
 	_, err := svc.validateOverrideWrite("*", "video-only", ModelPriceCurrencyUSD, &ModelPriceOverridePayload{VideoPricing: seedanceVideoPricing()}, true)
 	require.NoError(t, err)
@@ -200,11 +200,11 @@ func TestModelPriceOverrideSupportsVideoOnlyReplacementInheritanceAndShadow(t *t
 	require.NoError(t, err, "nested video prices remain USD without changing the record currency used by other fields")
 
 	svc.overrideRows = []ModelPriceOverride{{
-		Platform: "*", ModelName: "doubao-seedance-2.0-mini-480p", Currency: "USD", Enabled: true,
+		Platform: "*", ModelName: "doubao-seedance-1-0-lite-t2v-250428", Currency: "USD", Enabled: true,
 		Payload: ModelPriceOverridePayload{OutputCostPerToken: ptrPrice(9e-6)},
 	}}
 	svc.rebuildEffectiveLocked(svc.catalogData)
-	inherited := svc.LookupModelPricingStrict("doubao-seedance-2.0-mini-480p")
+	inherited := svc.LookupModelPricingStrict("doubao-seedance-1-0-lite-t2v-250428")
 	require.NotNil(t, inherited.VideoPricing)
 	require.Equal(t, "480p-no-video", inherited.VideoPricing.Rules[0].Key)
 
@@ -212,15 +212,15 @@ func TestModelPriceOverrideSupportsVideoOnlyReplacementInheritanceAndShadow(t *t
 	replacement.Rules[0].UnitPriceUSD = 7e-6
 	svc.overrideRows[0].Payload.VideoPricing = replacement
 	svc.rebuildEffectiveLocked(svc.catalogData)
-	effective := svc.LookupModelPricingStrict("doubao-seedance-2.0-mini-480p")
+	effective := svc.LookupModelPricingStrict("doubao-seedance-1-0-lite-t2v-250428")
 	require.Equal(t, 7e-6, effective.VideoPricing.Rules[0].UnitPriceUSD)
 	require.True(t, effective.VideoPricingOperatorOverride)
 	effective.VideoPricing.Rules[0].UnitPriceUSD = 99
-	require.Equal(t, 1e-6, svc.catalogData["doubao-seedance-2.0-mini-480p"].VideoPricing.Rules[0].UnitPriceUSD)
+	require.Equal(t, 1e-6, svc.catalogData["doubao-seedance-1-0-lite-t2v-250428"].VideoPricing.Rules[0].UnitPriceUSD)
 
 	svc.overrideRows[0].Payload.VideoPricing = &VideoPricingConfig{Version: 1, Enabled: false, Currency: "USD"}
 	svc.rebuildEffectiveLocked(svc.catalogData)
-	shadowed := svc.LookupModelPricingStrict("doubao-seedance-2.0-mini-480p")
+	shadowed := svc.LookupModelPricingStrict("doubao-seedance-1-0-lite-t2v-250428")
 	require.NotNil(t, shadowed.VideoPricing)
 	require.False(t, shadowed.VideoPricing.Enabled)
 }
@@ -251,7 +251,7 @@ func TestPricingCatalogRejectsInvalidVideoProfileWithoutDroppingTokenPrice(t *te
 }
 
 func TestVideoPricingResolverUsesGlobalVideoPriceAndStrictPriority(t *testing.T) {
-	const model = "doubao-seedance-2.0-mini-480p"
+	const model = "doubao-seedance-1-0-lite-t2v-250428"
 	pricing := NewPricingService(&config.Config{}, nil)
 	pricing.SeedCatalogForTest(map[string]*ModelPriceEntry{
 		model: {VideoPricing: seedanceVideoPricing(), PricePresenceKnown: true, TokenPricingAbsent: true},

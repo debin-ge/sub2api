@@ -133,12 +133,12 @@ func validateAccountProviderIdentityProposal(request AccountProviderIdentityProp
 	request.PrincipalKind = strings.ToLower(strings.TrimSpace(request.PrincipalKind))
 	request.Principal = strings.TrimSpace(request.Principal)
 	if request.ActorID <= 0 || request.ExpectedVersion <= 0 ||
-		!videoReviewOpaqueReference.MatchString(request.OperationKey) ||
-		!videoReviewOpaqueReference.MatchString(request.EvidenceRef) || strings.Contains(request.EvidenceRef, "://") ||
-		videoReviewCredentialPattern.MatchString(request.OperationKey) || videoReviewCredentialPattern.MatchString(request.EvidenceRef) ||
-		!validVideoReviewText(request.Reason) || !validAccountProviderPrincipalKind(request.PrincipalKind) ||
+		!adminAuditOpaqueReference.MatchString(request.OperationKey) ||
+		!adminAuditOpaqueReference.MatchString(request.EvidenceRef) || strings.Contains(request.EvidenceRef, "://") ||
+		adminAuditCredentialPattern.MatchString(request.OperationKey) || adminAuditCredentialPattern.MatchString(request.EvidenceRef) ||
+		!validAdminAuditReason(request.Reason) || !validAccountProviderPrincipalKind(request.PrincipalKind) ||
 		!providerPrincipalValuePattern.MatchString(request.Principal) || strings.Contains(request.Principal, "://") ||
-		videoReviewCredentialPattern.MatchString(request.Principal) || providerPrincipalCredentialPattern.MatchString(request.Principal) ||
+		adminAuditCredentialPattern.MatchString(request.Principal) || providerPrincipalCredentialPattern.MatchString(request.Principal) ||
 		(strings.Count(request.Principal, ".") >= 2 && len(request.Principal) > 40) || containsUnicodeControl(request.Principal) {
 		return ErrAccountProviderIdentityRequired
 	}
@@ -146,14 +146,20 @@ func validateAccountProviderIdentityProposal(request AccountProviderIdentityProp
 }
 
 func validateAccountProviderIdentityDecision(request AccountProviderIdentityDecision) error {
-	return ValidateVideoBillingReviewDecision(VideoBillingReviewDecision(request))
+	if request.ActorID <= 0 || request.ExpectedVersion < 0 ||
+		!adminAuditOpaqueReference.MatchString(strings.TrimSpace(request.OperationKey)) ||
+		adminAuditCredentialPattern.MatchString(request.OperationKey) ||
+		!validAdminAuditReason(request.Reason) {
+		return ErrAccountProviderIdentityRequired
+	}
+	return nil
 }
 
 func validateAccountProviderIdentityRevocation(request AccountProviderIdentityRevocation) error {
-	if request.ActorID <= 0 || !videoReviewOpaqueReference.MatchString(strings.TrimSpace(request.OperationKey)) ||
-		!videoReviewOpaqueReference.MatchString(strings.TrimSpace(request.EvidenceRef)) || strings.Contains(request.EvidenceRef, "://") ||
-		videoReviewCredentialPattern.MatchString(request.OperationKey) || videoReviewCredentialPattern.MatchString(request.EvidenceRef) ||
-		!validVideoReviewText(request.Reason) {
+	if request.ActorID <= 0 || !adminAuditOpaqueReference.MatchString(strings.TrimSpace(request.OperationKey)) ||
+		!adminAuditOpaqueReference.MatchString(strings.TrimSpace(request.EvidenceRef)) || strings.Contains(request.EvidenceRef, "://") ||
+		adminAuditCredentialPattern.MatchString(request.OperationKey) || adminAuditCredentialPattern.MatchString(request.EvidenceRef) ||
+		!validAdminAuditReason(request.Reason) {
 		return ErrAccountProviderIdentityRequired
 	}
 	return nil

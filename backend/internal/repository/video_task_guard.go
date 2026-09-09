@@ -88,7 +88,7 @@ func (r *videoTaskRepository) WakeVideoTask(ctx context.Context, publicID string
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE video_tasks SET next_action_at = LEAST(COALESCE(next_action_at, $2), $2)
 		WHERE public_id = $1 AND billing_state = 'held'
-			AND generation_state IN ('submission_unknown', 'queued', 'in_progress')
+			AND generation_state IN ('queued', 'in_progress')
 	`, publicID, at)
 	if err != nil {
 		return nil, err

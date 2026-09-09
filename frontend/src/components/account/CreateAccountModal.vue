@@ -203,6 +203,20 @@
             <Icon name="key" size="sm" />
             OpenCode
           </button>
+          <button
+            type="button"
+            data-testid="create-platform-bytedance"
+            @click="form.platform = 'bytedance'"
+            :class="[
+              'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium transition-all',
+              form.platform === 'bytedance'
+                ? 'bg-white text-red-700 shadow-sm dark:bg-dark-600 dark:text-red-300'
+                : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+            ]"
+          >
+            <Icon name="play" size="sm" />
+            ByteDance
+          </button>
         </div>
         <!-- CN providers row: Kimi / Zhipu GLM / DeepSeek -->
         <div class="mt-2 flex flex-wrap rounded-lg bg-gray-100 p-1 dark:bg-dark-700">
@@ -1443,16 +1457,43 @@
           </div>
         </template>
         <template v-else>
+        <div v-if="form.platform === 'bytedance'">
+          <label class="input-label">{{ t('admin.accounts.bytedance.protocolMode.title') }}</label>
+          <select
+            v-model="byteDanceProtocolMode"
+            data-testid="bytedance-protocol-mode"
+            class="input"
+          >
+            <option value="native">{{ t('admin.accounts.bytedance.protocolMode.native') }}</option>
+            <option value="openai_compatible">
+              {{ t('admin.accounts.bytedance.protocolMode.openaiCompatible') }}
+            </option>
+          </select>
+          <p class="input-hint">
+            {{
+              byteDanceProtocolMode === 'openai_compatible'
+                ? t('admin.accounts.bytedance.protocolMode.openaiCompatibleDesc')
+                : t('admin.accounts.bytedance.protocolMode.nativeDesc')
+            }}
+          </p>
+        </div>
         <div v-if="!isCNPlatform || apiProtocol !== 'adaptive'">
-          <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
+          <label class="input-label">
+            {{ t('admin.accounts.baseUrl') }}
+            <span v-if="byteDanceNeedsBaseUrl" class="text-red-500">*</span>
+          </label>
           <input
             v-model="apiKeyBaseUrl"
             :data-testid="isCNPlatform ? 'cn-base-url' : 'api-key-base-url'"
             type="text"
             class="input"
+            :required="byteDanceNeedsBaseUrl"
             :placeholder="apiKeyBaseUrlPlaceholder"
             @input="syncOpenAIVideoCapabilityForBaseURL"
           />
+          <p v-if="byteDanceNeedsBaseUrl" class="input-hint text-amber-600 dark:text-amber-400">
+            {{ t('admin.accounts.bytedance.protocolMode.baseUrlRequired') }}
+          </p>
           <p v-if="baseUrlHint" class="input-hint">{{ baseUrlHint }}</p>
           <GrokBaseUrlPresets
             v-if="form.platform === 'grok'"
@@ -1503,6 +1544,7 @@
         </template>
 
         <div
+          v-if="form.platform !== 'bytedance'"
           class="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800/60 dark:bg-amber-900/20"
         >
           <div class="flex items-center justify-between gap-4">
@@ -1522,6 +1564,7 @@
 
         <!-- 上游倍率自动探测：全部 API-key 平台可用（所在区块已限定 apikey 类型） -->
         <div
+          v-if="form.platform !== 'bytedance'"
           class="flex items-center justify-between gap-4 border-t border-gray-200 pt-4 dark:border-dark-600"
         >
           <div>
@@ -4100,13 +4143,16 @@ import HeaderOverrideEditor from '@/components/account/HeaderOverrideEditor.vue'
 import { allSelectedGroupsEnableLongContextPricing } from '@/components/account/longContextBilling'
 import {
   applyAntigravityProjectID,
+  applyByteDanceProtocolMode,
   applyHeaderOverride,
   applyInterceptWarmup,
+  byteDanceProtocolRequiresBaseUrl,
   cnSupportsNativeResponses,
   defaultCNAdaptiveBaseUrls,
   defaultCNBaseUrl,
   isHeaderOverrideCapable,
   validateHeaderOverrideRows,
+  type ByteDanceProtocolMode,
   type CnAccountMode,
   type CnApiProtocol,
   type CnNativeApiProtocol,
@@ -4204,6 +4250,11 @@ const apiKeyBaseUrlPlaceholder = computed(() => {
       return 'https://generativelanguage.googleapis.com'
     case 'grok':
       return 'https://api.x.ai/v1'
+    case 'bytedance':
+      // 转发模式没有官方主机，占位符若沿用 Ark 地址会诱导填错。
+      return byteDanceProtocolMode.value === 'openai_compatible'
+        ? 'https://relay.example.com/v1'
+        : 'https://ark.cn-beijing.volces.com/api/v3'
     default:
       return 'https://api.anthropic.com'
   }
@@ -4317,6 +4368,13 @@ const glmOpenAIBaseUrl = ref(GLM_OPENAI_BASE_URL)
 const windsurfBaseUrl = ref(WINDSURF_BASE_URL)
 const opencodeBaseUrl = ref(OPENCODE_BASE_URL)
 const upstreamBillingAutoProbeEnabled = ref(true)
+
+// ByteDance 上游线格式：native 走 Ark 自身的异步任务协议，openai_compatible
+// 走第三方以 /v1/videos 转发的 Seedance。缺省 native（等同不写凭据）。
+const byteDanceProtocolMode = ref<ByteDanceProtocolMode>('native')
+const byteDanceNeedsBaseUrl = computed(
+  () => form.platform === 'bytedance' && byteDanceProtocolRequiresBaseUrl(byteDanceProtocolMode.value)
+)
 
 // ── 国产供应商（Kimi / Zhipu / DeepSeek）账号类型、API 协议与端点 ──
 const accountMode = ref<CnAccountMode>('payg')
@@ -4990,6 +5048,10 @@ watch(
       form.type = 'apikey'
       return
     }
+    if (form.platform === 'bytedance') {
+      form.type = 'apikey'
+      return
+    }
     if (form.platform === 'grok') {
       form.type = category === 'apikey' ? 'apikey' : 'oauth'
       return
@@ -5039,6 +5101,8 @@ watch(
                     ? WINDSURF_BASE_URL
                     : newPlatform === 'opencode'
                       ? OPENCODE_BASE_URL
+                      : newPlatform === 'bytedance'
+                        ? ''
                       : 'https://api.anthropic.com'
     }
     minimaxAnthropicBaseUrl.value = MINIMAX_ANTHROPIC_BASE_URL
@@ -5086,6 +5150,14 @@ watch(
     if (newPlatform === 'opencode') {
       accountCategory.value = 'apikey'
       modelRestrictionMode.value = 'whitelist'
+    }
+    if (newPlatform === 'bytedance') {
+      accountCategory.value = 'apikey'
+      modelRestrictionMode.value = 'whitelist'
+      upstreamBillingAutoProbeEnabled.value = false
+    } else {
+      upstreamBillingAutoProbeEnabled.value = true
+      byteDanceProtocolMode.value = 'native'
     }
     if (newPlatform === 'grok') {
       accountCategory.value = 'oauth-based'
@@ -5550,6 +5622,7 @@ const resetForm = () => {
   windsurfBaseUrl.value = WINDSURF_BASE_URL
   opencodeBaseUrl.value = OPENCODE_BASE_URL
   upstreamBillingAutoProbeEnabled.value = true
+  byteDanceProtocolMode.value = 'native'
   editQuotaLimit.value = null
   editQuotaDailyLimit.value = null
   editQuotaWeeklyLimit.value = null
@@ -6050,6 +6123,13 @@ const handleSubmit = async () => {
     return
   }
 
+  // 转发模式必须自带主机：后端对缺 base_url 的 openai_compatible 账号直接判不可
+  // 调度，放行只会得到一个永远轮不到的账号，所以在这里就拦住。
+  if (byteDanceNeedsBaseUrl.value && !apiKeyBaseUrl.value.trim()) {
+    appStore.showError(t('admin.accounts.bytedance.protocolMode.baseUrlRequired'))
+    return
+  }
+
   // Determine default base URL based on platform
   const defaultBaseUrl =
     form.platform === 'openai'
@@ -6058,6 +6138,8 @@ const handleSubmit = async () => {
         ? 'https://generativelanguage.googleapis.com'
         : form.platform === 'grok'
           ? 'https://api.x.ai/v1'
+          : form.platform === 'bytedance'
+            ? ''
           : 'https://api.anthropic.com'
 
   // Build credentials with optional model mapping
@@ -6090,6 +6172,9 @@ const handleSubmit = async () => {
       }
   if (form.platform === 'gemini') {
     credentials.tier_id = geminiTierAIStudio.value
+  }
+  if (form.platform === 'bytedance') {
+    applyByteDanceProtocolMode(credentials, byteDanceProtocolMode.value, 'create')
   }
 
   // 国产供应商：账号模式 + 协议 + 对应端点写入凭据；后端按 account_mode 路由

@@ -10,7 +10,7 @@ func TestDefaultModelCatalogIDs_AllPlatforms(t *testing.T) {
 	platforms := []string{
 		PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity,
 		PlatformGrok, PlatformMiniMax, PlatformZhipu, PlatformGLM, PlatformKimi,
-		PlatformDeepSeek, PlatformWindsurf, PlatformOpenCode,
+		PlatformDeepSeek, PlatformWindsurf, PlatformOpenCode, PlatformByteDance,
 	}
 	for _, platform := range platforms {
 		t.Run(platform, func(t *testing.T) {
@@ -20,5 +20,6 @@ func TestDefaultModelCatalogIDs_AllPlatforms(t *testing.T) {
 			require.NotEqual(t, "mutated", DefaultModelCatalogIDs(platform)[0])
 		})
 	}
+	require.Contains(t, DefaultModelCatalogIDs(PlatformByteDance), ByteDanceVideoModelSeedance10Pro)
 	require.Nil(t, DefaultModelCatalogIDs("unknown"))
 }

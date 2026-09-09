@@ -34,6 +34,8 @@ func TestDefaultVideoCapabilityCatalogIsValid(t *testing.T) {
 	document := DefaultVideoCapabilityCatalogDocument()
 	require.NoError(t, ValidateVideoCapabilityCatalog(document))
 	require.Equal(t, OpenAIVideoModelSora2, document.Providers[VideoProviderOpenAI].DefaultModel)
+	require.Equal(t, ByteDanceVideoModelSeedance10Pro, document.Providers[VideoProviderByteDance].DefaultModel)
+	require.False(t, document.Providers[VideoProviderByteDance].Supports(VideoCapabilityWebhook))
 }
 
 func TestVideoCapabilityCatalogRejectsUnsafeProviderName(t *testing.T) {
