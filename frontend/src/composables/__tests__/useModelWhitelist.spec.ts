@@ -20,6 +20,15 @@ describe('useModelWhitelist', () => {
     expect(models).toContain('gpt-5.4-2026-03-05')
     expect(models).toContain('codex-auto-review')
     expect(models).toContain('gpt-5.6')
+    expect(models).toContain('gpt-6')
+    expect(models).toContain('gpt-6-astra')
+  })
+
+  it('openai 预设映射包含 GPT-6 别名和 Astra', () => {
+    expect(getPresetMappingsByPlatform('openai')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'GPT-6', from: 'gpt-6', to: 'gpt-6' }),
+      expect.objectContaining({ label: 'GPT-6 Astra', from: 'gpt-6-astra', to: 'gpt-6-astra' })
+    ]))
   })
 
   it('openai 模型列表不再暴露已下线的 ChatGPT 登录 Codex 模型', () => {
@@ -111,7 +120,9 @@ describe('useModelWhitelist', () => {
       'GLM-5.2', 'GLM-5.1', 'GLM-4.7', 'GLM-4.5-air',
       'glm-4', 'glm-4v', 'glm-4-plus', 'glm-4-0520',
       'glm-4-air', 'glm-4-airx', 'glm-4-long', 'glm-4-flash',
-      'glm-4v-plus', 'glm-4.5', 'glm-4.6',
+      'glm-4v-plus', 'glm-4.5', 'glm-4.5-x', 'glm-4.5-air', 'glm-4.5-flash',
+      'glm-4.6', 'glm-4.7', 'glm-4.7-flash', 'glm-4.7-flashx',
+      'glm-5', 'glm-5-turbo', 'glm-5.1', 'glm-5.2', 'glm-5.3', 'glm-5.3-flash',
       'glm-3-turbo', 'glm-4-alltools',
       'chatglm_turbo', 'chatglm_pro', 'chatglm_std', 'chatglm_lite',
       'cogview-3', 'cogvideo'

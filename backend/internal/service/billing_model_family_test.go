@@ -60,7 +60,7 @@ func TestGetModelPricing_UnknownDomesticFamilyMemberIsNotDowngraded(t *testing.T
 	svc := newTestBillingService()
 
 	for _, model := range []string{
-		"glm-5.3",      // 未来的 GLM-5 系新版本
+		"glm-5.4",      // 未来的 GLM-5 系新版本
 		"glm-4.8",      // 未来的 GLM-4 系新版本
 		"kimi-k2.7",    // 未来的 K2 系新版本
 		"kimi-k2-0905", // 官方未保留定价的历史快照

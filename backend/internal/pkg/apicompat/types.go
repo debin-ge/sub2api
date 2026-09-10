@@ -279,7 +279,8 @@ type ResponsesInputItem struct {
 	ID        string `json:"id,omitempty"`
 
 	// type=function_call_output
-	Output    string `json:"output,omitempty"`
+	Output    string          `json:"output,omitempty"`
+	Tools     []ResponsesTool `json:"tools,omitempty"`
 	outputRaw json.RawMessage
 }
 

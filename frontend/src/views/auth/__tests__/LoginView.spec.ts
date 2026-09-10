@@ -98,8 +98,14 @@ const TurnstileStub = defineComponent({
 
 function publicSettings() {
   return {
+    registration_enabled: true,
     turnstile_enabled: true,
     turnstile_site_key: 'site-key',
+    tencent_captcha_enabled: false,
+    tencent_captcha_app_id: '',
+    aliyun_captcha_enabled: false,
+    aliyun_captcha_scene_id: '',
+    aliyun_captcha_prefix: '',
     linuxdo_oauth_enabled: false,
     dingtalk_oauth_enabled: false,
     wechat_oauth_enabled: false,
@@ -129,7 +135,8 @@ function mountLoginView() {
         DingTalkOAuthSection: true,
         WechatOAuthSection: true,
         OidcOAuthSection: true,
-        RouterLink: { template: '<a><slot /></a>' }
+        RouterLink: { template: '<a><slot /></a>' },
+        transition: false
       }
     }
   })
@@ -216,5 +223,31 @@ describe('LoginView authentication and navigation boundaries', () => {
     expect(showSuccessMock).toHaveBeenCalledWith('auth.loginSuccess')
     expect(showErrorMock).not.toHaveBeenCalled()
     expect(turnstileResetMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('LoginView registration entry', () => {
+  beforeEach(() => {
+    getPublicSettingsMock.mockReset()
+    getPublicSettingsMock.mockResolvedValue(publicSettings())
+  })
+
+  it('shows the registration entry when registration is enabled', async () => {
+    const wrapper = mountLoginView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('auth.signUp')
+  })
+
+  it('hides the registration entry when registration is disabled', async () => {
+    getPublicSettingsMock.mockResolvedValueOnce({
+      ...publicSettings(),
+      registration_enabled: false
+    })
+
+    const wrapper = mountLoginView()
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('auth.signUp')
   })
 })

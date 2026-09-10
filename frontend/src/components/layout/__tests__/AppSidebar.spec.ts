@@ -40,6 +40,15 @@ describe('AppSidebar scroll position persistence', () => {
   })
 })
 
+describe('AppSidebar collapsible groups', () => {
+  it('lets the user collapse a group even while a child route is active', () => {
+    // The expand state must come from the user's override first, falling back
+    // to the active-route heuristic only when the user has not clicked yet.
+    expect(componentSource).toContain('const groupExpandOverrides = ref<Map<string, boolean>>(new Map())')
+    expect(componentSource).not.toContain('expandedGroups.value.has(item.path) || isGroupActive(item)')
+  })
+})
+
 describe('AppSidebar header styles', () => {
   it('does not render the version badge in the brand header', () => {
     expect(componentSource).not.toContain('<VersionBadge')

@@ -53,6 +53,8 @@ BEGIN
        AND OLD.default_mapped_model IS NOT DISTINCT FROM NEW.default_mapped_model
        AND OLD.messages_dispatch_model_config IS NOT DISTINCT FROM NEW.messages_dispatch_model_config
        AND OLD.models_list_config IS NOT DISTINCT FROM NEW.models_list_config
+       AND OLD.model_allowlist IS NOT DISTINCT FROM NEW.model_allowlist
+       AND OLD.codex_models_manifest_config IS NOT DISTINCT FROM NEW.codex_models_manifest_config
        AND OLD.rpm_limit IS NOT DISTINCT FROM NEW.rpm_limit
        AND OLD.max_reasoning_effort IS NOT DISTINCT FROM NEW.max_reasoning_effort
        AND OLD.max_reasoning_effort_over_limit IS NOT DISTINCT FROM NEW.max_reasoning_effort_over_limit

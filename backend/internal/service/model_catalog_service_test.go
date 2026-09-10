@@ -783,7 +783,7 @@ func TestModelCatalogGroupConfigAndCandidates(t *testing.T) {
 	catalog := &ModelCatalogService{
 		accountRepo:    &modelCatalogAccountRepoStub{byGroup: map[int64][]Account{20: {account}}},
 		groupRepo:      &modelCatalogGroupRepoStub{groups: []Group{group}},
-		channelService: NewChannelService(channelRepo, nil, nil, nil),
+		channelService: NewChannelService(channelRepo, nil, nil, nil, nil),
 		discoverer:     discoverer,
 		cfg:            config.ModelCatalogConfig{RequestTimeoutSeconds: 10},
 		now:            time.Now,

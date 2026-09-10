@@ -293,7 +293,7 @@ func (s *OpenAIGatewayService) SelectAccountForTokenCount(
 func NormalizeOpenAICompatiblePlatform(platform string) string {
 	platform = CanonicalCNPlatform(platform)
 	switch platform {
-	case PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek:
+	case PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax:
 		return platform
 	default:
 		return PlatformOpenAI

@@ -68,6 +68,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { AccountPlatform, AccountType } from '@/types'
+import { platformLabel as sharedPlatformLabel } from '@/utils/platformColors'
 import GrokFreeIcon from './GrokFreeIcon.vue'
 import PlatformIcon from './PlatformIcon.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -85,19 +86,7 @@ interface Props {
 
 const props = defineProps<Props>()
 
-const platformLabel = computed(() => {
-  if (props.platform === 'anthropic') return 'Anthropic'
-  if (props.platform === 'openai') return 'OpenAI'
-  if (props.platform === 'antigravity') return 'Antigravity'
-  if (props.platform === 'grok') return 'Grok'
-  if (props.platform === 'kimi') return 'Kimi'
-  if (props.platform === 'zhipu' || props.platform === 'glm') return 'Zhipu GLM'
-  if (props.platform === 'deepseek') return 'DeepSeek'
-  if (props.platform === 'minimax') return 'MiniMax'
-  if (props.platform === 'windsurf') return 'Windsurf'
-  if (props.platform === 'opencode') return 'OpenCode'
-  return 'Gemini'
-})
+const platformLabel = computed(() => sharedPlatformLabel(props.platform))
 
 const normalizedAuthMode = computed(() =>
   (props.authMode || '').trim().toLowerCase().replace(/[\s_-]+/g, '')

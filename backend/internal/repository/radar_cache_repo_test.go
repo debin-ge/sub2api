@@ -1561,7 +1561,7 @@ func TestRadarCacheRepositoryBoundedLatestFallbackAndTrendRecovery(t *testing.T)
 		latest, err := repo.GetLatestBucket(ctx, "anthropic/pro")
 		require.NoError(t, err)
 		require.Equal(t, base, latest.CapturedAt)
-		require.Equal(t, []string{"zrevrange"}, hook.snapshot())
+		require.Equal(t, []string{"zrange"}, hook.snapshot())
 	})
 
 	t.Run("invalid newest falls back to nearest valid in two commands", func(t *testing.T) {
@@ -1575,7 +1575,7 @@ func TestRadarCacheRepositoryBoundedLatestFallbackAndTrendRecovery(t *testing.T)
 		latest, err := repo.GetLatestBucket(ctx, valid.BucketKey)
 		require.NoError(t, err)
 		require.Equal(t, valid.CapturedAt, latest.CapturedAt)
-		require.Equal(t, []string{"zrevrange", "zrevrange"}, hook.snapshot())
+		require.Equal(t, []string{"zrange", "zrange"}, hook.snapshot())
 	})
 
 	t.Run("fallback scans at most 128 total points", func(t *testing.T) {
@@ -1593,7 +1593,7 @@ func TestRadarCacheRepositoryBoundedLatestFallbackAndTrendRecovery(t *testing.T)
 		latest, err := repo.GetLatestBucket(ctx, valid.BucketKey)
 		require.Nil(t, latest)
 		require.ErrorIs(t, err, service.ErrRadarCacheMiss)
-		require.Equal(t, []string{"zrevrange", "zrevrange"}, hook.snapshot())
+		require.Equal(t, []string{"zrange", "zrange"}, hook.snapshot())
 	})
 
 	t.Run("trend skips old invalid and retains new valid", func(t *testing.T) {

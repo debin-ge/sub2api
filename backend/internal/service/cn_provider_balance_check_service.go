@@ -141,7 +141,7 @@ func (s *CNProviderBalanceCheckService) runOnce() {
 			}
 			// payg 余额探测仅 kimi/deepseek（智谱无公开余额端点，payg 账号
 			// 依赖响应式 402/429 处理）。
-			if platform != PlatformZhipu && account.Schedulable {
+			if platform != PlatformZhipu && platform != PlatformMiniMax && account.Schedulable {
 				paygTargets = append(paygTargets, account)
 			}
 		}
@@ -154,9 +154,9 @@ func (s *CNProviderBalanceCheckService) runOnce() {
 		}
 		collect(platform, accounts)
 	}
-	// 智谱无余额端点，仅进额度探测。同时扫历史 glm 平台 ID，避免迁移窗口漏检。
+	// 智谱 / MiniMax 无余额端点，仅进额度探测。同时扫历史 glm 平台 ID，避免迁移窗口漏检。
 	if s.quotaService != nil {
-		for _, platform := range []string{PlatformZhipu, PlatformGLM} {
+		for _, platform := range []string{PlatformZhipu, PlatformGLM, PlatformMiniMax} {
 			accounts, err := s.accountRepo.ListByPlatform(context.Background(), platform)
 			if err != nil {
 				log.Printf("[CNBalance] list %s accounts failed: %v", platform, err)

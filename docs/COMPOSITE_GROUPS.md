@@ -74,10 +74,10 @@ Composite routing detects common public model IDs and provider-prefixed IDs:
 - `gpt-*`, `o*`, `codex-*`, `text-embedding-*`, `dall-e-*`, and
   `openai/*` route to OpenAI.
 - `grok-*` and `xai/grok-*` route to Grok.
-- `kimi-*` and `moonshot-*` route to Kimi.
+- `kimi-*`, `moonshot-*`, and `k3` route to Kimi.
 - `glm-*` routes to the canonical Zhipu platform.
 - `deepseek-*` routes to DeepSeek.
-- `minimax-*` routes to MiniMax.
+- `minimax-*`, `abab*`, and `minimax/*` route to MiniMax.
 
 Windsurf and OpenCode models commonly overlap other providers' public model
 names. Use explicit provider-prefixed or admin-configured routes for them so

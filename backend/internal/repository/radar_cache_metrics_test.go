@@ -199,7 +199,7 @@ func TestRadarLatestHotPathNeverScansQuotaHistoryForMetrics(t *testing.T) {
 	_, err = repo.GetLatestBucket(context.Background(), "anthropic/pro")
 	require.NoError(t, err)
 	commands := hook.snapshot()
-	require.Equal(t, []string{"zrevrange"}, commands, "latest public read must not scan history or refresh metrics")
+	require.Equal(t, []string{"zrange"}, commands, "latest public read must not scan history or refresh metrics")
 }
 
 func TestRadarSharedMemoryLedgerDropsExpiredEntries(t *testing.T) {
@@ -267,7 +267,7 @@ func TestRadarAppendSurvivesLedgerFailureAndPeriodicSnapshotRepairsExistingQuota
 	require.Contains(t, commands, "memory")
 	require.Contains(t, commands, "hset")
 	require.NotContains(t, commands, "zrange", "periodic metrics repair must not scan quota history")
-	require.NotContains(t, commands, "zrevrange", "periodic metrics repair must not read quota payloads")
+	require.NotContains(t, commands, "zrange", "periodic metrics repair must not read quota payloads")
 	require.Equal(t, int(wantUsage), snapshot.CacheMemoryBytes["quota_bucket"])
 	storedUsage, err := rdb.HGet(ctx, radarMetricsMemoryKey, field).Int64()
 	require.NoError(t, err)

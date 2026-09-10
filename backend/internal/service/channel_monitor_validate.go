@@ -219,31 +219,34 @@ func normalizeMonitorPrimaryModel(provider, checkMode, model string) string {
 // monitorAccountQuotaCapability 校验关联账号能否充当配额数据源，与
 // fetchUncached 的路由一一对应（coding→CN 额度端点 / payg→CN 余额端点 /
 // 其余→AccountUsageService）。在创建/更新期拦截注定运行期永久 error 的组合：
-//   - kimi/zhipu/deepseek coding：须为 kimi/zhipu 且指向官方额度端点
-//   - kimi/zhipu/deepseek payg：须为 kimi/deepseek 且指向官方余额端点
+//   - kimi/zhipu/deepseek/minimax coding：须识别到官方额度端点
+//   - kimi/zhipu/deepseek/minimax payg：仅 kimi/deepseek 有公开余额端点
 //   - anthropic：OAuth / Setup Token（API-Key 型无 usage 通道，永久 error）
 //   - openai：OAuth（API-Key 型无 usage 通道）
 //   - gemini/grok/antigravity：本地统计/值通道降级，不会永久 error，放行
 func monitorAccountQuotaCapability(account *Account) error {
 	switch account.Platform {
-	case PlatformKimi, PlatformZhipu, PlatformDeepseek:
+	case PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax:
 		if account.IsCodingPlan() {
 			provider := account.GetCodingPlanProvider()
-			if provider != PlatformKimi && provider != PlatformZhipu {
+			if provider != PlatformKimi && provider != PlatformZhipu && provider != PlatformMiniMax {
 				return ErrChannelMonitorAccountNotSupportable
 			}
 			var officialHosts []string
-			if provider == PlatformKimi {
+			switch provider {
+			case PlatformKimi:
 				officialHosts = []string{"api.kimi.com"}
-			} else {
+			case PlatformZhipu:
 				officialHosts = []string{"open.bigmodel.cn", "api.z.ai"}
+			case PlatformMiniMax:
+				officialHosts = []string{"api.minimaxi.com", "api.minimax.io"}
 			}
 			if !cnProviderResolvedEndpointsAreOfficial(account, officialHosts) {
 				return ErrChannelMonitorAccountNotSupportable
 			}
 			return nil
 		}
-		if account.Platform == PlatformZhipu {
+		if account.Platform == PlatformZhipu || account.Platform == PlatformMiniMax {
 			return ErrChannelMonitorAccountNotSupportable
 		}
 		var officialHosts []string

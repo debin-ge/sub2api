@@ -224,6 +224,10 @@ func TestCalculateAnthropic429ResetTime_NeitherExceeded_StatusRejected_UsesShort
 func TestIsAnthropicBurst429(t *testing.T) {
 	require.False(t, isAnthropicBurst429(http.Header{}), "no unified headers is not a burst signal")
 
+	aggregateOnly := http.Header{}
+	aggregateOnly.Set("anthropic-ratelimit-unified-reset", "1770998400")
+	require.False(t, isAnthropicBurst429(aggregateOnly), "an aggregate reset without status keeps legacy window handling")
+
 	burst := http.Header{}
 	burst.Set("anthropic-ratelimit-unified-status", "allowed")
 	burst.Set("anthropic-ratelimit-unified-5h-utilization", "0.3")

@@ -940,7 +940,12 @@ func (r *radarCacheRepository) GetLatestBucket(ctx context.Context, bucketKey st
 		return nil, err
 	}
 
-	values, err := r.rdb.ZRevRange(ctx, radarBucketRedisKey(bucketKey), 0, 0).Result()
+	values, err := r.rdb.ZRangeArgs(ctx, redis.ZRangeArgs{
+		Key:   radarBucketRedisKey(bucketKey),
+		Start: 0,
+		Stop:  0,
+		Rev:   true,
+	}).Result()
 	if err != nil {
 		r.metrics.RecordRedis("get_latest_bucket", "read", err)
 		return nil, fmt.Errorf("read latest radar bucket snapshot: %w", err)
@@ -958,12 +963,12 @@ func (r *radarCacheRepository) GetLatestBucket(ctx context.Context, bucketKey st
 
 	// Preserve the one-command normal path. Only a malformed newest entry pays
 	// for one bounded fallback command, never an unbounded history read.
-	fallback, readErr := r.rdb.ZRevRange(
-		ctx,
-		radarBucketRedisKey(bucketKey),
-		1,
-		radarLatestFallbackScanLimit-1,
-	).Result()
+	fallback, readErr := r.rdb.ZRangeArgs(ctx, redis.ZRangeArgs{
+		Key:   radarBucketRedisKey(bucketKey),
+		Start: 1,
+		Stop:  radarLatestFallbackScanLimit - 1,
+		Rev:   true,
+	}).Result()
 	if readErr != nil {
 		r.metrics.RecordRedis("get_latest_bucket", "read", readErr)
 		return nil, fmt.Errorf("read latest radar bucket fallback: %w", readErr)
@@ -984,9 +989,11 @@ func (r *radarCacheRepository) GetBucketTrend(ctx context.Context, bucketKey str
 		return nil, err
 	}
 
-	values, err := r.rdb.ZRangeByScore(ctx, radarBucketRedisKey(bucketKey), &redis.ZRangeBy{
-		Min: strconv.FormatInt(since.UnixMilli(), 10),
-		Max: "+inf",
+	values, err := r.rdb.ZRangeArgs(ctx, redis.ZRangeArgs{
+		Key:     radarBucketRedisKey(bucketKey),
+		Start:   strconv.FormatInt(since.UnixMilli(), 10),
+		Stop:    "+inf",
+		ByScore: true,
 	}).Result()
 	if err != nil {
 		r.metrics.RecordRedis("get_bucket_trend", "read", err)

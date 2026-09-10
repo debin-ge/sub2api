@@ -49,7 +49,7 @@ describe('AccountActionMenu', () => {
       props: {
         show: true,
         account,
-        position: { top: 10, left: 20 }
+        anchorRect: new DOMRect(20, 10, 1, 1)
       },
       global: {
         stubs: {
@@ -82,7 +82,7 @@ describe('AccountActionMenu', () => {
       props: {
         show: true,
         account,
-        position: { top: 10, left: 20 }
+        anchorRect: new DOMRect(20, 10, 1, 1)
       },
       global: {
         stubs: {
@@ -109,7 +109,7 @@ describe('AccountActionMenu', () => {
       props: {
         show: true,
         account,
-        position: { top: 10, left: 20 }
+        anchorRect: new DOMRect(20, 10, 1, 1)
       },
       global: {
         stubs: {

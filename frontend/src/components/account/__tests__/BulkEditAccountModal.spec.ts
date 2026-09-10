@@ -196,13 +196,21 @@ describe('BulkEditAccountModal', () => {
     })
   })
 
-  it.each(['kimi', 'zhipu', 'deepseek'])('全部目标为 %s API Key 时展示请求头覆写', (platform) => {
-    const wrapper = mountModal({ selectedPlatforms: [platform], selectedTypes: ['apikey'] })
+  it.each(['kimi', 'zhipu', 'deepseek', 'minimax'])('全部目标为 %s API Key 时展示请求头覆写', (platform) => {
+    const wrapper = mountModal({
+      selectedPlatforms: [platform],
+      selectedTypes: ['apikey']
+    })
+
     expect(wrapper.find('#bulk-edit-header-override-enabled').exists()).toBe(true)
   })
 
-  it.each(['kimi', 'zhipu', 'deepseek'])('目标为 %s OAuth 时不展示请求头覆写', (platform) => {
-    const wrapper = mountModal({ selectedPlatforms: [platform], selectedTypes: ['oauth'] })
+  it.each(['kimi', 'zhipu', 'deepseek', 'minimax'])('目标为 %s OAuth 时不展示请求头覆写', (platform) => {
+    const wrapper = mountModal({
+      selectedPlatforms: [platform],
+      selectedTypes: ['oauth']
+    })
+
     expect(wrapper.find('#bulk-edit-header-override-enabled').exists()).toBe(false)
   })
 
