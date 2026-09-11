@@ -36,6 +36,7 @@ func TestVideoPlatformMigrationsAreEmbeddedAndMetadataOnly(t *testing.T) {
 		"269_drop_video_manual_review_notx.sql",
 		"270_validate_video_state_checks.sql",
 		"271_clear_bytedance_execution_spec_conflict.sql",
+		"272_repair_video_budget_reservations_index_notx.sql",
 	}
 	for _, name := range files {
 		t.Run(name, func(t *testing.T) {
@@ -137,6 +138,39 @@ func TestVideoManualReviewMigrationSettlesBacklogAndDropsTheSchema(t *testing.T)
 	require.Contains(t, concurrentSQL, "WHERE billing_state IN ('held', 'capture_pending', 'release_pending')")
 	require.NotContains(t, concurrentSQL, "manual_review")
 	require.NotContains(t, statement, "CREATE INDEX CONCURRENTLY")
+}
+
+// A database that applied the first version of 269_notx skips it forever on its
+// historical checksum, so the defensive DROP the current version carries never
+// reaches it. 272 carries the same repair, gated on the index actually being
+// INVALID by prepareNonTransactionalMigration, and matches nothing on a healthy
+// database.
+func TestRepairVideoBudgetReservationsIndexMigrationRebuildsTheSameIndex(t *testing.T) {
+	content, err := FS.ReadFile("272_repair_video_budget_reservations_index_notx.sql")
+	require.NoError(t, err)
+	// Assert on the executable body only: the header comment names 269_notx, and
+	// that filename carries "manual_review" into any whole-file match.
+	body := make([]string, 0, 8)
+	for _, line := range strings.Split(string(content), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "--") {
+			continue
+		}
+		body = append(body, line)
+	}
+	statement := strings.Join(strings.Fields(strings.Join(body, "\n")), " ")
+
+	require.Contains(t, statement, "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_video_tasks_budget_reservations_v2")
+	require.Contains(t, statement, "ON video_tasks (user_id, api_key_id, provider) INCLUDE (hold_amount)")
+	// The predicate must stay byte-identical to 269_notx: a different one would
+	// silently be accepted by IF NOT EXISTS and leave the wrong index in place.
+	require.Contains(t, statement, "WHERE billing_state IN ('held', 'capture_pending', 'release_pending')")
+	require.NotContains(t, statement, "manual_review")
+	// The v1 index drop is repeated because a database that never reached the
+	// first version's second statement still carries it.
+	require.Contains(t, statement, "DROP INDEX CONCURRENTLY IF EXISTS idx_video_tasks_budget_reservations;")
+	// Dropping v2 unconditionally would take a live index away from a healthy
+	// database; that decision belongs to the runner's invalid-index probe.
+	require.NotContains(t, statement, "DROP INDEX CONCURRENTLY IF EXISTS idx_video_tasks_budget_reservations_v2")
 }
 
 // The first published version of 269 lacked the conflict-marker cleanup, and a

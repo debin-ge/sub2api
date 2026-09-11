@@ -96,6 +96,26 @@ Why?
 - Different environments would have inconsistent database states
 - Breaks audit trail and reproducibility
 
+### ⚠️ CI 门禁看不见的那一半：分支内改写
+
+`check-migration-gate.sh` 拿 `origin/main` 的 merge-base 比对，所以**同一个特性分支内**
+「先加一个迁移、后来又原地改掉它」在门禁眼里只是一次新增，规则 1 完全拦不住。而
+`test` 分支会构建镜像（`.github/workflows`），迁移在**每次容器启动时自动执行**——分支
+一旦部署过任何环境，它的迁移就已经落库，此后再改就是改已应用的迁移。
+
+这正是 269 的事故形态：首版部署到环境后被原地改写，`269_drop_video_manual_review.sql`
+补了 checksum 兼容规则，同一批被改的 `269_drop_video_manual_review_notx.sql` 漏了，
+线上启动在前者放行后立刻卡在后者上，进入崩溃循环。
+
+**因此：**
+
+1. 迁移一旦随任何镜像部署过，就按已应用对待，改动一律新开文件；
+2. 确需保留原文件名（改的是尚未合并的新迁移）时，必须在
+   `internal/repository/migrations_runner.go` 的 `migrationChecksumCompatibilityRules`
+   里登记规则，且**同一批被改的每个文件都要登记**——`_notx.sql` 兄弟文件最容易漏；
+3. 兼容规则等于「跳过该迁移」。新旧两版的差异如果对终态有实际影响，必须再开一个
+   新迁移把差异补上（参见 270 / 271 / 272 对 269 的三处补齐）。
+
 ### ✅ Correct Workflow
 
 1. **Create new migration**

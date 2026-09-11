@@ -106,6 +106,7 @@ func TestMigrationChecksumCompatibilityRules_CoverEditedUpgradeCompatibilityMigr
 		"123_fix_legacy_auth_source_grant_on_signup_defaults.sql",
 		"186_registration_email_suffix_blacklist.sql",
 		"269_drop_video_manual_review.sql",
+		"269_drop_video_manual_review_notx.sql",
 	} {
 		rule, ok := migrationChecksumCompatibilityRules[name]
 		require.Truef(t, ok, "missing compatibility rule for %s", name)

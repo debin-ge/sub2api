@@ -66,6 +66,8 @@ const usageLogsEffectiveRequestedModelIndex = "idx_usage_logs_effective_requeste
 const usageLogsEffectiveUpstreamModelIndex = "idx_usage_logs_effective_upstream_model_created"
 const videoTasksAccountActiveIndexMigration = "244_video_tasks_account_active_v2_notx.sql"
 const videoTasksAccountActiveIndex = "idx_video_tasks_account_active_v2"
+const videoBudgetReservationsIndexRepairMigration = "272_repair_video_budget_reservations_index_notx.sql"
+const videoBudgetReservationsIndex = "idx_video_tasks_budget_reservations_v2"
 
 var vipConcurrentIndexNames = []string{
 	"idx_users_is_vip",
@@ -124,6 +126,13 @@ var migrationChecksumCompatibilityRules = map[string]migrationChecksumCompatibil
 	// checksum 并跳过 269；缺失的标记清理由 271 单独补齐，另外两项只影响 269 自身
 	// 已经执行完的动作，既无法也无需回溯。
 	"269_drop_video_manual_review.sql": newMigrationChecksumCompatibilityRule("00e601e6ff1994f3e142b216e72abd3c426574db718d4fc3037605e422f602f9", "92e6fb7a1926ad560e03572f0583c0827df7c7c1423641f83eada7cd41c76c1b"),
+	// 269 的 notx 兄弟文件与它同一批被改，却漏登记了规则，症状就是已应用首版的库
+	// 在 269 放行之后立刻卡在这一条上。首版是「CREATE v2 + DROP v1」两条语句，当前
+	// 版本只在前面多了一条防御性 DROP：CREATE INDEX CONCURRENTLY 失败会留下同名的
+	// INVALID 索引，IF NOT EXISTS 会把它当成已建好而静默跳过。两版的目标终态一致，
+	// 因此已应用首版的库保留历史 checksum 并跳过；那条防御性 DROP 的实际效果由 272
+	// 以「仅当索引 INVALID 时才删」的形式补齐。
+	"269_drop_video_manual_review_notx.sql": newMigrationChecksumCompatibilityRule("27cb3b2b139b12514890c28f9130e3fb65287d1e92e08d7d813cbd3a812d2398", "ed0e2cfd37fb2b47b29d4e561d37237c0677f25732a9e154c62fcfbe0e296551"),
 }
 
 // ApplyMigrations 将嵌入的 SQL 迁移文件应用到指定的数据库。
@@ -341,6 +350,8 @@ func prepareNonTransactionalMigration(ctx context.Context, db migrationConnectio
 		return nil
 	case videoTasksAccountActiveIndexMigration:
 		return dropInvalidIndexIfPresent(ctx, db, videoTasksAccountActiveIndex)
+	case videoBudgetReservationsIndexRepairMigration:
+		return dropInvalidIndexIfPresent(ctx, db, videoBudgetReservationsIndex)
 	default:
 		return nil
 	}

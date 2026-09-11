@@ -11,6 +11,24 @@ import (
 )
 
 func TestIsMigrationChecksumCompatible(t *testing.T) {
+	t.Run("269_notx首版checksum可兼容", func(t *testing.T) {
+		ok := isMigrationChecksumCompatible(
+			"269_drop_video_manual_review_notx.sql",
+			"ed0e2cfd37fb2b47b29d4e561d37237c0677f25732a9e154c62fcfbe0e296551",
+			"27cb3b2b139b12514890c28f9130e3fb65287d1e92e08d7d813cbd3a812d2398",
+		)
+		require.True(t, ok)
+	})
+
+	t.Run("269_notx在未知库checksum下不兼容", func(t *testing.T) {
+		ok := isMigrationChecksumCompatible(
+			"269_drop_video_manual_review_notx.sql",
+			"0000000000000000000000000000000000000000000000000000000000000000",
+			"27cb3b2b139b12514890c28f9130e3fb65287d1e92e08d7d813cbd3a812d2398",
+		)
+		require.False(t, ok)
+	})
+
 	t.Run("054历史checksum可兼容", func(t *testing.T) {
 		ok := isMigrationChecksumCompatible(
 			"054_drop_legacy_cache_columns.sql",
