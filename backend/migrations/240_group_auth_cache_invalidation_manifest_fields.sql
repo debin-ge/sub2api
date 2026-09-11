@@ -1,5 +1,7 @@
--- Extend the group auth-cache trigger for fields added after migration 222.
--- Historical migrations remain immutable; this migration is idempotent.
+-- Extend the group auth-cache trigger (237) to also watch the new
+-- model_allowlist and codex_models_manifest_config columns (234/235/236).
+-- Historical migrations remain immutable; this migration only adds two
+-- new comparisons to the existing idempotent CREATE OR REPLACE FUNCTION.
 
 CREATE OR REPLACE FUNCTION enqueue_group_auth_cache_invalidation()
 RETURNS TRIGGER
