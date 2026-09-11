@@ -1650,7 +1650,7 @@ func (s *VideoTaskService) OpenContentForTask(ctx context.Context, task *VideoTa
 	}
 	content, err := provider.OpenContent(ctx, account, request)
 	if err != nil {
-		return nil, err
+		return nil, videoContentOpenError(err)
 	}
 	if content == nil || content.Body == nil {
 		return nil, unknownVideoProviderError("upstream", "invalid_content_response", "video provider returned no content body", nil)
@@ -1663,6 +1663,22 @@ func (s *VideoTaskService) OpenContentForTask(ctx context.Context, task *VideoTa
 		}
 	}
 	return content, nil
+}
+
+// videoContentOpenError 把"签名链接已经失效"翻译成一个稳定的错误码。
+//
+// 取回内容时我们不带任何上游凭据——授权整个写在 URL 的签名里（bytedance_video_provider.go
+// 的 OpenContent 注释说得很明白）。因此对象存储回 401/403 只有一种解释：那条链接过期或被
+// 撤销了，而不是"这个用户没有权限"。原样透出去，用户看到的是上游那句英文
+// "The request signature expired"；换成 video_content_expired，前端才有一个可翻译、
+// 可判断的码，而不是去猜一段上游文案。
+func videoContentOpenError(err error) error {
+	var providerErr *VideoProviderError
+	if errors.As(err, &providerErr) &&
+		(providerErr.StatusCode == http.StatusUnauthorized || providerErr.StatusCode == http.StatusForbidden) {
+		return ErrVideoContentExpired
+	}
+	return err
 }
 
 func (s *VideoTaskService) GetContentTaskForOwner(ctx context.Context, userID int64, reference string) (*VideoTask, error) {
@@ -2182,9 +2198,14 @@ func videoInputHashManifest(inputs []VideoInput) []videoInputHashEntry {
 	return manifest
 }
 
+// videoPromptAttributeMaxRunes 限制随任务留存的提示词长度。request_attributes 是一块
+// 与任务同生命周期的 JSONB，一条没有上限的提示词会把它撑成行外存储，且这里只为回放与
+// 排障服务，两千字足够。
+const videoPromptAttributeMaxRunes = 2000
+
 func videoRequestAttributes(request VideoSubmitRequest, resolved *resolvedVideoSubmission) map[string]any {
 	attrs := resolved.quote.Attributes
-	return map[string]any{
+	attributes := map[string]any{
 		"client_request_contract_version": 2,
 		"account_identity_version":        resolved.account.ProviderIdentityVersion,
 		"requires_verified_isolation":     request.InputReference != nil && strings.TrimSpace(request.InputReference.FileID) != "",
@@ -2212,6 +2233,13 @@ func videoRequestAttributes(request VideoSubmitRequest, resolved *resolvedVideoS
 		"reference_audio_count": len(request.ReferenceMedia.ReferenceAudios),
 		"provider":              resolved.provider.Name(),
 	}
+	// 提示词跟着任务一起留存：它不参与任何上游请求或哈希，只是让任务事后还说得清
+	// "当初要的是什么"。空提示词（character_create）不写键，省得下游把空串当成
+	// "存过但为空"。
+	if prompt := trimRunes(strings.TrimSpace(request.Prompt), videoPromptAttributeMaxRunes); prompt != "" {
+		attributes["prompt"] = prompt
+	}
+	return attributes
 }
 
 func videoOptionalReferenceCount(values ...string) int {

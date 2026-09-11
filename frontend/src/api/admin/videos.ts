@@ -42,6 +42,11 @@ export interface VideoAdminTask {
   upstream_model: string
   input_manifest: VideoInputManifestEntry[]
   request_attributes: Record<string, unknown>
+  /**
+   * 提交时用的提示词原文，服务端从 request_attributes 里提到顶层（上限 2000 字，
+   * 超出截断）。这次改动之前创建的任务没有这个字段，缺席即「当时没留存」。
+   */
+  prompt?: string
   provider_task_id?: string
   provider_status?: string
 	provider_created_at?: string

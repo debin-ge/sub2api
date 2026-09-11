@@ -45,6 +45,7 @@ type videoTaskAPI interface {
 	GetContentTaskByURL(context.Context, string) (*service.VideoTask, error)
 	VideoURLForOwner(context.Context, int64, string) (string, error)
 	ListForOwner(context.Context, int64, service.VideoTaskFilter) (*service.VideoTaskPage, error)
+	ListVideoModels(context.Context, *service.APIKey) (*service.VideoModelsResponse, error)
 	GetCharacterForOwner(context.Context, int64, string) (*service.VideoResource, error)
 	DisclosureForOwner(context.Context, int64, string) (*service.VideoTaskDisclosure, error)
 	ResourceDisclosureForOwner(context.Context, int64, string) (*service.VideoResourceDisclosure, error)
@@ -468,6 +469,27 @@ func (h *VideoHandler) List(c *gin.Context) {
 	if len(data) > 0 {
 		response.FirstID = data[0].ID
 		response.LastID = data[len(data)-1].ID
+	}
+	h.setNoStore(c)
+	c.PureJSON(http.StatusOK, response)
+}
+
+// Models 列出当前 API Key 所属分组可提交的视频模型及其请求约束。
+//
+// 这是一份能力目录，不是可调度性保证：定价与账号 model_mapping 都不在这里检查，
+// 未配价或分组内无账号暴露的模型仍会列出，直到提交时才报错。
+func (h *VideoHandler) Models(c *gin.Context) {
+	apiKey, ok := h.authorizedAPIKey(c)
+	if !ok {
+		return
+	}
+	if !h.readEnabled(c) {
+		return
+	}
+	response, err := h.tasks.ListVideoModels(c.Request.Context(), apiKey)
+	if err != nil {
+		videoError(c, err)
+		return
 	}
 	h.setNoStore(c)
 	c.PureJSON(http.StatusOK, response)
@@ -1501,6 +1523,7 @@ type videoTaskResponse struct {
 	ExpiresAt       *int64                       `json:"expires_at,omitempty"`
 	Status          string                       `json:"status"`
 	Model           string                       `json:"model,omitempty"`
+	Prompt          string                       `json:"prompt,omitempty"`
 	Progress        *float64                     `json:"progress,omitempty"`
 	Seconds         string                       `json:"seconds,omitempty"`
 	Size            string                       `json:"size,omitempty"`
@@ -1508,6 +1531,8 @@ type videoTaskResponse struct {
 	URL             string                       `json:"url,omitempty"`
 	Error           *videoTaskErrorResponse      `json:"error,omitempty"`
 	ContentVariants []string                     `json:"content_variants,omitempty"`
+	ActualCost      *float64                     `json:"actual_cost,omitempty"`
+	Currency        string                       `json:"currency,omitempty"`
 	Provider        string                       `json:"provider,omitempty"`
 	ProviderAccess  *videoProviderAccessResponse `json:"provider_access,omitempty"`
 }
@@ -1569,6 +1594,9 @@ func (h *VideoHandler) projectTask(ctx context.Context, userID int64, task *serv
 		value := task.ContentExpiresAt.Unix()
 		response.ExpiresAt = &value
 	}
+	// 提示词是用户自己的输入，回给发起它的本人，不属于 disclosure 门控的范畴，
+	// 所以在那道门之前就填好。
+	response.Prompt = videoAttributeString(task.RequestAttributes, "prompt")
 	if value := videoAttributeString(task.RequestAttributes, "size"); value != "" {
 		response.Size = value
 	}
@@ -1600,6 +1628,14 @@ func (h *VideoHandler) projectTask(ctx context.Context, userID int64, task *serv
 	}
 	if disclosure == nil || disclosure.Policy == config.VideoDisclosureNone {
 		return response, nil
+	}
+	// 实际消费仅在任务投影为 completed 时暴露。这道状态门不能用 omitempty 代替：
+	// 失败/取消/释放路径会把 ActualCost 写成 &0.0（非空指针），omitempty 留不住，
+	// 序列化后会变成 "actual_cost": 0，等于对用户宣称"这次免费"。
+	if response.Status == service.VideoGenerationCompleted && task.ActualCost != nil {
+		cost := *task.ActualCost
+		response.ActualCost = &cost
+		response.Currency = strings.TrimSpace(task.Currency)
 	}
 	response.Provider = disclosure.Provider
 	if disclosure.Access != nil && disclosure.Access.Value != "" {

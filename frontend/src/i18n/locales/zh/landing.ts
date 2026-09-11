@@ -3,6 +3,10 @@ export default {
     title: '图片批量生成',
     description: '一次提交多条提示词，任务完成后可统一下载图片结果'
   },
+  videoPlaygroundGuide: {
+    title: '视频 Playground',
+    description: '用对话的方式生成视频，就地播放与下载，并查看本次的耗时与实际消费'
+  },
   // Home Page
   home: {
     viewDocs: '查看文档',

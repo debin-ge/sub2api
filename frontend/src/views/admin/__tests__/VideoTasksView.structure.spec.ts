@@ -67,6 +67,8 @@ describe('VideoTasksView recovery surface', () => {
 
 	it('shows safe spool and queue health without exposing filesystem paths', () => {
 		expect(source).toContain('video-spool-health')
+		// 这一条只在真出事时才渲染，正常运行时整块不占版面
+		expect(source).toContain('v-if="healthAlerts.length > 0"')
 		expect(source).toContain('spool?.current_bytes')
 		expect(source).toContain('spool?.orphan_candidates')
 		expect(source).toContain('spool?.cleanup_failure_count')

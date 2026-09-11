@@ -205,3 +205,46 @@ func TestVideoAdminTaskProjectionIncludesTypedGenerationAndBillingDetails(t *tes
 	require.Equal(t, float64(7), data["duration_seconds"])
 	require.Equal(t, float64(125_000), data["video_tokens"])
 }
+
+// 排障时最想知道的一件事就是"这条任务当初要的是什么"。提示词存在 request_attributes
+// 里，管理端把它提到顶层，详情弹窗不必自己去 JSON 里翻。
+func TestVideoAdminTaskProjectionExposesStoredPrompt(t *testing.T) {
+	stub := &videoAdminHandlerStub{task: &service.VideoTask{
+		PublicID: "video_0123456789abcdef0123456789abcdef", UserID: 9,
+		Provider: service.VideoProviderOpenAI, Operation: service.VideoOperationGenerate,
+		GenerationState: service.VideoGenerationCompleted, BillingState: service.VideoBillingCaptured,
+		DeleteState:       service.VideoDeleteNone,
+		RequestAttributes: map[string]any{"prompt": "一只猫在下雨的东京街头", "seconds": float64(8)},
+		CreatedAt:         time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	}}
+
+	recorder := performVideoAdminRequest(newVideoHandler(stub).GetTask, http.MethodGet, "/tasks/:id", "/tasks/"+stub.task.PublicID, nil)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var response map[string]any
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+	data, ok := response["data"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "一只猫在下雨的东京街头", data["prompt"])
+}
+
+// 历史任务没存过提示词，字段整个缺席——管理端据此显示"未保留"，而不是一个空框。
+func TestVideoAdminTaskProjectionOmitsMissingPrompt(t *testing.T) {
+	stub := &videoAdminHandlerStub{task: &service.VideoTask{
+		PublicID: "video_0123456789abcdef0123456789abcdef", UserID: 9,
+		Provider: service.VideoProviderOpenAI, Operation: service.VideoOperationGenerate,
+		GenerationState: service.VideoGenerationCompleted, BillingState: service.VideoBillingCaptured,
+		DeleteState:       service.VideoDeleteNone,
+		RequestAttributes: map[string]any{"seconds": float64(8)},
+		CreatedAt:         time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	}}
+
+	recorder := performVideoAdminRequest(newVideoHandler(stub).GetTask, http.MethodGet, "/tasks/:id", "/tasks/"+stub.task.PublicID, nil)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var response map[string]any
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+	data, ok := response["data"].(map[string]any)
+	require.True(t, ok)
+	require.NotContains(t, data, "prompt")
+}

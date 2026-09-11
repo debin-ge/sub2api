@@ -1,7 +1,7 @@
 <template>
   <AppLayout>
     <div class="space-y-5" data-test="video-admin-page">
-      <section class="grid grid-cols-2 gap-3 lg:grid-cols-5">
+      <section class="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div v-for="metric in overviewMetrics" :key="metric.key" class="card min-w-0 p-4">
           <p class="truncate text-xs font-medium text-gray-500 dark:text-gray-400">{{ metric.label }}</p>
           <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">{{ metric.value }}</p>
@@ -9,20 +9,21 @@
         </div>
       </section>
 
-			<section class="border-y border-gray-200 py-3 dark:border-dark-700" data-test="video-spool-health">
-				<div class="mb-3 flex items-center justify-between gap-3">
-					<h2 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.videos.health.title') }}</h2>
-					<span :class="statusClass(overview?.spool?.last_sweep_result || 'not_run')">
-						{{ stateLabel(overview?.spool?.last_sweep_result || 'not_run') }}
-					</span>
-				</div>
-				<div class="grid grid-cols-2 gap-x-6 gap-y-3 text-sm md:grid-cols-4 xl:grid-cols-7">
-					<div v-for="item in healthMetrics" :key="item.key" class="min-w-0">
-						<p class="truncate text-xs text-gray-500 dark:text-gray-400">{{ item.label }}</p>
-						<p class="mt-1 truncate font-medium text-gray-900 dark:text-gray-100">{{ item.value }}</p>
-					</div>
-				</div>
-			</section>
+      <!--
+        暂存与队列原本常驻 8 个指标，但提交暂存只有 multipart 上传路径会写入
+        （backend internal/handler/video_handler.go:995-1000），本平台提交的全是 JSON，
+        那一排永远是 0 / 0 B / 0.0% / 尚未运行。改成只在真出事时才出现的一条告警。
+      -->
+      <section
+        v-if="healthAlerts.length > 0"
+        class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900/50 dark:bg-amber-950/20"
+        data-test="video-spool-health"
+      >
+        <p class="text-sm font-medium text-amber-800 dark:text-amber-200">{{ t('admin.videos.health.title') }}</p>
+        <ul class="mt-1 space-y-1 text-sm text-amber-700 dark:text-amber-300">
+          <li v-for="alert in healthAlerts" :key="alert">{{ alert }}</li>
+        </ul>
+      </section>
 
       <section class="border-b border-gray-200 dark:border-dark-700">
         <div class="flex min-w-0 gap-1 overflow-x-auto" role="tablist" :aria-label="t('admin.videos.tabs.label')">
@@ -96,13 +97,11 @@
           {{ error }}
         </div>
         <div class="overflow-x-auto">
-          <table v-if="activeTab === 'tasks'" class="w-full min-w-[1080px] text-sm">
+          <table v-if="activeTab === 'tasks'" class="w-full min-w-[860px] text-sm">
             <thead class="bg-gray-50 text-left text-xs text-gray-500 dark:bg-dark-800 dark:text-gray-400">
               <tr>
                 <th class="px-4 py-3 font-medium">{{ t('admin.videos.columns.task') }}</th>
                 <th class="px-4 py-3 font-medium">{{ t('admin.videos.columns.owner') }}</th>
-                <th class="px-4 py-3 font-medium">{{ t('admin.videos.columns.provider') }}</th>
-                <th class="px-4 py-3 font-medium">{{ t('admin.videos.columns.operation') }}</th>
                 <th class="px-4 py-3 font-medium">{{ t('admin.videos.columns.state') }}</th>
                 <th class="px-4 py-3 font-medium">{{ t('admin.videos.columns.billing') }}</th>
                 <th class="px-4 py-3 font-medium">{{ t('admin.videos.columns.amount') }}</th>
@@ -114,11 +113,9 @@
               <tr v-for="task in taskRows" :key="task.public_id" class="hover:bg-gray-50/60 dark:hover:bg-dark-800/60">
                 <td class="px-4 py-3">
                   <button class="block max-w-64 truncate font-mono text-xs text-primary-600 hover:underline dark:text-primary-400" @click="openTask(task)">{{ task.public_id }}</button>
-                  <p class="mt-1 max-w-64 truncate text-xs text-gray-500">{{ task.public_model || '-' }}</p>
+                  <p class="mt-1 max-w-64 truncate text-xs text-gray-500">{{ taskSubtitle(task) }}</p>
                 </td>
                 <td class="px-4 py-3 font-mono text-xs">U{{ task.user_id }} / A{{ task.account_id ?? '-' }}</td>
-                <td class="px-4 py-3">{{ task.provider }}</td>
-                <td class="px-4 py-3">{{ stateLabel(task.operation) }}</td>
                 <td class="px-4 py-3"><span :class="statusClass(task.generation_state)">{{ stateLabel(task.generation_state) }}</span></td>
                 <td class="px-4 py-3"><span :class="statusClass(task.billing_state)">{{ stateLabel(task.billing_state) }}</span></td>
 				<td class="px-4 py-3 text-xs" data-test="video-task-amounts">
@@ -140,7 +137,7 @@
                   </div>
                 </td>
               </tr>
-              <tr v-if="!loading && taskRows.length === 0"><td colspan="9" class="px-4 py-12 text-center text-gray-500">{{ t('admin.videos.empty') }}</td></tr>
+              <tr v-if="!loading && taskRows.length === 0"><td colspan="7" class="px-4 py-12 text-center text-gray-500">{{ t('admin.videos.empty') }}</td></tr>
             </tbody>
           </table>
 
@@ -193,6 +190,15 @@
 				</div>
 			</div>
 		</section>
+
+        <!--
+          提示词单开一段，不塞进上面那张 label/value 网格：那里每格都是 break-all
+          font-mono 的短值，一段几百字的提示词进去就成了一堵没有断行的字墙。
+        -->
+        <section v-if="selectedTask.prompt" data-test="video-detail-prompt">
+          <h4 class="mb-3 text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.videos.detail.prompt') }}</h4>
+          <p class="max-h-48 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-gray-50 p-3 text-sm text-gray-800 dark:bg-dark-800 dark:text-gray-200">{{ selectedTask.prompt }}</p>
+        </section>
 
         <div v-if="selectedTask.last_error_message" class="border-l-2 border-red-500 bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950/20 dark:text-red-300">
           <p class="font-medium">{{ selectedTask.last_error_code || selectedTask.last_error_kind }}</p><p class="mt-1 break-words">{{ selectedTask.last_error_message }}</p>
@@ -275,32 +281,51 @@ const taskTotal = computed(() => Object.values(overview.value?.tasks_by_generati
 const activeTasks = computed(() => (overview.value?.tasks_by_generation?.queued ?? 0) + (overview.value?.tasks_by_generation?.in_progress ?? 0) + (overview.value?.tasks_by_generation?.submitting ?? 0))
 const pendingBilling = computed(() => (overview.value?.tasks_by_billing?.capture_pending ?? 0) + (overview.value?.tasks_by_billing?.release_pending ?? 0))
 const callbackAttention = computed(() => (overview.value?.callbacks_by_status?.failed ?? 0) + (overview.value?.callbacks_by_status?.quarantined ?? 0))
+const heldTasks = computed(() => (overview.value?.tasks_by_billing?.held ?? 0) + pendingBilling.value)
+// 顶部只留「现在有没有人要处理」的三个数。原来的「Callback 异常」「未匹配 Webhook」
+// 两张卡直接删了：它们就是下面 tab 上的那两个角标（tabs 用的是同一个
+// callbackAttention / unmatched_webhooks），同一个数字隔 40px 写两遍没有意义。
+// 补上的 held_amount 后端一直在返回却从没渲染过，它才是这页唯一的「此刻压着多少
+// 用户余额」——视频计价强制 USD（backend video_pricing_config.go:207），汇总不会混币。
 const overviewMetrics = computed(() => [
   { key: 'active', label: t('admin.videos.metrics.active'), value: formatNumber(activeTasks.value), meta: relativeAge(overview.value?.oldest_task_pending_at) },
   { key: 'billing', label: t('admin.videos.metrics.billing'), value: formatNumber(pendingBilling.value), meta: relativeAge(overview.value?.oldest_billing_at) },
-  { key: 'callbacks', label: t('admin.videos.metrics.callbacks'), value: formatNumber(callbackAttention.value), meta: relativeAge(overview.value?.oldest_callback_at) },
-  { key: 'unmatched', label: t('admin.videos.metrics.unmatched'), value: formatNumber(overview.value?.unmatched_webhooks ?? 0), meta: t('admin.videos.metrics.requiresReview') },
+  { key: 'held', label: t('admin.videos.metrics.held'), value: formatMoney(overview.value?.held_amount ?? 0), meta: t('admin.videos.metrics.heldCount', { value: formatNumber(heldTasks.value) }) },
 ])
-const healthMetrics = computed(() => {
+// 只报「需要人动手」的异常，正常时整条不渲染。磁盘/利用率/孤儿/清理失败这些数字
+// 仍然读，只是不再常驻展示——平时它们全是 0，出事时才有信息量。
+const healthAlerts = computed(() => {
 	const spool = overview.value?.spool
-	const queue = overview.value?.queue
-	return [
-		{ key: 'spool-enabled', label: t('admin.videos.health.spool'), value: spool?.enabled ? t('admin.videos.health.enabled') : t('admin.videos.health.disabled') },
-		{ key: 'spool-bytes', label: t('admin.videos.health.disk'), value: `${formatBytes(spool?.current_bytes)} / ${formatBytes(spool?.max_bytes)}` },
-		{ key: 'spool-utilization', label: t('admin.videos.health.utilization'), value: formatPercent(spool?.utilization) },
-		{ key: 'spool-active', label: t('admin.videos.health.activeSessions'), value: formatNumber(spool?.active_sessions ?? 0) },
-		{ key: 'spool-orphans', label: t('admin.videos.health.orphans'), value: formatNumber(spool?.orphan_candidates ?? 0) },
-		{ key: 'spool-failures', label: t('admin.videos.health.cleanupFailures'), value: formatNumber(spool?.cleanup_failure_count ?? 0) },
-		{ key: 'queue', label: t('admin.videos.health.queue'), value: overview.value?.queue_status === 'available' && queue ? `${queue.ready} / ${queue.delayed} / ${queue.active}` : t('admin.videos.health.unavailable') },
-		{ key: 'last-sweep', label: t('admin.videos.health.lastSweep'), value: formatDate(spool?.last_sweep_at) },
-	]
+	const alerts: string[] = []
+	if (overview.value && overview.value?.queue_status !== 'available') alerts.push(t('admin.videos.health.queueUnavailable'))
+	if (spool?.enabled && (spool?.utilization ?? 0) >= 0.85) {
+		alerts.push(t('admin.videos.health.diskTight', { used: formatBytes(spool?.current_bytes), max: formatBytes(spool?.max_bytes), percent: formatPercent(spool?.utilization) }))
+	}
+	if ((spool?.cleanup_failure_count ?? 0) > 0) {
+		alerts.push(t('admin.videos.health.cleanupFailing', { value: formatNumber(spool?.cleanup_failure_count ?? 0), orphans: formatNumber(spool?.orphan_candidates ?? 0) }))
+	}
+	if (spool?.last_sweep_result === 'error') alerts.push(t('admin.videos.health.sweepFailed', { value: formatDate(spool?.last_sweep_at) }))
+	return alerts
 })
 const currentStatusOptions = computed(() => activeTab.value === 'resources' ? resourceStates : callbackStates)
 const currentBillingStates = computed(() => billingStates)
+// 请求 / 公开 / 渠道 / 上游四个模型名在绝大多数任务里就是同一个串，四行一模一样的
+// 值等于什么都没说。只有真的不一致（改名映射、渠道覆盖）时才值得逐层摊开。
+function modelFields(task: VideoAdminTask) {
+	const chain = [
+		{ label: t('admin.videos.detail.requestedModel'), value: task.requested_model || '-' },
+		{ label: t('admin.videos.detail.publicModel'), value: task.public_model || '-' },
+		{ label: t('admin.videos.detail.channelModel'), value: task.channel_model || '-' },
+		{ label: t('admin.videos.detail.upstreamModel'), value: task.upstream_model || '-' },
+	]
+	if (new Set(chain.map(field => field.value)).size > 1) return chain
+	return [{ label: t('admin.videos.columns.model'), value: chain[0].value }]
+}
+
 const detailSections = computed(() => {
   const task = selectedTask.value
   if (!task) return []
-  return [
+  const sections = [
 	{
 		key: 'routing',
 		title: t('admin.videos.detail.routing'),
@@ -309,12 +334,8 @@ const detailSections = computed(() => {
 			{ label: t('admin.videos.columns.upstreamTask'), value: task.provider_task_id || '-' },
 			{ label: t('admin.videos.detail.ownerIds'), value: `U${task.user_id} / K${task.api_key_id ?? '-'} / G${task.group_id ?? '-'}` },
 			{ label: t('admin.videos.detail.routeIds'), value: `C${task.channel_id ?? '-'} / A${task.account_id ?? '-'}` },
-			{ label: t('admin.videos.detail.requestedModel'), value: task.requested_model || '-' },
-			{ label: t('admin.videos.detail.publicModel'), value: task.public_model || '-' },
-			{ label: t('admin.videos.detail.channelModel'), value: task.channel_model || '-' },
-			{ label: t('admin.videos.detail.upstreamModel'), value: task.upstream_model || '-' },
+			...modelFields(task),
 			{ label: t('admin.videos.columns.provider'), value: task.provider || '-' },
-			{ label: t('admin.videos.detail.endpoint'), value: task.endpoint || '-' },
 			{ label: t('admin.videos.detail.stableClientToken'), value: task.stable_client_token || '-' },
 		],
 	},
@@ -324,16 +345,12 @@ const detailSections = computed(() => {
 		fields: [
 			{ label: t('admin.videos.columns.operation'), value: stateLabel(task.operation) },
 			{ label: t('admin.videos.columns.state'), value: stateLabel(task.generation_state) },
-			{ label: t('admin.videos.detail.version'), value: String(task.version ?? '-') },
-			{ label: t('admin.videos.detail.leaseEpoch'), value: String(task.lease_epoch ?? '-') },
-			{ label: t('admin.videos.detail.leaseExpiresAt'), value: task.lease_expires_at || '-' },
 			{ label: t('admin.videos.detail.providerStatus'), value: task.provider_status || '-' },
 			{ label: t('admin.videos.detail.progress'), value: formatProgress(task.progress) },
 			{ label: t('admin.videos.detail.resolution'), value: task.resolution || '-' },
 			{ label: t('admin.videos.detail.duration'), value: formatDurationSeconds(task.duration_seconds) },
 			{ label: t('admin.videos.detail.videoTokens'), value: formatNumberValue(task.video_tokens) },
 			{ label: t('admin.videos.detail.contentVariants'), value: formatList(task.content_variants) },
-			{ label: t('admin.videos.detail.inputCount'), value: formatNumber(task.input_manifest?.length ?? 0) },
 			{ label: t('admin.videos.detail.deleteState'), value: stateLabel(task.delete_state) },
 		],
 	},
@@ -350,7 +367,6 @@ const detailSections = computed(() => {
 			{ label: t('admin.videos.detail.estimatedCost'), value: formatMoney(task.estimated_cost, task.currency) },
 			{ label: t('admin.videos.detail.heldAmount'), value: formatMoney(task.hold_amount, task.currency) },
 			{ label: task.billing_state === 'captured' ? t('admin.videos.detail.chargedAmount') : t('admin.videos.detail.payableAmount'), value: formatMoney(task.actual_cost, task.currency) },
-			{ label: t('admin.videos.detail.currency'), value: task.currency || '-' },
 			{ label: t('admin.videos.detail.pricingSource'), value: task.pricing_source || '-' },
 			{ label: t('admin.videos.detail.pricingRule'), value: task.pricing_rule_key || '-' },
 			{ label: t('admin.videos.detail.holdId'), value: task.hold_id || '-' },
@@ -374,6 +390,11 @@ const detailSections = computed(() => {
 		],
 	},
   ]
+  // 一个典型任务里近一半字段是 '-'，留着只会把真有内容的那几行淹掉。状态类字段
+  // （生成 / 结算 / 删除状态）经 stateLabel 永远不是 '-'，所以不会整段消失。
+  return sections
+    .map(section => ({ ...section, fields: section.fields.filter(field => field.value !== '-' && field.value !== '') }))
+    .filter(section => section.fields.length > 0)
 })
 
 function numericFilter(value: string): number | undefined {
@@ -509,6 +530,11 @@ function canRetryDelete(task: VideoAdminTask) { return ['requested', 'deleting',
 function canRetryCallback(callback: VideoAdminCallback) { return ['failed', 'quarantined'].includes(callback.status) && new Date(callback.expires_at).getTime() > Date.now() }
 
 function stateLabel(state: string) { return t(`admin.videos.states.${state}`, state) }
+// provider 与 operation 原本各占一列，可 provider 只有两种取值、operation 在本平台
+// 恒为 generate，两整列换来的信息量还不如跟在模型名后面的一小段副标题。
+function taskSubtitle(task: VideoAdminTask) {
+	return [task.public_model, task.provider, task.operation === 'generate' ? '' : stateLabel(task.operation)].filter(Boolean).join(' · ') || '-'
+}
 function statusClass(state: string) {
   const base = 'inline-flex min-h-6 items-center rounded px-2 py-0.5 text-xs font-medium'
 	  if (['completed', 'captured', 'released', 'ready', 'delivered', 'success', 'done', 'billed', 'waived', 'approved', 'already_durable'].includes(state)) return `${base} bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300`

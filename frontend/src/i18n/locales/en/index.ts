@@ -3,6 +3,7 @@ import common from './common'
 import dashboard from './dashboard'
 import channelMonitorV2 from './channelMonitorV2'
 import batchImage from './batchImage'
+import videoPlayground from './videoPlayground'
 import admin from './admin'
 import misc from './misc'
 import local from './local'
@@ -14,6 +15,7 @@ const upstream = {
   ...dashboard,
   ...channelMonitorV2,
   ...batchImage,
+  ...videoPlayground,
   admin,
   ...misc,
 }

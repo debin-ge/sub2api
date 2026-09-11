@@ -94,6 +94,7 @@ func TestOpenAICompatibleVideoReferenceFieldsRejectsInvalidCombinations(t *testi
 		}}},
 		{name: "private video URL", references: ProviderVideoReferenceMedia{ReferenceVideos: []string{"http://127.0.0.1/video.mp4"}}},
 		{name: "inline video", references: ProviderVideoReferenceMedia{ReferenceVideos: []string{"data:video/mp4;base64,dmlkZW8="}}},
+		// 接口文档 §4.3 与能力目录的 reference_audios.requires_any 都这么承诺，这一层必须同口径。
 		{name: "audio alone", references: ProviderVideoReferenceMedia{ReferenceAudios: []string{"https://media.example.com/audio.mp3"}}},
 		{name: "first frame and reference video", references: ProviderVideoReferenceMedia{
 			FirstImageURL:   "https://media.example.com/first.png",

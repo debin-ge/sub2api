@@ -114,6 +114,9 @@ func openAICompatibleVideoReferenceFields(references ProviderVideoReferenceMedia
 	if err != nil {
 		return nil, err
 	}
+	// 参考音频不能单独使用，必须同时带至少一份图片或视频参考——这条写在对外接口文档
+	// §4.3，能力目录也以 reference_audios.requires_any 的形式下发给前端。三处必须同口径：
+	// 这里放行而文档与目录照旧拦，等于让直连 API 的客户端和 Playground 用户拿到两套规则。
 	if len(referenceAudios) > 0 && imageURL == "" && firstImageURL == "" && lastImageURL == "" &&
 		len(referenceImages) == 0 && len(referenceVideos) == 0 {
 		return nil, errors.New("reference audio requires an image or video reference")

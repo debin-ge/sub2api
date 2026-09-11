@@ -164,6 +164,7 @@ export default {
     announcements: '公告',
     apiKeys: 'API 密钥',
     batchImage: '批量生图',
+    videoPlayground: '视频 Playground',
     usage: '使用记录',
     redeem: '兑换',
     affiliate: '邀请返利',

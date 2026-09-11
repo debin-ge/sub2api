@@ -3,6 +3,10 @@ export default {
     title: 'Batch Image Generation',
     description: 'Submit multiple prompts in one job and download the generated images when complete'
   },
+  videoPlaygroundGuide: {
+    title: 'Video Playground',
+    description: 'Generate videos conversationally, play and download them in place, and see elapsed time and actual cost'
+  },
   // Home Page
   home: {
     viewDocs: 'View Documentation',

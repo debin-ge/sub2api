@@ -54,6 +54,9 @@ type videoTaskAPIFake struct {
 	videoURLErr           error
 	deleteTask            *service.VideoTask
 	deleteErr             error
+	models                *service.VideoModelsResponse
+	modelsErr             error
+	modelsAPIKey          *service.APIKey
 	characterErr          error
 	submitCalls           int
 	getCalls              int
@@ -223,6 +226,11 @@ func (f *videoTaskAPIFake) DeleteCharacterForOwner(context.Context, int64, strin
 	return f.characterErr
 }
 
+func (f *videoTaskAPIFake) ListVideoModels(_ context.Context, apiKey *service.APIKey) (*service.VideoModelsResponse, error) {
+	f.modelsAPIKey = apiKey
+	return f.models, f.modelsErr
+}
+
 func TestVideoHandlerProjectsSpecificUpstreamFailure(t *testing.T) {
 	code := "content_policy"
 	message := "video generation was rejected by content policy"
@@ -230,6 +238,8 @@ func TestVideoHandlerProjectsSpecificUpstreamFailure(t *testing.T) {
 		PublicID: "video_0123456789abcdef0123456789abcdef", UserID: 42,
 		GenerationState: service.VideoGenerationFailed, BillingState: service.VideoBillingReleased,
 		LastErrorCode: &code, LastErrorMessage: &message, CreatedAt: time.Now().UTC(),
+		// 释放路径把实际消费写成 &0.0，这是非空指针，omitempty 留不住它。
+		ActualCost: float64Pointer(0), Currency: "USD",
 	}
 	fake := &videoTaskAPIFake{
 		getTask:    task,
@@ -244,6 +254,8 @@ func TestVideoHandlerProjectsSpecificUpstreamFailure(t *testing.T) {
 	require.NotNil(t, response.Error)
 	require.Equal(t, code, response.Error.Code)
 	require.Equal(t, message, response.Error.Message)
+	require.Nil(t, response.ActualCost)
+	require.Empty(t, response.Currency)
 }
 
 func videoHandlerTestConfig(t *testing.T) *config.Config {
@@ -486,6 +498,8 @@ func TestVideoHandlerCompletedTaskIncludesLocalContentURL(t *testing.T) {
 	task.GenerationState = service.VideoGenerationCompleted
 	task.BillingState = service.VideoBillingCaptured
 	task.ContentVariants = []string{"thumbnail", "video"}
+	task.ActualCost = float64Pointer(0.4213)
+	task.Currency = "USD"
 	fake := &videoTaskAPIFake{
 		getTask:  task,
 		videoURL: "https://video-upstream.example/v1/videos/video_upstream_1/content?token=signed&disposition=inline",
@@ -505,6 +519,80 @@ func TestVideoHandlerCompletedTaskIncludesLocalContentURL(t *testing.T) {
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
 	require.Equal(t, "https://api.current.example/v1/videos/video_upstream_1/content?token=signed&disposition=inline", response["url"])
 	require.NotContains(t, response, "provider_task_id")
+	require.InDelta(t, 0.4213, response["actual_cost"], 1e-9)
+	require.Equal(t, "USD", response["currency"])
+}
+
+// 实际消费只有在任务真正结算（captured）后才允许暴露。这是 omitempty 陷阱的回归测试：
+// 失败/取消/释放路径会写入 &0.0，若少了投影状态门控，序列化结果会是 "actual_cost": 0，
+// 等于对用户宣称"这次免费"。
+func TestVideoHandlerTaskOmitsActualCostUntilCaptured(t *testing.T) {
+	cases := []struct {
+		name       string
+		generation string
+		billing    string
+		actualCost *float64
+		currency   string
+		expectCost *float64
+	}{
+		{"captured discloses cost", service.VideoGenerationCompleted, service.VideoBillingCaptured, float64Pointer(1.25), "USD", float64Pointer(1.25)},
+		{"capture pending stays silent", service.VideoGenerationCompleted, service.VideoBillingCapturePending, float64Pointer(0), "USD", nil},
+		{"failed release pending stays silent", service.VideoGenerationFailed, service.VideoBillingReleasePending, float64Pointer(0), "USD", nil},
+		{"cancelled released stays silent", service.VideoGenerationCancelled, service.VideoBillingReleased, float64Pointer(0), "USD", nil},
+		{"expired released stays silent", service.VideoGenerationExpired, service.VideoBillingReleased, float64Pointer(0), "USD", nil},
+		{"in progress stays silent", service.VideoGenerationInProgress, service.VideoBillingHeld, nil, "", nil},
+		{"captured without cost stays silent", service.VideoGenerationCompleted, service.VideoBillingCaptured, nil, "USD", nil},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			task := videoHandlerTask()
+			task.GenerationState = testCase.generation
+			task.BillingState = testCase.billing
+			task.ActualCost = testCase.actualCost
+			task.Currency = testCase.currency
+			task.ContentVariants = nil
+			fake := &videoTaskAPIFake{getTask: task}
+			handler := newVideoHandler(fake, nil, videoHandlerTestConfig(t))
+
+			response, err := handler.projectTask(context.Background(), task.UserID, task)
+			require.NoError(t, err)
+
+			if testCase.expectCost == nil {
+				require.Nil(t, response.ActualCost)
+				require.Empty(t, response.Currency)
+				body, marshalErr := json.Marshal(response)
+				require.NoError(t, marshalErr)
+				require.NotContains(t, string(body), "actual_cost")
+				require.NotContains(t, string(body), "currency")
+				return
+			}
+			require.NotNil(t, response.ActualCost)
+			require.InDelta(t, *testCase.expectCost, *response.ActualCost, 1e-9)
+			require.Equal(t, testCase.currency, response.Currency)
+		})
+	}
+}
+
+func TestVideoHandlerCompletedTaskOmitsActualCostWhenDisclosureIsNone(t *testing.T) {
+	task := videoHandlerTask()
+	task.GenerationState = service.VideoGenerationCompleted
+	task.BillingState = service.VideoBillingCaptured
+	task.ContentVariants = nil
+	task.ActualCost = float64Pointer(2.5)
+	task.Currency = "USD"
+	fake := &videoTaskAPIFake{
+		getTask:    task,
+		disclosure: &service.VideoTaskDisclosure{Policy: config.VideoDisclosureNone},
+	}
+	handler := newVideoHandler(fake, nil, videoHandlerTestConfig(t))
+
+	response, err := handler.projectTask(context.Background(), task.UserID, task)
+
+	require.NoError(t, err)
+	require.Equal(t, service.VideoGenerationCompleted, response.Status)
+	require.Nil(t, response.ActualCost)
+	require.Empty(t, response.Currency)
+	require.Empty(t, response.Provider)
 }
 
 func TestVideoHandlerContentAcceptsRewrittenProviderTaskPath(t *testing.T) {
@@ -1287,3 +1375,37 @@ func TestVideoHandlerContentRejectsMultipleRanges(t *testing.T) {
 }
 
 func float64Pointer(value float64) *float64 { return &value }
+
+// 提示词随任务一起回放：服务端把它留在 request_attributes 里，投影时原样带出。
+// 没存过（历史行、或 character_create 这类没有提示词的操作）就整个字段缺席，
+// 前端据此说"未保留"，而不是拿别的字段冒充原文。
+func TestVideoHandlerTaskProjectsStoredPrompt(t *testing.T) {
+	t.Run("stored prompt is returned", func(t *testing.T) {
+		task := videoHandlerTask()
+		task.RequestAttributes["prompt"] = "一只猫在下雨的东京街头"
+		handler := newVideoHandler(&videoTaskAPIFake{getTask: task}, nil, videoHandlerTestConfig(t))
+		ctx, recorder := newVideoHandlerTestContext(http.MethodGet, "/v1/videos/"+task.PublicID, "", nil)
+		ctx.Params = gin.Params{{Key: "video_id", Value: task.PublicID}}
+
+		handler.Retrieve(ctx)
+
+		require.Equal(t, http.StatusOK, recorder.Code)
+		var response map[string]any
+		require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+		require.Equal(t, "一只猫在下雨的东京街头", response["prompt"])
+	})
+
+	t.Run("missing prompt omits the field", func(t *testing.T) {
+		task := videoHandlerTask()
+		handler := newVideoHandler(&videoTaskAPIFake{getTask: task}, nil, videoHandlerTestConfig(t))
+		ctx, recorder := newVideoHandlerTestContext(http.MethodGet, "/v1/videos/"+task.PublicID, "", nil)
+		ctx.Params = gin.Params{{Key: "video_id", Value: task.PublicID}}
+
+		handler.Retrieve(ctx)
+
+		require.Equal(t, http.StatusOK, recorder.Code)
+		var response map[string]any
+		require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+		require.NotContains(t, response, "prompt")
+	})
+}

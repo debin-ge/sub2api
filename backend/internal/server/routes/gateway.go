@@ -239,6 +239,13 @@ func RegisterGatewayRoutes(
 		}
 		videoUnsupported(c)
 	}
+	videoModelsHandler := func(c *gin.Context) {
+		if (getGroupPlatform(c) == service.PlatformOpenAI || getGroupPlatform(c) == service.PlatformByteDance || getGroupPlatform(c) == service.PlatformComposite) && h.Video != nil {
+			h.Video.Models(c)
+			return
+		}
+		videoUnsupported(c)
+	}
 	videoDeleteHandler := func(c *gin.Context) {
 		if (getGroupPlatform(c) == service.PlatformOpenAI || getGroupPlatform(c) == service.PlatformByteDance || getGroupPlatform(c) == service.PlatformComposite) && h.Video != nil {
 			h.Video.Delete(c)
@@ -463,6 +470,8 @@ func RegisterGatewayRoutes(
 		// canonical /videos/generations route inside the Grok media forwarder.
 		gateway.POST("/videos", videoCreateHandler)
 		gateway.GET("/videos", videoListHandler)
+		// 静态段先于 /videos/:request_id 匹配，与既有的 /videos/characters 同理。
+		gateway.GET("/videos/models", videoModelsHandler)
 		gateway.POST("/videos/generations", legacyVideoGenerationHandler)
 		gateway.POST("/videos/edits", videoEditHandler)
 		gateway.POST("/videos/extensions", videoExtensionHandler)
@@ -669,6 +678,7 @@ func RegisterGatewayRoutes(
 	r.GET("/images/tasks/:task_id", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, h.AsyncImage.Get)
 	r.POST("/videos", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, videoCreateIntent, requireGroupAnthropic, videoCreateHandler)
 	r.GET("/videos", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, videoListHandler)
+	r.GET("/videos/models", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, videoModelsHandler)
 	r.POST("/videos/generations", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, videoCreateIntent, requireGroupAnthropic, legacyVideoGenerationHandler)
 	r.POST("/videos/edits", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, videoCreateIntent, requireGroupAnthropic, videoEditHandler)
 	r.POST("/videos/extensions", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, videoCreateIntent, requireGroupAnthropic, videoExtensionHandler)

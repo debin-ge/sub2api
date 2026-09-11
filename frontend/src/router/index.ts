@@ -275,6 +275,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/video-playground',
+    name: 'VideoPlayground',
+    component: () => import('@/views/user/VideoPlaygroundView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Video Playground',
+      titleKey: 'videoPlaygroundGuide.title',
+      descriptionKey: 'videoPlaygroundGuide.description'
+    }
+  },
+  {
     path: '/usage',
     name: 'Usage',
     component: () => import('@/views/user/UsageView.vue'),

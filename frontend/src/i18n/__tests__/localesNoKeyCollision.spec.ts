@@ -7,10 +7,13 @@ import enAdminOverview from '../locales/en/admin/overview'
 import enAdminResources from '../locales/en/admin/resources'
 import enAdminSettings from '../locales/en/admin/settings'
 import enAdminModelPrices from '../locales/en/admin/modelPrices'
+import enBatchImage from '../locales/en/batchImage'
+import enChannelMonitorV2 from '../locales/en/channelMonitorV2'
 import enCommon from '../locales/en/common'
 import enDashboard from '../locales/en/dashboard'
 import enLanding from '../locales/en/landing'
 import enMisc from '../locales/en/misc'
+import enVideoPlayground from '../locales/en/videoPlayground'
 import zhAdminAccounts from '../locales/zh/admin/accounts'
 import zhAdminChannels from '../locales/zh/admin/channels'
 import zhAdminOps from '../locales/zh/admin/ops'
@@ -18,10 +21,13 @@ import zhAdminOverview from '../locales/zh/admin/overview'
 import zhAdminResources from '../locales/zh/admin/resources'
 import zhAdminSettings from '../locales/zh/admin/settings'
 import zhAdminModelPrices from '../locales/zh/admin/modelPrices'
+import zhBatchImage from '../locales/zh/batchImage'
+import zhChannelMonitorV2 from '../locales/zh/channelMonitorV2'
 import zhCommon from '../locales/zh/common'
 import zhDashboard from '../locales/zh/dashboard'
 import zhLanding from '../locales/zh/landing'
 import zhMisc from '../locales/zh/misc'
+import zhVideoPlayground from '../locales/zh/videoPlayground'
 
 // locales/{zh,en}/index.ts 与 admin/index.ts 使用对象展开聚合各域模块，
 // 展开模块之间若出现同名顶层键会静默覆盖。本测试将该风险固化为显式失败。
@@ -43,9 +49,27 @@ function collisions(modules: Modules): string[] {
   return out
 }
 
+// 这张表必须覆盖 locales/{zh,en}/index.ts 里 upstream 展开的每一个模块，
+// 少列一个就等于那个模块的顶层键不受本测试保护。
 const roots: Record<string, Modules> = {
-  zh: { landing: zhLanding, common: zhCommon, dashboard: zhDashboard, misc: zhMisc },
-  en: { landing: enLanding, common: enCommon, dashboard: enDashboard, misc: enMisc }
+  zh: {
+    landing: zhLanding,
+    common: zhCommon,
+    dashboard: zhDashboard,
+    channelMonitorV2: zhChannelMonitorV2,
+    batchImage: zhBatchImage,
+    videoPlayground: zhVideoPlayground,
+    misc: zhMisc
+  },
+  en: {
+    landing: enLanding,
+    common: enCommon,
+    dashboard: enDashboard,
+    channelMonitorV2: enChannelMonitorV2,
+    batchImage: enBatchImage,
+    videoPlayground: enVideoPlayground,
+    misc: enMisc
+  }
 }
 
 const admins: Record<string, Modules> = {

@@ -79,6 +79,7 @@ type videoAdminTaskResponse struct {
 	UpstreamModel        string                            `json:"upstream_model"`
 	InputManifest        []service.VideoInputManifestEntry `json:"input_manifest"`
 	RequestAttributes    map[string]any                    `json:"request_attributes"`
+	Prompt               string                            `json:"prompt,omitempty"`
 	ProviderTaskID       string                            `json:"provider_task_id,omitempty"`
 	ProviderStatus       string                            `json:"provider_status,omitempty"`
 	ProviderCreatedAt    *time.Time                        `json:"provider_created_at,omitempty"`
@@ -159,6 +160,7 @@ func videoAdminTask(task *service.VideoTask) *videoAdminTaskResponse {
 		FinishedAt: task.FinishedAt, SettledAt: task.SettledAt, SubmissionUnknownAt: task.SubmissionUnknownAt,
 		QuarantinedAt: task.QuarantinedAt, DeletedAt: task.DeletedAt,
 	}
+	response.Prompt = videoAdminString(task.RequestAttributes, "prompt")
 	response.UnitPrice = videoAdminNumber(task.PriceSnapshot, "unit_price")
 	response.CustomerMultiplier = videoAdminNumber(task.PriceSnapshot, "customer_multiplier")
 	response.EstimatedCost = videoAdminNumber(task.PriceSnapshot, "estimated_cost")

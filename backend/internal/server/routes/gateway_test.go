@@ -347,6 +347,7 @@ func TestGatewayRoutesOpenAIVideoPlatformSurfaceIsRegistered(t *testing.T) {
 		for _, route := range []string{
 			"POST " + prefix + "/videos",
 			"GET " + prefix + "/videos",
+			"GET " + prefix + "/videos/models",
 			"GET " + prefix + "/videos/:request_id",
 			"DELETE " + prefix + "/videos/:request_id",
 			"GET " + prefix + "/videos/:request_id/content",
@@ -369,6 +370,7 @@ func TestGatewayRoutesOpenAIVideosDispatchToVideoHandler(t *testing.T) {
 	router := newGatewayRoutesTestRouterForPlatformWithHandlers(service.PlatformOpenAI, handlers)
 	for _, request := range []*http.Request{
 		httptest.NewRequest(http.MethodPost, "/v1/videos", strings.NewReader(`{"model":"sora-2","prompt":"waves"}`)),
+		httptest.NewRequest(http.MethodGet, "/v1/videos/models", nil),
 		httptest.NewRequest(http.MethodGet, "/v1/videos/video_0123456789abcdef0123456789abcdef", nil),
 	} {
 		request.Header.Set("Content-Type", "application/json")
@@ -376,6 +378,31 @@ func TestGatewayRoutesOpenAIVideosDispatchToVideoHandler(t *testing.T) {
 		router.ServeHTTP(w, request)
 		require.Contains(t, w.Body.String(), "video_disabled")
 		require.NotContains(t, w.Body.String(), "not supported for this platform")
+	}
+}
+
+// TestGatewayRoutesVideoModelsDoesNotShadowTaskLookup 钉死 /videos/models 与
+// /videos/:request_id 的共存关系：静态段先匹配，但任何可达的任务都不会被它遮蔽。
+func TestGatewayRoutesVideoModelsDoesNotShadowTaskLookup(t *testing.T) {
+	// 任务 public_id 必须是 video_ + 32 位十六进制，"models" 永远不是合法任务 id，
+	// 所以静态段抢先匹配不会让任何真实任务查不到。
+	require.False(t, service.IsValidVideoTaskID("models"))
+
+	// Grok 分组下两个 handler 的响应可区分：models 走 videoUnsupported，
+	// 任务查询走 Grok 转发器。以此确认路由确实分派到了各自的 handler，
+	// 而不是靠"gin 静态段优先"这条推理。
+	router := newGatewayRoutesTestRouter(service.PlatformGrok)
+	for _, path := range []string{"/v1/videos/models", "/videos/models"} {
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		// 这条消息只能由 videoModelsHandler 写出；gin 自己的 404 是空 body。
+		require.Contains(t, w.Body.String(), "not supported for this platform", "path=%s", path)
+	}
+	for _, path := range []string{"/v1/videos/request-123", "/videos/request-123"} {
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		require.NotEqual(t, http.StatusNotFound, w.Code, "path=%s", path)
+		require.NotContains(t, w.Body.String(), "not supported for this platform", "path=%s", path)
 	}
 }
 

@@ -371,6 +371,7 @@ func (r *videoUserRateRepoStub) GetByUserAndGroup(context.Context, int64, int64)
 
 type videoProviderStub struct {
 	name             string
+	capabilities     *VideoCapabilities
 	result           *ProviderVideoTask
 	err              error
 	createCalls      int
@@ -402,8 +403,17 @@ func (p *videoProviderStub) Name() string {
 	}
 	return VideoProviderOpenAI
 }
-func (p *videoProviderStub) Capabilities() VideoCapabilities { return DefaultOpenAIVideoCapabilities() }
-func (p *videoProviderStub) SupportsAccount(*Account) bool   { return true }
+func (p *videoProviderStub) Capabilities() VideoCapabilities {
+	if p.capabilities != nil {
+		return *p.capabilities
+	}
+	return DefaultOpenAIVideoCapabilities()
+}
+
+func videoCapabilitiesPointer(capabilities VideoCapabilities) *VideoCapabilities {
+	return &capabilities
+}
+func (p *videoProviderStub) SupportsAccount(*Account) bool { return true }
 func (p *videoProviderStub) ValidateSubmission(_ *Account, _ VideoCreateRequest, _ []VideoInput) error {
 	p.validationCalls++
 	return p.validationErr
@@ -2216,4 +2226,67 @@ func TestVideoCapabilityRejectionIsCertainAndKeepsItsSentinel(t *testing.T) {
 	var typed *VideoProviderError
 	require.True(t, errors.As(error(rejection), &typed))
 	require.NotEqual(t, VideoSubmissionUnknown, typed.Certainty)
+}
+
+// 提交时把提示词留在 request_attributes 里。它不参与请求哈希也不发往上游，纯粹是
+// 为了事后还能说清"当初要的是什么"——任务列表和 Playground 历史都靠它回放。
+func TestVideoTaskServiceStoresPromptInRequestAttributes(t *testing.T) {
+	t.Run("prompt is stored verbatim", func(t *testing.T) {
+		provider := &videoProviderStub{result: &ProviderVideoTask{
+			ProviderTaskID: "video_upstream", Status: VideoGenerationQueued, RawStatus: "queued",
+		}}
+		svc, tasks, _ := newVideoTaskServiceForTest(provider, videoGroupForTest(SubscriptionTypeStandard), nil)
+		request := videoSubmitRequestForTest()
+		request.Prompt = "  A tracking shot through a rainy Tokyo alley  "
+
+		_, err := svc.Submit(context.Background(), request)
+
+		require.NoError(t, err)
+		require.Equal(t, "A tracking shot through a rainy Tokyo alley", tasks.create.RequestAttributes["prompt"])
+	})
+
+	// JSONB 与任务同生命周期，一条没有上限的提示词会把它撑成行外存储。
+	t.Run("oversized prompt is bounded", func(t *testing.T) {
+		provider := &videoProviderStub{result: &ProviderVideoTask{
+			ProviderTaskID: "video_upstream", Status: VideoGenerationQueued, RawStatus: "queued",
+		}}
+		svc, tasks, _ := newVideoTaskServiceForTest(provider, videoGroupForTest(SubscriptionTypeStandard), nil)
+		request := videoSubmitRequestForTest()
+		request.Prompt = strings.Repeat("镜", videoPromptAttributeMaxRunes+500)
+
+		_, err := svc.Submit(context.Background(), request)
+
+		require.NoError(t, err)
+		stored, ok := tasks.create.RequestAttributes["prompt"].(string)
+		require.True(t, ok)
+		require.Equal(t, videoPromptAttributeMaxRunes, len([]rune(stored)))
+	})
+
+	// character_create 没有提示词。写一个空串会让下游把"从来没有过"误读成
+	// "存过但为空"，所以整个键缺席。
+	t.Run("empty prompt omits the key", func(t *testing.T) {
+		svc, tasks, _, _ := videoCharacterServiceForTest(t)
+
+		_, err := svc.Submit(context.Background(), videoCharacterSubmitRequestForTest())
+
+		require.NoError(t, err)
+		require.NotContains(t, tasks.create.RequestAttributes, "prompt")
+	})
+}
+
+// 取内容时我们不带任何上游凭据——授权整个写在 URL 的签名里。对象存储回 401/403
+// 因此只有一种解释：链接过期了。透出上游那句英文没法翻译也没法判断，换成稳定错误码。
+func TestVideoContentOpenErrorMapsDeadSignatureToExpired(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		require.ErrorIs(t,
+			videoContentOpenError(&VideoProviderError{StatusCode: status, Message: "The request signature expired"}),
+			ErrVideoContentExpired,
+		)
+	}
+
+	// 其他状态码说明的是别的事，原样透出。
+	other := &VideoProviderError{StatusCode: http.StatusBadGateway, Message: "upstream down"}
+	require.ErrorIs(t, videoContentOpenError(other), other)
+	plain := errors.New("dial tcp: connection refused")
+	require.ErrorIs(t, videoContentOpenError(plain), plain)
 }
