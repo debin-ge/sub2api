@@ -398,6 +398,9 @@ func (s *ModelCatalogService) refreshAccountForGeneration(ctx context.Context, a
 			}
 			return nil, discoverErr
 		}
+		if custom := literalConfiguredAccountModels(account); len(custom) > 0 {
+			models = normalizeCatalogModelIDs(append(models, custom...))
+		}
 		if s.cache != nil {
 			s.cache.storeSuccessForGeneration(accountID, models, s.currentTime(), generation)
 		}
@@ -953,6 +956,26 @@ func configuredAccountModelPatterns(account *Account) []string {
 		whitelist = append([]string(nil), raw...)
 	}
 	return normalizeCatalogModelIDs(whitelist)
+}
+
+// literalConfiguredAccountModels returns the account's configured custom model
+// names that are exact IDs (no trailing "*" wildcard). These represent models
+// an admin explicitly declared for the account (e.g. via "自定义模型名称") and
+// must still surface even when live upstream discovery succeeds, since
+// refreshAccountForGeneration otherwise replaces the configured list outright.
+func literalConfiguredAccountModels(account *Account) []string {
+	patterns := configuredAccountModelPatterns(account)
+	if len(patterns) == 0 {
+		return nil
+	}
+	literal := make([]string, 0, len(patterns))
+	for _, pattern := range patterns {
+		if strings.HasSuffix(pattern, "*") {
+			continue
+		}
+		literal = append(literal, pattern)
+	}
+	return literal
 }
 
 func expandModelPatterns(patterns, candidates []string) []string {

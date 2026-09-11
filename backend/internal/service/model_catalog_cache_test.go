@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -607,12 +608,13 @@ func TestModelCatalogListForAccountNoWaitUsesConfiguredFallback(t *testing.T) {
 			case <-time.After(time.Second):
 				t.Fatal("async discovery did not finish")
 			}
+			wantCached := append([]string{"discovered-model"}, tt.want...)
 			require.Eventually(t, func() bool {
 				entry, ok := cache.load(account.ID)
 				catalog.asyncRefreshMu.Lock()
 				asyncRefreshes := len(catalog.asyncRefreshes)
 				catalog.asyncRefreshMu.Unlock()
-				return ok && len(entry.models) == 1 && entry.models[0] == "discovered-model" && asyncRefreshes == 0
+				return ok && asyncRefreshes == 0 && slices.Equal(entry.models, wantCached)
 			}, time.Second, 10*time.Millisecond)
 		})
 	}
