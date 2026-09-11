@@ -860,6 +860,10 @@ func (s *VideoTaskService) reconcileSubmitting(ctx context.Context, task *VideoT
 	}
 	searcher, supported := provider.(VideoTaskSearcher)
 	if supported && strings.TrimSpace(videoStringValue(task.StableClientToken)) != "" {
+		// A lookup failure is deliberately swallowed: it is not proof that the
+		// task was never created, so the only safe answer is to keep asking
+		// until the deterministic reconciliation deadline above expires and
+		// releases the hold in full.
 		observed, searchErr := searcher.SearchByClientToken(ctx, account, videoStringValue(task.StableClientToken))
 		if searchErr == nil && observed != nil && validVideoProviderIdentifier(observed.ProviderTaskID) {
 			acceptance, acceptanceErr := s.videoProviderAcceptance(observed)
@@ -875,14 +879,6 @@ func (s *VideoTaskService) reconcileSubmitting(ctx context.Context, task *VideoT
 				return s.releaseConfirmedVideoFailure(ctx, updated)
 			}
 			return updated, nil
-		}
-		if searchErr != nil {
-			var providerErr *VideoProviderError
-			if !errors.As(searchErr, &providerErr) || !providerErr.Retryable {
-				// A lookup failure is not proof that the task was not created. Keep
-				// retrying until the deterministic reconciliation deadline.
-				searchErr = nil
-			}
 		}
 	}
 

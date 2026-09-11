@@ -36,11 +36,11 @@ const (
 	byteDanceMaxErrorResponse      = 64 << 10
 	// An image reference is inlined into the request body, and every reference
 	// image also passes content moderation, so the two limits must agree.
-	byteDanceMaxInlineImageBytes    = MaxContentModerationImageBytes
-	byteDanceContentURLTTL          = 24 * time.Hour
-	byteDanceDefaultPollInterval    = 5 * time.Second
-	byteDanceContentMaxRedirects    = 3
-	byteDanceContentHeaderTimeoutMS = 30 * time.Second
+	byteDanceMaxInlineImageBytes  = MaxContentModerationImageBytes
+	byteDanceContentURLTTL        = 24 * time.Hour
+	byteDanceDefaultPollInterval  = 5 * time.Second
+	byteDanceContentMaxRedirects  = 3
+	byteDanceContentHeaderTimeout = 30 * time.Second
 )
 
 // byteDancePromptFlagPattern matches the Ark "--param value" prompt syntax.
@@ -54,7 +54,6 @@ type ByteDanceVideoProvider struct {
 	tlsProfiles  *TLSFingerprintProfileService
 	capabilities VideoCapabilities
 	catalog      *VideoCapabilityCatalog
-	now          func() time.Time
 	resolver     videoCallbackIPResolver
 	redirect     videoContentRedirectExecutor
 }
@@ -62,7 +61,7 @@ type ByteDanceVideoProvider struct {
 func NewByteDanceVideoProvider(httpUpstream HTTPUpstream, tlsProfiles *TLSFingerprintProfileService) *ByteDanceVideoProvider {
 	return &ByteDanceVideoProvider{
 		httpUpstream: httpUpstream, tlsProfiles: tlsProfiles,
-		capabilities: DefaultByteDanceVideoCapabilities(), now: time.Now, resolver: net.DefaultResolver,
+		capabilities: DefaultByteDanceVideoCapabilities(), resolver: net.DefaultResolver,
 		redirect: executePinnedVideoContentRedirect,
 	}
 }
@@ -134,13 +133,6 @@ func byteDanceProtocolMode(account *Account) string {
 	default:
 		return ""
 	}
-}
-
-func (p *ByteDanceVideoProvider) clock() time.Time {
-	if p == nil || p.now == nil {
-		return time.Now().UTC()
-	}
-	return p.now().UTC()
 }
 
 // ---------------------------------------------------------------------------
@@ -669,7 +661,7 @@ func (p *ByteDanceVideoProvider) executeContent(ctx context.Context, request *ht
 		resolver = net.DefaultResolver
 	}
 	if responseHeaderTimeout <= 0 {
-		responseHeaderTimeout = byteDanceContentHeaderTimeoutMS
+		responseHeaderTimeout = byteDanceContentHeaderTimeout
 	}
 	current := request
 	currentAddresses := addresses
