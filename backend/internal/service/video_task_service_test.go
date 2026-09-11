@@ -596,6 +596,26 @@ func videoSubmitRequestForTest() VideoSubmitRequest {
 	}
 }
 
+// The billing cache is an optional dependency guarded by `s.admission != nil`.
+// Because the field is an interface, handing the constructor a nil
+// *BillingCacheService used to yield a non-nil interface holding a nil
+// pointer: the guard passed and the call landed on a nil receiver, which
+// answers ErrBillingServiceUnavailable. Note the explicit `== nil` comparison
+// below — require.Nil reflects into the interface and reports a typed nil as
+// nil, so it cannot see this class of bug.
+func TestNewVideoTaskServiceKeepsAdmissionNilWithoutABillingCache(t *testing.T) {
+	cfg := &config.Config{}
+	var typedNil *BillingCacheService
+	for name, cache := range map[string]*BillingCacheService{"untyped nil": nil, "typed nil": typedNil} {
+		t.Run(name, func(t *testing.T) {
+			svc := NewVideoTaskService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, cache, cfg)
+			require.True(t, svc.admission == nil, "a nil billing cache must leave admission nil, not wrap it in an interface")
+		})
+	}
+	svc := NewVideoTaskService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, &BillingCacheService{}, cfg)
+	require.True(t, svc.admission != nil)
+}
+
 func TestVideoTaskServiceSubmitAccepted(t *testing.T) {
 	provider := &videoProviderStub{result: &ProviderVideoTask{
 		ProviderTaskID: "video_upstream", Status: VideoGenerationQueued,

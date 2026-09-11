@@ -78,12 +78,21 @@ func NewVideoTaskService(
 	billingCache *BillingCacheService,
 	cfg *config.Config,
 ) *VideoTaskService {
-	return &VideoTaskService{
+	svc := &VideoTaskService{
 		tasks: tasks, resources: resources, queue: queue, accounts: accounts,
 		groups: groups, userRates: userRates, channels: channels, composite: composite,
 		providers: providers, pricing: pricing, settlements: settlements, encryptor: encryptor, cfg: cfg,
-		now: time.Now, admission: billingCache,
+		now: time.Now,
 	}
+	// admission is an interface, so assigning a nil *BillingCacheService straight
+	// into it would produce a non-nil interface wrapping a nil pointer: every
+	// `s.admission != nil` guard would pass and then call a method on a nil
+	// receiver, which answers ErrBillingServiceUnavailable. Assign only a live
+	// cache, so the nil checks around the field mean what they read.
+	if billingCache != nil {
+		svc.admission = billingCache
+	}
+	return svc
 }
 
 type resolvedVideoSubmission struct {
