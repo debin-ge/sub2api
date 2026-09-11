@@ -153,7 +153,9 @@ func TestVideoPlatformMigrationsExcludeRemovedGrokObjects(t *testing.T) {
 				'265_video_failed_auto_release.sql',
 				'266_video_task_provider_url.sql',
 				'267_user_platform_quotas_add_bytedance.sql',
-				'268_composite_routes_add_bytedance.sql'
+				'268_composite_routes_add_bytedance.sql',
+				'269_drop_video_manual_review.sql',
+				'269_drop_video_manual_review_notx.sql'
 			 )`,
 	} {
 		var count int

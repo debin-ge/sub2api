@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -114,9 +115,47 @@ func killVideoReleaseChild(t *testing.T, mode string, task *service.VideoTask, p
 	require.Error(t, cmd.Wait(), "child must be killed rather than shut down gracefully")
 }
 
+// videoReconcileStubProvider stands in for an upstream adapter while the worker
+// reconciles a submission whose outcome was lost to a crash. Every method other
+// than the client-token lookup fails loudly: reaching them would mean the worker
+// replayed a create or polled a task it has no identifier for.
+type videoReconcileStubProvider struct {
+	observed *service.ProviderVideoTask
+	searches atomic.Int64
+}
+
+func (p *videoReconcileStubProvider) Name() string { return service.VideoProviderOpenAI }
+
+func (p *videoReconcileStubProvider) Capabilities() service.VideoCapabilities {
+	return service.VideoCapabilities{}
+}
+
+func (p *videoReconcileStubProvider) SupportsAccount(*service.Account) bool { return true }
+
+func (p *videoReconcileStubProvider) Create(context.Context, *service.Account, service.VideoCreateRequest, []service.VideoInput) (*service.ProviderVideoTask, error) {
+	return nil, errors.New("create must never be replayed after a crashed submission")
+}
+
+func (p *videoReconcileStubProvider) Get(context.Context, *service.Account, service.ProviderTaskRef) (*service.ProviderVideoTask, error) {
+	return nil, errors.New("poll requires a provider task id the crashed submission never recorded")
+}
+
+func (p *videoReconcileStubProvider) OpenContent(context.Context, *service.Account, service.ProviderContentRequest) (*service.ProviderContent, error) {
+	return nil, errors.New("unexpected content open")
+}
+
+func (p *videoReconcileStubProvider) Delete(context.Context, *service.Account, service.ProviderTaskRef) error {
+	return errors.New("unexpected delete")
+}
+
+func (p *videoReconcileStubProvider) SearchByClientToken(context.Context, *service.Account, string) (*service.ProviderVideoTask, error) {
+	p.searches.Add(1)
+	return p.observed, nil
+}
+
 func TestVideoReleaseProcessCrashAfterUpstreamSubmitReleasesHoldOnce(t *testing.T) {
 	ctx := context.Background()
-	repo, _, _, user, key, account := newVideoRepositoryFixture(t, 10)
+	repo, resources, _, user, key, account := newVideoRepositoryFixture(t, 10)
 	task, _, err := repo.CreateHeldVideoTask(ctx, videoCreateParams(user, key, account, service.NewVideoTaskID(), uuid.NewString(), "process-submit", 1))
 	require.NoError(t, err)
 	var creates atomic.Int64
@@ -124,16 +163,30 @@ func TestVideoReleaseProcessCrashAfterUpstreamSubmitReleasesHoldOnce(t *testing.
 	defer provider.Close()
 	killVideoReleaseChild(t, "submit", task, provider.URL)
 	time.Sleep(1100 * time.Millisecond)
+
+	// Migration 269 removed manual review, and with it the "fail a stale
+	// submitting task on sight" shortcut: the outcome is now reconciled against
+	// the upstream by the task's stable client token. The upstream answers that
+	// the create it accepted has failed.
+	upstream := &videoReconcileStubProvider{observed: &service.ProviderVideoTask{
+		ProviderTaskID: "video_crashed_submit", Status: service.VideoGenerationFailed, RawStatus: "failed",
+		ErrorCode: "upstream_generation_failed", ErrorMessage: "video provider task failed",
+	}}
+	registry := service.NewVideoProviderRegistry(upstream)
+	accounts := NewAccountRepository(testEntClient(t), integrationDB, nil)
 	cfg := &config.Config{Gateway: config.GatewayConfig{Video: config.GatewayVideoConfig{Enabled: true, LeaseSeconds: 3, WorkerConcurrency: 1}}}
-	worker := service.NewVideoTaskWorker(repo, nil, nil, service.NewVideoProviderRegistry(), nil, repo.billing, nil, nil, cfg)
+	svc := service.NewVideoTaskService(repo, resources, nil, accounts, nil, nil, nil, nil, registry, nil, repo.billing, nil, nil, cfg)
+	worker := service.NewVideoTaskWorker(repo, nil, accounts, registry, svc, repo.billing, nil, nil, cfg)
 	require.NoError(t, worker.ProcessBatch(ctx, 1))
 	updated, err := repo.GetVideoTaskForOwner(ctx, user.ID, task.PublicID)
 	require.NoError(t, err)
 	// A submission whose outcome was never observed is closed out automatically:
 	// the create is not replayed and the caller is not charged for it.
 	require.Equal(t, service.VideoGenerationFailed, updated.GenerationState)
-	require.Equal(t, "stale_submitting", *updated.LastErrorCode)
+	require.Equal(t, "upstream_generation_failed", *updated.LastErrorCode)
+	require.Equal(t, "video_crashed_submit", *updated.ProviderTaskID)
 	require.Equal(t, int64(1), creates.Load())
+	require.Equal(t, int64(1), upstream.searches.Load())
 	var balance, frozen float64
 	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT balance,frozen_balance FROM users WHERE id=$1`, user.ID).Scan(&balance, &frozen))
 	require.Equal(t, 10.0, balance)
