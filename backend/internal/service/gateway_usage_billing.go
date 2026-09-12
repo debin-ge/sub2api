@@ -1212,8 +1212,7 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 				CacheReadTokens:     result.Usage.CacheReadInputTokens,
 				ImageOutputTokens:   result.Usage.ImageOutputTokens,
 			},
-			cost.TotalCost,
-			account.Platform,
+			cost.TotalCost, pricingAt, accountStatsPlatform(account.Platform),
 		)
 	}
 
@@ -1493,9 +1492,9 @@ func (s *GatewayService) hasResolvableImagePricingForPlatforms(
 	return ok
 }
 
-// hasResolvableTokenPricingForPlatforms only accepts a complete explicit channel price or
-// a strict global match for the model itself. Cross-SKU family/OpenAI inference
-// is not settlement evidence.
+// hasResolvableTokenPricingForPlatforms only accepts complete explicit group/channel
+// pricing or a strict global match for the model itself. Cross-SKU family/OpenAI
+// inference is not settlement evidence.
 func (s *GatewayService) hasResolvableTokenPricingForPlatforms(
 	ctx context.Context,
 	model string,
@@ -1503,6 +1502,16 @@ func (s *GatewayService) hasResolvableTokenPricingForPlatforms(
 	platforms []string,
 ) bool {
 	if strings.TrimSpace(model) == "" {
+		return false
+	}
+	if s.resolver != nil && apiKey != nil && apiKey.Group != nil {
+		gid := apiKey.Group.ID
+		resolved, err := s.resolver.ResolveStrictToken(ctx, PricingInput{
+			Model: model, Platforms: platforms, GroupID: &gid, Group: apiKey.Group,
+		})
+		if err == nil {
+			return resolved != nil && (resolved.Mode == "" || resolved.Mode == BillingModeToken)
+		}
 		return false
 	}
 	if s.channelService != nil && apiKey != nil && apiKey.GroupID != nil {
@@ -1709,16 +1718,17 @@ func (s *GatewayService) calculateTokenCost(
 		return nil, err
 	}
 	cost, err := s.billingService.CalculateTokenCostForRequest(TokenCostRequest{
-		Ctx:            ctx,
-		Model:          billingModel,
-		Platforms:      platforms,
-		Group:          apiKey.Group,
-		Tokens:         tokens,
-		RateMultiplier: multiplier,
-		PricingAt:      pricingAt,
-		ServiceTier:    serviceTier,
-		Resolver:       s.resolver,
-		Resolved:       resolved,
+		Ctx:             ctx,
+		Model:           billingModel,
+		Platforms:       platforms,
+		Group:           apiKey.Group,
+		Tokens:          tokens,
+		RateMultiplier:  multiplier,
+		PricingAt:       pricingAt,
+		ServiceTier:     serviceTier,
+		ReasoningEffort: optionalStringValue(result.ReasoningEffort),
+		Resolver:        s.resolver,
+		Resolved:        resolved,
 	})
 	if err != nil {
 		logger.LegacyPrintf("service.gateway", "Calculate token cost failed: %v", err)
@@ -1784,6 +1794,7 @@ func (s *GatewayService) buildRecordUsageLog(
 			}
 			return modelName
 		}(),
+		UpstreamRequestID:        usageUpstreamRequestIDPtr(account, result.UpstreamHeaders, false),
 		RequestedModel:           requestedModel,
 		UpstreamModel:            optionalTrimmedStringPtr(result.UpstreamModel),
 		UpstreamResponseModel:    optionalTrimmedStringPtr(result.UpstreamResponseModel),

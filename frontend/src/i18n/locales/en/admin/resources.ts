@@ -521,7 +521,9 @@ export default {
       account: 'Account',
       group: 'Group',
       requestId: 'Request ID',
+      upstreamRequestId: 'Upstream ID',
       requestIdCopied: 'Request ID copied',
+      upstreamRequestIdCopied: 'Upstream ID copied',
       allModels: 'All Models',
       allAccounts: 'All Accounts',
       allGroups: 'All Groups',
@@ -560,6 +562,21 @@ export default {
         rowHint: "Click to view this user's usage details",
         userCount: '{count} users',
         columns: {
+          user: 'User',
+          requests: 'Requests',
+          inputTokens: 'Input Tokens',
+          outputTokens: 'Output Tokens',
+          cacheTokens: 'Cache Tokens',
+          totalTokens: 'Total Tokens',
+          cost: 'Cost'
+        }
+      },
+      apiKeyTokenRanking: {
+        subtitle: 'Per-API-key token usage for the current filters and time range',
+        rowHint: "Click to view this key's usage details",
+        keyCount: '{count} keys',
+        columns: {
+          key: 'API Key',
           user: 'User',
           requests: 'Requests',
           inputTokens: 'Input Tokens',

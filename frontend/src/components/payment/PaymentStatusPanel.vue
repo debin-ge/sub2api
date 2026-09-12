@@ -411,7 +411,7 @@ function saveQRCode() {
 }
 
 async function tryRecoverPendingOrder(order: PaymentOrder): Promise<PaymentOrder> {
-  if (!isWxpay.value && !isWise.value && !isStripe.value && !isMobileAlipayDeepLink.value) {
+  if (!isWxpay.value && !isAlipay.value && !isWise.value && !isStripe.value) {
     return order
   }
   const outTradeNo = String(order.out_trade_no || '').trim()

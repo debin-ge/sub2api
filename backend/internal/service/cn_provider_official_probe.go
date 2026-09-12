@@ -40,6 +40,8 @@ func cnProviderOfficialQuotaProbeSupported(account *Account) bool {
 		officialHosts = []string{"api.kimi.com"}
 	case PlatformZhipu:
 		officialHosts = []string{"open.bigmodel.cn", "api.z.ai"}
+	case PlatformMiniMax:
+		officialHosts = []string{"api.minimaxi.com", "api.minimax.io", "api.minimax.com"}
 	default:
 		return false
 	}

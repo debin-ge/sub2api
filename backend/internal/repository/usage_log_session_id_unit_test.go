@@ -47,7 +47,7 @@ func usageLogInsertArgFromEnd(args []any, offsetFromEnd int) any {
 // arg slice / arg-type table so the five INSERT column lists stay in sync. session_id
 // is followed by native_compaction_v2, created_at, and billing_state.
 func TestPrepareUsageLogInsert_SessionIDArgWiring(t *testing.T) {
-	require.Len(t, usageLogInsertArgTypes, 62)
+	require.Len(t, usageLogInsertArgTypes, 63)
 	sessionID := "sess-persisted-123"
 	prepared := prepareUsageLogInsert(newSessionIDUsageLog(&sessionID))
 

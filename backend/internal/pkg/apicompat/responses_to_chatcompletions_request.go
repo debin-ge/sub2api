@@ -49,8 +49,12 @@ func ResponsesToChatCompletionsRequest(req *ResponsesRequest) (*ChatCompletionsR
 		out.ReasoningEffort = strings.TrimSpace(req.Reasoning.Effort)
 	}
 
-	if len(req.Tools) > 0 {
-		tools, err := convertResponsesToolsToChatTools(req.Tools)
+	effectiveTools, err := EffectiveResponsesTools(req)
+	if err != nil {
+		return nil, err
+	}
+	if len(effectiveTools) > 0 {
+		tools, err := convertResponsesToolsToChatTools(effectiveTools)
 		if err != nil {
 			return nil, err
 		}
@@ -111,6 +115,14 @@ func convertResponsesInputToChatMessages(input json.RawMessage) ([]ChatMessage, 
 			}
 			if isResponsesToolOutputItemType(item.Type) {
 				outputRaw := item.outputRaw
+				if item.Type == "tool_search_output" && len(outputRaw) == 0 && len(item.Tools) > 0 {
+					var err error
+					outputRaw, err = json.Marshal(item.Tools)
+					if err != nil {
+						return nil, fmt.Errorf("marshal responses tool search output %d: %w", i, err)
+					}
+					item.Output = string(outputRaw)
+				}
 				if len(outputRaw) == 0 {
 					var err error
 					outputRaw, err = json.Marshal(item.Output)

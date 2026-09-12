@@ -531,6 +531,30 @@ func TestModelCatalogLiveDiscoveryUsesTimeoutAndNormalizes(t *testing.T) {
 	require.Equal(t, []string{"GPT-A", "gpt-b"}, got)
 }
 
+func TestModelCatalogLiveDiscoverySucceedsUnionsConfiguredCustomModels(t *testing.T) {
+	account := &Account{
+		ID:       30,
+		Platform: PlatformAnthropic,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{
+				"custom-claude":    "custom-claude",
+				"wildcard-claude*": "wildcard-claude*",
+			},
+		},
+	}
+	discoverer := modelDiscovererFunc(func(context.Context, *Account) ([]string, error) {
+		return []string{"claude-live"}, nil
+	})
+	catalog := NewModelCatalogService(nil, nil, nil, discoverer, config.ModelCatalogConfig{RequestTimeoutSeconds: 10})
+
+	got, err := catalog.ListForAccount(context.Background(), account, true)
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"claude-live", "custom-claude"}, got)
+	require.NotContains(t, got, "wildcard-claude*")
+}
+
 func TestModelCatalogEmptyLiveResultFallsBackToProviderDefaults(t *testing.T) {
 	account := &Account{ID: 18, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 	catalog := NewModelCatalogService(nil, nil, nil, modelDiscovererFunc(func(context.Context, *Account) ([]string, error) {
@@ -783,7 +807,7 @@ func TestModelCatalogGroupConfigAndCandidates(t *testing.T) {
 	catalog := &ModelCatalogService{
 		accountRepo:    &modelCatalogAccountRepoStub{byGroup: map[int64][]Account{20: {account}}},
 		groupRepo:      &modelCatalogGroupRepoStub{groups: []Group{group}},
-		channelService: NewChannelService(channelRepo, nil, nil, nil),
+		channelService: NewChannelService(channelRepo, nil, nil, nil, nil),
 		discoverer:     discoverer,
 		cfg:            config.ModelCatalogConfig{RequestTimeoutSeconds: 10},
 		now:            time.Now,

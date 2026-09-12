@@ -393,6 +393,15 @@ func (s *UsageService) GetGroupStatsWithFilters(ctx context.Context, startTime, 
 	return stats, nil
 }
 
+// GetAPIKeyBreakdownStats returns per-API-key usage breakdown within a specific dimension.
+func (s *UsageService) GetAPIKeyBreakdownStats(ctx context.Context, startTime, endTime time.Time, dim usagestats.UserBreakdownDimension, limit int) ([]usagestats.APIKeyBreakdownItem, error) {
+	stats, err := s.usageRepo.GetAPIKeyBreakdownStats(ctx, startTime, endTime, dim, limit)
+	if err != nil {
+		return nil, fmt.Errorf("get api key breakdown stats: %w", err)
+	}
+	return stats, nil
+}
+
 // GetAPIKeyModelStats returns per-model usage stats for a specific API Key.
 func (s *UsageService) GetAPIKeyModelStats(ctx context.Context, apiKeyID int64, startTime, endTime time.Time) ([]usagestats.ModelStat, error) {
 	stats, err := s.usageRepo.GetModelStatsWithFilters(ctx, startTime, endTime, 0, apiKeyID, 0, 0, nil, nil, nil)

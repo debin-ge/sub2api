@@ -119,7 +119,7 @@
               <label class="input-label">{{ t('admin.usage.billingType') }}</label>
               <Select v-model="filters.billing_type" :options="billingTypeOptions" @change="applyFilters" />
             </div>
-            <div class="w-full sm:w-auto sm:min-w-[200px]">
+            <div v-if="activeTab !== 'key-ranking'" class="w-full sm:w-auto sm:min-w-[200px]">
               <label class="input-label">{{ t('admin.usage.billingMode') }}</label>
               <Select v-model="filters.billing_mode" :options="billingModeOptions" @change="applyFilters" />
             </div>
@@ -132,7 +132,7 @@
             <button type="button" @click="resetFilters" class="btn btn-secondary">
               {{ t('common.reset') }}
             </button>
-            <div class="relative" ref="columnDropdownRef">
+            <div v-if="activeTab !== 'key-ranking'" class="relative" ref="columnDropdownRef">
               <button
                 type="button"
                 data-testid="usage-column-settings"
@@ -160,19 +160,22 @@
                 </button>
               </div>
             </div>
-            <button v-if="activeTab !== 'errors'" type="button" @click="exportToCSV" :disabled="exporting" class="btn btn-primary">
+            <button v-if="activeTab === 'usage'" type="button" @click="exportToCSV" :disabled="exporting" class="btn btn-primary">
               {{ exporting ? t('usage.exporting') : t('usage.exportCsv') }}
             </button>
           </div>
         </div>
       </div>
 
-      <div v-if="errorViewEnabled" class="flex gap-2 border-b border-gray-200 dark:border-dark-700">
+      <div class="flex gap-2 border-b border-gray-200 dark:border-dark-700">
         <button class="tab" :class="{ 'tab-active': activeTab === 'usage' }" @click="activeTab = 'usage'">
           {{ t('usage.tabs.usage') }}
         </button>
-        <button class="tab" :class="{ 'tab-active': activeTab === 'errors' }" @click="switchToErrors">
+        <button v-if="errorViewEnabled" class="tab" :class="{ 'tab-active': activeTab === 'errors' }" @click="switchToErrors">
           {{ t('usage.tabs.errors') }}
+        </button>
+        <button class="tab" :class="{ 'tab-active': activeTab === 'key-ranking' }" @click="switchToKeyRanking">
+          {{ t('usage.tabs.keyRanking') }}
         </button>
       </div>
 
@@ -201,7 +204,7 @@
       </template>
 
       <UserErrorRequestsTable
-        v-else-if="errorViewEnabled"
+        v-else-if="activeTab === 'errors' && errorViewEnabled"
         :rows="errorRows"
         :total="errorTotal"
         :loading="errorLoading"
@@ -212,6 +215,16 @@
         @update:page="onErrorPage"
         @update:pageSize="onErrorPageSize"
         @ipGeoBatchFailed="handleIpGeoBatchFailed"
+      />
+
+      <ApiKeyTokenRanking
+        v-else-if="activeTab === 'key-ranking' && keyRankingMounted"
+        ref="keyRankingRef"
+        mode="user"
+        :start-date="startDate"
+        :end-date="endDate"
+        :filters="breakdownFilters"
+        @select-key="handleKeyRankingSelectKey"
       />
     </div>
   </AppLayout>
@@ -229,6 +242,7 @@ import Select, { type SelectOption } from '@/components/common/Select.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import UsageStatsCards from '@/components/admin/usage/UsageStatsCards.vue'
 import UsageTable from '@/components/admin/usage/UsageTable.vue'
+import ApiKeyTokenRanking from '@/components/admin/usage/ApiKeyTokenRanking.vue'
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'
 import GroupDistributionChart from '@/components/charts/GroupDistributionChart.vue'
 import EndpointDistributionChart from '@/components/charts/EndpointDistributionChart.vue'
@@ -350,8 +364,11 @@ const modelDistributionMetric = ref<DistributionMetric>('tokens')
 const groupDistributionMetric = ref<DistributionMetric>('tokens')
 const endpointDistributionMetric = ref<DistributionMetric>('tokens')
 const endpointDistributionSource = ref<EndpointSource>('inbound')
-const activeTab = ref<'usage' | 'errors'>('usage')
+const activeTab = ref<'usage' | 'errors' | 'key-ranking'>('usage')
 const errorViewEnabled = computed(() => appStore.cachedPublicSettings?.allow_user_view_error_requests ?? false)
+
+const keyRankingMounted = ref(false)
+const keyRankingRef = ref<InstanceType<typeof ApiKeyTokenRanking> | null>(null)
 
 const filters = ref<UsageQueryParams>({
   start_date: startDate.value,
@@ -438,6 +455,17 @@ const buildUsageListParams = (page: number, pageSize: number): UsageQueryParams 
   ...normalizedFilters.value,
   sort_by: sortState.sort_by,
   sort_order: sortState.sort_order,
+})
+
+// 密钥排行复用的过滤范围：裁剪到密钥维度接口支持的字段(不含 billing_mode)
+const breakdownFilters = computed(() => {
+  const f: Record<string, any> = {}
+  if (filters.value.api_key_id) f.api_key_id = filters.value.api_key_id
+  if (filters.value.group_id) f.group_id = filters.value.group_id
+  if (filters.value.request_type != null) f.request_type = filters.value.request_type
+  if (filters.value.native_compaction_v2 != null) f.native_compaction_v2 = filters.value.native_compaction_v2
+  if (filters.value.billing_type != null) f.billing_type = filters.value.billing_type
+  return f
 })
 
 const loadLogs = async () => {
@@ -552,6 +580,7 @@ const refreshData = () => {
   void loadModelStats()
   void loadChartData()
   if (activeTab.value === 'errors') void loadErrors()
+  if (keyRankingMounted.value) keyRankingRef.value?.reload()
 }
 
 const resetFilters = () => {
@@ -827,13 +856,24 @@ const handleColumnClickOutside = (event: MouseEvent) => {
   }
 }
 
+const loadApiKeys = async () => {
+  const firstPage = await keysAPI.list(1, 100)
+  const keys = [...firstPage.items]
+  for (let page = 2; page <= firstPage.pages && keys.length > 0; page++) {
+    const response = await keysAPI.list(page, 100)
+    if (response.items.length === 0) break
+    keys.push(...response.items)
+  }
+  return keys
+}
+
 const loadFilterOptions = async () => {
   try {
     const [keys, availableGroups] = await Promise.all([
-      keysAPI.list(1, 100),
+      loadApiKeys(),
       userGroupsAPI.getAvailable(),
     ])
-    apiKeys.value = keys.items
+    apiKeys.value = keys
     groups.value = availableGroups
   } catch (error) {
     console.error('Failed to load usage filter options:', error)
@@ -898,6 +938,18 @@ const onErrorPageSize = (pageSize: number) => {
 const switchToErrors = () => {
   activeTab.value = 'errors'
   if (errorRows.value.length === 0) void loadErrors()
+}
+
+const switchToKeyRanking = () => {
+  activeTab.value = 'key-ranking'
+  keyRankingMounted.value = true
+}
+
+// 密钥排行下钻：直接回填筛选区的密钥下拉(真实 Select,无需关键字回显)并跳回用量明细
+const handleKeyRankingSelectKey = (apiKeyId: number) => {
+  filters.value = { ...filters.value, api_key_id: apiKeyId }
+  activeTab.value = 'usage'
+  applyFilters()
 }
 
 onMounted(() => {

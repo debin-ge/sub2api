@@ -62,10 +62,13 @@ func TestCNProviderBalanceCheckRunOnceProbesCodingPlanQuota(t *testing.T) {
 		Credentials: map[string]any{"account_mode": "coding", "api_key": "sk-kimi-inactive"}}
 	zhipuCoding := Account{ID: 4, Platform: PlatformZhipu, Type: AccountTypeAPIKey, Status: StatusActive,
 		Credentials: map[string]any{"account_mode": "coding", "api_key": "sk-zhipu"}}
+	minimaxCoding := Account{ID: 5, Platform: PlatformMiniMax, Type: AccountTypeAPIKey, Status: StatusActive,
+		Credentials: map[string]any{"account_mode": "coding", "api_key": "sk-minimax"}}
 
 	repo := &fakeCNCheckRepo{byPlatform: map[string][]Account{
-		PlatformKimi:  {kimiActive, kimiPaused, kimiInactive},
-		PlatformZhipu: {zhipuCoding},
+		PlatformKimi:    {kimiActive, kimiPaused, kimiInactive},
+		PlatformZhipu:   {zhipuCoding},
+		PlatformMiniMax: {minimaxCoding},
 	}}
 	prober := &fakeCNQuotaProber{}
 	svc := &CNProviderBalanceCheckService{
@@ -76,7 +79,7 @@ func TestCNProviderBalanceCheckRunOnceProbesCodingPlanQuota(t *testing.T) {
 
 	svc.runOnce()
 
-	require.ElementsMatch(t, []int64{1, 2, 4}, prober.probed)
+	require.ElementsMatch(t, []int64{1, 2, 4, 5}, prober.probed)
 }
 
 // runOnceZhipuQuota 在 quotaService 缺失时安全跳过（Start 门控不启动的老部署路径）。

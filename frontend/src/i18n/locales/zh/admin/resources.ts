@@ -518,7 +518,9 @@ export default {
       account: '账户',
       group: '分组',
       requestId: '请求ID',
+      upstreamRequestId: '上游ID',
       requestIdCopied: '请求ID已复制',
+      upstreamRequestIdCopied: '上游ID已复制',
       allModels: '全部模型',
       allAccounts: '全部账户',
       allGroups: '全部分组',
@@ -558,6 +560,21 @@ export default {
         userCount: '共 {count} 位用户',
         columns: {
           user: '用户',
+          requests: '请求数',
+          inputTokens: '输入 Token',
+          outputTokens: '输出 Token',
+          cacheTokens: '缓存 Token',
+          totalTokens: '总 Token',
+          cost: '费用'
+        }
+      },
+      apiKeyTokenRanking: {
+        subtitle: '按当前筛选与时间范围统计每个密钥的 Token 用量',
+        rowHint: '点击查看该密钥的用量明细',
+        keyCount: '共 {count} 个密钥',
+        columns: {
+          key: '密钥',
+          user: '所属用户',
           requests: '请求数',
           inputTokens: '输入 Token',
           outputTokens: '输出 Token',

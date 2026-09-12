@@ -71,6 +71,11 @@ func resolveCNProviderBaseURLWithLegacyDefaults(account *Account, protocol strin
 			return DefaultDeepseekAnthropicBaseURL
 		}
 		return DefaultDeepseekBaseURL
+	case PlatformMiniMax:
+		if protocol == APIProtocolAnthropic {
+			return DefaultMiniMaxAnthropicBaseURL
+		}
+		return DefaultMiniMaxBaseURL
 	default:
 		return ""
 	}
