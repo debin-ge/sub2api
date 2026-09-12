@@ -143,6 +143,7 @@ docs/*
 !docs/COMPOSITE_GROUPS.md
 !docs/PLUGIN_DEVELOPMENT.md
 !docs/channel-monitor-v2-safe-defaults.md
+!docs/channel-monitor-bytedance-deferred.md
 !docs/legal/
 !docs/legal/*.md
 !docs/screenshots/
@@ -159,3 +160,6 @@ output/
 .vite/
 # 本地闭源插件开发目录及构建产物不进入 Sub2API 仓库
 /plugins/
+
+# entc 代码生成的临时加载器目录（go generate ./ent 会在此写入临时 .go 文件）
+backend/ent/schema/.entc/
