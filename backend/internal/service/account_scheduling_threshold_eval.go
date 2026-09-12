@@ -55,11 +55,11 @@ func EvaluateAccountSchedulingThreshold(account *Account, thresholds map[string]
 	case PlatformOpenAI:
 		winner = pickLatestResetSchedulingCandidate(openAIThresholdCandidates(account, now), threshold, now)
 	case PlatformAnthropic:
-		winner = pickLatestResetSchedulingCandidate(anthropicThresholdCandidates(account), threshold, now)
+		winner = pickLatestResetSchedulingCandidate(anthropicThresholdCandidates(account, now), threshold, now)
 	case PlatformGrok:
-		winner = pickLatestResetSchedulingCandidate(grokThresholdCandidates(account), threshold, now)
+		winner = pickLatestResetSchedulingCandidate(grokThresholdCandidates(account, now), threshold, now)
 	case PlatformKimi, PlatformZhipu, PlatformMiniMax:
-		winner = pickLatestResetSchedulingCandidate(cnProviderThresholdCandidates(account, decision.Platform), threshold, now)
+		winner = pickLatestResetSchedulingCandidate(cnProviderThresholdCandidates(account, decision.Platform, now), threshold, now)
 	default:
 		return decision
 	}
@@ -89,7 +89,7 @@ func evaluateAnthropicFableSchedulingThreshold(account *Account, thresholds map[
 		return decision
 	}
 
-	candidate := anthropicFableThresholdCandidate(account)
+	candidate := anthropicFableThresholdCandidate(account, now)
 	if !candidateMatchesThreshold(candidate, threshold, now) {
 		return decision
 	}
@@ -255,14 +255,17 @@ func openAIThresholdCandidate(extra map[string]any, window string, now time.Time
 	var (
 		usedPercentKey string
 		resetAtKey     string
+		maxAge         time.Duration
 	)
 	switch window {
 	case "5h":
 		usedPercentKey = "codex_5h_used_percent"
 		resetAtKey = "codex_5h_reset_at"
+		maxAge = schedulingMax5hResetAge
 	case "7d":
 		usedPercentKey = "codex_7d_used_percent"
 		resetAtKey = "codex_7d_reset_at"
+		maxAge = schedulingMax7dResetAge
 	default:
 		return nil
 	}
@@ -277,11 +280,11 @@ func openAIThresholdCandidate(extra map[string]any, window string, now time.Time
 	return &accountSchedulingThresholdCandidate{
 		window:      window,
 		usedPercent: schedulingPercentValue(usedPercent),
-		until:       parseSchedulingResetAt(extra[resetAtKey]),
+		until:       parseSchedulingResetAt(extra[resetAtKey], now, maxAge),
 	}
 }
 
-func anthropicThresholdCandidates(account *Account) []*accountSchedulingThresholdCandidate {
+func anthropicThresholdCandidates(account *Account, now time.Time) []*accountSchedulingThresholdCandidate {
 	if account == nil {
 		return nil
 	}
@@ -298,13 +301,13 @@ func anthropicThresholdCandidates(account *Account) []*accountSchedulingThreshol
 		candidates = append(candidates, &accountSchedulingThresholdCandidate{
 			window:      "7d",
 			usedPercent: usedPercent,
-			until:       parseSchedulingResetAt(account.Extra["passive_usage_7d_reset"]),
+			until:       parseSchedulingResetAt(account.Extra["passive_usage_7d_reset"], now, schedulingMax7dResetAge),
 		})
 	}
 	return candidates
 }
 
-func anthropicFableThresholdCandidate(account *Account) *accountSchedulingThresholdCandidate {
+func anthropicFableThresholdCandidate(account *Account, now time.Time) *accountSchedulingThresholdCandidate {
 	if account == nil {
 		return nil
 	}
@@ -316,7 +319,7 @@ func anthropicFableThresholdCandidate(account *Account) *accountSchedulingThresh
 		window:      "7d_oi",
 		scope:       anthropicFableRateLimitKey,
 		usedPercent: usedPercent,
-		until:       parseSchedulingResetAt(account.Extra["passive_usage_7d_oi_reset"]),
+		until:       parseSchedulingResetAt(account.Extra["passive_usage_7d_oi_reset"], now, schedulingMax7dResetAge),
 	}
 }
 
@@ -333,7 +336,7 @@ func anthropicFableThresholdCandidate(account *Account) *accountSchedulingThresh
 // grok_sched_utilization / grok_sched_reset_at (rolling quota window, reset
 // capped at ~25h when written). Official billing 7d/30d windows are not used
 // for auto-pause here.
-func grokThresholdCandidates(account *Account) []*accountSchedulingThresholdCandidate {
+func grokThresholdCandidates(account *Account, now time.Time) []*accountSchedulingThresholdCandidate {
 	if account == nil {
 		return nil
 	}
@@ -342,7 +345,7 @@ func grokThresholdCandidates(account *Account) []*accountSchedulingThresholdCand
 			window:      "quota",
 			scope:       "grok",
 			usedPercent: schedulingPercentValue(account.Extra["grok_sched_utilization"]),
-			until:       parseSchedulingResetAt(account.Extra["grok_sched_reset_at"]),
+			until:       parseSchedulingResetAt(account.Extra["grok_sched_reset_at"], now, schedulingMaxGrokResetAge),
 		},
 	}
 }
@@ -352,25 +355,28 @@ func grokThresholdCandidates(account *Account) []*accountSchedulingThresholdCand
 // <provider>_5h_used_percent / <provider>_weekly_reset_at）。payg 账号无此快照，
 // 候选为空 → 不触发阈值停调（余额型走余额检测）。与 openai 的快照驱动停调一致：
 // 仅当用量超阈值且窗口尚未重置时才停调。
-func cnProviderThresholdCandidates(account *Account, provider string) []*accountSchedulingThresholdCandidate {
+func cnProviderThresholdCandidates(account *Account, provider string, now time.Time) []*accountSchedulingThresholdCandidate {
 	if account == nil || len(account.Extra) == 0 {
 		return nil
 	}
 	return []*accountSchedulingThresholdCandidate{
-		cnThresholdCandidate(account.Extra, provider, "5h"),
-		cnThresholdCandidate(account.Extra, provider, "weekly"),
+		cnThresholdCandidate(account.Extra, provider, "5h", now),
+		cnThresholdCandidate(account.Extra, provider, "weekly", now),
 	}
 }
 
-func cnThresholdCandidate(extra map[string]any, provider, window string) *accountSchedulingThresholdCandidate {
+func cnThresholdCandidate(extra map[string]any, provider, window string, now time.Time) *accountSchedulingThresholdCandidate {
 	var usedKey, resetKey string
+	var maxAge time.Duration
 	switch window {
 	case "5h":
 		usedKey = cnExtraKey(provider, cnExtraSuffix5hUsed)
 		resetKey = cnExtraKey(provider, cnExtraSuffix5hReset)
+		maxAge = schedulingMax5hResetAge
 	case "weekly":
 		usedKey = cnExtraKey(provider, cnExtraSuffixWeeklyUsed)
 		resetKey = cnExtraKey(provider, cnExtraSuffixWeeklyReset)
+		maxAge = schedulingMax7dResetAge
 	default:
 		return nil
 	}
@@ -382,7 +388,7 @@ func cnThresholdCandidate(extra map[string]any, provider, window string) *accoun
 		window:      window,
 		scope:       provider,
 		usedPercent: schedulingPercentValue(usedPercent),
-		until:       parseSchedulingResetAt(extra[resetKey]),
+		until:       parseSchedulingResetAt(extra[resetKey], now, maxAge),
 	}
 }
 
@@ -478,15 +484,43 @@ func schedulingPercentValue(raw any) float64 {
 	}
 }
 
-func parseSchedulingResetAt(raw any) *time.Time {
+const (
+	// schedulingMax5hResetAge 是 5h 滚动窗口 reset 时间的合理性上限（窗口长度 + 余量）。
+	schedulingMax5hResetAge = 6 * time.Hour
+	// schedulingMax7dResetAge 是 7d / weekly 窗口 reset 时间的合理性上限（窗口长度 + 余量）。
+	schedulingMax7dResetAge = 8 * 24 * time.Hour
+	// schedulingMaxGrokResetAge 对应 grok_sched_reset_at（写入侧已限制在 now+25h 内），
+	// 读侧留出余量作为纵深防御。
+	schedulingMaxGrokResetAge = 48 * time.Hour
+)
+
+// boundedSchedulingTime 校验一个绝对时间是否落在 (now, now+maxAge] 内，越界返回 nil。
+func boundedSchedulingTime(ts time.Time, now time.Time, maxAge time.Duration) *time.Time {
+	if !ts.After(now) || ts.After(now.Add(maxAge)) {
+		return nil
+	}
+	out := ts
+	return &out
+}
+
+// parseSchedulingResetAt 解析 account.Extra 里的窗口重置时间（字符串 / Unix 秒 / 毫秒）。
+//
+// 这些值来自上游配额接口或响应头投影，不可信：一旦单位错误（毫秒当秒）或异常巨大，
+// 会被当作候选的 until 直接写进 SetTempUnschedulable / SetModelRateLimit，把账号
+// 误停调数天甚至数年。因此所有分支统一做毫秒识别 + (now, now+maxAge] 区间校验，
+// 越界返回 nil —— candidateMatchesThreshold 对 until == nil 直接判负，候选被自然丢弃，
+// 不需要额外兜底路径。
+func parseSchedulingResetAt(raw any, now time.Time, maxAge time.Duration) *time.Time {
 	switch v := raw.(type) {
 	case nil:
 		return nil
 	case time.Time:
-		ts := v
-		return &ts
+		return boundedSchedulingTime(v, now, maxAge)
 	case *time.Time:
-		return cloneTimePtr(v)
+		if v == nil {
+			return nil
+		}
+		return boundedSchedulingTime(*v, now, maxAge)
 	case string:
 		trimmed := strings.TrimSpace(v)
 		if trimmed == "" {
@@ -496,38 +530,36 @@ func parseSchedulingResetAt(raw any) *time.Time {
 		if err != nil {
 			return nil
 		}
-		return &ts
+		return boundedSchedulingTime(ts, now, maxAge)
 	case json.Number:
-		if value, err := v.Int64(); err == nil && value > 0 {
-			ts := time.Unix(value, 0)
-			return &ts
+		if value, err := v.Int64(); err == nil {
+			return boundedSchedulingUnix(value, now, maxAge)
 		}
-		if value, err := v.Float64(); err == nil && value > 0 {
-			ts := time.Unix(int64(value), 0)
-			return &ts
+		if value, err := v.Float64(); err == nil {
+			return boundedSchedulingUnix(int64(value), now, maxAge)
 		}
 	case float64:
-		if v > 0 {
-			ts := time.Unix(int64(v), 0)
-			return &ts
-		}
+		return boundedSchedulingUnix(int64(v), now, maxAge)
 	case float32:
-		if v > 0 {
-			ts := time.Unix(int64(v), 0)
-			return &ts
-		}
+		return boundedSchedulingUnix(int64(v), now, maxAge)
 	case int:
-		if v > 0 {
-			ts := time.Unix(int64(v), 0)
-			return &ts
-		}
+		return boundedSchedulingUnix(int64(v), now, maxAge)
 	case int64:
-		if v > 0 {
-			ts := time.Unix(v, 0)
-			return &ts
-		}
+		return boundedSchedulingUnix(v, now, maxAge)
 	}
 	return nil
+}
+
+// boundedSchedulingUnix 把 Unix 秒（自动识别毫秒）转成校验过的绝对时间。
+func boundedSchedulingUnix(value int64, now time.Time, maxAge time.Duration) *time.Time {
+	if value <= 0 {
+		return nil
+	}
+	ts, ok := boundUnixSeconds(value, now, maxAge)
+	if !ok {
+		return nil
+	}
+	return &ts
 }
 
 func parseSchedulingTime(raw string) (time.Time, error) {

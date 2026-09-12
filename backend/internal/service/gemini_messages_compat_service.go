@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"math"
 	mathrand "math/rand"
 	"net/http"
@@ -3122,7 +3123,14 @@ func (s *GeminiMessagesCompatService) handleGeminiUpstreamError(ctx context.Cont
 		account.ID, resetTime, oauthType, tierID)
 }
 
-// ParseGeminiRateLimitResetTime 解析 Gemini 格式的 429 响应，返回重置时间的 Unix 时间戳
+// maxGeminiResetDelay 是从 Gemini/Antigravity 429 响应体解析出的相对冷却时长上限。
+// 上游返回单位错误或异常巨大的值时必须判定为不可信，否则会被原样写入
+// accounts.rate_limit_reset_at，把账号误锁数天甚至数年。
+const maxGeminiResetDelay = 48 * time.Hour
+
+// ParseGeminiRateLimitResetTime 解析 Gemini 格式的 429 响应，返回重置时间的 Unix 时间戳。
+// 解析出的相对时长会做合理性校验：越界时跳过该来源（继续尝试后续分支，最终可能返回
+// nil），调用方据此落到各自已有的兜底冷却。
 func ParseGeminiRateLimitResetTime(body []byte) *int64 {
 	// 第一阶段：gjson 结构化提取
 	errMsg := gjson.GetBytes(body, "error.message").String()
@@ -3140,6 +3148,11 @@ func ParseGeminiRateLimitResetTime(body []byte) *int64 {
 			return true
 		}
 		if dur, err := time.ParseDuration(v); err == nil {
+			if dur <= 0 || dur > maxGeminiResetDelay {
+				// 该 detail 的值不可信，继续尝试后续 detail。
+				slog.Warn("gemini_429_reset_delay_out_of_range", "source", "quotaResetDelay", "value", v)
+				return true
+			}
 			// Use ceil to avoid undercounting fractional seconds (e.g. 10.1s should not become 10s),
 			// which can affect scheduling decisions around thresholds (like 10s).
 			ts := time.Now().Unix() + int64(math.Ceil(dur.Seconds()))
@@ -3156,6 +3169,10 @@ func ParseGeminiRateLimitResetTime(body []byte) *int64 {
 	matches := retryInRegex.FindStringSubmatch(string(body))
 	if len(matches) == 2 {
 		if dur, err := time.ParseDuration(matches[1] + "s"); err == nil {
+			if dur <= 0 || dur > maxGeminiResetDelay {
+				slog.Warn("gemini_429_reset_delay_out_of_range", "source", "retry_in_regex", "value", matches[1])
+				return nil
+			}
 			ts := time.Now().Unix() + int64(math.Ceil(dur.Seconds()))
 			return &ts
 		}

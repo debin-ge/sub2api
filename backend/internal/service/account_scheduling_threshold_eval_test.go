@@ -3,6 +3,8 @@
 package service
 
 import (
+	"encoding/json"
+	"strconv"
 	"testing"
 	"time"
 
@@ -137,7 +139,8 @@ func TestEvaluateAccountSchedulingThreshold_OpenAIPreservesPercentageSemantics(t
 	t.Parallel()
 
 	now := time.Date(2026, 6, 3, 12, 0, 0, 0, time.UTC)
-	openAIUntil := now.Add(24 * time.Hour)
+	// 5h 窗口的 reset 必须落在 schedulingMax5hResetAge 之内，否则会被判为不可信而丢弃。
+	openAIUntil := now.Add(2 * time.Hour)
 	openAIAccount := &Account{
 		Platform: PlatformOpenAI,
 		Extra: map[string]any{
@@ -470,4 +473,151 @@ func TestEvaluateAccountSchedulingThreshold_GrokUsesOnlyHeaderQuotaWindow(t *tes
 	require.Equal(t, "quota", decision.Window)
 	require.NotNil(t, decision.Until)
 	require.True(t, headerUntil.Equal(*decision.Until))
+}
+
+// TestParseSchedulingResetAt_BoundsUntrustedValues account.Extra 里的窗口重置时间
+// 来自上游配额接口 / 响应头投影，不可信。越界值一旦被当作候选的 until，会被
+// SetTempUnschedulable 原样写入，把账号误停调数天甚至数年。
+func TestParseSchedulingResetAt_BoundsUntrustedValues(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 3, 12, 0, 0, 0, time.UTC)
+	valid := now.Add(2 * time.Hour)
+
+	t.Run("接受合法值", func(t *testing.T) {
+		require.NotNil(t, parseSchedulingResetAt(valid.Format(time.RFC3339), now, schedulingMax5hResetAge))
+		require.NotNil(t, parseSchedulingResetAt(valid.Unix(), now, schedulingMax5hResetAge))
+		require.NotNil(t, parseSchedulingResetAt(float64(valid.Unix()), now, schedulingMax5hResetAge))
+		require.NotNil(t, parseSchedulingResetAt(int(valid.Unix()), now, schedulingMax5hResetAge))
+		require.NotNil(t, parseSchedulingResetAt(json.Number(strconv.FormatInt(valid.Unix(), 10)), now, schedulingMax5hResetAge))
+		require.NotNil(t, parseSchedulingResetAt(valid, now, schedulingMax5hResetAge))
+		require.NotNil(t, parseSchedulingResetAt(&valid, now, schedulingMax5hResetAge))
+	})
+
+	t.Run("毫秒时间戳自动识别", func(t *testing.T) {
+		got := parseSchedulingResetAt(valid.UnixMilli(), now, schedulingMax5hResetAge)
+		require.NotNil(t, got)
+		require.True(t, valid.Equal(*got))
+
+		got = parseSchedulingResetAt(float64(valid.UnixMilli()), now, schedulingMax5hResetAge)
+		require.NotNil(t, got)
+		require.True(t, valid.Equal(*got))
+	})
+
+	t.Run("拒绝过去时间", func(t *testing.T) {
+		past := now.Add(-time.Minute)
+		require.Nil(t, parseSchedulingResetAt(past.Format(time.RFC3339), now, schedulingMax5hResetAge))
+		require.Nil(t, parseSchedulingResetAt(past.Unix(), now, schedulingMax5hResetAge))
+		require.Nil(t, parseSchedulingResetAt(past, now, schedulingMax5hResetAge))
+		require.Nil(t, parseSchedulingResetAt(&past, now, schedulingMax5hResetAge))
+	})
+
+	t.Run("拒绝超出 maxAge 的未来时间", func(t *testing.T) {
+		far := now.Add(30 * 24 * time.Hour)
+		require.Nil(t, parseSchedulingResetAt(far.Format(time.RFC3339), now, schedulingMax5hResetAge))
+		require.Nil(t, parseSchedulingResetAt(far.Unix(), now, schedulingMax5hResetAge))
+		require.Nil(t, parseSchedulingResetAt(far.Unix(), now, schedulingMax7dResetAge))
+		require.Nil(t, parseSchedulingResetAt(json.Number(strconv.FormatInt(far.Unix(), 10)), now, schedulingMax7dResetAge))
+	})
+
+	t.Run("拒绝非法与零值", func(t *testing.T) {
+		require.Nil(t, parseSchedulingResetAt(nil, now, schedulingMax5hResetAge))
+		require.Nil(t, parseSchedulingResetAt("", now, schedulingMax5hResetAge))
+		require.Nil(t, parseSchedulingResetAt("not-a-time", now, schedulingMax5hResetAge))
+		require.Nil(t, parseSchedulingResetAt(int64(0), now, schedulingMax5hResetAge))
+		require.Nil(t, parseSchedulingResetAt(float64(-1), now, schedulingMax5hResetAge))
+		require.Nil(t, parseSchedulingResetAt((*time.Time)(nil), now, schedulingMax5hResetAge))
+	})
+}
+
+// TestAnthropicThresholdCandidates_RejectsOutOfRangeReset passive_usage_7d_reset
+// 写入侧（account_usage_service）没有做边界校验，读侧必须兜住：越界值只让候选失效
+// （until == nil → candidateMatchesThreshold 判负），不得据此停调。
+func TestAnthropicThresholdCandidates_RejectsOutOfRangeReset(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 3, 12, 0, 0, 0, time.UTC)
+	account := &Account{
+		Platform: PlatformAnthropic,
+		Extra: map[string]any{
+			"passive_usage_7d_utilization": 0.99,
+			// 毫秒当秒：被原样接受的话会锁到 50 年后
+			"passive_usage_7d_reset": float64(now.Add(3*24*time.Hour).UnixMilli()) * 1000,
+		},
+	}
+
+	for _, candidate := range anthropicThresholdCandidates(account, now) {
+		require.Nil(t, candidate.until)
+		require.False(t, candidateMatchesThreshold(candidate, 80, now))
+	}
+
+	decision := EvaluateAccountSchedulingThreshold(account, map[string]int{PlatformAnthropic: 80}, now)
+	require.False(t, decision.ShouldPause, "越界 reset 不得触发停调")
+}
+
+// TestAnthropicFableThresholdCandidate_RejectsOutOfRangeReset 与整账号级同理，
+// 但作用于模型级封锁（SetModelRateLimit）。
+func TestAnthropicFableThresholdCandidate_RejectsOutOfRangeReset(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 3, 12, 0, 0, 0, time.UTC)
+	account := &Account{
+		Platform: PlatformAnthropic,
+		Extra: map[string]any{
+			"passive_usage_7d_oi_utilization": 0.99,
+			"passive_usage_7d_oi_reset":       float64(now.Add(365 * 24 * time.Hour).Unix()),
+		},
+	}
+
+	candidate := anthropicFableThresholdCandidate(account, now)
+	require.NotNil(t, candidate)
+	require.Nil(t, candidate.until)
+	require.False(t, candidateMatchesThreshold(candidate, 80, now))
+}
+
+// TestGrokThresholdCandidates_RejectsOutOfRangeReset grok_sched_reset_at 写入侧已限
+// now+25h，读侧的 48h 上限是纵深防御：写入侧一旦劣化也不会把账号锁到几年后。
+func TestGrokThresholdCandidates_RejectsOutOfRangeReset(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 3, 12, 0, 0, 0, time.UTC)
+	account := &Account{
+		Platform: PlatformGrok,
+		Extra: map[string]any{
+			"grok_sched_utilization": 95.0,
+			"grok_sched_reset_at":    now.Add(10 * 24 * time.Hour).Format(time.RFC3339),
+		},
+	}
+
+	for _, candidate := range grokThresholdCandidates(account, now) {
+		require.Nil(t, candidate.until)
+	}
+
+	decision := EvaluateAccountSchedulingThreshold(account, map[string]int{PlatformGrok: 90}, now)
+	require.False(t, decision.ShouldPause, "越界 reset 不得触发停调")
+}
+
+// TestOpenAIThresholdCandidate_RejectsOutOfRangeReset codex_5h/7d_reset_at 越界时
+// 候选失效，账号继续可调度（而不是被停到几年后）。
+func TestOpenAIThresholdCandidate_RejectsOutOfRangeReset(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 3, 12, 0, 0, 0, time.UTC)
+	extra := map[string]any{
+		"codex_5h_used_percent": 99.0,
+		// 5h 窗口给了 3 天后的时间，超出 schedulingMax5hResetAge
+		"codex_5h_reset_at":     now.Add(3 * 24 * time.Hour).Format(time.RFC3339),
+		"codex_7d_used_percent": 99.0,
+		"codex_7d_reset_at":     now.Add(60 * 24 * time.Hour).Format(time.RFC3339),
+	}
+
+	for _, window := range []string{"5h", "7d"} {
+		candidate := openAIThresholdCandidate(extra, window, now)
+		require.NotNil(t, candidate)
+		require.Nil(t, candidate.until, "window %s", window)
+	}
+
+	account := &Account{Platform: PlatformOpenAI, Extra: extra}
+	decision := EvaluateAccountSchedulingThreshold(account, map[string]int{PlatformOpenAI: 90}, now)
+	require.False(t, decision.ShouldPause, "越界 reset 不得触发停调")
 }

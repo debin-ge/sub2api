@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -236,7 +237,8 @@ func TestHandle429_OpenAISyncsObservedPlanType(t *testing.T) {
 		Type:        AccountTypeOAuth,
 		Credentials: map[string]any{"plan_type": "plus"},
 	}
-	body := []byte(`{"error":{"type":"usage_limit_reached","message":"limit reached","plan_type":"free","resets_at":1777283883}}`)
+	// reset 必须是动态的未来时间：parseOpenAIRateLimitResetTime 会拒绝过去/超远的时间戳。
+	body := []byte(fmt.Sprintf(`{"error":{"type":"usage_limit_reached","message":"limit reached","plan_type":"free","resets_at":%d}}`, time.Now().Add(2*time.Hour).Unix()))
 
 	svc.handle429(context.Background(), account, http.Header{}, body, "")
 
@@ -551,4 +553,111 @@ func TestCalculateOpenAI429ResetTime_5MinFallbackWhenNoReset(t *testing.T) {
 	if resetAt != nil {
 		t.Errorf("expected nil when no reset_after_seconds, got %v", resetAt)
 	}
+}
+
+// TestParseOpenAIRateLimitResetTime_RejectsOutOfRangeValues 上游 429 响应体里的
+// resets_at / resets_in_seconds 不可信：单位错误（毫秒当秒）、被重放的过去时间、
+// 或异常巨大的值一旦被原样写入 accounts.rate_limit_reset_at，账号会被误锁数年。
+// 越界时必须返回 nil，由调用方落到已有的兜底冷却。
+func TestParseOpenAIRateLimitResetTime_RejectsOutOfRangeValues(t *testing.T) {
+	now := time.Now()
+
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"resets_at 已是过去", fmt.Sprintf(`{"error":{"type":"usage_limit_reached","resets_at":%d}}`, now.Add(-time.Hour).Unix())},
+		{"resets_at 超出 8d 上限", fmt.Sprintf(`{"error":{"type":"usage_limit_reached","resets_at":%d}}`, now.Add(30*24*time.Hour).Unix())},
+		{"resets_at 字符串形式越界", fmt.Sprintf(`{"error":{"type":"usage_limit_reached","resets_at":"%d"}}`, now.Add(365*24*time.Hour).Unix())},
+		{"resets_at 秒被误当毫秒(值过小)", `{"error":{"type":"usage_limit_reached","resets_at":1}}`},
+		{"resets_in_seconds 为负", `{"error":{"type":"usage_limit_reached","resets_in_seconds":-5}}`},
+		{"resets_in_seconds 为零", `{"error":{"type":"usage_limit_reached","resets_in_seconds":0}}`},
+		{"resets_in_seconds 超大(毫秒当秒)", `{"error":{"type":"usage_limit_reached","resets_in_seconds":604800000}}`},
+		{"resets_in_seconds 字符串超大", `{"error":{"type":"usage_limit_reached","resets_in_seconds":"99999999999"}}`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Nil(t, parseOpenAIRateLimitResetTime([]byte(tc.body)))
+		})
+	}
+}
+
+// TestParseOpenAIRateLimitResetTime_AcceptsValidValues 合法值仍须正常解析，
+// 且毫秒时间戳被自动识别为秒。
+func TestParseOpenAIRateLimitResetTime_AcceptsValidValues(t *testing.T) {
+	now := time.Now()
+	want := now.Add(3 * time.Hour).Truncate(time.Second)
+
+	t.Run("resets_at 秒", func(t *testing.T) {
+		got := parseOpenAIRateLimitResetTime([]byte(fmt.Sprintf(`{"error":{"type":"usage_limit_reached","resets_at":%d}}`, want.Unix())))
+		require.NotNil(t, got)
+		require.Equal(t, want.Unix(), *got)
+	})
+
+	t.Run("resets_at 毫秒自动识别", func(t *testing.T) {
+		got := parseOpenAIRateLimitResetTime([]byte(fmt.Sprintf(`{"error":{"type":"usage_limit_reached","resets_at":%d}}`, want.UnixMilli())))
+		require.NotNil(t, got)
+		require.Equal(t, want.Unix(), *got)
+	})
+
+	t.Run("resets_in_seconds", func(t *testing.T) {
+		got := parseOpenAIRateLimitResetTime([]byte(`{"error":{"type":"usage_limit_reached","resets_in_seconds":3600}}`))
+		require.NotNil(t, got)
+		require.WithinDuration(t, now.Add(time.Hour), time.Unix(*got, 0), 5*time.Second)
+	})
+}
+
+// TestCalculateOpenAI429ResetTime_RejectsOutOfRangeResetSeconds 响应头里的
+// x-codex-*-reset-after-seconds 若为异常巨大的值（例如毫秒当秒），即使窗口已 100%
+// 用满也必须返回 nil，让 handle429 落到 apply429FallbackRateLimit，而不是把账号
+// 锁到几十年后。
+func TestCalculateOpenAI429ResetTime_RejectsOutOfRangeResetSeconds(t *testing.T) {
+	headers := http.Header{}
+	headers.Set("x-codex-primary-used-percent", "100")
+	headers.Set("x-codex-primary-reset-after-seconds", "99999999999") // ~3000 年
+	headers.Set("x-codex-primary-window-minutes", "10080")            // 7d
+	headers.Set("x-codex-secondary-used-percent", "100")
+	headers.Set("x-codex-secondary-reset-after-seconds", "18000000") // 5h 窗口却给了 208 天
+	headers.Set("x-codex-secondary-window-minutes", "300")
+
+	require.Nil(t, calculateOpenAI429ResetTime(headers))
+}
+
+// TestClassifyOpenAIOAuth429_RejectsOutOfRangeResetSeconds 内存态快速封锁路径与
+// calculateOpenAI429ResetTime 同源，同样不得携带越界的 reset 时间。
+func TestClassifyOpenAIOAuth429_RejectsOutOfRangeResetSeconds(t *testing.T) {
+	t.Run("7d 窗口越界", func(t *testing.T) {
+		headers := http.Header{}
+		headers.Set("x-codex-primary-used-percent", "100")
+		headers.Set("x-codex-primary-reset-after-seconds", "99999999999")
+		headers.Set("x-codex-primary-window-minutes", "10080")
+
+		disposition, resetAt := classifyOpenAIOAuth429(headers, nil)
+		require.Equal(t, openAIOAuth429Quota7d, disposition)
+		require.Nil(t, resetAt)
+	})
+
+	t.Run("5h 窗口越界", func(t *testing.T) {
+		headers := http.Header{}
+		headers.Set("x-codex-secondary-used-percent", "100")
+		headers.Set("x-codex-secondary-reset-after-seconds", "18000000")
+		headers.Set("x-codex-secondary-window-minutes", "300")
+
+		disposition, resetAt := classifyOpenAIOAuth429(headers, nil)
+		require.Equal(t, openAIOAuth429Quota5h, disposition)
+		require.Nil(t, resetAt)
+	})
+
+	t.Run("合法值仍返回 reset", func(t *testing.T) {
+		headers := http.Header{}
+		headers.Set("x-codex-secondary-used-percent", "100")
+		headers.Set("x-codex-secondary-reset-after-seconds", "1800")
+		headers.Set("x-codex-secondary-window-minutes", "300")
+
+		disposition, resetAt := classifyOpenAIOAuth429(headers, nil)
+		require.Equal(t, openAIOAuth429Quota5h, disposition)
+		require.NotNil(t, resetAt)
+		require.WithinDuration(t, time.Now().Add(30*time.Minute), *resetAt, 5*time.Second)
+	})
 }

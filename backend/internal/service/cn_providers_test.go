@@ -364,16 +364,18 @@ func TestCNBalanceURL(t *testing.T) {
 // TestCNProviderThresholdCandidates 从 Extra 快照读取 5h / weekly 候选。
 func TestCNProviderThresholdCandidates(t *testing.T) {
 	t.Parallel()
+	now := time.Now()
+	// reset 必须是相对 now 的未来时间：parseSchedulingResetAt 会拒绝过去/超出窗口上限的值。
 	account := &Account{
 		Platform: PlatformKimi,
 		Extra: map[string]any{
 			"kimi_5h_used_percent":     90.0,
-			"kimi_5h_reset_at":         "2026-08-14T15:00:00Z",
+			"kimi_5h_reset_at":         now.Add(2 * time.Hour).Format(time.RFC3339),
 			"kimi_weekly_used_percent": 50.0,
-			"kimi_weekly_reset_at":     "2026-08-18T00:00:00Z",
+			"kimi_weekly_reset_at":     now.Add(3 * 24 * time.Hour).Format(time.RFC3339),
 		},
 	}
-	cands := cnProviderThresholdCandidates(account, PlatformKimi)
+	cands := cnProviderThresholdCandidates(account, PlatformKimi, now)
 	// 仅返回非 nil 候选（两窗口均存在 → 2 条）。
 	var present []*accountSchedulingThresholdCandidate
 	for _, c := range cands {
@@ -382,16 +384,55 @@ func TestCNProviderThresholdCandidates(t *testing.T) {
 		}
 	}
 	require.Len(t, present, 2)
+	for _, c := range present {
+		require.NotNil(t, c.until, "window %s 的 reset 应通过边界校验", c.window)
+	}
 
 	// 缺少 used 键的窗口不产生候选。
 	partial := &Account{
 		Platform: PlatformKimi,
-		Extra:    map[string]any{"kimi_5h_reset_at": "2026-08-14T15:00:00Z"}, // 无 used_percent
+		Extra:    map[string]any{"kimi_5h_reset_at": now.Add(2 * time.Hour).Format(time.RFC3339)}, // 无 used_percent
 	}
-	require.Empty(t, filterNil(cnProviderThresholdCandidates(partial, PlatformKimi)))
+	require.Empty(t, filterNil(cnProviderThresholdCandidates(partial, PlatformKimi, now)))
 
 	// 空 Extra / nil account 安全返回。
-	require.Empty(t, filterNil(cnProviderThresholdCandidates(&Account{Platform: PlatformKimi}, PlatformKimi)))
+	require.Empty(t, filterNil(cnProviderThresholdCandidates(&Account{Platform: PlatformKimi}, PlatformKimi, now)))
+}
+
+// TestCNProviderThresholdCandidates_RejectsOutOfRangeReset 上游快照写入离谱的 reset
+// 时间（单位错误 / 被重放）时，候选的 until 必须为 nil，从而被 candidateMatchesThreshold
+// 丢弃，而不是把账号停调到几年后。
+func TestCNProviderThresholdCandidates_RejectsOutOfRangeReset(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	account := &Account{
+		Platform: PlatformKimi,
+		Extra: map[string]any{
+			// 5h 窗口给了一个 30 天后的时间（远超 6h 上限）
+			"kimi_5h_used_percent":     99.0,
+			"kimi_5h_reset_at":         now.Add(30 * 24 * time.Hour).Format(time.RFC3339),
+			"kimi_weekly_used_percent": 99.0,
+			// weekly 窗口给了一个毫秒时间戳误当秒的巨大值
+			"kimi_weekly_reset_at": float64(now.Add(7*24*time.Hour).UnixMilli()) * 1000,
+		},
+	}
+	for _, c := range filterNil(cnProviderThresholdCandidates(account, PlatformKimi, now)) {
+		require.Nil(t, c.until, "window %s 的越界 reset 必须被拒绝", c.window)
+		require.False(t, candidateMatchesThreshold(c, 80, now))
+	}
+
+	// 毫秒时间戳（1e11 以上）应被自动识别并修正，而不是被当成秒直接接受。
+	msAccount := &Account{
+		Platform: PlatformKimi,
+		Extra: map[string]any{
+			"kimi_5h_used_percent": 99.0,
+			"kimi_5h_reset_at":     float64(now.Add(2 * time.Hour).UnixMilli()),
+		},
+	}
+	msCands := filterNil(cnProviderThresholdCandidates(msAccount, PlatformKimi, now))
+	require.Len(t, msCands, 1)
+	require.NotNil(t, msCands[0].until)
+	require.WithinDuration(t, now.Add(2*time.Hour), *msCands[0].until, time.Second)
 }
 
 func filterNil(cands []*accountSchedulingThresholdCandidate) []*accountSchedulingThresholdCandidate {
