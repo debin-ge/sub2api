@@ -217,9 +217,9 @@ interface Props {
   modelOptions?: string[]
   /**
    * errors 模式:隐藏用量专属字段/按钮,显示错误类型+状态码(错误请求 tab 用)
-   * ranking 模式:同 usage 但隐藏计费模式筛选与清理/导出按钮(用户排行 tab 用)
+   * ranking / key-ranking 模式:同 usage 但隐藏计费模式筛选与清理/导出按钮(用户/密钥排行 tab 用)
    */
-  mode?: 'usage' | 'errors' | 'ranking'
+  mode?: 'usage' | 'errors' | 'ranking' | 'key-ranking'
   /** 嵌入统一卡片内使用：去掉自身卡片外观 */
   flat?: boolean
 }
@@ -547,5 +547,16 @@ const setUserKeyword = (email: string) => {
 
 const getUserSearchRevision = () => userSearchSequence
 
-defineExpose({ getUserSearchRevision, setUserKeyword })
+// 供外部(如密钥排行下钻)在程序化设置 api_key_id 后回显选中的密钥名称
+const setApiKeyKeyword = (name: string) => {
+  if (apiKeySearchTimeout) {
+    clearTimeout(apiKeySearchTimeout)
+    apiKeySearchTimeout = null
+  }
+  apiKeyKeyword.value = name
+  apiKeyResults.value = []
+  showApiKeyDropdown.value = false
+}
+
+defineExpose({ getUserSearchRevision, setUserKeyword, setApiKeyKeyword })
 </script>

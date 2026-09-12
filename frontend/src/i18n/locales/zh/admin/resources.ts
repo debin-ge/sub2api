@@ -568,6 +568,21 @@ export default {
           cost: '费用'
         }
       },
+      apiKeyTokenRanking: {
+        subtitle: '按当前筛选与时间范围统计每个密钥的 Token 用量',
+        rowHint: '点击查看该密钥的用量明细',
+        keyCount: '共 {count} 个密钥',
+        columns: {
+          key: '密钥',
+          user: '所属用户',
+          requests: '请求数',
+          inputTokens: '输入 Token',
+          outputTokens: '输出 Token',
+          cacheTokens: '缓存 Token',
+          totalTokens: '总 Token',
+          cost: '费用'
+        }
+      },
       cleanup: {
         button: '清理',
         title: '清理使用记录',

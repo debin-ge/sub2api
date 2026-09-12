@@ -526,6 +526,48 @@ func (h *UsageHandler) DashboardModels(c *gin.Context) {
 	})
 }
 
+// DashboardAPIKeyBreakdown handles getting the authenticated user's own API-key usage breakdown.
+// GET /api/v1/usage/dashboard/api-key-breakdown
+func (h *UsageHandler) DashboardAPIKeyBreakdown(c *gin.Context) {
+	parsed, ok := h.parseUserUsageFilters(c, true)
+	if !ok {
+		return
+	}
+
+	dim := usagestats.UserBreakdownDimension{
+		GroupID:            parsed.Filters.GroupID,
+		Model:              parsed.Filters.Model,
+		ModelType:          parsed.Filters.ModelFilterSource,
+		UserID:             parsed.Filters.UserID, // Security: hardcoded to the authenticated subject by parseUserUsageFilters — do not add a user_id query param to this handler.
+		APIKeyID:           parsed.Filters.APIKeyID,
+		RequestType:        parsed.Filters.RequestType,
+		Stream:             parsed.Filters.Stream,
+		NativeCompactionV2: parsed.Filters.NativeCompactionV2,
+		BillingType:        parsed.Filters.BillingType,
+		SortBy:             strings.TrimSpace(c.Query("sort_by")),
+	}
+
+	limit := 50
+	if v := c.Query("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 200 {
+			limit = n
+		}
+	}
+
+	stats, err := h.usageService.GetAPIKeyBreakdownStats(c.Request.Context(), parsed.StartTime, parsed.EndTime, dim, limit)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	startDate, endDate := parsed.echoDateRange()
+	response.Success(c, gin.H{
+		"api_keys":   stats,
+		"start_date": startDate,
+		"end_date":   endDate,
+	})
+}
+
 // DashboardSnapshotV2 returns usage-page chart data scoped to the current user.
 // GET /api/v1/usage/dashboard/snapshot-v2
 func (h *UsageHandler) DashboardSnapshotV2(c *gin.Context) {

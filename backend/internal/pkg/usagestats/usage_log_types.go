@@ -178,6 +178,22 @@ type UserBreakdownItem struct {
 	AccountCost  float64 `json:"account_cost"`  // 账号成本
 }
 
+// APIKeyBreakdownItem represents per-API-key usage breakdown within a dimension.
+type APIKeyBreakdownItem struct {
+	APIKeyID     int64   `json:"api_key_id"`
+	KeyName      string  `json:"key_name"`
+	UserID       int64   `json:"user_id"`
+	Email        string  `json:"email"`
+	Requests     int64   `json:"requests"`
+	InputTokens  int64   `json:"input_tokens"`  // 输入 token 累计
+	OutputTokens int64   `json:"output_tokens"` // 输出 token 累计
+	CacheTokens  int64   `json:"cache_tokens"`  // 缓存创建 + 读取 token 累计
+	TotalTokens  int64   `json:"total_tokens"`  // 输入+输出+缓存 token 累计
+	Cost         float64 `json:"cost"`          // 标准计费
+	ActualCost   float64 `json:"actual_cost"`   // 实际扣除
+	AccountCost  float64 `json:"account_cost"`  // 账号成本
+}
+
 // UserBreakdownDimension specifies the dimension to filter for user breakdown.
 type UserBreakdownDimension struct {
 	GroupID      int64  // filter by group_id (>0 to enable)

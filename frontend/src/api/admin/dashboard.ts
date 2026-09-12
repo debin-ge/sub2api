@@ -13,6 +13,7 @@ import type {
   UserUsageTrendPoint,
   UserSpendingRankingResponse,
   UserBreakdownItem,
+  ApiKeyBreakdownItem,
   UsageRequestType
 } from '@/types'
 
@@ -203,6 +204,42 @@ export interface UserBreakdownResponse {
 
 export async function getUserBreakdown(params: UserBreakdownParams): Promise<UserBreakdownResponse> {
   const { data } = await apiClient.get<UserBreakdownResponse>('/admin/dashboard/user-breakdown', {
+    params
+  })
+  return data
+}
+
+export interface ApiKeyBreakdownParams {
+  start_date?: string
+  end_date?: string
+  start_time?: string
+  end_time?: string
+  group_id?: number
+  model?: string
+  model_source?: 'requested' | 'upstream' | 'mapping'
+  endpoint?: string
+  endpoint_type?: 'inbound' | 'upstream' | 'path'
+  limit?: number
+  // Sort column for the ranking (allowlisted server-side; falls back to actual_cost)
+  sort_by?: 'total_tokens' | 'input_tokens' | 'output_tokens' | 'cache_tokens' | 'requests' | 'cost' | 'actual_cost'
+  // Additional filter conditions
+  user_id?: number // Admin-only: scope the ranking to a single user's keys
+  api_key_id?: number
+  account_id?: number
+  request_type?: UsageRequestType
+  stream?: boolean
+  native_compaction_v2?: boolean | null
+  billing_type?: number | null
+}
+
+export interface ApiKeyBreakdownResponse {
+  api_keys: ApiKeyBreakdownItem[]
+  start_date: string
+  end_date: string
+}
+
+export async function getApiKeyBreakdown(params: ApiKeyBreakdownParams): Promise<ApiKeyBreakdownResponse> {
+  const { data } = await apiClient.get<ApiKeyBreakdownResponse>('/admin/dashboard/api-key-breakdown', {
     params
   })
   return data

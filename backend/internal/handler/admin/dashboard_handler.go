@@ -758,3 +758,95 @@ func (h *DashboardHandler) GetUserBreakdown(c *gin.Context) {
 		"end_date":   echoEndDate(c, endTime),
 	})
 }
+
+// GetAPIKeyBreakdown handles getting per-API-key usage breakdown within a dimension.
+// GET /api/v1/admin/dashboard/api-key-breakdown
+// Query params: start_date, end_date, group_id, model, endpoint, endpoint_type, user_id, limit
+func (h *DashboardHandler) GetAPIKeyBreakdown(c *gin.Context) {
+	startTime, endTime := parseTimeRange(c)
+
+	dim := usagestats.UserBreakdownDimension{}
+	if v := c.Query("group_id"); v != "" {
+		if id, err := strconv.ParseInt(v, 10, 64); err == nil {
+			dim.GroupID = id
+		}
+	}
+	dim.Model = c.Query("model")
+	rawModelSource := strings.TrimSpace(c.DefaultQuery("model_source", usagestats.ModelSourceRequested))
+	if !usagestats.IsValidModelSource(rawModelSource) {
+		response.BadRequest(c, "Invalid model_source, use requested/upstream/mapping")
+		return
+	}
+	dim.ModelType = rawModelSource
+	dim.Endpoint = c.Query("endpoint")
+	dim.EndpointType = c.DefaultQuery("endpoint_type", "inbound")
+
+	// Additional filter conditions
+	if v := c.Query("user_id"); v != "" {
+		if id, err := strconv.ParseInt(v, 10, 64); err == nil {
+			dim.UserID = id
+		}
+	}
+	if v := c.Query("api_key_id"); v != "" {
+		if id, err := strconv.ParseInt(v, 10, 64); err == nil {
+			dim.APIKeyID = id
+		}
+	}
+	if v := c.Query("account_id"); v != "" {
+		if id, err := strconv.ParseInt(v, 10, 64); err == nil {
+			dim.AccountID = id
+		}
+	}
+	if v := strings.TrimSpace(c.Query("request_type")); v != "" {
+		parsed, err := service.ParseUsageRequestType(v)
+		if err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
+		rtVal := int16(parsed)
+		dim.RequestType = &rtVal
+	}
+	if v := c.Query("stream"); v != "" {
+		if s, err := strconv.ParseBool(v); err == nil {
+			dim.Stream = &s
+		}
+	}
+	if v := strings.TrimSpace(c.Query("native_compaction_v2")); v != "" {
+		value, err := strconv.ParseBool(v)
+		if err != nil {
+			response.BadRequest(c, "Invalid native_compaction_v2 value, use true or false")
+			return
+		}
+		dim.NativeCompactionV2 = &value
+	}
+	if v := c.Query("billing_type"); v != "" {
+		if bt, err := strconv.ParseInt(v, 10, 8); err == nil {
+			btVal := int8(bt)
+			dim.BillingType = &btVal
+		}
+	}
+
+	// sort_by 由 repo 层 allowlist 校验;非法值静默回退默认排序(actual_cost)。
+	dim.SortBy = strings.TrimSpace(c.Query("sort_by"))
+
+	limit := 50
+	if v := c.Query("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 200 {
+			limit = n
+		}
+	}
+
+	stats, err := h.dashboardService.GetAPIKeyBreakdownStats(
+		c.Request.Context(), startTime, endTime, dim, limit,
+	)
+	if err != nil {
+		response.Error(c, 500, "Failed to get API key breakdown stats")
+		return
+	}
+
+	response.Success(c, gin.H{
+		"api_keys":   stats,
+		"start_date": echoStartDate(c, startTime),
+		"end_date":   echoEndDate(c, endTime),
+	})
+}

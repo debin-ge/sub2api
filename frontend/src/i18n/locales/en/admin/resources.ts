@@ -571,6 +571,21 @@ export default {
           cost: 'Cost'
         }
       },
+      apiKeyTokenRanking: {
+        subtitle: 'Per-API-key token usage for the current filters and time range',
+        rowHint: "Click to view this key's usage details",
+        keyCount: '{count} keys',
+        columns: {
+          key: 'API Key',
+          user: 'User',
+          requests: 'Requests',
+          inputTokens: 'Input Tokens',
+          outputTokens: 'Output Tokens',
+          cacheTokens: 'Cache Tokens',
+          totalTokens: 'Total Tokens',
+          cost: 'Cost'
+        }
+      },
       cleanup: {
         button: 'Cleanup',
         title: 'Cleanup Usage Records',

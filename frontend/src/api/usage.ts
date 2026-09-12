@@ -16,7 +16,8 @@ import type {
   UsageRequestType,
   UserErrorRequest,
   UserErrorRequestDetail,
-  UserErrorListParams
+  UserErrorListParams,
+  ApiKeyBreakdownItem
 } from '@/types'
 
 // ==================== Dashboard Types ====================
@@ -374,6 +375,42 @@ export async function getDashboardApiKeysUsage(
   return data
 }
 
+export interface MyApiKeyBreakdownParams {
+  start_date?: string
+  end_date?: string
+  start_time?: string
+  end_time?: string
+  group_id?: number
+  api_key_id?: number
+  request_type?: UsageRequestType
+  stream?: boolean
+  native_compaction_v2?: boolean | null
+  billing_type?: number | null
+  limit?: number
+  // Sort column for the ranking (allowlisted server-side; falls back to actual_cost)
+  sort_by?: 'total_tokens' | 'input_tokens' | 'output_tokens' | 'cache_tokens' | 'requests' | 'cost' | 'actual_cost'
+}
+
+export interface MyApiKeyBreakdownResponse {
+  api_keys: ApiKeyBreakdownItem[]
+  start_date: string
+  end_date: string
+}
+
+/**
+ * Get the authenticated user's own API-key usage breakdown (key ranking).
+ * @param params - Query parameters for filtering
+ * @returns Per-API-key usage breakdown for current user
+ */
+export async function getMyApiKeyBreakdown(
+  params?: MyApiKeyBreakdownParams
+): Promise<MyApiKeyBreakdownResponse> {
+  const { data } = await apiClient.get<MyApiKeyBreakdownResponse>('/usage/dashboard/api-key-breakdown', {
+    params: withTimezone(params)
+  })
+  return data
+}
+
 export async function listMyErrorRequests(
   params: UserErrorListParams
 ): Promise<PaginatedResponse<UserErrorRequest>> {
@@ -402,6 +439,7 @@ export const usageAPI = {
   getMyApiKeyDailyUsage,
   getDashboardSnapshotV2,
   getDashboardApiKeysUsage,
+  getMyApiKeyBreakdown,
   // Error requests
   listMyErrorRequests,
   getMyErrorDetail

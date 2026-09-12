@@ -470,7 +470,21 @@ export default {
       detailAccuracy: '定位精度',
       detailCoordinates: '坐标',
     },
-    tabs: { usage: '用量明细', errors: '错误请求', ranking: '用户排行' },
+    tabs: { usage: '用量明细', errors: '错误请求', ranking: '用户排行', keyRanking: '密钥排行' },
+    keyRanking: {
+      subtitle: '按当前筛选与时间范围统计您名下每个密钥的 Token 用量',
+      rowHint: '点击查看该密钥的用量明细',
+      keyCount: '共 {count} 个密钥',
+      columns: {
+        key: '密钥',
+        requests: '请求数',
+        inputTokens: '输入 Token',
+        outputTokens: '输出 Token',
+        cacheTokens: '缓存 Token',
+        totalTokens: '总 Token',
+        cost: '费用'
+      }
+    },
     errors: {
       time: '时间', model: '模型', endpoint: '端点', status: '状态码',
       category: '分类', platform: '平台', message: '错误信息',

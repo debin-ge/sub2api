@@ -153,6 +153,7 @@ function mountUsageView() {
         UsageStatsCards: chartStub,
         UsageTable: chartStub,
         UserErrorRequestsTable: chartStub,
+        ApiKeyTokenRanking: chartStub,
         ModelDistributionChart: chartStub,
         GroupDistributionChart: chartStub,
         EndpointDistributionChart: chartStub,

@@ -2161,6 +2161,21 @@ export interface UserBreakdownItem {
   account_cost: number
 }
 
+export interface ApiKeyBreakdownItem {
+  api_key_id: number
+  key_name: string
+  user_id: number
+  email: string
+  requests: number
+  input_tokens: number
+  output_tokens: number
+  cache_tokens: number
+  total_tokens: number
+  cost: number
+  actual_cost: number
+  account_cost: number
+}
+
 export interface UserUsageTrendPoint {
   date: string
   user_id: number
