@@ -1060,3 +1060,36 @@ func TestGatewayRoutesOpenCodeModelsDispatchesToOpenCodeHandler(t *testing.T) {
 	require.Equal(t, http.StatusServiceUnavailable, w.Code)
 	require.Contains(t, w.Body.String(), "opencode gateway service unavailable")
 }
+
+// Scenario: Grok 的语音 / 搜索能力同时挂在 /v1 与根路径两个入口上。ByteDance 网关只
+// 放行 Videos API，若只有 /v1 入口挂了 byteDanceVideoOnly、根路径漏挂，根路径就成了
+// 绕过口。这里把「两个入口对 ByteDance 表现一致」钉成不变量，而不是只钉某一侧的 404。
+func TestGatewayRoutesByteDanceGatesRootAndV1VoiceSearchPathsIdentically(t *testing.T) {
+	router := newGatewayRoutesTestRouterForPlatform(service.PlatformByteDance)
+	for _, route := range []struct {
+		method string
+		path   string
+	}{
+		{http.MethodPost, "/tts"},
+		{http.MethodPost, "/stt"},
+		{http.MethodPost, "/custom-voices"},
+		{http.MethodGet, "/custom-voices"},
+		{http.MethodGet, "/custom-voices/voice_0123456789abcdef"},
+		{http.MethodPatch, "/custom-voices/voice_0123456789abcdef"},
+		{http.MethodDelete, "/custom-voices/voice_0123456789abcdef"},
+		{http.MethodGet, "/custom-voices/voice_0123456789abcdef/audio"},
+		{http.MethodGet, "/realtime"},
+		{http.MethodPost, "/web_search"},
+		{http.MethodPost, "/x_search"},
+	} {
+		for _, path := range []string{route.path, "/v1" + route.path} {
+			request := httptest.NewRequest(route.method, path, strings.NewReader(`{}`))
+			request.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, request)
+			require.Equal(t, http.StatusNotFound, w.Code, "%s %s", route.method, path)
+			require.Contains(t, w.Body.String(), "ByteDance gateway supports only the Videos API",
+				"%s %s 未被 byteDanceVideoOnly 拦下；根路径与 /v1 必须一致，否则根路径是绕过口", route.method, path)
+		}
+	}
+}
