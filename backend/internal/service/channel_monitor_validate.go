@@ -12,6 +12,11 @@ import (
 // monitorProviders 渠道监控支持的全部 provider（与迁移 226 的 CHECK 约束一致）。
 // 不再以 adapter 表为唯一来源：antigravity 没有探活 adapter，但支持配额模式。
 //
+// bytedance 故意不在此列：它的账号只有 Ark 推理用的 api_key，配额路径会落到
+// fetchUncached 的 default 分支 → GetUsageForAccount 的兜底错误（account_usage_service.go:570），
+// 探活路径则没有 ProbeCapability 实现，两种模式都只会稳定失败。加进来等于凭空多一个永红
+// 告警源。复工所需条件与三处白名单同步清单见 docs/channel-monitor-bytedance-deferred.md。
+//
 //nolint:gochecknoglobals // 静态查表，初始化后不变。
 var monitorProviders = map[string]struct{}{
 	MonitorProviderOpenAI:      {},
