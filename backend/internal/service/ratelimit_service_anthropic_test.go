@@ -180,7 +180,7 @@ func TestCalculateAnthropic429ResetTime_UtilizationExactlyOne(t *testing.T) {
 // per-window calculation must yield nil and let Retry-After / fallback decide.
 func TestCalculateAnthropic429ResetTime_NeitherExceeded_ReturnsNil(t *testing.T) {
 	now := time.Now()
-	reset5h := now.Add(3 * time.Hour).Truncate(time.Second)   // sooner
+	reset5h := now.Add(3 * time.Hour).Truncate(time.Second)      // sooner
 	reset7d := now.Add(5 * 24 * time.Hour).Truncate(time.Second) // later
 
 	headers := http.Header{}
