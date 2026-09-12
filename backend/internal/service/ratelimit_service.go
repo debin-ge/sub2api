@@ -1186,7 +1186,7 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 	}
 
 	// 3. Anthropic 平台：尝试解析 per-window 头（5h / 7d），选择实际触发的窗口
-	if result := calculateAnthropic429ResetTime(headers); result != nil {
+	if result := calculateAnthropic429ResetTime(headers, time.Now()); result != nil {
 		s.notifyAccountSchedulingBlocked(account, result.resetAt, "429")
 		if err := s.accountRepo.SetRateLimited(ctx, account.ID, result.resetAt); err != nil {
 			slog.Warn("rate_limit_set_failed", "account_id", account.ID, "error", err)
@@ -1257,15 +1257,18 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 		return
 	}
 
-	// 解析Unix时间戳
-	ts, err := strconv.ParseInt(resetTimestamp, 10, 64)
-	if err != nil {
-		slog.Warn("rate_limit_reset_parse_failed", "reset_timestamp", resetTimestamp, "error", err)
+	// 聚合头同样需要与逐窗口头一致的边界校验（毫秒识别 + 上下界），否则一个异常/重放的
+	// reset 值会绕开 selectAnthropicExhaustedWindow 的校验，在这里被无条件信任写入。
+	resetAt, ok := parseAnthropicAggregateReset(headers, time.Now())
+	if !ok {
+		slog.Warn("rate_limit_reset_parse_failed", "reset_timestamp", resetTimestamp, "account_id", account.ID, "platform", account.Platform)
+		if account.Platform == PlatformAnthropic {
+			s.applyAnthropicRetryAfterOrFallback(ctx, account, headers, responseBody, "anthropic_aggregate_reset_out_of_range")
+			return
+		}
 		s.apply429FallbackRateLimit(ctx, account, "reset_parse_failed", headers, responseBody)
 		return
 	}
-
-	resetAt := time.Unix(ts, 0)
 
 	// 标记限流状态
 	s.notifyAccountSchedulingBlocked(account, resetAt, "429")
@@ -1825,7 +1828,10 @@ func (s *RateLimitService) persistAnthropicFableWindowLimit(ctx context.Context,
 //
 // Returns nil when the per-window headers are absent (caller should fall back to
 // the aggregated anthropic-ratelimit-unified-reset header).
-func calculateAnthropic429ResetTime(headers http.Header) *anthropic429Result {
+//
+// now 由调用方传入（而非内部 time.Now()），与本文件其它 Anthropic 窗口函数
+// （parseAnthropicWindowReset / selectAnthropicExhaustedWindow 等）保持一致的可测试模式。
+func calculateAnthropic429ResetTime(headers http.Header, now time.Time) *anthropic429Result {
 	reset5hStr := headers.Get("anthropic-ratelimit-unified-5h-reset")
 	reset7dStr := headers.Get("anthropic-ratelimit-unified-7d-reset")
 
@@ -1833,18 +1839,21 @@ func calculateAnthropic429ResetTime(headers http.Header) *anthropic429Result {
 		return nil
 	}
 
-	var reset5h, reset7d *time.Time
-	if ts, err := strconv.ParseInt(reset5hStr, 10, 64); err == nil {
-		t := time.Unix(ts, 0)
-		reset5h = &t
-	}
-	if ts, err := strconv.ParseInt(reset7dStr, 10, 64); err == nil {
-		t := time.Unix(ts, 0)
-		reset7d = &t
-	}
+	// 复用与 selectAnthropicExhaustedWindow 相同的校验（毫秒识别 + 上下界），而不是裸
+	// strconv.ParseInt+time.Unix：陈旧/异常的 reset 值曾经把账号误锁 18 天以上
+	// （本次修复的直接诱因），这里必须做同样的合理性检查，不能盲信上游头。
+	reset5h, ok5h := parseAnthropicWindowReset(headers, "5h", now)
+	reset7d, ok7d := parseAnthropicWindowReset(headers, "7d", now)
 
 	is5hExceeded := isAnthropicWindowExceeded(headers, "5h")
 	is7dExceeded := isAnthropicWindowExceeded(headers, "7d")
+
+	if (is5hExceeded && !ok5h) || (is7dExceeded && !ok7d) {
+		slog.Warn("anthropic_429_window_reset_out_of_range",
+			"is_5h_exceeded", is5hExceeded, "ok_5h", ok5h, "raw_5h", reset5hStr,
+			"is_7d_exceeded", is7dExceeded, "ok_7d", ok7d, "raw_7d", reset7dStr,
+		)
+	}
 
 	slog.Info("anthropic_429_window_analysis",
 		"is_5h_exceeded", is5hExceeded,
@@ -1854,18 +1863,26 @@ func calculateAnthropic429ResetTime(headers http.Header) *anthropic429Result {
 	)
 
 	// Select the correct reset time based on which window(s) are exceeded.
+	// 某窗口被标记超限但其 reset 值未通过校验时不采用该值，也不回退到另一个未被标记
+	// 超限的窗口（那个窗口没有被上游标记为耗尽，用它的 reset 时间没有依据）。
 	var chosen *time.Time
 	switch {
 	case is5hExceeded && is7dExceeded:
 		// Both exceeded → prefer 7d (longer cooldown), fall back to 5h
-		chosen = reset7d
-		if chosen == nil {
-			chosen = reset5h
+		switch {
+		case ok7d:
+			chosen = &reset7d
+		case ok5h:
+			chosen = &reset5h
 		}
 	case is5hExceeded:
-		chosen = reset5h
+		if ok5h {
+			chosen = &reset5h
+		}
 	case is7dExceeded:
-		chosen = reset7d
+		if ok7d {
+			chosen = &reset7d
+		}
 	default:
 		// Neither window is flagged as exceeded. Only when the unified status is
 		// explicitly rejected do we still trust the window reset (pick the sooner
@@ -1875,13 +1892,24 @@ func calculateAnthropic429ResetTime(headers http.Header) *anthropic429Result {
 		if !isAnthropicUnifiedStatusRejected(headers) {
 			return nil
 		}
-		chosen = pickSooner(reset5h, reset7d)
+		var a, b *time.Time
+		if ok5h {
+			a = &reset5h
+		}
+		if ok7d {
+			b = &reset7d
+		}
+		chosen = pickSooner(a, b)
 	}
 
 	if chosen == nil {
 		return nil
 	}
-	return &anthropic429Result{resetAt: *chosen, fiveHourReset: reset5h}
+	result := &anthropic429Result{resetAt: *chosen}
+	if ok5h {
+		result.fiveHourReset = &reset5h
+	}
+	return result
 }
 
 // isAnthropicWindowExceeded checks whether a given Anthropic rate-limit window
