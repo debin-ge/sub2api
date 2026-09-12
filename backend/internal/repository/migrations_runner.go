@@ -122,6 +122,13 @@ var migrationChecksumCompatibilityRules = map[string]migrationChecksumCompatibil
 	"219_group_search_price_per_1k.sql":              newMigrationChecksumCompatibilityRule("e86786ebcc3b14206fd2d321380a4e50e80cdadbfcf4962c639255e6a14008db", "df6ffd71b97e30ec2c8fe7b95e15783042dea58c553e32701ee7c42a5619af80"),
 	"218_group_audio_voice_pricing.sql":              newMigrationChecksumCompatibilityRule("40ee9f3a2af0e0a5e99dabc878fd0fe98be1011f26bcfcefcac7197f7081f0e7", "c2a5e5b4ffd6968ad1c10593289fbc11192cdea19fec3ed9bce3a84eff9a8351"),
 	"186_registration_email_suffix_blacklist.sql":    newMigrationChecksumCompatibilityRule("4aa7cd53e2d7d6e9a4895f232a9f92b0ffc82662de03ae00ecee1e549f7f063d", "13371a7c85985afa557c8e9679c596c1af119558274145831dc8b484865f6f29"),
+	// 237 的两条 CHECK 在 main → test 合并后被改成含 'bytedance' 的超集（原因见迁移文件头），
+	// 但这里没有为它登记规则：改动时已核实可达环境（本地 + 测试，均为 test 血脉）都还没有
+	// 应用过 237，不存在需要兼容的历史 checksum。若日后真出现应用过首版的库，启动会报
+	// "migration 237... checksum mismatch (db=... file=...)" 并把所需的历史值直接打出来，
+	// 届时按该值补一条规则即可（那个库也可以直接重建 —— 237 的每一条效果都已由 226 /
+	// 268 / 273 覆盖）。
+	//
 	// 269 首版应用后才发现三处缺陷：回填事件的 from_* 取自 UPDATE 之后的行、
 	// ByteDance 冻结规格 Bug 留下的粘性冲突标记没有清理、两条 CHECK 在已持有
 	// ACCESS EXCLUSIVE 的事务里又叠加了一次全表校验。已应用首版的库保留其历史
