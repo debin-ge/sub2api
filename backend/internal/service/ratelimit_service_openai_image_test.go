@@ -5,6 +5,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -59,6 +60,67 @@ func TestRateLimitService_HandleOpenAIImageRateLimit_DefaultsToOneMinute(t *test
 	require.Equal(t, openAIImageGenerationRateLimitKey, call.scope)
 	require.Equal(t, openAIImageRateLimitReason, call.reason)
 	require.WithinDuration(t, before.Add(time.Minute), call.resetAt, time.Second)
+}
+
+func TestRateLimitService_HandleOpenAIImageRateLimit_RejectsUnboundedRetryAfter(t *testing.T) {
+	tests := []struct {
+		name    string
+		headers http.Header
+		body    string
+	}{
+		{
+			name:    "relative seconds",
+			headers: http.Header{"Retry-After": []string{"172800"}},
+			body:    `{"error":{"message":"Rate limit reached for gpt-image-2-codex (for limit gpt-image)"}}`,
+		},
+		{
+			name:    "absolute date",
+			headers: http.Header{"Retry-After": []string{time.Now().Add(48 * time.Hour).UTC().Format(http.TimeFormat)}},
+			body:    `{"error":{"message":"Rate limit reached for gpt-image-2-codex (for limit gpt-image)"}}`,
+		},
+		{
+			name:    "body duration",
+			headers: http.Header{},
+			body:    `{"error":{"message":"Rate limit reached for gpt-image-2-codex (for limit gpt-image). Please try again in 1441m."}}`,
+		},
+		{
+			name: "codex reset header",
+			headers: http.Header{
+				"x-codex-primary-used-percent":        []string{"100"},
+				"x-codex-primary-reset-after-seconds": []string{"604800"},
+				"x-codex-primary-window-minutes":      []string{"10080"},
+			},
+			body: `{"error":{"message":"Rate limit reached for gpt-image-2-codex (for limit gpt-image)"}}`,
+		},
+		{
+			name:    "body reset timestamp",
+			headers: http.Header{},
+			body:    fmt.Sprintf(`{"error":{"type":"usage_limit_reached","resets_at":%d,"message":"Rate limit reached for gpt-image"}}`, time.Now().Add(8*24*time.Hour).Unix()),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &modelNotFoundAccountRepoStub{}
+			svc := &RateLimitService{accountRepo: repo}
+			account := &Account{ID: 205, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+
+			before := time.Now()
+			handled := svc.HandleOpenAIImageRateLimit(context.Background(), account, http.StatusTooManyRequests, tt.headers, []byte(tt.body))
+
+			require.True(t, handled)
+			require.Len(t, repo.modelRateLimitCalls, 1)
+			resetAt := repo.modelRateLimitCalls[0].resetAt
+			require.GreaterOrEqual(t, resetAt, before.Add(openAIImageRateLimitDefaultCooldown-time.Second))
+			require.LessOrEqual(t, resetAt, before.Add(openAIImageRateLimitDefaultCooldown+2*time.Second))
+		})
+	}
+}
+
+func TestOpenAIImageRateLimitResetAt_AcceptsShortRetryAfter(t *testing.T) {
+	now := time.Now()
+	resetAt := openAIImageRateLimitResetAt(http.Header{"Retry-After": []string{"30"}}, nil)
+	require.WithinDuration(t, now.Add(30*time.Second), resetAt, time.Second)
 }
 
 func TestOpenAIGatewayService_HandleOpenAIAccountUpstreamError_ImageRateLimitDoesNotBlockWholeAccount(t *testing.T) {

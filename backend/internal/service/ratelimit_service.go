@@ -74,9 +74,12 @@ const (
 
 const (
 	openAIImageRateLimitDefaultCooldown = time.Minute
-	openAIImageRateLimitReason          = "openai_image_rate_limited"
-	openAIImageCapabilityLossCooldown   = 30 * time.Minute
-	openAIImageCapabilityLossReason     = "openai_image_capability_lost"
+	// Image rate-limit responses are expected to describe a short per-minute
+	// quota window. Do not persist an unbounded upstream Retry-After value.
+	maxOpenAIImageRateLimitAge        = 24 * time.Hour
+	openAIImageRateLimitReason        = "openai_image_rate_limited"
+	openAIImageCapabilityLossCooldown = 30 * time.Minute
+	openAIImageCapabilityLossReason   = "openai_image_capability_lost"
 )
 
 var openAIImageTryAgainPattern = regexp.MustCompile(`(?i)try again in\s+([0-9]+(?:\.[0-9]+)?)\s*(ms|s|sec|secs|second|seconds|m|min|mins|minute|minutes)`)
@@ -2692,14 +2695,14 @@ func isOpenAIImageRateLimitError(statusCode int, body []byte) bool {
 
 func openAIImageRateLimitResetAt(headers http.Header, body []byte) time.Time {
 	now := time.Now()
-	if resetAt := parseRetryAfterResetTime(headers, now); resetAt != nil && resetAt.After(now) {
+	if resetAt := parseRetryAfterResetTime(headers, now); isValidOpenAIImageResetAt(resetAt, now) {
 		return *resetAt
 	}
-	if resetAt := calculateOpenAI429ResetTime(headers); resetAt != nil && resetAt.After(now) {
+	if resetAt := calculateOpenAI429ResetTime(headers); isValidOpenAIImageResetAt(resetAt, now) {
 		return *resetAt
 	}
 	if resetUnix := parseOpenAIRateLimitResetTime(body); resetUnix != nil {
-		if resetAt := time.Unix(*resetUnix, 0); resetAt.After(now) {
+		if resetAt := time.Unix(*resetUnix, 0); isValidOpenAIImageResetAt(&resetAt, now) {
 			return resetAt
 		}
 	}
@@ -2707,6 +2710,10 @@ func openAIImageRateLimitResetAt(headers http.Header, body []byte) time.Time {
 		return now.Add(cooldown)
 	}
 	return now.Add(openAIImageRateLimitDefaultCooldown)
+}
+
+func isValidOpenAIImageResetAt(resetAt *time.Time, now time.Time) bool {
+	return resetAt != nil && resetAt.After(now) && !resetAt.After(now.Add(maxOpenAIImageRateLimitAge))
 }
 
 func parseRetryAfterResetTime(headers http.Header, now time.Time) *time.Time {
@@ -2739,12 +2746,22 @@ func parseOpenAIImageTryAgainCooldown(body []byte) time.Duration {
 	if err != nil || value <= 0 {
 		return 0
 	}
+	maxCooldown := float64(maxOpenAIImageRateLimitAge)
 	switch strings.ToLower(string(match[2])) {
 	case "ms":
+		if value > maxCooldown/float64(time.Millisecond) {
+			return 0
+		}
 		return time.Duration(value * float64(time.Millisecond))
 	case "s", "sec", "secs", "second", "seconds":
+		if value > maxCooldown/float64(time.Second) {
+			return 0
+		}
 		return time.Duration(value * float64(time.Second))
 	case "m", "min", "mins", "minute", "minutes":
+		if value > maxCooldown/float64(time.Minute) {
+			return 0
+		}
 		return time.Duration(value * float64(time.Minute))
 	default:
 		return 0

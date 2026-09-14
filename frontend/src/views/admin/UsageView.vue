@@ -169,6 +169,8 @@
             mode="admin"
             :start-date="startDate"
             :end-date="endDate"
+            :start-time="filters.start_time"
+            :end-time="filters.end_time"
             :filters="breakdownFilters"
             :model="filters.model"
             @select-key="handleKeyRankingSelectKey"

@@ -99,6 +99,8 @@ const props = defineProps<{
   mode: 'admin' | 'user'
   startDate: string
   endDate: string
+  startTime?: string
+  endTime?: string
   filters: Record<string, unknown>
   model?: string
 }>()
@@ -156,11 +158,15 @@ const load = async () => {
       ...props.filters,
       start_date: props.startDate,
       end_date: props.endDate,
+      start_time: props.startTime,
+      end_time: props.endTime,
       sort_by: sortBy.value,
       limit: limit.value,
     }
+    if (props.model) {
+      (params as ApiKeyBreakdownParams | MyApiKeyBreakdownParams).model = props.model
+    }
     if (props.mode === 'admin') {
-      if (props.model) (params as ApiKeyBreakdownParams).model = props.model
       const res = await getApiKeyBreakdown(params as ApiKeyBreakdownParams)
       if (seq !== reqSeq) return
       items.value = res.api_keys || []

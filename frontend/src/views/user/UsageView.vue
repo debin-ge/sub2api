@@ -223,7 +223,10 @@
         mode="user"
         :start-date="startDate"
         :end-date="endDate"
+        :start-time="startTime"
+        :end-time="endTime"
         :filters="breakdownFilters"
+        :model="filters.model"
         @select-key="handleKeyRankingSelectKey"
       />
     </div>
@@ -462,6 +465,7 @@ const breakdownFilters = computed(() => {
   const f: Record<string, any> = {}
   if (filters.value.api_key_id) f.api_key_id = filters.value.api_key_id
   if (filters.value.group_id) f.group_id = filters.value.group_id
+  if (filters.value.model) f.model = filters.value.model
   if (filters.value.request_type != null) f.request_type = filters.value.request_type
   if (filters.value.native_compaction_v2 != null) f.native_compaction_v2 = filters.value.native_compaction_v2
   if (filters.value.billing_type != null) f.billing_type = filters.value.billing_type
