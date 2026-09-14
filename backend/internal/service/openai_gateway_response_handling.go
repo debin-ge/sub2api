@@ -28,6 +28,7 @@ import (
 // openaiStreamingResult streaming response result
 type openaiStreamingResult struct {
 	usage            *OpenAIUsage
+	semanticOutput   []byte
 	firstTokenMs     *int
 	responseID       string
 	imageCount       int
@@ -38,6 +39,7 @@ type openaiStreamingResult struct {
 type openaiNonStreamingResult struct {
 	*OpenAIUsage
 	usage            *OpenAIUsage
+	semanticOutput   []byte
 	responseID       string
 	imageCount       int
 	imageOutputSizes []string
@@ -346,8 +348,13 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	// both list the same call_id — counting both would ~2× the surcharge).
 	streamSearchSeen := make(map[string]struct{})
 	resultWithUsage := func() *openaiStreamingResult {
+		semanticOutput, _ := buildResponsesOutputJSON(streamOutputAccumulator, streamImageOutputs)
+		if doneOutput, ok := streamDoneItems.BuildOutput(); ok {
+			semanticOutput = doneOutput
+		}
 		return &openaiStreamingResult{
 			usage:            usage,
+			semanticOutput:   semanticOutput,
 			firstTokenMs:     firstTokenMs,
 			responseID:       responseID,
 			imageCount:       imageCounter.Count(),
@@ -1485,6 +1492,13 @@ func openAIUsageFromGJSON(value gjson.Result) (OpenAIUsage, bool) {
 	if !value.Exists() || !value.IsObject() {
 		return OpenAIUsage{}, false
 	}
+	if openAIUsageHasNegativeFields(value) {
+		return OpenAIUsage{}, false
+	}
+	inputValue := value.Get("input_tokens")
+	if !inputValue.Exists() {
+		inputValue = value.Get("prompt_tokens")
+	}
 	inputTokens := value.Get("input_tokens").Int()
 	if inputTokens == 0 {
 		inputTokens = value.Get("prompt_tokens").Int()
@@ -1506,6 +1520,17 @@ func openAIUsageFromGJSON(value gjson.Result) (OpenAIUsage, bool) {
 	}
 	cacheReadTokens := openAICacheReadTokensFromUsage(value)
 	cacheCreationTokens := openAICacheCreationTokensFromUsage(value)
+	// DeepSeek's OpenAI-compatible API reports prompt cache usage as
+	// prompt_cache_hit_tokens / prompt_cache_miss_tokens. InputTokens remains
+	// the aggregate prompt count because the OpenAI billing path subtracts the
+	// cache buckets once before pricing.
+	cacheMissTokens, hasCacheMissTokens := openAIPromptCacheMissTokensFromUsage(value)
+	if !inputValue.Exists() && hasCacheMissTokens {
+		inputTokens = int64(cacheMissTokens + cacheReadTokens + cacheCreationTokens)
+	}
+	if !openAIUsageBreakdownIsConsistent(value, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, cacheMissTokens, hasCacheMissTokens) {
+		return OpenAIUsage{}, false
+	}
 	imageOutputTokens := value.Get("output_tokens_details.image_tokens").Int()
 	if imageOutputTokens == 0 {
 		imageOutputTokens = value.Get("completion_tokens_details.image_tokens").Int()
@@ -1527,8 +1552,58 @@ func openAIUsageFromGJSON(value gjson.Result) (OpenAIUsage, bool) {
 	}, true
 }
 
+func openAIUsageHasNegativeFields(value gjson.Result) bool {
+	for _, path := range []string{
+		"input_tokens", "prompt_tokens", "output_tokens", "completion_tokens", "total_tokens",
+		"prompt_cache_hit_tokens", "prompt_cache_miss_tokens",
+		"cache_read_input_tokens", "cache_read_tokens", "cached_tokens",
+		"cache_creation_input_tokens", "cache_write_tokens", "cache_write_input_tokens", "cache_creation_tokens",
+		"input_tokens_details.cached_tokens", "prompt_tokens_details.cached_tokens",
+		"input_tokens_details.cache_write_tokens", "prompt_tokens_details.cache_write_tokens",
+		"input_tokens_details.cache_creation_tokens", "prompt_tokens_details.cache_creation_tokens",
+	} {
+		field := value.Get(path)
+		if field.Exists() && field.Int() < 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func openAIUsageBreakdownIsConsistent(value gjson.Result, inputTokens, outputTokens int64, cacheReadTokens, cacheCreationTokens, cacheMissTokens int, hasCacheMissTokens bool) bool {
+	if inputTokens < 0 || outputTokens < 0 || cacheReadTokens < 0 || cacheCreationTokens < 0 {
+		return false
+	}
+	cacheTotal := int64(cacheReadTokens) + int64(cacheCreationTokens)
+	// Generic OpenAI-compatible providers have historically used cache fields
+	// whose aggregate is independent of input_tokens. Preserve that compatibility
+	// and apply strict arithmetic only to DeepSeek's native prompt_cache_* pair.
+	if nativeHit := value.Get("prompt_cache_hit_tokens"); nativeHit.Exists() && nativeHit.Int() > inputTokens {
+		return false
+	}
+	if hasCacheMissTokens {
+		if int64(cacheMissTokens)+cacheTotal > inputTokens {
+			return false
+		}
+		if value.Get("prompt_tokens").Exists() || value.Get("input_tokens").Exists() {
+			if int64(cacheMissTokens)+int64(cacheReadTokens)+int64(cacheCreationTokens) != inputTokens {
+				return false
+			}
+		}
+	}
+	if total := value.Get("total_tokens"); total.Exists() && total.Int() >= 0 {
+		if inputTokens+outputTokens != total.Int() {
+			return false
+		}
+	}
+	return true
+}
+
 func openAICacheReadTokensFromUsage(value gjson.Result) int {
 	for _, nested := range []gjson.Result{
+		// DeepSeek native cache breakdown. Prefer this provider-specific field
+		// when present so it cannot be silently replaced by a generic fallback.
+		value.Get("prompt_cache_hit_tokens"),
 		value.Get("input_tokens_details.cached_tokens"),
 		value.Get("prompt_tokens_details.cached_tokens"),
 	} {
@@ -1542,6 +1617,14 @@ func openAICacheReadTokensFromUsage(value gjson.Result) int {
 		value.Get("cache_read_tokens"),
 		value.Get("cached_tokens"),
 	)
+}
+
+func openAIPromptCacheMissTokensFromUsage(value gjson.Result) (int, bool) {
+	result := value.Get("prompt_cache_miss_tokens")
+	if !result.Exists() {
+		return 0, false
+	}
+	return max(int(result.Int()), 0), true
 }
 
 func openAICacheCreationTokensFromUsage(value gjson.Result) int {
@@ -1613,7 +1696,10 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 		if bodyLooksLikeSSE {
 			return s.handleSSEToJSON(resp, c, account, body, originalModel, mappedModel)
 		}
-		return nil, fmt.Errorf("parse response: invalid json response")
+		if !gjson.ValidBytes(body) {
+			return nil, fmt.Errorf("parse response: invalid json response")
+		}
+		usageValue = OpenAIUsage{}
 	}
 	usage := &usageValue
 	logOpenAISuccessMissingUsage(ctx, c, account, resp, usage, "json", false)
@@ -1654,6 +1740,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	return &openaiNonStreamingResult{
 		OpenAIUsage:      usage,
 		usage:            usage,
+		semanticOutput:   extractOpenAISemanticOutputForBilling(body),
 		responseID:       extractOpenAIResponseIDFromJSONBytes(body),
 		imageCount:       countOpenAIResponseImageOutputsFromJSONBytes(body),
 		imageOutputSizes: collectOpenAIResponseImageOutputSizesFromJSONBytes(body),

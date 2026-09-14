@@ -119,16 +119,18 @@ type usageLogPayloadV1 struct {
 	AccountRateMultiplier     *float64 `json:"account_rate_multiplier,omitempty"`
 	AccountStatsCost          *float64 `json:"account_stats_cost,omitempty"`
 
-	BillingType  int8                `json:"billing_type"`
-	BillingState int8                `json:"billing_state"`
-	RequestType  service.RequestType `json:"request_type"`
-	Stream       bool                `json:"stream"`
-	OpenAIWSMode bool                `json:"openai_ws_mode"`
-	DurationMs   *int                `json:"duration_ms,omitempty"`
-	FirstTokenMs *int                `json:"first_token_ms,omitempty"`
-	UserAgent    *string             `json:"user_agent,omitempty"`
-	IPAddress    *string             `json:"ip_address,omitempty"`
-	SessionID    *string             `json:"session_id,omitempty"`
+	BillingType           int8                `json:"billing_type"`
+	BillingState          int8                `json:"billing_state"`
+	UsageSource           service.UsageSource `json:"usage_source"`
+	UsageEstimationMethod string              `json:"usage_estimation_method,omitempty"`
+	RequestType           service.RequestType `json:"request_type"`
+	Stream                bool                `json:"stream"`
+	OpenAIWSMode          bool                `json:"openai_ws_mode"`
+	DurationMs            *int                `json:"duration_ms,omitempty"`
+	FirstTokenMs          *int                `json:"first_token_ms,omitempty"`
+	UserAgent             *string             `json:"user_agent,omitempty"`
+	IPAddress             *string             `json:"ip_address,omitempty"`
+	SessionID             *string             `json:"session_id,omitempty"`
 
 	CacheTTLOverridden bool `json:"cache_ttl_overridden"`
 
@@ -223,6 +225,7 @@ func usageLogToPayloadV1(log *service.UsageLog) usageLogPayloadV1 {
 		LongContextBillingApplied: copyLog.LongContextBillingApplied,
 		AccountRateMultiplier:     copyLog.AccountRateMultiplier, AccountStatsCost: copyLog.AccountStatsCost,
 		BillingType: copyLog.BillingType, BillingState: copyLog.BillingState,
+		UsageSource: copyLog.UsageSource, UsageEstimationMethod: copyLog.UsageEstimationMethod,
 		RequestType: copyLog.RequestType, Stream: copyLog.Stream, OpenAIWSMode: copyLog.OpenAIWSMode,
 		DurationMs: copyLog.DurationMs, FirstTokenMs: copyLog.FirstTokenMs,
 		UserAgent: copyLog.UserAgent, IPAddress: copyLog.IPAddress, SessionID: copyLog.SessionID,
@@ -256,7 +259,8 @@ func (p usageLogPayloadV1) usageLog() *service.UsageLog {
 		TotalCost: p.TotalCost, ActualCost: p.ActualCost, RateMultiplier: p.RateMultiplier,
 		LongContextBillingApplied: p.LongContextBillingApplied,
 		AccountRateMultiplier:     p.AccountRateMultiplier, AccountStatsCost: p.AccountStatsCost,
-		BillingType: p.BillingType, BillingState: p.BillingState, RequestType: p.RequestType,
+		BillingType: p.BillingType, BillingState: p.BillingState,
+		UsageSource: p.UsageSource, UsageEstimationMethod: p.UsageEstimationMethod, RequestType: p.RequestType,
 		Stream: p.Stream, OpenAIWSMode: p.OpenAIWSMode, DurationMs: p.DurationMs,
 		FirstTokenMs: p.FirstTokenMs, UserAgent: p.UserAgent, IPAddress: p.IPAddress,
 		SessionID: p.SessionID, CacheTTLOverridden: p.CacheTTLOverridden,
@@ -615,9 +619,11 @@ type usageLogBillingComparableV1 struct {
 	AccountRateMultiplier     *float64
 	AccountStatsCost          *float64
 
-	BillingType  int8
-	BillingState int8
-	RequestType  service.RequestType
+	BillingType           int8
+	BillingState          int8
+	UsageSource           service.UsageSource
+	UsageEstimationMethod string
+	RequestType           service.RequestType
 
 	CacheTTLOverridden bool
 	ImageCount         int
@@ -701,7 +707,8 @@ func usageLogPayloadBillingComparable(p usageLogPayloadV1) usageLogBillingCompar
 		LongContextBillingApplied: p.LongContextBillingApplied,
 		AccountRateMultiplier:     canonicalUsageBillingNumericPtr(p.AccountRateMultiplier, 4),
 		AccountStatsCost:          canonicalUsageBillingNumericPtr(p.AccountStatsCost, 10),
-		BillingType:               p.BillingType, BillingState: p.BillingState, RequestType: requestType,
+		BillingType:               p.BillingType, BillingState: p.BillingState,
+		UsageSource: p.UsageSource, UsageEstimationMethod: p.UsageEstimationMethod, RequestType: requestType,
 		CacheTTLOverridden: p.CacheTTLOverridden, ImageCount: p.ImageCount,
 		ImageSize: optionalStringValue(p.ImageSize), ImageInputSize: optionalStringValue(p.ImageInputSize),
 		ImageOutputSize: optionalStringValue(p.ImageOutputSize), ImageSizeSource: optionalStringValue(p.ImageSizeSource),

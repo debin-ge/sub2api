@@ -11,6 +11,30 @@ const (
 	BillingTypeSubscription int8 = 1 // 订阅套餐
 )
 
+// UsageSource records where the token usage used for billing came from.
+// Historical rows retain the zero value for backwards compatibility.
+type UsageSource int8
+
+const (
+	UsageSourceUnknown   UsageSource = 0
+	UsageSourceUpstream  UsageSource = 1
+	UsageSourceEstimated UsageSource = 2
+	UsageSourceMinimum   UsageSource = 3
+)
+
+func (s UsageSource) String() string {
+	switch s {
+	case UsageSourceUpstream:
+		return "upstream"
+	case UsageSourceEstimated:
+		return "estimated"
+	case UsageSourceMinimum:
+		return "minimum"
+	default:
+		return "unknown"
+	}
+}
+
 // BillingState 标记一条用量记录的结算状态。
 //
 // 未定价模型采用 fail-closed 准入策略：请求在转发上游之前就应被拒绝。但准入
@@ -194,6 +218,9 @@ type UsageLog struct {
 	AccountStatsCost *float64
 
 	BillingType int8
+	// UsageSource records whether billing used upstream usage or a local fallback.
+	UsageSource           UsageSource
+	UsageEstimationMethod string
 	// BillingState 结算状态，取值见 BillingStateSettled / BillingStatePricingUnavailable /
 	// BillingStatePricingRecovered。零值即"已结算"，历史行天然兼容。
 	BillingState       int8

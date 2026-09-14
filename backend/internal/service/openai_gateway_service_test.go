@@ -534,6 +534,36 @@ func TestExtractOpenAIUsage_ReadsClineDataEnvelope(t *testing.T) {
 	require.Equal(t, 4, usage.CacheReadInputTokens)
 }
 
+func TestExtractOpenAIUsage_ReadsDeepSeekPromptCacheBreakdown(t *testing.T) {
+	body := []byte(`{"usage":{"prompt_tokens":100000,"prompt_cache_miss_tokens":5000,"prompt_cache_hit_tokens":95000,"completion_tokens":1000,"total_tokens":101000}}`)
+
+	usage, ok := extractOpenAIUsageFromJSONBytes(body)
+
+	require.True(t, ok)
+	require.Equal(t, 100000, usage.InputTokens, "OpenAI usage keeps aggregate prompt tokens")
+	require.Equal(t, 95000, usage.CacheReadInputTokens)
+	require.Equal(t, 1000, usage.OutputTokens)
+
+	// When the provider omits prompt_tokens, the native miss/hit breakdown is
+	// sufficient to reconstruct the aggregate input count.
+	body = []byte(`{"usage":{"prompt_cache_miss_tokens":5000,"prompt_cache_hit_tokens":95000,"completion_tokens":1000}}`)
+	usage, ok = extractOpenAIUsageFromJSONBytes(body)
+	require.True(t, ok)
+	require.Equal(t, 100000, usage.InputTokens)
+	require.Equal(t, 95000, usage.CacheReadInputTokens)
+}
+
+func TestExtractOpenAIUsageRejectsInconsistentPromptCacheBreakdown(t *testing.T) {
+	for _, body := range []string{
+		`{"usage":{"prompt_tokens":100,"prompt_cache_miss_tokens":10,"prompt_cache_hit_tokens":95,"completion_tokens":1}}`,
+		`{"usage":{"prompt_tokens":100,"prompt_cache_hit_tokens":10,"completion_tokens":1,"total_tokens":999}}`,
+		`{"usage":{"prompt_tokens":100,"prompt_cache_hit_tokens":-1,"completion_tokens":1}}`,
+	} {
+		usage, ok := extractOpenAIUsageFromJSONBytes([]byte(body))
+		require.False(t, ok, "inconsistent usage must not reach billing: %s parsed=%+v", body, usage)
+	}
+}
+
 func TestExtractOpenAIUsage_ReadsWrappedResponsesDataEnvelope(t *testing.T) {
 	body := []byte(`{"data":{"response":{"usage":{"input_tokens":11,"output_tokens":5,"total_tokens":16,"input_tokens_details":{"cached_tokens":2}}}}}`)
 

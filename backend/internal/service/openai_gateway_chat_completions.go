@@ -67,7 +67,11 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 		writeChatCompletionsError(c, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return nil, err
 	}
-	return s.forwardAsChatCompletions(ctx, c, account, body, promptCacheKey, defaultMappedModel, false)
+	result, err := s.forwardAsChatCompletions(ctx, c, account, body, promptCacheKey, defaultMappedModel, false)
+	if result != nil && err == nil {
+		applyOpenAIUsageFallback(result, result.UpstreamModel, body)
+	}
+	return result, err
 }
 
 func (s *OpenAIGatewayService) forwardAsChatCompletions(
@@ -603,6 +607,7 @@ func (s *OpenAIGatewayService) handleChatBufferedStreamingResponse(
 		UpstreamResponseServiceTier:   observedUpstreamResponseServiceTier(c),
 		Stream:                        false,
 		Duration:                      time.Since(startTime),
+		FallbackSemanticOutput:        func() []byte { value, _ := json.Marshal(finalResponse); return value }(),
 	}
 	// Grok chat bridge: bill native search tools found in the terminal Responses body.
 	if account != nil && account.IsGrok() && finalResponse != nil {
