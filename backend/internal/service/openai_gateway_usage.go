@@ -20,19 +20,22 @@ import (
 
 // OpenAIRecordUsageInput input for recording usage
 type OpenAIRecordUsageInput struct {
-	Result             *OpenAIForwardResult
-	APIKey             *APIKey
-	User               *User
-	Account            *Account
-	Subscription       *UserSubscription
-	InboundEndpoint    string
-	UpstreamEndpoint   string
-	UserAgent          string // 请求的 User-Agent
-	IPAddress          string // 请求的客户端 IP 地址
-	SessionID          string // 客户端显式会话标识（session_id / X-Session-Id 等请求头），仅用于用量行会话关联
-	RequestPayloadHash string
-	APIKeyService      APIKeyQuotaUpdater
-	QuotaPlatform      string // user×platform quota platform resolved by the handler before async billing.
+	Result *OpenAIForwardResult
+	// FallbackRequestBody is the transformed request body retained only for
+	// local usage estimation when the upstream omitted usage.
+	FallbackRequestBody []byte
+	APIKey              *APIKey
+	User                *User
+	Account             *Account
+	Subscription        *UserSubscription
+	InboundEndpoint     string
+	UpstreamEndpoint    string
+	UserAgent           string // 请求的 User-Agent
+	IPAddress           string // 请求的客户端 IP 地址
+	SessionID           string // 客户端显式会话标识（session_id / X-Session-Id 等请求头），仅用于用量行会话关联
+	RequestPayloadHash  string
+	APIKeyService       APIKeyQuotaUpdater
+	QuotaPlatform       string // user×platform quota platform resolved by the handler before async billing.
 	// BillingKind 是路由在转发前就已确定的结算口径（token/image/video/web_search）。
 	// 由入口显式传下来，而不是在这里从 result 的字段反推：上游少回一个 image_count
 	// 不该把按张计费的请求变成按 token 计费，进而在没有 token 价时变成免费。
@@ -97,6 +100,8 @@ func (s *OpenAIGatewayService) RecordCyberPolicyUsageLog(ctx context.Context, in
 			InputTokens:  in.InputTokens,
 			OutputTokens: in.OutputTokens,
 		},
+		UsageSource:           UsageSourceUpstream,
+		UsageEstimationMethod: "upstream",
 	}
 	err := s.RecordUsage(ctx, &OpenAIRecordUsageInput{
 		Result:             result,
@@ -185,6 +190,38 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	if s.billingService == nil {
 		return fmt.Errorf("%w: OpenAI billing service is nil", ErrDurableUsageBillingRequired)
 	}
+	if result.UsageSource == UsageSourceUnknown && (input.BillingKind == BillingKindToken || input.BillingKind == BillingKindUnspecified ||
+		(input.BillingKind == BillingKindImage && result.ImageBillingPlan != nil && result.ImageBillingPlan.Mode == BillingModeToken)) {
+		if openAIUsageHasTokens(&result.Usage) {
+			result.UsageSource = UsageSourceUpstream
+			result.UsageEstimationMethod = "upstream"
+		} else {
+			fallbackBody := result.FallbackRequestBody
+			if len(fallbackBody) == 0 {
+				fallbackBody = input.FallbackRequestBody
+			}
+			if len(fallbackBody) > 0 {
+				usage, source, method := EstimateOpenAIUsageFallback(result.Model, fallbackBody, result.FallbackSemanticOutput)
+				result.Usage = usage
+				result.UsageSource = source
+				result.UsageEstimationMethod = method
+			} else {
+				result.UsageSource = UsageSourceMinimum
+				result.UsageEstimationMethod = "minimum"
+				if result.Usage.InputTokens < fallbackUsageMinimumTokens {
+					result.Usage.InputTokens = fallbackUsageMinimumTokens
+				}
+			}
+		}
+		logger.L().Warn("openai_usage.missing_usage_fallback",
+			zap.String("request_id", result.RequestID),
+			zap.String("model", result.Model),
+			zap.Int64("account_id", accountIDForLog(input.Account)),
+			zap.String("usage_source", result.UsageSource.String()),
+			zap.String("usage_estimation_method", result.UsageEstimationMethod),
+		)
+	}
+	result.FallbackRequestBody = nil
 	if s.rateLimitService != nil && input.Account.Platform == PlatformOpenAI {
 		s.rateLimitService.ResetOpenAI403Counter(ctx, input.Account.ID)
 	}
@@ -485,6 +522,8 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		ImageSizeSource:          optionalTrimmedStringPtr(result.ImageSizeSource),
 		ImageSizeBreakdown:       result.ImageSizeBreakdown,
 		NativeCompactionV2:       input.NativeCompactionV2,
+		UsageSource:              result.UsageSource,
+		UsageEstimationMethod:    strings.TrimSpace(result.UsageEstimationMethod),
 	}
 	// 视频用量的判定同样以入口口径优先：videos_* 路由发出去的请求就是视频用量，
 	// 不取决于上游有没有回 video_count（回不回都已经产生了成本）。

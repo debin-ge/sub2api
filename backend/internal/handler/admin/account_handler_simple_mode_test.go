@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -170,6 +171,29 @@ func TestAccountHandlerSimpleModeLitePreservesCompactShapeAndETag(t *testing.T) 
 	req.Header.Set("If-None-Match", res.Header().Get("ETag"))
 	r.ServeHTTP(notModified, req)
 	require.Equal(t, http.StatusNotModified, notModified.Code)
+}
+
+func TestAccountHandlerSimpleModeHidesSchedulerGroupScores(t *testing.T) {
+	h := NewAccountHandler(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	h.cfg = &config.Config{RunMode: config.RunModeSimple}
+	groupID := int64(9)
+	groupPriority := 4
+	raw, err := json.Marshal(AccountWithConcurrency{
+		Account:    &dto.Account{},
+		simpleMode: true,
+		SchedulerScore: &AccountSchedulerScore{
+			BaseScore: 1,
+		},
+		SchedulerScores: []AccountSchedulerGroupScore{{
+			GroupID:       &groupID,
+			GroupName:     "historical composite",
+			GroupPriority: &groupPriority,
+		}},
+	})
+	require.NoError(t, err)
+	require.Contains(t, string(raw), `"scheduler_score"`)
+	require.NotContains(t, string(raw), `"scheduler_scores"`)
+	require.NotContains(t, string(raw), "historical composite")
 }
 
 func TestAccountHandlerSimpleModeRejectsCompositeGroupBindingsBeforeWrites(t *testing.T) {

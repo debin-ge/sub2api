@@ -3949,6 +3949,38 @@ func TestBuildGrokSchedulerExtraUpdates_FeedsThresholdEvaluator(t *testing.T) {
 	require.NotNil(t, decision.Until)
 }
 
+// TestBuildGrokSchedulerExtraUpdates_CapsOutOfRangeReset 回归测试：上游 reset 头脏掉
+// （例如相对毫秒被当成相对秒）时，写入侧必须钳制到 grokMaxSchedulingResetHorizon，
+// 过去时刻则完全不写。读侧 grokThresholdCandidates 的 48h 上限是第二道防线。
+func TestBuildGrokSchedulerExtraUpdates_CapsOutOfRangeReset(t *testing.T) {
+	int64p := func(v int64) *int64 { return &v }
+	now := time.Now()
+
+	farFuture := now.Add(365 * 24 * time.Hour).Unix()
+	updates := buildGrokSchedulerExtraUpdates(&xai.QuotaSnapshot{
+		Tokens: &xai.QuotaWindow{Limit: int64p(1000), Remaining: int64p(0), ResetUnix: &farFuture},
+	})
+	require.NotNil(t, updates)
+	raw, ok := updates["grok_sched_reset_at"].(string)
+	require.True(t, ok, "越界 reset 仍应写入被钳制后的值")
+	capped, err := time.Parse(time.RFC3339, raw)
+	require.NoError(t, err)
+	require.False(t, capped.After(now.Add(grokMaxSchedulingResetHorizon+time.Minute)), "reset 必须被钳制到 horizon 内")
+
+	// 钳制后的值仍须通过读侧的边界校验，否则等于把账号误停调的窗口丢掉。
+	account := &Account{Platform: PlatformGrok, Extra: updates}
+	for _, candidate := range grokThresholdCandidates(account, now) {
+		require.NotNil(t, candidate.until)
+	}
+
+	past := now.Add(-time.Hour).Unix()
+	updates = buildGrokSchedulerExtraUpdates(&xai.QuotaSnapshot{
+		Tokens: &xai.QuotaWindow{Limit: int64p(1000), Remaining: int64p(0), ResetUnix: &past},
+	})
+	require.NotNil(t, updates)
+	require.NotContains(t, updates, "grok_sched_reset_at", "过去时刻不得写入")
+}
+
 func TestBuildGrokSchedulerExtraUpdates_NilWhenNoQuotaWindows(t *testing.T) {
 	require.Nil(t, buildGrokSchedulerExtraUpdates(&xai.QuotaSnapshot{}))
 	require.Nil(t, buildGrokSchedulerExtraUpdates(nil))

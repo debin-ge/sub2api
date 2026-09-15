@@ -132,8 +132,14 @@ func cnProviderQuotaSnapshotReset(account *Account, now time.Time) *time.Time {
 	}
 	provider := account.Platform
 	var earliest *time.Time
-	for _, suffix := range []string{cnExtraSuffix5hReset, cnExtraSuffixWeeklyReset} {
-		t := parseSchedulingResetAt(account.Extra[cnExtraKey(provider, suffix)])
+	for _, entry := range []struct {
+		suffix string
+		maxAge time.Duration
+	}{
+		{cnExtraSuffix5hReset, schedulingMax5hResetAge},
+		{cnExtraSuffixWeeklyReset, schedulingMax7dResetAge},
+	} {
+		t := parseSchedulingResetAt(account.Extra[cnExtraKey(provider, entry.suffix)], now, entry.maxAge)
 		if t == nil || !t.After(now) {
 			continue
 		}

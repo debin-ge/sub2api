@@ -508,6 +508,30 @@ func TestOpenAICacheCreationTokensFromUsageNestedZeroWins(t *testing.T) {
 	require.Zero(t, openAICacheCreationTokensFromUsage(usage))
 }
 
+func TestParseUsageAndAccumulateReadsDeepSeekPromptCacheBreakdown(t *testing.T) {
+	t.Parallel()
+
+	state := &relayState{}
+	got := parseUsageAndAccumulate(state, []byte(`{"type":"response.completed","usage":{"prompt_tokens":100000,"prompt_cache_miss_tokens":5000,"prompt_cache_hit_tokens":95000,"completion_tokens":1000,"total_tokens":101000}}`), "response.completed", nil)
+
+	require.Equal(t, Usage{InputTokens: 100000, OutputTokens: 1000, CacheReadInputTokens: 95000}, got)
+}
+
+func TestParseUsageAndAccumulateRejectsInconsistentPromptCacheBreakdown(t *testing.T) {
+	t.Parallel()
+
+	for _, message := range []string{
+		`{"type":"response.completed","usage":{"prompt_tokens":100,"prompt_cache_miss_tokens":10,"prompt_cache_hit_tokens":95,"completion_tokens":1}}`,
+		`{"type":"response.completed","usage":{"prompt_tokens":100,"prompt_cache_hit_tokens":101,"completion_tokens":1}}`,
+		`{"type":"response.completed","usage":{"prompt_tokens":100,"prompt_cache_hit_tokens":10,"completion_tokens":1,"total_tokens":999}}`,
+		`{"type":"response.completed","usage":{"prompt_tokens":100,"prompt_cache_hit_tokens":-1,"completion_tokens":1}}`,
+	} {
+		state := &relayState{}
+		got := parseUsageAndAccumulate(state, []byte(message), "response.completed", nil)
+		require.Equal(t, Usage{}, got, "inconsistent usage must not be accumulated: %s", message)
+	}
+}
+
 func TestEmitTurnCompleteCoverage(t *testing.T) {
 	t.Parallel()
 

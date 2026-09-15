@@ -245,6 +245,9 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 	if result != nil {
 		addOpenAIUsage(&result.Usage, bridgeUsage)
 		result.UpstreamEndpoint = grokChatRawEndpoint
+		if forwardErr == nil {
+			applyOpenAIUsageFallback(result, upstreamModel, body)
+		}
 	}
 	return result, forwardErr
 }

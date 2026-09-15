@@ -644,6 +644,47 @@ func (_u *UsageLogUpdate) AddBillingType(v int8) *UsageLogUpdate {
 	return _u
 }
 
+// SetUsageSource sets the "usage_source" field.
+func (_u *UsageLogUpdate) SetUsageSource(v int8) *UsageLogUpdate {
+	_u.mutation.ResetUsageSource()
+	_u.mutation.SetUsageSource(v)
+	return _u
+}
+
+// SetNillableUsageSource sets the "usage_source" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableUsageSource(v *int8) *UsageLogUpdate {
+	if v != nil {
+		_u.SetUsageSource(*v)
+	}
+	return _u
+}
+
+// AddUsageSource adds value to the "usage_source" field.
+func (_u *UsageLogUpdate) AddUsageSource(v int8) *UsageLogUpdate {
+	_u.mutation.AddUsageSource(v)
+	return _u
+}
+
+// SetUsageEstimationMethod sets the "usage_estimation_method" field.
+func (_u *UsageLogUpdate) SetUsageEstimationMethod(v string) *UsageLogUpdate {
+	_u.mutation.SetUsageEstimationMethod(v)
+	return _u
+}
+
+// SetNillableUsageEstimationMethod sets the "usage_estimation_method" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableUsageEstimationMethod(v *string) *UsageLogUpdate {
+	if v != nil {
+		_u.SetUsageEstimationMethod(*v)
+	}
+	return _u
+}
+
+// ClearUsageEstimationMethod clears the value of the "usage_estimation_method" field.
+func (_u *UsageLogUpdate) ClearUsageEstimationMethod() *UsageLogUpdate {
+	_u.mutation.ClearUsageEstimationMethod()
+	return _u
+}
+
 // SetBillingState sets the "billing_state" field.
 func (_u *UsageLogUpdate) SetBillingState(v int8) *UsageLogUpdate {
 	_u.mutation.ResetBillingState()
@@ -1097,6 +1138,11 @@ func (_u *UsageLogUpdate) check() error {
 			return &ValidationError{Name: "billing_mode", err: fmt.Errorf(`ent: validator failed for field "UsageLog.billing_mode": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.UsageEstimationMethod(); ok {
+		if err := usagelog.UsageEstimationMethodValidator(v); err != nil {
+			return &ValidationError{Name: "usage_estimation_method", err: fmt.Errorf(`ent: validator failed for field "UsageLog.usage_estimation_method": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.UserAgent(); ok {
 		if err := usagelog.UserAgentValidator(v); err != nil {
 			return &ValidationError{Name: "user_agent", err: fmt.Errorf(`ent: validator failed for field "UsageLog.user_agent": %w`, err)}
@@ -1308,6 +1354,18 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.AddedBillingType(); ok {
 		_spec.AddField(usagelog.FieldBillingType, field.TypeInt8, value)
+	}
+	if value, ok := _u.mutation.UsageSource(); ok {
+		_spec.SetField(usagelog.FieldUsageSource, field.TypeInt8, value)
+	}
+	if value, ok := _u.mutation.AddedUsageSource(); ok {
+		_spec.AddField(usagelog.FieldUsageSource, field.TypeInt8, value)
+	}
+	if value, ok := _u.mutation.UsageEstimationMethod(); ok {
+		_spec.SetField(usagelog.FieldUsageEstimationMethod, field.TypeString, value)
+	}
+	if _u.mutation.UsageEstimationMethodCleared() {
+		_spec.ClearField(usagelog.FieldUsageEstimationMethod, field.TypeString)
 	}
 	if value, ok := _u.mutation.BillingState(); ok {
 		_spec.SetField(usagelog.FieldBillingState, field.TypeInt8, value)
@@ -2185,6 +2243,47 @@ func (_u *UsageLogUpdateOne) AddBillingType(v int8) *UsageLogUpdateOne {
 	return _u
 }
 
+// SetUsageSource sets the "usage_source" field.
+func (_u *UsageLogUpdateOne) SetUsageSource(v int8) *UsageLogUpdateOne {
+	_u.mutation.ResetUsageSource()
+	_u.mutation.SetUsageSource(v)
+	return _u
+}
+
+// SetNillableUsageSource sets the "usage_source" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableUsageSource(v *int8) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetUsageSource(*v)
+	}
+	return _u
+}
+
+// AddUsageSource adds value to the "usage_source" field.
+func (_u *UsageLogUpdateOne) AddUsageSource(v int8) *UsageLogUpdateOne {
+	_u.mutation.AddUsageSource(v)
+	return _u
+}
+
+// SetUsageEstimationMethod sets the "usage_estimation_method" field.
+func (_u *UsageLogUpdateOne) SetUsageEstimationMethod(v string) *UsageLogUpdateOne {
+	_u.mutation.SetUsageEstimationMethod(v)
+	return _u
+}
+
+// SetNillableUsageEstimationMethod sets the "usage_estimation_method" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableUsageEstimationMethod(v *string) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetUsageEstimationMethod(*v)
+	}
+	return _u
+}
+
+// ClearUsageEstimationMethod clears the value of the "usage_estimation_method" field.
+func (_u *UsageLogUpdateOne) ClearUsageEstimationMethod() *UsageLogUpdateOne {
+	_u.mutation.ClearUsageEstimationMethod()
+	return _u
+}
+
 // SetBillingState sets the "billing_state" field.
 func (_u *UsageLogUpdateOne) SetBillingState(v int8) *UsageLogUpdateOne {
 	_u.mutation.ResetBillingState()
@@ -2651,6 +2750,11 @@ func (_u *UsageLogUpdateOne) check() error {
 			return &ValidationError{Name: "billing_mode", err: fmt.Errorf(`ent: validator failed for field "UsageLog.billing_mode": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.UsageEstimationMethod(); ok {
+		if err := usagelog.UsageEstimationMethodValidator(v); err != nil {
+			return &ValidationError{Name: "usage_estimation_method", err: fmt.Errorf(`ent: validator failed for field "UsageLog.usage_estimation_method": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.UserAgent(); ok {
 		if err := usagelog.UserAgentValidator(v); err != nil {
 			return &ValidationError{Name: "user_agent", err: fmt.Errorf(`ent: validator failed for field "UsageLog.user_agent": %w`, err)}
@@ -2879,6 +2983,18 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	}
 	if value, ok := _u.mutation.AddedBillingType(); ok {
 		_spec.AddField(usagelog.FieldBillingType, field.TypeInt8, value)
+	}
+	if value, ok := _u.mutation.UsageSource(); ok {
+		_spec.SetField(usagelog.FieldUsageSource, field.TypeInt8, value)
+	}
+	if value, ok := _u.mutation.AddedUsageSource(); ok {
+		_spec.AddField(usagelog.FieldUsageSource, field.TypeInt8, value)
+	}
+	if value, ok := _u.mutation.UsageEstimationMethod(); ok {
+		_spec.SetField(usagelog.FieldUsageEstimationMethod, field.TypeString, value)
+	}
+	if _u.mutation.UsageEstimationMethodCleared() {
+		_spec.ClearField(usagelog.FieldUsageEstimationMethod, field.TypeString)
 	}
 	if value, ok := _u.mutation.BillingState(); ok {
 		_spec.SetField(usagelog.FieldBillingState, field.TypeInt8, value)

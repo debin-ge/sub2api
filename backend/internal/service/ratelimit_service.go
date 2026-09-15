@@ -74,9 +74,12 @@ const (
 
 const (
 	openAIImageRateLimitDefaultCooldown = time.Minute
-	openAIImageRateLimitReason          = "openai_image_rate_limited"
-	openAIImageCapabilityLossCooldown   = 30 * time.Minute
-	openAIImageCapabilityLossReason     = "openai_image_capability_lost"
+	// Image rate-limit responses are expected to describe a short per-minute
+	// quota window. Do not persist an unbounded upstream Retry-After value.
+	maxOpenAIImageRateLimitAge        = 24 * time.Hour
+	openAIImageRateLimitReason        = "openai_image_rate_limited"
+	openAIImageCapabilityLossCooldown = 30 * time.Minute
+	openAIImageCapabilityLossReason   = "openai_image_capability_lost"
 )
 
 var openAIImageTryAgainPattern = regexp.MustCompile(`(?i)try again in\s+([0-9]+(?:\.[0-9]+)?)\s*(ms|s|sec|secs|second|seconds|m|min|mins|minute|minutes)`)
@@ -1186,7 +1189,7 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 	}
 
 	// 3. Anthropic 平台：尝试解析 per-window 头（5h / 7d），选择实际触发的窗口
-	if result := calculateAnthropic429ResetTime(headers); result != nil {
+	if result := calculateAnthropic429ResetTime(headers, time.Now()); result != nil {
 		s.notifyAccountSchedulingBlocked(account, result.resetAt, "429")
 		if err := s.accountRepo.SetRateLimited(ctx, account.ID, result.resetAt); err != nil {
 			slog.Warn("rate_limit_set_failed", "account_id", account.ID, "error", err)
@@ -1257,15 +1260,18 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 		return
 	}
 
-	// 解析Unix时间戳
-	ts, err := strconv.ParseInt(resetTimestamp, 10, 64)
-	if err != nil {
-		slog.Warn("rate_limit_reset_parse_failed", "reset_timestamp", resetTimestamp, "error", err)
+	// 聚合头同样需要与逐窗口头一致的边界校验（毫秒识别 + 上下界），否则一个异常/重放的
+	// reset 值会绕开 selectAnthropicExhaustedWindow 的校验，在这里被无条件信任写入。
+	resetAt, ok := parseAnthropicAggregateReset(headers, time.Now())
+	if !ok {
+		slog.Warn("rate_limit_reset_parse_failed", "reset_timestamp", resetTimestamp, "account_id", account.ID, "platform", account.Platform)
+		if account.Platform == PlatformAnthropic {
+			s.applyAnthropicRetryAfterOrFallback(ctx, account, headers, responseBody, "anthropic_aggregate_reset_out_of_range")
+			return
+		}
 		s.apply429FallbackRateLimit(ctx, account, "reset_parse_failed", headers, responseBody)
 		return
 	}
-
-	resetAt := time.Unix(ts, 0)
 
 	// 标记限流状态
 	s.notifyAccountSchedulingBlocked(account, resetAt, "429")
@@ -1531,6 +1537,27 @@ func clampRateLimit429CooldownSeconds(seconds int) int {
 	return seconds
 }
 
+const (
+	// maxCodex5hResetAge 是 Codex 5h 窗口 reset 相对秒数的合理性上限（窗口长度 + 余量）。
+	maxCodex5hResetAge = 6 * time.Hour
+	// maxCodex7dResetAge 是 Codex 7d 窗口 reset 相对秒数的合理性上限（窗口长度 + 余量）。
+	maxCodex7dResetAge = 8 * 24 * time.Hour
+)
+
+// boundedCodexWindowReset 把 Codex 响应头里的相对秒数转换为绝对时间并做边界校验。
+// 上游一旦返回单位错误（例如毫秒当秒）或异常巨大的值，这里返回 nil，
+// 调用方据此落到各自已有的兜底冷却，而不是把账号锁到几十年后。
+func boundedCodexWindowReset(resetSeconds *int, now time.Time, maxAge time.Duration) *time.Time {
+	if resetSeconds == nil {
+		return nil
+	}
+	resetAt, ok := boundRelativeSeconds(int64(*resetSeconds), now, maxAge)
+	if !ok {
+		return nil
+	}
+	return &resetAt
+}
+
 // calculateOpenAI429ResetTime 从 OpenAI 429 响应头计算正确的重置时间
 // 返回 nil 表示无法从响应头中确定重置时间
 func calculateOpenAI429ResetTime(headers http.Header) *time.Time {
@@ -1552,14 +1579,18 @@ func calculateOpenAI429ResetTime(headers http.Header) *time.Time {
 
 	// 优先使用被触发限制的重置时间
 	if is7dExhausted && normalized.Reset7dSeconds != nil {
-		resetAt := now.Add(time.Duration(*normalized.Reset7dSeconds) * time.Second)
-		slog.Info("openai_429_7d_limit_exhausted", "reset_after_seconds", *normalized.Reset7dSeconds, "reset_at", resetAt)
-		return &resetAt
+		if resetAt := boundedCodexWindowReset(normalized.Reset7dSeconds, now, maxCodex7dResetAge); resetAt != nil {
+			slog.Info("openai_429_7d_limit_exhausted", "reset_after_seconds", *normalized.Reset7dSeconds, "reset_at", *resetAt)
+			return resetAt
+		}
+		slog.Warn("openai_429_window_reset_out_of_range", "window", "7d", "reset_after_seconds", *normalized.Reset7dSeconds)
 	}
 	if is5hExhausted && normalized.Reset5hSeconds != nil {
-		resetAt := now.Add(time.Duration(*normalized.Reset5hSeconds) * time.Second)
-		slog.Info("openai_429_5h_limit_exhausted", "reset_after_seconds", *normalized.Reset5hSeconds, "reset_at", resetAt)
-		return &resetAt
+		if resetAt := boundedCodexWindowReset(normalized.Reset5hSeconds, now, maxCodex5hResetAge); resetAt != nil {
+			slog.Info("openai_429_5h_limit_exhausted", "reset_after_seconds", *normalized.Reset5hSeconds, "reset_at", *resetAt)
+			return resetAt
+		}
+		slog.Warn("openai_429_window_reset_out_of_range", "window", "5h", "reset_after_seconds", *normalized.Reset5hSeconds)
 	}
 
 	// 未达到100%时，reset-after 只代表窗口信息，不能证明账号配额耗尽。
@@ -1623,17 +1654,10 @@ func parseAnthropicWindowReset(headers http.Header, window string, now time.Time
 	return parseAnthropicResetTimestamp(headers.Get("anthropic-ratelimit-unified-"+window+"-reset"), now, maxAge)
 }
 
-// parseAnthropicResetTimestamp 解析 Anthropic reset 头的 Unix 时间戳（自动识别毫秒），
-// 并校验落在 (now, now+maxAge] 的合理区间内。
-func parseAnthropicResetTimestamp(raw string, now time.Time, maxAge time.Duration) (time.Time, bool) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return time.Time{}, false
-	}
-	ts, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil {
-		return time.Time{}, false
-	}
+// boundUnixSeconds 校验一个 Unix 秒级时间戳（自动识别毫秒）是否落在 (now, now+maxAge] 内。
+// 上游返回单位错误或异常巨大的值时必须判定为不可信，否则会被原样写入
+// accounts.rate_limit_reset_at 等字段，把账号误锁数天甚至数年。
+func boundUnixSeconds(ts int64, now time.Time, maxAge time.Duration) (time.Time, bool) {
 	if ts > 1e11 {
 		ts = ts / 1000
 	}
@@ -1642,6 +1666,34 @@ func parseAnthropicResetTimestamp(raw string, now time.Time, maxAge time.Duratio
 		return time.Time{}, false
 	}
 	return resetAt, true
+}
+
+// parseBoundedUnixTimestamp 解析字符串形式的 Unix 时间戳并校验边界。
+func parseBoundedUnixTimestamp(raw string, now time.Time, maxAge time.Duration) (time.Time, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}, false
+	}
+	ts, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return boundUnixSeconds(ts, now, maxAge)
+}
+
+// boundRelativeSeconds 校验一个"相对当前时间的秒数"是否合理。先校验量级再做加法，
+// 避免巨大的上游值在 time.Duration(seconds) * time.Second 上溢出回绕成过去时间。
+func boundRelativeSeconds(seconds int64, now time.Time, maxAge time.Duration) (time.Time, bool) {
+	if seconds <= 0 || seconds > int64(maxAge/time.Second) {
+		return time.Time{}, false
+	}
+	return now.Add(time.Duration(seconds) * time.Second), true
+}
+
+// parseAnthropicResetTimestamp 解析 Anthropic reset 头的 Unix 时间戳（自动识别毫秒），
+// 并校验落在 (now, now+maxAge] 的合理区间内。
+func parseAnthropicResetTimestamp(raw string, now time.Time, maxAge time.Duration) (time.Time, bool) {
+	return parseBoundedUnixTimestamp(raw, now, maxAge)
 }
 
 func shouldPersistAnthropicWindowLimit(account *Account, limit *anthropicWindowLimit, now time.Time) bool {
@@ -1825,7 +1877,10 @@ func (s *RateLimitService) persistAnthropicFableWindowLimit(ctx context.Context,
 //
 // Returns nil when the per-window headers are absent (caller should fall back to
 // the aggregated anthropic-ratelimit-unified-reset header).
-func calculateAnthropic429ResetTime(headers http.Header) *anthropic429Result {
+//
+// now 由调用方传入（而非内部 time.Now()），与本文件其它 Anthropic 窗口函数
+// （parseAnthropicWindowReset / selectAnthropicExhaustedWindow 等）保持一致的可测试模式。
+func calculateAnthropic429ResetTime(headers http.Header, now time.Time) *anthropic429Result {
 	reset5hStr := headers.Get("anthropic-ratelimit-unified-5h-reset")
 	reset7dStr := headers.Get("anthropic-ratelimit-unified-7d-reset")
 
@@ -1833,18 +1888,21 @@ func calculateAnthropic429ResetTime(headers http.Header) *anthropic429Result {
 		return nil
 	}
 
-	var reset5h, reset7d *time.Time
-	if ts, err := strconv.ParseInt(reset5hStr, 10, 64); err == nil {
-		t := time.Unix(ts, 0)
-		reset5h = &t
-	}
-	if ts, err := strconv.ParseInt(reset7dStr, 10, 64); err == nil {
-		t := time.Unix(ts, 0)
-		reset7d = &t
-	}
+	// 复用与 selectAnthropicExhaustedWindow 相同的校验（毫秒识别 + 上下界），而不是裸
+	// strconv.ParseInt+time.Unix：陈旧/异常的 reset 值曾经把账号误锁 18 天以上
+	// （本次修复的直接诱因），这里必须做同样的合理性检查，不能盲信上游头。
+	reset5h, ok5h := parseAnthropicWindowReset(headers, "5h", now)
+	reset7d, ok7d := parseAnthropicWindowReset(headers, "7d", now)
 
 	is5hExceeded := isAnthropicWindowExceeded(headers, "5h")
 	is7dExceeded := isAnthropicWindowExceeded(headers, "7d")
+
+	if (is5hExceeded && !ok5h) || (is7dExceeded && !ok7d) {
+		slog.Warn("anthropic_429_window_reset_out_of_range",
+			"is_5h_exceeded", is5hExceeded, "ok_5h", ok5h, "raw_5h", reset5hStr,
+			"is_7d_exceeded", is7dExceeded, "ok_7d", ok7d, "raw_7d", reset7dStr,
+		)
+	}
 
 	slog.Info("anthropic_429_window_analysis",
 		"is_5h_exceeded", is5hExceeded,
@@ -1854,18 +1912,26 @@ func calculateAnthropic429ResetTime(headers http.Header) *anthropic429Result {
 	)
 
 	// Select the correct reset time based on which window(s) are exceeded.
+	// 某窗口被标记超限但其 reset 值未通过校验时不采用该值，也不回退到另一个未被标记
+	// 超限的窗口（那个窗口没有被上游标记为耗尽，用它的 reset 时间没有依据）。
 	var chosen *time.Time
 	switch {
 	case is5hExceeded && is7dExceeded:
 		// Both exceeded → prefer 7d (longer cooldown), fall back to 5h
-		chosen = reset7d
-		if chosen == nil {
-			chosen = reset5h
+		switch {
+		case ok7d:
+			chosen = &reset7d
+		case ok5h:
+			chosen = &reset5h
 		}
 	case is5hExceeded:
-		chosen = reset5h
+		if ok5h {
+			chosen = &reset5h
+		}
 	case is7dExceeded:
-		chosen = reset7d
+		if ok7d {
+			chosen = &reset7d
+		}
 	default:
 		// Neither window is flagged as exceeded. Only when the unified status is
 		// explicitly rejected do we still trust the window reset (pick the sooner
@@ -1875,13 +1941,24 @@ func calculateAnthropic429ResetTime(headers http.Header) *anthropic429Result {
 		if !isAnthropicUnifiedStatusRejected(headers) {
 			return nil
 		}
-		chosen = pickSooner(reset5h, reset7d)
+		var a, b *time.Time
+		if ok5h {
+			a = &reset5h
+		}
+		if ok7d {
+			b = &reset7d
+		}
+		chosen = pickSooner(a, b)
 	}
 
 	if chosen == nil {
 		return nil
 	}
-	return &anthropic429Result{resetAt: *chosen, fiveHourReset: reset5h}
+	result := &anthropic429Result{resetAt: *chosen}
+	if ok5h {
+		result.fiveHourReset = &reset5h
+	}
+	return result
 }
 
 // isAnthropicWindowExceeded checks whether a given Anthropic rate-limit window
@@ -1945,6 +2022,15 @@ func (s *RateLimitService) persistOpenAICodexSnapshot(ctx context.Context, accou
 	notifyOpenAIAutoReset(account.ID)
 }
 
+const (
+	// maxOpenAIBodyResetAge 是从 OpenAI 429 响应体解析出的 reset 时间的合理性上限，
+	// 覆盖 usage_limit_reached 的 5h/7d 两类窗口，取较宽的 7d 再留余量。
+	maxOpenAIBodyResetAge = 8 * 24 * time.Hour
+	// maxOpenCodeGoResetAge 针对 OpenCode Go 订阅从文案里解析出的冷却时长，
+	// 其窗口语义比 Codex 宽松（可到"月"级），只作为防御性上限。
+	maxOpenCodeGoResetAge = 30 * 24 * time.Hour
+)
+
 // parseOpenAIRateLimitResetTime 解析 OpenAI 兼容格式的 429 响应，返回重置时间的 Unix 时间戳
 // OpenAI 的 usage_limit_reached 错误格式：
 //
@@ -1956,6 +2042,9 @@ func (s *RateLimitService) persistOpenAICodexSnapshot(ctx context.Context, accou
 //	    "resets_in_seconds": 133107
 //	  }
 //	}
+//
+// 所有分支解析出的值都会经过边界校验：上游一旦返回单位错误或异常巨大的值，
+// 本函数返回 nil，调用方据此落到各自已有的兜底冷却，而不是把账号锁到几年后。
 func parseOpenAIRateLimitResetTime(body []byte) *int64 {
 	var parsed map[string]any
 	if err := json.Unmarshal(body, &parsed); err != nil {
@@ -1973,26 +2062,39 @@ func parseOpenAIRateLimitResetTime(body []byte) *int64 {
 		return nil
 	}
 
+	now := time.Now()
+
 	// 优先使用 resets_at（Unix 时间戳）
 	if resetsAt, ok := errObj["resets_at"].(float64); ok {
-		ts := int64(resetsAt)
-		return &ts
-	}
-	if resetsAt, ok := errObj["resets_at"].(string); ok {
-		if ts, err := strconv.ParseInt(resetsAt, 10, 64); err == nil {
+		if resetAt, valid := boundUnixSeconds(int64(resetsAt), now, maxOpenAIBodyResetAge); valid {
+			ts := resetAt.Unix()
 			return &ts
 		}
+		slog.Warn("openai_429_body_reset_out_of_range", "field", "resets_at", "value", resetsAt)
+	}
+	if resetsAt, ok := errObj["resets_at"].(string); ok {
+		if resetAt, valid := parseBoundedUnixTimestamp(resetsAt, now, maxOpenAIBodyResetAge); valid {
+			ts := resetAt.Unix()
+			return &ts
+		}
+		slog.Warn("openai_429_body_reset_out_of_range", "field", "resets_at", "value", resetsAt)
 	}
 
 	// 如果没有 resets_at，尝试使用 resets_in_seconds
 	if resetsInSeconds, ok := errObj["resets_in_seconds"].(float64); ok {
-		ts := time.Now().Unix() + int64(resetsInSeconds)
-		return &ts
+		if resetAt, valid := boundRelativeSeconds(int64(resetsInSeconds), now, maxOpenAIBodyResetAge); valid {
+			ts := resetAt.Unix()
+			return &ts
+		}
+		slog.Warn("openai_429_body_reset_out_of_range", "field", "resets_in_seconds", "value", resetsInSeconds)
 	}
 	if resetsInSeconds, ok := errObj["resets_in_seconds"].(string); ok {
-		if sec, err := strconv.ParseInt(resetsInSeconds, 10, 64); err == nil {
-			ts := time.Now().Unix() + sec
-			return &ts
+		if sec, err := strconv.ParseInt(strings.TrimSpace(resetsInSeconds), 10, 64); err == nil {
+			if resetAt, valid := boundRelativeSeconds(sec, now, maxOpenAIBodyResetAge); valid {
+				ts := resetAt.Unix()
+				return &ts
+			}
+			slog.Warn("openai_429_body_reset_out_of_range", "field", "resets_in_seconds", "value", resetsInSeconds)
 		}
 	}
 
@@ -2001,8 +2103,11 @@ func parseOpenAIRateLimitResetTime(body []byte) *int64 {
 	if errType == "GoUsageLimitError" {
 		message, _ := errObj["message"].(string)
 		if resetAfter := parseOpenCodeGoUsageLimitResetDuration(message); resetAfter > 0 {
-			ts := time.Now().Add(resetAfter).Unix()
-			return &ts
+			if resetAt, valid := boundRelativeSeconds(int64(resetAfter/time.Second), now, maxOpenCodeGoResetAge); valid {
+				ts := resetAt.Unix()
+				return &ts
+			}
+			slog.Warn("openai_429_body_reset_out_of_range", "field", "message_duration", "value", resetAfter.String())
 		}
 	}
 
@@ -2590,14 +2695,14 @@ func isOpenAIImageRateLimitError(statusCode int, body []byte) bool {
 
 func openAIImageRateLimitResetAt(headers http.Header, body []byte) time.Time {
 	now := time.Now()
-	if resetAt := parseRetryAfterResetTime(headers, now); resetAt != nil && resetAt.After(now) {
+	if resetAt := parseRetryAfterResetTime(headers, now); isValidOpenAIImageResetAt(resetAt, now) {
 		return *resetAt
 	}
-	if resetAt := calculateOpenAI429ResetTime(headers); resetAt != nil && resetAt.After(now) {
+	if resetAt := calculateOpenAI429ResetTime(headers); isValidOpenAIImageResetAt(resetAt, now) {
 		return *resetAt
 	}
 	if resetUnix := parseOpenAIRateLimitResetTime(body); resetUnix != nil {
-		if resetAt := time.Unix(*resetUnix, 0); resetAt.After(now) {
+		if resetAt := time.Unix(*resetUnix, 0); isValidOpenAIImageResetAt(&resetAt, now) {
 			return resetAt
 		}
 	}
@@ -2605,6 +2710,10 @@ func openAIImageRateLimitResetAt(headers http.Header, body []byte) time.Time {
 		return now.Add(cooldown)
 	}
 	return now.Add(openAIImageRateLimitDefaultCooldown)
+}
+
+func isValidOpenAIImageResetAt(resetAt *time.Time, now time.Time) bool {
+	return resetAt != nil && resetAt.After(now) && !resetAt.After(now.Add(maxOpenAIImageRateLimitAge))
 }
 
 func parseRetryAfterResetTime(headers http.Header, now time.Time) *time.Time {
@@ -2637,12 +2746,22 @@ func parseOpenAIImageTryAgainCooldown(body []byte) time.Duration {
 	if err != nil || value <= 0 {
 		return 0
 	}
+	maxCooldown := float64(maxOpenAIImageRateLimitAge)
 	switch strings.ToLower(string(match[2])) {
 	case "ms":
+		if value > maxCooldown/float64(time.Millisecond) {
+			return 0
+		}
 		return time.Duration(value * float64(time.Millisecond))
 	case "s", "sec", "secs", "second", "seconds":
+		if value > maxCooldown/float64(time.Second) {
+			return 0
+		}
 		return time.Duration(value * float64(time.Second))
 	case "m", "min", "mins", "minute", "minutes":
+		if value > maxCooldown/float64(time.Minute) {
+			return 0
+		}
 		return time.Duration(value * float64(time.Minute))
 	default:
 		return 0

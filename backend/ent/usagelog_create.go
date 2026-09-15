@@ -421,6 +421,34 @@ func (_c *UsageLogCreate) SetNillableBillingType(v *int8) *UsageLogCreate {
 	return _c
 }
 
+// SetUsageSource sets the "usage_source" field.
+func (_c *UsageLogCreate) SetUsageSource(v int8) *UsageLogCreate {
+	_c.mutation.SetUsageSource(v)
+	return _c
+}
+
+// SetNillableUsageSource sets the "usage_source" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableUsageSource(v *int8) *UsageLogCreate {
+	if v != nil {
+		_c.SetUsageSource(*v)
+	}
+	return _c
+}
+
+// SetUsageEstimationMethod sets the "usage_estimation_method" field.
+func (_c *UsageLogCreate) SetUsageEstimationMethod(v string) *UsageLogCreate {
+	_c.mutation.SetUsageEstimationMethod(v)
+	return _c
+}
+
+// SetNillableUsageEstimationMethod sets the "usage_estimation_method" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableUsageEstimationMethod(v *string) *UsageLogCreate {
+	if v != nil {
+		_c.SetUsageEstimationMethod(*v)
+	}
+	return _c
+}
+
 // SetBillingState sets the "billing_state" field.
 func (_c *UsageLogCreate) SetBillingState(v int8) *UsageLogCreate {
 	_c.mutation.SetBillingState(v)
@@ -771,6 +799,10 @@ func (_c *UsageLogCreate) defaults() {
 		v := usagelog.DefaultBillingType
 		_c.mutation.SetBillingType(v)
 	}
+	if _, ok := _c.mutation.UsageSource(); !ok {
+		v := usagelog.DefaultUsageSource
+		_c.mutation.SetUsageSource(v)
+	}
 	if _, ok := _c.mutation.BillingState(); !ok {
 		v := usagelog.DefaultBillingState
 		_c.mutation.SetBillingState(v)
@@ -898,6 +930,14 @@ func (_c *UsageLogCreate) check() error {
 	}
 	if _, ok := _c.mutation.BillingType(); !ok {
 		return &ValidationError{Name: "billing_type", err: errors.New(`ent: missing required field "UsageLog.billing_type"`)}
+	}
+	if _, ok := _c.mutation.UsageSource(); !ok {
+		return &ValidationError{Name: "usage_source", err: errors.New(`ent: missing required field "UsageLog.usage_source"`)}
+	}
+	if v, ok := _c.mutation.UsageEstimationMethod(); ok {
+		if err := usagelog.UsageEstimationMethodValidator(v); err != nil {
+			return &ValidationError{Name: "usage_estimation_method", err: fmt.Errorf(`ent: validator failed for field "UsageLog.usage_estimation_method": %w`, err)}
+		}
 	}
 	if _, ok := _c.mutation.BillingState(); !ok {
 		return &ValidationError{Name: "billing_state", err: errors.New(`ent: missing required field "UsageLog.billing_state"`)}
@@ -1091,6 +1131,14 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.BillingType(); ok {
 		_spec.SetField(usagelog.FieldBillingType, field.TypeInt8, value)
 		_node.BillingType = value
+	}
+	if value, ok := _c.mutation.UsageSource(); ok {
+		_spec.SetField(usagelog.FieldUsageSource, field.TypeInt8, value)
+		_node.UsageSource = value
+	}
+	if value, ok := _c.mutation.UsageEstimationMethod(); ok {
+		_spec.SetField(usagelog.FieldUsageEstimationMethod, field.TypeString, value)
+		_node.UsageEstimationMethod = value
 	}
 	if value, ok := _c.mutation.BillingState(); ok {
 		_spec.SetField(usagelog.FieldBillingState, field.TypeInt8, value)
@@ -1828,6 +1876,42 @@ func (u *UsageLogUpsert) UpdateBillingType() *UsageLogUpsert {
 // AddBillingType adds v to the "billing_type" field.
 func (u *UsageLogUpsert) AddBillingType(v int8) *UsageLogUpsert {
 	u.Add(usagelog.FieldBillingType, v)
+	return u
+}
+
+// SetUsageSource sets the "usage_source" field.
+func (u *UsageLogUpsert) SetUsageSource(v int8) *UsageLogUpsert {
+	u.Set(usagelog.FieldUsageSource, v)
+	return u
+}
+
+// UpdateUsageSource sets the "usage_source" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateUsageSource() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldUsageSource)
+	return u
+}
+
+// AddUsageSource adds v to the "usage_source" field.
+func (u *UsageLogUpsert) AddUsageSource(v int8) *UsageLogUpsert {
+	u.Add(usagelog.FieldUsageSource, v)
+	return u
+}
+
+// SetUsageEstimationMethod sets the "usage_estimation_method" field.
+func (u *UsageLogUpsert) SetUsageEstimationMethod(v string) *UsageLogUpsert {
+	u.Set(usagelog.FieldUsageEstimationMethod, v)
+	return u
+}
+
+// UpdateUsageEstimationMethod sets the "usage_estimation_method" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateUsageEstimationMethod() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldUsageEstimationMethod)
+	return u
+}
+
+// ClearUsageEstimationMethod clears the value of the "usage_estimation_method" field.
+func (u *UsageLogUpsert) ClearUsageEstimationMethod() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldUsageEstimationMethod)
 	return u
 }
 
@@ -2790,6 +2874,48 @@ func (u *UsageLogUpsertOne) AddBillingType(v int8) *UsageLogUpsertOne {
 func (u *UsageLogUpsertOne) UpdateBillingType() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.UpdateBillingType()
+	})
+}
+
+// SetUsageSource sets the "usage_source" field.
+func (u *UsageLogUpsertOne) SetUsageSource(v int8) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUsageSource(v)
+	})
+}
+
+// AddUsageSource adds v to the "usage_source" field.
+func (u *UsageLogUpsertOne) AddUsageSource(v int8) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddUsageSource(v)
+	})
+}
+
+// UpdateUsageSource sets the "usage_source" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateUsageSource() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUsageSource()
+	})
+}
+
+// SetUsageEstimationMethod sets the "usage_estimation_method" field.
+func (u *UsageLogUpsertOne) SetUsageEstimationMethod(v string) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUsageEstimationMethod(v)
+	})
+}
+
+// UpdateUsageEstimationMethod sets the "usage_estimation_method" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateUsageEstimationMethod() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUsageEstimationMethod()
+	})
+}
+
+// ClearUsageEstimationMethod clears the value of the "usage_estimation_method" field.
+func (u *UsageLogUpsertOne) ClearUsageEstimationMethod() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearUsageEstimationMethod()
 	})
 }
 
@@ -3967,6 +4093,48 @@ func (u *UsageLogUpsertBulk) AddBillingType(v int8) *UsageLogUpsertBulk {
 func (u *UsageLogUpsertBulk) UpdateBillingType() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.UpdateBillingType()
+	})
+}
+
+// SetUsageSource sets the "usage_source" field.
+func (u *UsageLogUpsertBulk) SetUsageSource(v int8) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUsageSource(v)
+	})
+}
+
+// AddUsageSource adds v to the "usage_source" field.
+func (u *UsageLogUpsertBulk) AddUsageSource(v int8) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddUsageSource(v)
+	})
+}
+
+// UpdateUsageSource sets the "usage_source" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateUsageSource() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUsageSource()
+	})
+}
+
+// SetUsageEstimationMethod sets the "usage_estimation_method" field.
+func (u *UsageLogUpsertBulk) SetUsageEstimationMethod(v string) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUsageEstimationMethod(v)
+	})
+}
+
+// UpdateUsageEstimationMethod sets the "usage_estimation_method" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateUsageEstimationMethod() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUsageEstimationMethod()
+	})
+}
+
+// ClearUsageEstimationMethod clears the value of the "usage_estimation_method" field.
+func (u *UsageLogUpsertBulk) ClearUsageEstimationMethod() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearUsageEstimationMethod()
 	})
 }
 

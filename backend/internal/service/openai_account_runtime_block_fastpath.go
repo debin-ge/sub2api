@@ -42,21 +42,14 @@ const (
 func classifyOpenAIOAuth429(headers http.Header, responseBody []byte) (openAIOAuth429Disposition, *time.Time) {
 	if snapshot := ParseCodexRateLimitHeaders(headers); snapshot != nil {
 		if normalized := snapshot.Normalize(); normalized != nil {
+			now := time.Now()
 			if normalized.Used7dPercent != nil && *normalized.Used7dPercent >= 100 {
-				if normalized.Reset7dSeconds != nil {
-					now := time.Now()
-					resetAt := now.Add(time.Duration(*normalized.Reset7dSeconds) * time.Second)
-					return openAIOAuth429Quota7d, &resetAt
-				}
-				return openAIOAuth429Quota7d, nil
+				// reset 秒数越界时返回 nil，调用方按"仅知配额耗尽、不知何时恢复"处理，
+				// 落到已有的默认冷却，而不是把账号锁到几十年后。
+				return openAIOAuth429Quota7d, boundedCodexWindowReset(normalized.Reset7dSeconds, now, maxCodex7dResetAge)
 			}
 			if normalized.Used5hPercent != nil && *normalized.Used5hPercent >= 100 {
-				if normalized.Reset5hSeconds != nil {
-					now := time.Now()
-					resetAt := now.Add(time.Duration(*normalized.Reset5hSeconds) * time.Second)
-					return openAIOAuth429Quota5h, &resetAt
-				}
-				return openAIOAuth429Quota5h, nil
+				return openAIOAuth429Quota5h, boundedCodexWindowReset(normalized.Reset5hSeconds, now, maxCodex5hResetAge)
 			}
 		}
 	}

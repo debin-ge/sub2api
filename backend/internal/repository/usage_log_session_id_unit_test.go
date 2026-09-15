@@ -33,10 +33,10 @@ func newSessionIDUsageLog(sessionID *string) *service.UsageLog {
 // offsets shift by one each time — that's the point: the compiler can't catch a
 // forgotten call site, these constants make the test do it.
 const (
-	usageLogArgOffsetSessionID        = 4 // ..., session_id, native_compaction_v2, created_at, billing_state
-	usageLogArgOffsetNativeCompaction = 3
-	usageLogArgOffsetCreatedAt        = 2
-	usageLogArgOffsetBillingSta       = 1
+	usageLogArgOffsetSessionID        = 6 // ..., session_id, native_compaction_v2, created_at, billing_state, usage_source, usage_estimation_method
+	usageLogArgOffsetNativeCompaction = 5
+	usageLogArgOffsetCreatedAt        = 4
+	usageLogArgOffsetBillingSta       = 3
 )
 
 func usageLogInsertArgFromEnd(args []any, offsetFromEnd int) any {
@@ -47,7 +47,7 @@ func usageLogInsertArgFromEnd(args []any, offsetFromEnd int) any {
 // arg slice / arg-type table so the five INSERT column lists stay in sync. session_id
 // is followed by native_compaction_v2, created_at, and billing_state.
 func TestPrepareUsageLogInsert_SessionIDArgWiring(t *testing.T) {
-	require.Len(t, usageLogInsertArgTypes, 63)
+	require.Len(t, usageLogInsertArgTypes, 65)
 	sessionID := "sess-persisted-123"
 	prepared := prepareUsageLogInsert(newSessionIDUsageLog(&sessionID))
 

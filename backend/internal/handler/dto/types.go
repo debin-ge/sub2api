@@ -668,10 +668,12 @@ type UsageLog struct {
 	RateMultiplier            float64 `json:"rate_multiplier"`
 	LongContextBillingApplied bool    `json:"long_context_billing_applied"`
 
-	BillingType  int8   `json:"billing_type"`
-	RequestType  string `json:"request_type"`
-	Stream       bool   `json:"stream"`
-	OpenAIWSMode bool   `json:"openai_ws_mode"`
+	BillingType           int8   `json:"billing_type"`
+	UsageSource           int8   `json:"usage_source"`
+	UsageEstimationMethod string `json:"usage_estimation_method,omitempty"`
+	RequestType           string `json:"request_type"`
+	Stream                bool   `json:"stream"`
+	OpenAIWSMode          bool   `json:"openai_ws_mode"`
 	// NativeCompactionV2 is true only for requests positively identified at
 	// runtime as the native OpenAI remote compaction v2 wire.
 	NativeCompactionV2 bool `json:"native_compaction_v2"`

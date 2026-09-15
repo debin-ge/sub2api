@@ -403,12 +403,16 @@ func (a AccountWithConcurrency) MarshalJSON() ([]byte, error) {
 			CreatedAt: accountGroup.CreatedAt, Group: simpleModeGroupReferenceFromDTO(accountGroup.Group),
 		})
 	}
+	// Group-level scheduler scores can contain hidden composite group IDs and
+	// names. Simple mode exposes only the aggregate score, never this metadata.
+	safe := a
+	safe.SchedulerScores = nil
 	return json.Marshal(struct {
 		alias
 		GroupIDs      []int64                           `json:"group_ids,omitempty"`
 		Groups        []simpleModeGroupReference        `json:"groups"`
 		AccountGroups []simpleModeAccountGroupReference `json:"account_groups"`
-	}{alias: alias(a), GroupIDs: filterSimpleModeGroupIDs(a.GroupIDs, compositeIDs), Groups: groups, AccountGroups: accountGroups})
+	}{alias: alias(safe), GroupIDs: filterSimpleModeGroupIDs(a.GroupIDs, compositeIDs), Groups: groups, AccountGroups: accountGroups})
 }
 
 type AccountSchedulerScore struct {

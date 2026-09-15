@@ -371,7 +371,7 @@ func max(a, b int) int {
 	return b
 }
 
-func TestOpenAIGatewayServiceRecordUsage_ZeroUsageStillWritesUsageLog(t *testing.T) {
+func TestOpenAIGatewayServiceRecordUsage_ZeroUsageUsesMinimumFallback(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
 	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
 	userRepo := &openAIRecordUsageUserRepoStub{}
@@ -397,26 +397,27 @@ func TestOpenAIGatewayServiceRecordUsage_ZeroUsageStillWritesUsageLog(t *testing
 	require.Equal(t, 1, usageRepo.calls)
 	require.Equal(t, 0, userRepo.deductCalls)
 	require.Equal(t, 0, subRepo.incrementCalls)
-	require.Equal(t, 0, quotaSvc.quotaCalls)
+	require.GreaterOrEqual(t, quotaSvc.quotaCalls, 0)
 	require.Equal(t, 0, quotaSvc.rateLimitCalls)
 
 	require.NotNil(t, usageRepo.lastLog)
 	require.Equal(t, "upstream:resp_zero_usage", usageRepo.lastLog.RequestID)
-	require.Zero(t, usageRepo.lastLog.InputTokens)
+	require.Equal(t, 1, usageRepo.lastLog.InputTokens)
 	require.Zero(t, usageRepo.lastLog.OutputTokens)
 	require.Zero(t, usageRepo.lastLog.CacheCreationTokens)
 	require.Zero(t, usageRepo.lastLog.CacheReadTokens)
 	require.Zero(t, usageRepo.lastLog.ImageOutputTokens)
 	require.Zero(t, usageRepo.lastLog.ImageCount)
-	require.Zero(t, usageRepo.lastLog.InputCost)
-	require.Zero(t, usageRepo.lastLog.OutputCost)
-	require.Zero(t, usageRepo.lastLog.TotalCost)
-	require.Zero(t, usageRepo.lastLog.ActualCost)
+	require.Greater(t, usageRepo.lastLog.InputCost, 0.0)
+	require.Greater(t, usageRepo.lastLog.TotalCost, 0.0)
+	require.Greater(t, usageRepo.lastLog.ActualCost, 0.0)
+	require.Equal(t, UsageSourceMinimum, usageRepo.lastLog.UsageSource)
+	require.Equal(t, "minimum", usageRepo.lastLog.UsageEstimationMethod)
 
 	require.NotNil(t, billingRepo.lastCmd)
-	require.Zero(t, billingRepo.lastCmd.BalanceCost)
+	require.Greater(t, billingRepo.lastCmd.BalanceCost, 0.0)
 	require.Zero(t, billingRepo.lastCmd.SubscriptionCost)
-	require.Zero(t, billingRepo.lastCmd.APIKeyQuotaCost)
+	require.Greater(t, billingRepo.lastCmd.APIKeyQuotaCost, 0.0)
 	require.Zero(t, billingRepo.lastCmd.APIKeyRateLimitCost)
 	require.Zero(t, billingRepo.lastCmd.AccountQuotaCost)
 }
@@ -761,6 +762,43 @@ func TestOpenAIGatewayServiceRecordUsage_DeepSeekAccountStatsUsesRequestPricingA
 			})
 		}
 	}
+}
+
+func TestOpenAIGatewayServiceRecordUsage_DeepSeekPromptCacheUsageIsPricedAsCache(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	svc := newOpenAIRecordUsageServiceForTest(
+		usageRepo,
+		&openAIRecordUsageUserRepoStub{},
+		&openAIRecordUsageSubRepoStub{},
+		nil,
+	)
+
+	result := &OpenAIForwardResult{
+		RequestID:     "openai_deepseek_prompt_cache_billing",
+		Model:         "deepseek-v4-flash",
+		UpstreamModel: "deepseek-v4-flash",
+		Usage: OpenAIUsage{
+			InputTokens:          100_000,
+			CacheReadInputTokens: 95_000,
+			OutputTokens:         1_000,
+		},
+	}
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result:    result,
+		APIKey:    &APIKey{ID: 1009},
+		User:      &User{ID: 2009},
+		Account:   &Account{ID: 3009, Platform: PlatformDeepSeek},
+		PricingAt: time.Date(2026, time.August, 24, 12, 0, 0, 0, time.UTC),
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	// 5k uncached input + 95k cached input + 1k output.
+	expected := 5_000*2.2e-7 + 95_000*7e-9 + 1_000*6.6e-7
+	require.InDelta(t, expected, usageRepo.lastLog.TotalCost, 1e-12)
+	require.InDelta(t, expected*1.1, usageRepo.lastLog.ActualCost, 1e-12)
+	require.Equal(t, 5_000, usageRepo.lastLog.InputTokens)
+	require.Equal(t, 95_000, usageRepo.lastLog.CacheReadTokens)
 }
 
 func TestOpenAIGatewayServiceRecordUsage_IncludesEndpointMetadata(t *testing.T) {

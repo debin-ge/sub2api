@@ -1158,3 +1158,42 @@ func parseAnthropicContentBlockEvents(t *testing.T, raw string) []anthropicConte
 	}
 	return events
 }
+
+// TestParseGeminiRateLimitResetTime_RejectsOutOfRangeDelay 上游 429 响应体里的
+// quotaResetDelay / "Please retry in Xs" 不可信：异常巨大的时长一旦被原样换算成
+// 绝对时间写入 accounts.rate_limit_reset_at，账号会被误锁数月。越界时必须跳过该
+// 来源，最终返回 nil，由调用方落到各自已有的兜底冷却。
+func TestParseGeminiRateLimitResetTime_RejectsOutOfRangeDelay(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+	}{
+		{"quotaResetDelay 超过 48h", `{"error":{"details":[{"metadata":{"quotaResetDelay":"720h"}}]}}`},
+		{"quotaResetDelay 为负", `{"error":{"details":[{"metadata":{"quotaResetDelay":"-30s"}}]}}`},
+		{"quotaResetDelay 为零", `{"error":{"details":[{"metadata":{"quotaResetDelay":"0s"}}]}}`},
+		{"regex 回退匹配到超大秒数", `Please retry in 99999999s`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ParseGeminiRateLimitResetTime([]byte(tc.input)); got != nil {
+				t.Fatalf("期望返回 nil，实际返回 %d（%v 之后）", *got, time.Until(time.Unix(*got, 0)))
+			}
+		})
+	}
+}
+
+// TestParseGeminiRateLimitResetTime_SkipsOutOfRangeDetailAndUsesNext 多个 detail
+// 时，越界的那个被跳过，后续合法的 detail 仍然生效（保持既有的逐个尝试语义）。
+func TestParseGeminiRateLimitResetTime_SkipsOutOfRangeDetailAndUsesNext(t *testing.T) {
+	body := `{"error":{"details":[{"metadata":{"quotaResetDelay":"720h"}},{"metadata":{"quotaResetDelay":"45s"}}]}}`
+	now := time.Now().Unix()
+
+	got := ParseGeminiRateLimitResetTime([]byte(body))
+	if got == nil {
+		t.Fatal("期望后续合法 detail 生效，实际返回 nil")
+	}
+	if delta := *got - now; delta < 44 || delta > 47 {
+		t.Fatalf("期望约 45s 之后，实际 delta=%d", delta)
+	}
+}

@@ -572,6 +572,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		forwardResult.ImageOutputSizes = imageOutputSizes
 		forwardResult.BillingModel = imageBillingModel
 	}
+	applyOpenAIUsageFallback(forwardResult, upstreamPassthroughModel, body)
 	return forwardResult, nil
 }
 

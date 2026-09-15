@@ -210,6 +210,16 @@ func BillingType(v int8) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldBillingType, v))
 }
 
+// UsageSource applies equality check predicate on the "usage_source" field. It's identical to UsageSourceEQ.
+func UsageSource(v int8) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldUsageSource, v))
+}
+
+// UsageEstimationMethod applies equality check predicate on the "usage_estimation_method" field. It's identical to UsageEstimationMethodEQ.
+func UsageEstimationMethod(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldUsageEstimationMethod, v))
+}
+
 // BillingState applies equality check predicate on the "billing_state" field. It's identical to BillingStateEQ.
 func BillingState(v int8) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldBillingState, v))
@@ -1678,6 +1688,121 @@ func BillingTypeLT(v int8) predicate.UsageLog {
 // BillingTypeLTE applies the LTE predicate on the "billing_type" field.
 func BillingTypeLTE(v int8) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldLTE(FieldBillingType, v))
+}
+
+// UsageSourceEQ applies the EQ predicate on the "usage_source" field.
+func UsageSourceEQ(v int8) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldUsageSource, v))
+}
+
+// UsageSourceNEQ applies the NEQ predicate on the "usage_source" field.
+func UsageSourceNEQ(v int8) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldUsageSource, v))
+}
+
+// UsageSourceIn applies the In predicate on the "usage_source" field.
+func UsageSourceIn(vs ...int8) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldUsageSource, vs...))
+}
+
+// UsageSourceNotIn applies the NotIn predicate on the "usage_source" field.
+func UsageSourceNotIn(vs ...int8) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldUsageSource, vs...))
+}
+
+// UsageSourceGT applies the GT predicate on the "usage_source" field.
+func UsageSourceGT(v int8) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldUsageSource, v))
+}
+
+// UsageSourceGTE applies the GTE predicate on the "usage_source" field.
+func UsageSourceGTE(v int8) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldUsageSource, v))
+}
+
+// UsageSourceLT applies the LT predicate on the "usage_source" field.
+func UsageSourceLT(v int8) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldUsageSource, v))
+}
+
+// UsageSourceLTE applies the LTE predicate on the "usage_source" field.
+func UsageSourceLTE(v int8) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldUsageSource, v))
+}
+
+// UsageEstimationMethodEQ applies the EQ predicate on the "usage_estimation_method" field.
+func UsageEstimationMethodEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldUsageEstimationMethod, v))
+}
+
+// UsageEstimationMethodNEQ applies the NEQ predicate on the "usage_estimation_method" field.
+func UsageEstimationMethodNEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldUsageEstimationMethod, v))
+}
+
+// UsageEstimationMethodIn applies the In predicate on the "usage_estimation_method" field.
+func UsageEstimationMethodIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldUsageEstimationMethod, vs...))
+}
+
+// UsageEstimationMethodNotIn applies the NotIn predicate on the "usage_estimation_method" field.
+func UsageEstimationMethodNotIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldUsageEstimationMethod, vs...))
+}
+
+// UsageEstimationMethodGT applies the GT predicate on the "usage_estimation_method" field.
+func UsageEstimationMethodGT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldUsageEstimationMethod, v))
+}
+
+// UsageEstimationMethodGTE applies the GTE predicate on the "usage_estimation_method" field.
+func UsageEstimationMethodGTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldUsageEstimationMethod, v))
+}
+
+// UsageEstimationMethodLT applies the LT predicate on the "usage_estimation_method" field.
+func UsageEstimationMethodLT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldUsageEstimationMethod, v))
+}
+
+// UsageEstimationMethodLTE applies the LTE predicate on the "usage_estimation_method" field.
+func UsageEstimationMethodLTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldUsageEstimationMethod, v))
+}
+
+// UsageEstimationMethodContains applies the Contains predicate on the "usage_estimation_method" field.
+func UsageEstimationMethodContains(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContains(FieldUsageEstimationMethod, v))
+}
+
+// UsageEstimationMethodHasPrefix applies the HasPrefix predicate on the "usage_estimation_method" field.
+func UsageEstimationMethodHasPrefix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasPrefix(FieldUsageEstimationMethod, v))
+}
+
+// UsageEstimationMethodHasSuffix applies the HasSuffix predicate on the "usage_estimation_method" field.
+func UsageEstimationMethodHasSuffix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasSuffix(FieldUsageEstimationMethod, v))
+}
+
+// UsageEstimationMethodIsNil applies the IsNil predicate on the "usage_estimation_method" field.
+func UsageEstimationMethodIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldUsageEstimationMethod))
+}
+
+// UsageEstimationMethodNotNil applies the NotNil predicate on the "usage_estimation_method" field.
+func UsageEstimationMethodNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldUsageEstimationMethod))
+}
+
+// UsageEstimationMethodEqualFold applies the EqualFold predicate on the "usage_estimation_method" field.
+func UsageEstimationMethodEqualFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEqualFold(FieldUsageEstimationMethod, v))
+}
+
+// UsageEstimationMethodContainsFold applies the ContainsFold predicate on the "usage_estimation_method" field.
+func UsageEstimationMethodContainsFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContainsFold(FieldUsageEstimationMethod, v))
 }
 
 // BillingStateEQ applies the EQ predicate on the "billing_state" field.

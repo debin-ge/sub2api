@@ -380,6 +380,7 @@ export interface MyApiKeyBreakdownParams {
   end_date?: string
   start_time?: string
   end_time?: string
+  model?: string
   group_id?: number
   api_key_id?: number
   request_type?: UsageRequestType

@@ -1113,6 +1113,10 @@ func parseUsageAndAccumulate(
 	if !cachedResult.Exists() {
 		cachedResult = usageResult.Get("prompt_tokens_details.cached_tokens")
 	}
+	if nativeCacheHit := usageResult.Get("prompt_cache_hit_tokens"); nativeCacheHit.Exists() {
+		cachedResult = nativeCacheHit
+	}
+	nativeCacheMiss := usageResult.Get("prompt_cache_miss_tokens")
 	imageTokens := usageResult.Get("output_tokens_details.image_tokens").Int()
 	if imageTokens == 0 {
 		imageTokens = usageResult.Get("completion_tokens_details.image_tokens").Int()
@@ -1122,6 +1126,25 @@ func parseUsageAndAccumulate(
 	inputTokens, inputOK := parseUsageIntField(inputResult, requireTotals)
 	outputTokens, outputOK := parseUsageIntField(outputResult, requireTotals)
 	cachedTokens, cachedOK := parseUsageIntField(cachedResult, false)
+	if !inputOK && nativeCacheMiss.Exists() && cachedOK {
+		missTokens, missOK := parseUsageIntField(nativeCacheMiss, false)
+		if missOK {
+			inputTokens = missTokens + cachedTokens + openAICacheCreationTokensFromUsage(usageResult)
+			inputOK = true
+		}
+	}
+	cacheCreationTokens := openAICacheCreationTokensFromUsage(usageResult)
+	if nativeCacheHit := usageResult.Get("prompt_cache_hit_tokens"); nativeCacheHit.Exists() && inputOK {
+		if hitTokens, hitOK := parseUsageIntField(nativeCacheHit, false); !hitOK || hitTokens > inputTokens {
+			inputOK = false
+		}
+	}
+	if nativeCacheMiss.Exists() {
+		missTokens, missOK := parseUsageIntField(nativeCacheMiss, false)
+		if !missOK || (inputOK && int64(missTokens)+int64(cachedTokens)+int64(cacheCreationTokens) != int64(inputTokens)) {
+			inputOK = false
+		}
+	}
 	if !inputOK || !outputOK || !cachedOK {
 		recordUsageParseFailure()
 		if onParseFailure != nil {
@@ -1139,10 +1162,21 @@ func parseUsageAndAccumulate(
 			int64(inputTokens), int64(outputTokens), usageResult.Get("total_tokens").Int(), reasoningTokens,
 		))
 	}
+	if requireTotals {
+		if total := usageResult.Get("total_tokens"); total.Exists() {
+			if total.Int() < 0 || inputTokens+outputTokens != int(total.Int()) {
+				recordUsageParseFailure()
+				if onParseFailure != nil {
+					onParseFailure(eventType, usageRaw)
+				}
+				return Usage{}
+			}
+		}
+	}
 	parsedUsage := Usage{
 		InputTokens:              inputTokens,
 		OutputTokens:             outputTokens,
-		CacheCreationInputTokens: openAICacheCreationTokensFromUsage(usageResult),
+		CacheCreationInputTokens: cacheCreationTokens,
 		CacheReadInputTokens:     cachedTokens,
 		ImageOutputTokens:        int(imageTokens),
 	}
@@ -1206,7 +1240,11 @@ func parseUsageIntField(value gjson.Result, required bool) (int, bool) {
 	if value.Type != gjson.Number {
 		return 0, false
 	}
-	return int(value.Int()), true
+	parsed := value.Int()
+	if parsed < 0 {
+		return 0, false
+	}
+	return int(parsed), true
 }
 
 func openAICacheCreationTokensFromUsage(value gjson.Result) int {

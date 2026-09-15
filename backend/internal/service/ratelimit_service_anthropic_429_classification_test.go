@@ -210,15 +210,79 @@ func TestHandle429_AnthropicWindowExhaustedStillUsesWindowReset(t *testing.T) {
 }
 
 func TestCalculateAnthropic429ResetTime_NeitherExceeded_StatusRejected_UsesShorter(t *testing.T) {
+	now := time.Now()
+	reset5h := now.Add(3 * time.Hour).Truncate(time.Second)      // sooner
+	reset7d := now.Add(5 * 24 * time.Hour).Truncate(time.Second) // later
+
 	headers := http.Header{}
 	headers.Set("anthropic-ratelimit-unified-status", "rejected")
 	headers.Set("anthropic-ratelimit-unified-5h-utilization", "0.95")
-	headers.Set("anthropic-ratelimit-unified-5h-reset", "1770998400") // sooner
+	headers.Set("anthropic-ratelimit-unified-5h-reset", strconv.FormatInt(reset5h.Unix(), 10))
 	headers.Set("anthropic-ratelimit-unified-7d-utilization", "0.80")
-	headers.Set("anthropic-ratelimit-unified-7d-reset", "1771549200") // later
+	headers.Set("anthropic-ratelimit-unified-7d-reset", strconv.FormatInt(reset7d.Unix(), 10))
 
-	result := calculateAnthropic429ResetTime(headers)
-	assertAnthropicResult(t, result, 1770998400)
+	result := calculateAnthropic429ResetTime(headers, now)
+	assertAnthropicResult(t, result, reset5h.Unix())
+}
+
+// TestHandle429_AnthropicWindowExhaustedGarbageReset_FallsBackToShortCooldown 复现本次
+// 生产事故：7d 窗口被 utilization=1.0 标记为耗尽，但 7d-reset 是一个越界的异常值
+// （曾经把账号误锁 18 天以上）。修复后必须退化为按 Retry-After 的短时冷却，而不是
+// 把异常值原样写入 rate_limit_reset_at。
+func TestHandle429_AnthropicWindowExhaustedGarbageReset_FallsBackToShortCooldown(t *testing.T) {
+	repo := &anthropic429RepoStub{}
+	svc := newAnthropic429TestService(repo)
+	account := &Account{ID: 510, Platform: PlatformAnthropic, Type: AccountTypeOAuth}
+
+	headers := http.Header{}
+	headers.Set("anthropic-ratelimit-unified-status", "rejected")
+	headers.Set("anthropic-ratelimit-unified-7d-utilization", "1.0")
+	headers.Set("anthropic-ratelimit-unified-7d-reset", "99999999999999") // 越界的异常值（本次事故复现）
+	headers.Set("Retry-After", "20")
+
+	before := time.Now()
+	svc.handle429(context.Background(), account, headers, []byte(`{"error":{"type":"rate_limit_error","message":"This request would exceed your account's rate limit."}}`), "claude-sonnet-4-5")
+	after := time.Now()
+
+	require.Equal(t, 1, repo.rateLimitCalls)
+	require.True(t, repo.lastReset.Before(before.Add(maxAnthropic429RetryAfter+time.Second)), "must not be parked until the out-of-range reset value, got %v", repo.lastReset)
+	requireResetWithin(t, repo.lastReset, before, after, 20*time.Second)
+}
+
+// TestHandle429_AnthropicAggregateResetOutOfRange_UsesRetryAfterFallback 覆盖 handle429
+// 聚合头兜底分支（无 per-window 头，仅有越界的聚合 anthropic-ratelimit-unified-reset）。
+func TestHandle429_AnthropicAggregateResetOutOfRange_UsesRetryAfterFallback(t *testing.T) {
+	repo := &anthropic429RepoStub{}
+	svc := newAnthropic429TestService(repo)
+	account := &Account{ID: 511, Platform: PlatformAnthropic, Type: AccountTypeOAuth}
+
+	headers := http.Header{}
+	headers.Set("anthropic-ratelimit-unified-reset", "99999999999999") // 越界的聚合 reset
+	headers.Set("Retry-After", "15")
+
+	before := time.Now()
+	svc.handle429(context.Background(), account, headers, []byte(`{"error":{"type":"rate_limit_error","message":"rate limited"}}`), "claude-sonnet-4-5")
+	after := time.Now()
+
+	require.Equal(t, 1, repo.rateLimitCalls)
+	requireResetWithin(t, repo.lastReset, before, after, 15*time.Second)
+}
+
+// TestHandle429_AnthropicAggregateResetValid_StillPersisted 确认聚合头兜底分支改成调用
+// parseAnthropicAggregateReset 后，合法值仍然正常持久化（非回归）。
+func TestHandle429_AnthropicAggregateResetValid_StillPersisted(t *testing.T) {
+	repo := &anthropic429RepoStub{}
+	svc := newAnthropic429TestService(repo)
+	account := &Account{ID: 512, Platform: PlatformAnthropic, Type: AccountTypeOAuth}
+
+	reset := time.Now().Add(2 * time.Hour).Truncate(time.Second)
+	headers := http.Header{}
+	headers.Set("anthropic-ratelimit-unified-reset", strconv.FormatInt(reset.Unix(), 10))
+
+	svc.handle429(context.Background(), account, headers, []byte(`{"error":{"type":"rate_limit_error","message":"rate limited"}}`), "claude-sonnet-4-5")
+
+	require.Equal(t, 1, repo.rateLimitCalls)
+	require.True(t, repo.lastReset.Equal(reset), "expected resetAt=%v, got %v", reset, repo.lastReset)
 }
 
 func TestIsAnthropicBurst429(t *testing.T) {

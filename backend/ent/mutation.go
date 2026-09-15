@@ -48661,6 +48661,9 @@ type UsageLogMutation struct {
 	addaccount_rate_multiplier   *float64
 	billing_type                 *int8
 	addbilling_type              *int8
+	usage_source                 *int8
+	addusage_source              *int8
+	usage_estimation_method      *string
 	billing_state                *int8
 	addbilling_state             *int8
 	stream                       *bool
@@ -50379,6 +50382,111 @@ func (m *UsageLogMutation) ResetBillingType() {
 	m.addbilling_type = nil
 }
 
+// SetUsageSource sets the "usage_source" field.
+func (m *UsageLogMutation) SetUsageSource(i int8) {
+	m.usage_source = &i
+	m.addusage_source = nil
+}
+
+// UsageSource returns the value of the "usage_source" field in the mutation.
+func (m *UsageLogMutation) UsageSource() (r int8, exists bool) {
+	v := m.usage_source
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUsageSource returns the old "usage_source" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldUsageSource(ctx context.Context) (v int8, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUsageSource is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUsageSource requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUsageSource: %w", err)
+	}
+	return oldValue.UsageSource, nil
+}
+
+// AddUsageSource adds i to the "usage_source" field.
+func (m *UsageLogMutation) AddUsageSource(i int8) {
+	if m.addusage_source != nil {
+		*m.addusage_source += i
+	} else {
+		m.addusage_source = &i
+	}
+}
+
+// AddedUsageSource returns the value that was added to the "usage_source" field in this mutation.
+func (m *UsageLogMutation) AddedUsageSource() (r int8, exists bool) {
+	v := m.addusage_source
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetUsageSource resets all changes to the "usage_source" field.
+func (m *UsageLogMutation) ResetUsageSource() {
+	m.usage_source = nil
+	m.addusage_source = nil
+}
+
+// SetUsageEstimationMethod sets the "usage_estimation_method" field.
+func (m *UsageLogMutation) SetUsageEstimationMethod(s string) {
+	m.usage_estimation_method = &s
+}
+
+// UsageEstimationMethod returns the value of the "usage_estimation_method" field in the mutation.
+func (m *UsageLogMutation) UsageEstimationMethod() (r string, exists bool) {
+	v := m.usage_estimation_method
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUsageEstimationMethod returns the old "usage_estimation_method" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldUsageEstimationMethod(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUsageEstimationMethod is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUsageEstimationMethod requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUsageEstimationMethod: %w", err)
+	}
+	return oldValue.UsageEstimationMethod, nil
+}
+
+// ClearUsageEstimationMethod clears the value of the "usage_estimation_method" field.
+func (m *UsageLogMutation) ClearUsageEstimationMethod() {
+	m.usage_estimation_method = nil
+	m.clearedFields[usagelog.FieldUsageEstimationMethod] = struct{}{}
+}
+
+// UsageEstimationMethodCleared returns if the "usage_estimation_method" field was cleared in this mutation.
+func (m *UsageLogMutation) UsageEstimationMethodCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldUsageEstimationMethod]
+	return ok
+}
+
+// ResetUsageEstimationMethod resets all changes to the "usage_estimation_method" field.
+func (m *UsageLogMutation) ResetUsageEstimationMethod() {
+	m.usage_estimation_method = nil
+	delete(m.clearedFields, usagelog.FieldUsageEstimationMethod)
+}
+
 // SetBillingState sets the "billing_state" field.
 func (m *UsageLogMutation) SetBillingState(i int8) {
 	m.billing_state = &i
@@ -51426,7 +51534,7 @@ func (m *UsageLogMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UsageLogMutation) Fields() []string {
-	fields := make([]string, 0, 48)
+	fields := make([]string, 0, 50)
 	if m.user != nil {
 		fields = append(fields, usagelog.FieldUserID)
 	}
@@ -51519,6 +51627,12 @@ func (m *UsageLogMutation) Fields() []string {
 	}
 	if m.billing_type != nil {
 		fields = append(fields, usagelog.FieldBillingType)
+	}
+	if m.usage_source != nil {
+		fields = append(fields, usagelog.FieldUsageSource)
+	}
+	if m.usage_estimation_method != nil {
+		fields = append(fields, usagelog.FieldUsageEstimationMethod)
 	}
 	if m.billing_state != nil {
 		fields = append(fields, usagelog.FieldBillingState)
@@ -51641,6 +51755,10 @@ func (m *UsageLogMutation) Field(name string) (ent.Value, bool) {
 		return m.AccountRateMultiplier()
 	case usagelog.FieldBillingType:
 		return m.BillingType()
+	case usagelog.FieldUsageSource:
+		return m.UsageSource()
+	case usagelog.FieldUsageEstimationMethod:
+		return m.UsageEstimationMethod()
 	case usagelog.FieldBillingState:
 		return m.BillingState()
 	case usagelog.FieldStream:
@@ -51746,6 +51864,10 @@ func (m *UsageLogMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldAccountRateMultiplier(ctx)
 	case usagelog.FieldBillingType:
 		return m.OldBillingType(ctx)
+	case usagelog.FieldUsageSource:
+		return m.OldUsageSource(ctx)
+	case usagelog.FieldUsageEstimationMethod:
+		return m.OldUsageEstimationMethod(ctx)
 	case usagelog.FieldBillingState:
 		return m.OldBillingState(ctx)
 	case usagelog.FieldStream:
@@ -52006,6 +52128,20 @@ func (m *UsageLogMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetBillingType(v)
 		return nil
+	case usagelog.FieldUsageSource:
+		v, ok := value.(int8)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUsageSource(v)
+		return nil
+	case usagelog.FieldUsageEstimationMethod:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUsageEstimationMethod(v)
+		return nil
 	case usagelog.FieldBillingState:
 		v, ok := value.(int8)
 		if !ok {
@@ -52181,6 +52317,9 @@ func (m *UsageLogMutation) AddedFields() []string {
 	if m.addbilling_type != nil {
 		fields = append(fields, usagelog.FieldBillingType)
 	}
+	if m.addusage_source != nil {
+		fields = append(fields, usagelog.FieldUsageSource)
+	}
 	if m.addbilling_state != nil {
 		fields = append(fields, usagelog.FieldBillingState)
 	}
@@ -52239,6 +52378,8 @@ func (m *UsageLogMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedAccountRateMultiplier()
 	case usagelog.FieldBillingType:
 		return m.AddedBillingType()
+	case usagelog.FieldUsageSource:
+		return m.AddedUsageSource()
 	case usagelog.FieldBillingState:
 		return m.AddedBillingState()
 	case usagelog.FieldDurationMs:
@@ -52372,6 +52513,13 @@ func (m *UsageLogMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddBillingType(v)
 		return nil
+	case usagelog.FieldUsageSource:
+		v, ok := value.(int8)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddUsageSource(v)
+		return nil
 	case usagelog.FieldBillingState:
 		v, ok := value.(int8)
 		if !ok {
@@ -52455,6 +52603,9 @@ func (m *UsageLogMutation) ClearedFields() []string {
 	if m.FieldCleared(usagelog.FieldAccountRateMultiplier) {
 		fields = append(fields, usagelog.FieldAccountRateMultiplier)
 	}
+	if m.FieldCleared(usagelog.FieldUsageEstimationMethod) {
+		fields = append(fields, usagelog.FieldUsageEstimationMethod)
+	}
 	if m.FieldCleared(usagelog.FieldDurationMs) {
 		fields = append(fields, usagelog.FieldDurationMs)
 	}
@@ -52534,6 +52685,9 @@ func (m *UsageLogMutation) ClearField(name string) error {
 		return nil
 	case usagelog.FieldAccountRateMultiplier:
 		m.ClearAccountRateMultiplier()
+		return nil
+	case usagelog.FieldUsageEstimationMethod:
+		m.ClearUsageEstimationMethod()
 		return nil
 	case usagelog.FieldDurationMs:
 		m.ClearDurationMs()
@@ -52668,6 +52822,12 @@ func (m *UsageLogMutation) ResetField(name string) error {
 		return nil
 	case usagelog.FieldBillingType:
 		m.ResetBillingType()
+		return nil
+	case usagelog.FieldUsageSource:
+		m.ResetUsageSource()
+		return nil
+	case usagelog.FieldUsageEstimationMethod:
+		m.ResetUsageEstimationMethod()
 		return nil
 	case usagelog.FieldBillingState:
 		m.ResetBillingState()

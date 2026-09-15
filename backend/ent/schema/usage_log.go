@@ -124,6 +124,13 @@ func (UsageLog) Fields() []ent.Field {
 		// 其他字段
 		field.Int8("billing_type").
 			Default(0),
+		field.Int8("usage_source").
+			Default(0).
+			Comment("用量来源：0=未知 1=上游 2=本地估算 3=最低兜底"),
+		field.String("usage_estimation_method").
+			MaxLen(16).
+			Optional().
+			Comment("用量估算方式：upstream/tokenizer/heuristic/minimum"),
 		// billing_state: 0=已结算 1=定价缺失待处理 2=价格已恢复（未追扣）。
 		// 定价解析失败时用量仍然落库并标记为 1，绝不静默按 $0 结算，也不丢弃记录。
 		field.Int8("billing_state").
