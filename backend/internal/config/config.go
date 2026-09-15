@@ -1270,6 +1270,11 @@ type GatewayConfig struct {
 	MaxAccountSwitches int `mapstructure:"max_account_switches"`
 	// Gemini 账户切换最大次数（Gemini 平台单独配置，因 API 限制更严格）
 	MaxAccountSwitchesGemini int `mapstructure:"max_account_switches_gemini"`
+	// OpenAI request-scoped capacity recovery budget. Values above the built-in
+	// safety ceilings are clamped; zero uses the defaults.
+	OpenAICapacityRetryMaxAttempts   int `mapstructure:"openai_capacity_retry_max_attempts"`
+	OpenAICapacityRetryBudgetSeconds int `mapstructure:"openai_capacity_retry_budget_seconds"`
+	OpenAICapacityRetryMaxRounds     int `mapstructure:"openai_capacity_retry_max_rounds"`
 
 	// Antigravity 429 fallback 限流时间（分钟），解析重置时间失败时使用
 	AntigravityFallbackCooldownMinutes int `mapstructure:"antigravity_fallback_cooldown_minutes"`
@@ -2752,6 +2757,9 @@ func setDefaults() {
 	viper.SetDefault("gateway.failover_on_400", false)
 	viper.SetDefault("gateway.max_account_switches", 10)
 	viper.SetDefault("gateway.max_account_switches_gemini", 3)
+	viper.SetDefault("gateway.openai_capacity_retry_max_attempts", 3)
+	viper.SetDefault("gateway.openai_capacity_retry_budget_seconds", 15)
+	viper.SetDefault("gateway.openai_capacity_retry_max_rounds", 3)
 	viper.SetDefault("gateway.force_codex_cli", false)
 	viper.SetDefault("gateway.disable_codex_identity_enforcement", false)
 	viper.SetDefault("gateway.disable_codex_originator_normalization", false)

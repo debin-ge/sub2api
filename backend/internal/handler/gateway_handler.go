@@ -2128,6 +2128,15 @@ func (h *GatewayHandler) handleConcurrencyError(c *gin.Context, err error, slotT
 }
 
 func (h *GatewayHandler) handleFailoverExhausted(c *gin.Context, failoverErr *service.UpstreamFailoverError, platform string, streamStarted bool) {
+	if failoverErr != nil && platform == service.PlatformOpenAI && failoverErr.IsOpenAICapacityShed() && strings.TrimSpace(failoverErr.ClientMessage) != "" {
+		if streamStarted {
+			service.MarkOpsStreamError(c, "server_error", failoverErr.ClientMessage, http.StatusServiceUnavailable)
+			return
+		}
+		service.SetOpsUpstreamError(c, http.StatusServiceUnavailable, failoverErr.ClientMessage, "")
+		h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "server_error", failoverErr.ClientMessage, false)
+		return
+	}
 	statusCode := failoverErr.StatusCode
 	responseBody := failoverErr.ResponseBody
 	if service.IsOpenAISilentRefusalErrorBody(responseBody) {

@@ -138,7 +138,8 @@ type FailoverState struct {
 	// SwitchCount 也不前进的活锁。清空后必须把它们放回排除集。
 	profitVetoedAccountIDs map[int64]struct{}
 	// profitVetoCount 本次请求累计的利润否决次数，用于 maxProfitVetoAttempts 上限。
-	profitVetoCount int
+	profitVetoCount  int
+	capacityRecovery *OpenAICapacityRecoveryState
 }
 
 // NewFailoverState 创建 failover 状态

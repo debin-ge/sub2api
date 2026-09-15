@@ -230,6 +230,13 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 				h.responsesErrorResponse(c, cls.Status, cls.ErrType, message)
 				return
 			}
+			if fs.LastFailoverErr != nil && fs.LastFailoverErr.IsOpenAICapacityShed() {
+				if action := fs.HandleOpenAICapacitySelectionExhausted(requestCtx); action == FailoverContinue {
+					continue
+				}
+				h.handleResponsesFailoverExhausted(c, fs.LastFailoverErr, streamStarted)
+				return
+			}
 			action := fs.HandleSelectionExhausted(requestCtx)
 			switch action {
 			case FailoverContinue:
@@ -330,6 +337,19 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 				if c.Writer.Size() != writerSizeBeforeForward {
 					h.handleResponsesFailoverExhausted(c, failoverErr, true)
 					return
+				}
+				if failoverErr.IsOpenAICapacityShed() {
+					action := fs.HandleOpenAICapacityError(requestCtx, h.cfg, account.ID, failoverErr)
+					switch action {
+					case FailoverContinue:
+						continue
+					case FailoverCanceled:
+						failoverClientGone(c)
+						return
+					default:
+						h.handleResponsesFailoverExhausted(c, fs.LastFailoverErr, streamStarted)
+						return
+					}
 				}
 				action := fs.HandleFailoverError(requestCtx, h.gatewayService, account.ID, account.Platform, account.GetPoolModeRetryCount(), failoverErr)
 				switch action {

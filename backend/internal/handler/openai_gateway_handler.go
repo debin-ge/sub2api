@@ -672,6 +672,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
 	var passthroughFailoverState openAIPassthroughFailoverState
 	var mappingFallback service.ChannelMappingFallbackState
+	capacityRecovery := NewOpenAICapacityRecoveryState(h.cfg)
 
 	// 生图意图的 /v1/responses 请求必须调度到确实支持 Responses API 的账号，否则
 	// 会在 forward 阶段被静默降级为无法生图的 Chat Completions 直转（#4417）。
@@ -735,6 +736,13 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 				}
 				h.handleStreamingAwareError(c, cls.Status, cls.ErrType, cls.Message, streamStarted)
+				return
+			}
+			if lastFailoverErr != nil && capacityRecovery.IsCapacityFailure(lastFailoverErr) && beginOpenAICapacityNextRound(c.Request.Context(), capacityRecovery, failedAccountIDs) {
+				continue
+			}
+			if lastFailoverErr != nil && capacityRecovery.IsCapacityFailure(lastFailoverErr) {
+				h.handleFailoverExhausted(c, lastFailoverErr, streamStarted)
 				return
 			}
 			if lastFailoverErr != nil {
@@ -940,7 +948,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						return
 					}
 					if !openAIForwardMayFailover(c, writerSizeBeforeForward, failoverErr) {
-						h.gatewayService.ObserveOpenAIAccountHealthFailure(c.Request.Context(), account, err)
+						if !failoverErr.IsOpenAICapacityShed() {
+							h.gatewayService.ObserveOpenAIAccountHealthFailure(c.Request.Context(), account, err)
+						}
 						h.handleFailoverExhausted(c, failoverErr, true)
 						return
 					}
@@ -959,6 +969,33 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					if openAIFirstOutputFailoverExhausted(failoverErr, &firstOutputTimeoutSwitchCount) {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
+					}
+					if capacityRecovery.IsCapacityFailure(failoverErr) {
+						if retryCount, retryDelay, ok := capacityRecovery.BeginSameAccountRetry(account.ID, failoverErr); ok {
+							reqLog.Warn("openai.capacity_same_account_retry",
+								zap.Int64("account_id", account.ID),
+								zap.Int("retry_count", retryCount),
+								zap.Int("retry_max", capacityRecovery.MaxAttempts()),
+								zap.Int("round", capacityRecovery.Round()),
+								zap.Int("round_max", capacityRecovery.MaxRounds()),
+								zap.Duration("retry_delay", retryDelay),
+								zap.Duration("remaining_budget", capacityRecovery.Remaining()),
+							)
+							select {
+							case <-c.Request.Context().Done():
+								return
+							case <-time.After(retryDelay):
+							}
+							continue
+						}
+						if capacityRecovery.Exhausted() {
+							h.handleFailoverExhausted(c, failoverErr, streamStarted)
+							return
+						}
+						capacityRecovery.MarkAccountFailed(account.ID)
+						failedAccountIDs[account.ID] = struct{}{}
+						lastFailoverErr = failoverErr
+						continue
 					}
 					// 池模式：同账号重试
 					if failoverErr.RetryableOnSameAccount {
@@ -1333,6 +1370,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
 	var mappingFallback service.ChannelMappingFallbackState
 	effectiveMappedModel := preferredMappedModel
+	capacityRecovery := NewOpenAICapacityRecoveryState(h.cfg)
 
 	// 分组利润控制：Messages 文本入口同样请求级装门并固定 pricingAt。
 	msgPricingCtx, pricingAt := h.gatewayService.WithOpenAIRequestPricingContext(c.Request.Context(), apiKey.GroupID)
@@ -1387,6 +1425,13 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 					return
 				}
 			} else {
+				if lastFailoverErr != nil && capacityRecovery.IsCapacityFailure(lastFailoverErr) && beginOpenAICapacityNextRound(c.Request.Context(), capacityRecovery, failedAccountIDs) {
+					continue
+				}
+				if lastFailoverErr != nil && capacityRecovery.IsCapacityFailure(lastFailoverErr) {
+					h.handleAnthropicFailoverExhausted(c, lastFailoverErr, streamStarted)
+					return
+				}
 				if lastFailoverErr != nil {
 					h.handleAnthropicFailoverExhausted(c, lastFailoverErr, streamStarted)
 				} else {
@@ -1537,7 +1582,9 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 						return
 					}
 					if c.Writer.Size() != writerSizeBeforeForward {
-						h.gatewayService.ObserveOpenAIAccountHealthFailure(c.Request.Context(), account, err)
+						if !failoverErr.IsOpenAICapacityShed() {
+							h.gatewayService.ObserveOpenAIAccountHealthFailure(c.Request.Context(), account, err)
+						}
 						h.handleAnthropicFailoverExhausted(c, failoverErr, true)
 						return
 					}
@@ -1547,6 +1594,33 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 					if !failoverErr.ShouldRetryNextAccount() {
 						h.handleAnthropicFailoverExhausted(c, failoverErr, streamStarted)
 						return
+					}
+					if capacityRecovery.IsCapacityFailure(failoverErr) {
+						if retryCount, retryDelay, ok := capacityRecovery.BeginSameAccountRetry(account.ID, failoverErr); ok {
+							reqLog.Warn("openai_messages.capacity_same_account_retry",
+								zap.Int64("account_id", account.ID),
+								zap.Int("retry_count", retryCount),
+								zap.Int("retry_max", capacityRecovery.MaxAttempts()),
+								zap.Int("round", capacityRecovery.Round()),
+								zap.Int("round_max", capacityRecovery.MaxRounds()),
+								zap.Duration("retry_delay", retryDelay),
+								zap.Duration("remaining_budget", capacityRecovery.Remaining()),
+							)
+							select {
+							case <-c.Request.Context().Done():
+								return
+							case <-time.After(retryDelay):
+							}
+							continue
+						}
+						if capacityRecovery.Exhausted() {
+							h.handleAnthropicFailoverExhausted(c, failoverErr, streamStarted)
+							return
+						}
+						capacityRecovery.MarkAccountFailed(account.ID)
+						failedAccountIDs[account.ID] = struct{}{}
+						lastFailoverErr = failoverErr
+						continue
 					}
 					// 池模式：同账号重试
 					if failoverErr.RetryableOnSameAccount {
@@ -2623,6 +2697,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	var lastFailoverErr *service.UpstreamFailoverError
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
 	wsAttemptMessage := append([]byte(nil), firstMessage...)
+	capacityRecovery := NewOpenAICapacityRecoveryState(h.cfg)
 	waitForWSSameAccountRetry := func(account *service.Account, failoverErr *service.UpstreamFailoverError) bool {
 		if account == nil || failoverErr == nil || failoverErr.StatusCode != http.StatusTooManyRequests || failoverErr.SameAccountRetryDeadline.IsZero() {
 			return false
@@ -2657,6 +2732,16 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		if !failoverErr.ShouldRetryNextAccount() {
 			closeOpenAIWSFailoverExhausted(c, wsConn, failoverErr)
 			return false
+		}
+		if capacityRecovery.IsCapacityFailure(failoverErr) {
+			if capacityRecovery.Exhausted() {
+				closeOpenAIWSFailoverExhausted(c, wsConn, failoverErr)
+				return false
+			}
+			capacityRecovery.MarkAccountFailed(account.ID)
+			failedAccountIDs[account.ID] = struct{}{}
+			lastFailoverErr = failoverErr
+			return ensureUserSlotHeld()
 		}
 		if ctx.Err() != nil {
 			return false
@@ -2731,6 +2816,9 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				zap.Int("excluded_account_count", len(failedAccountIDs)),
 				zap.String("routing_model", routingModel),
 			)
+			if lastFailoverErr != nil && capacityRecovery.IsCapacityFailure(lastFailoverErr) && beginOpenAICapacityNextRound(ctx, capacityRecovery, failedAccountIDs) {
+				continue
+			}
 			if lastFailoverErr != nil {
 				closeOpenAIWSFailoverExhausted(c, wsConn, lastFailoverErr)
 			} else {
@@ -2739,6 +2827,9 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			return
 		}
 		if selection == nil || selection.Account == nil {
+			if lastFailoverErr != nil && capacityRecovery.IsCapacityFailure(lastFailoverErr) && beginOpenAICapacityNextRound(ctx, capacityRecovery, failedAccountIDs) {
+				continue
+			}
 			if lastFailoverErr != nil {
 				closeOpenAIWSFailoverExhausted(c, wsConn, lastFailoverErr)
 			} else {
@@ -3165,6 +3256,50 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 						zap.Int("upstream_status", failoverErr.StatusCode),
 						zap.Int("retry_payload_bytes", len(retryPayload)),
 					)
+				}
+				if capacityRecovery.IsCapacityFailure(failoverErr) {
+					if retryCount, retryDelay, ok := capacityRecovery.BeginSameAccountRetry(account.ID, failoverErr); ok {
+						reqLog.Warn("openai.websocket.capacity_same_account_retry",
+							zap.Int64("account_id", account.ID),
+							zap.Int("retry_count", retryCount),
+							zap.Int("retry_max", capacityRecovery.MaxAttempts()),
+							zap.Int("round", capacityRecovery.Round()),
+							zap.Int("round_max", capacityRecovery.MaxRounds()),
+							zap.Duration("retry_delay", retryDelay),
+							zap.Duration("remaining_budget", capacityRecovery.Remaining()),
+						)
+						select {
+						case <-ctx.Done():
+							return
+						case <-time.After(retryDelay):
+						}
+						if !ensureUserSlotHeld() {
+							return
+						}
+						if currentAccountRelease == nil {
+							accountRelease, acquired, acquireErr := h.concurrencyHelper.TryAcquireAccountSlot(ctx, account.ID, accountMaxConcurrency)
+							if acquireErr != nil || !acquired {
+								reqLog.Warn("openai.websocket_capacity_retry_slot_unavailable",
+									zap.Int64("account_id", account.ID),
+									zap.Error(acquireErr),
+								)
+								closeOpenAIClientWS(wsConn, coderws.StatusTryAgainLater, "account is busy, please retry later")
+								return
+							}
+							currentAccountRelease = wrapReleaseOnDone(ctx, accountRelease)
+						}
+						wsFirstMessage = wsAttemptMessage
+						continue
+					}
+					if capacityRecovery.Exhausted() {
+						closeOpenAIWSFailoverExhausted(c, wsConn, failoverErr)
+						return
+					}
+					capacityRecovery.MarkAccountFailed(account.ID)
+					failedAccountIDs[account.ID] = struct{}{}
+					lastFailoverErr = failoverErr
+					releaseAccountSlot()
+					break
 				}
 				if waitForWSSameAccountRetry(account, failoverErr) {
 					if failoverErr.ShouldReportAccountScheduleFailure() {

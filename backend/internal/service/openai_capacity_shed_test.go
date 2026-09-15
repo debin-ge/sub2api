@@ -108,6 +108,33 @@ func TestOpenAIHTTPCapacityShedIsRequestScopedForOAuthAccounts(t *testing.T) {
 	require.Zero(t, repo.tempUnschedCalls)
 }
 
+func TestOpenAISelectedModelCapacityIsRequestScoped(t *testing.T) {
+	message := "Selected model is at capacity. Please try a different model."
+	body := []byte(`{"error":{"type":"invalid_request_error","message":"` + message + `"}}`)
+
+	require.True(t, isOpenAICapacityShedMessage(message))
+	require.True(t, isOpenAITransientProcessingError(http.StatusBadRequest, message, body))
+	require.True(t, isOpenAIRequestScopedCapacityShed(message, body))
+
+	err := newOpenAIUpstreamFailoverError(http.StatusTooManyRequests, nil, body, message, false)
+	require.True(t, err.RetryableOnSameAccount)
+	require.True(t, err.RequestScopedTransient)
+	require.Equal(t, http.StatusServiceUnavailable, err.ClientStatusCode)
+	require.Equal(t, message, err.ClientMessage)
+	require.True(t, err.IsOpenAICapacityShed())
+	require.False(t, err.ShouldReportAccountScheduleFailure())
+}
+
+func TestOpenAIOrdinaryRateLimitIsNotCapacityShed(t *testing.T) {
+	body := []byte(`{"error":{"type":"rate_limit_error","code":"rate_limit_exceeded","message":"Too many requests"}}`)
+	err := newOpenAIUpstreamFailoverError(http.StatusTooManyRequests, nil, body, "Too many requests", false)
+
+	require.False(t, err.RequestScopedTransient)
+	require.False(t, err.IsOpenAICapacityShed())
+	require.NotEqual(t, http.StatusServiceUnavailable, err.ClientStatusCode)
+	require.True(t, err.ShouldReportAccountScheduleFailure())
+}
+
 // 上游降载的真实序列是「event: error → event: response.failed」。error 帧不算
 // 客户端输出：若把它当首输出 flush，clientOutputStarted 被固化，随后的 failed
 // 事件就进不了 pre-output failover 分支，只能把致命错误原样转发给客户端。
