@@ -236,6 +236,7 @@ func (s *GatewayService) handleCCBufferedFromAnthropic(
 
 	var finalResp *apicompat.AnthropicResponse
 	var usage ClaudeUsage
+	var semanticOutput []byte
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -257,6 +258,7 @@ func (s *GatewayService) handleCCBufferedFromAnthropic(
 		if err := json.Unmarshal([]byte(payload), &event); err != nil {
 			continue
 		}
+		semanticOutput = appendFallbackSemanticOutput(semanticOutput, []byte(payload))
 
 		// message_start carries the initial response structure and cache usage
 		if event.Type == "message_start" && event.Message != nil {
@@ -341,6 +343,10 @@ func (s *GatewayService) handleCCBufferedFromAnthropic(
 		RequestID:       requestID,
 		UpstreamHeaders: resp.Header,
 		Usage:           usage,
+		FallbackSemanticOutput: func() []byte {
+			value, _ := json.Marshal(finalResp)
+			return appendFallbackSemanticOutput(nil, value)
+		}(),
 		Model:           originalModel,
 		UpstreamModel:   mappedModel,
 		ReasoningEffort: reasoningEffort,
@@ -379,6 +385,7 @@ func (s *GatewayService) handleCCStreamingFromAnthropic(
 	ccState.IncludeUsage = includeUsage
 
 	var usage ClaudeUsage
+	var semanticOutput []byte
 	var firstTokenMs *int
 	firstChunk := true
 
@@ -391,15 +398,16 @@ func (s *GatewayService) handleCCStreamingFromAnthropic(
 
 	resultWithUsage := func() *ForwardResult {
 		return &ForwardResult{
-			RequestID:       requestID,
-			UpstreamHeaders: resp.Header,
-			Usage:           usage,
-			Model:           originalModel,
-			UpstreamModel:   mappedModel,
-			ReasoningEffort: reasoningEffort,
-			Stream:          true,
-			Duration:        time.Since(startTime),
-			FirstTokenMs:    firstTokenMs,
+			RequestID:              requestID,
+			UpstreamHeaders:        resp.Header,
+			Usage:                  usage,
+			FallbackSemanticOutput: semanticOutput,
+			Model:                  originalModel,
+			UpstreamModel:          mappedModel,
+			ReasoningEffort:        reasoningEffort,
+			Stream:                 true,
+			Duration:               time.Since(startTime),
+			FirstTokenMs:           firstTokenMs,
 		}
 	}
 
@@ -466,6 +474,7 @@ func (s *GatewayService) handleCCStreamingFromAnthropic(
 		if err := json.Unmarshal([]byte(payload), &event); err != nil {
 			continue
 		}
+		semanticOutput = appendFallbackSemanticOutput(semanticOutput, []byte(payload))
 
 		if processAnthropicEvent(&event) {
 			return resultWithUsage(), nil

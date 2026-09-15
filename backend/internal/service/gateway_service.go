@@ -619,7 +619,10 @@ type ForwardResult struct {
 	Usage                 ClaudeUsage
 	UsageSource           UsageSource
 	UsageEstimationMethod string
-	Model                 string
+	// FallbackSemanticOutput contains bounded response content used only when
+	// the upstream omitted usage. It is never persisted as part of billing.
+	FallbackSemanticOutput []byte
+	Model                  string
 	// UpstreamModel is the actual upstream model after mapping.
 	// Prefer empty when it is identical to Model; persistence normalizes equal values away as no-op mappings.
 	UpstreamModel string

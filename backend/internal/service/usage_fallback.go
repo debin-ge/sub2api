@@ -9,6 +9,8 @@ import (
 
 const fallbackUsageMinimumTokens = 1
 
+const fallbackSemanticOutputMaxBytes = 1 << 20
+
 // EstimateOpenAIUsageFallback estimates billable text usage when an upstream
 // success response omitted usage. It deliberately leaves cache buckets empty:
 // cache hit/write cannot be inferred safely from a response without usage.
@@ -122,8 +124,8 @@ func applyGatewayUsageFallback(result *ForwardResult, requestBody []byte) {
 		result.UsageEstimationMethod = "upstream"
 		return
 	}
-	if len(requestBody) > 0 {
-		usage, source, method := EstimateOpenAIUsageFallback(result.Model, requestBody, nil)
+	if len(requestBody) > 0 || len(result.FallbackSemanticOutput) > 0 {
+		usage, source, method := EstimateOpenAIUsageFallback(result.Model, requestBody, result.FallbackSemanticOutput)
 		result.Usage.InputTokens = usage.InputTokens
 		result.Usage.OutputTokens = usage.OutputTokens
 		result.UsageSource = source
@@ -133,6 +135,22 @@ func applyGatewayUsageFallback(result *ForwardResult, requestBody []byte) {
 	result.Usage.InputTokens = fallbackUsageMinimumTokens
 	result.UsageSource = UsageSourceMinimum
 	result.UsageEstimationMethod = "minimum"
+}
+
+// appendFallbackSemanticOutput extracts only billable response content from a
+// provider response/event. The cap bounds worker-retained memory while token
+// counting remains based on the observed prefix rather than the protocol
+// envelope or usage metadata.
+func appendFallbackSemanticOutput(dst, payload []byte) []byte {
+	semantic := extractOpenAISemanticOutputForBilling(payload)
+	if len(semantic) == 0 || len(dst) >= fallbackSemanticOutputMaxBytes {
+		return dst
+	}
+	remaining := fallbackSemanticOutputMaxBytes - len(dst)
+	if len(semantic) > remaining {
+		semantic = semantic[:remaining]
+	}
+	return append(dst, semantic...)
 }
 
 func estimateFallbackInputTokens(model string, body []byte) (int, string, bool) {

@@ -60,3 +60,33 @@ func TestApplyOpenAIUsageFallbackDoesNotReplaceObservedUsage(t *testing.T) {
 	require.Equal(t, 123, result.Usage.InputTokens)
 	require.Equal(t, 45, result.Usage.OutputTokens)
 }
+
+func TestApplyGatewayUsageFallbackUsesRequestAndSemanticOutput(t *testing.T) {
+	result := &ForwardResult{
+		Model:                  "gpt-5.4",
+		FallbackSemanticOutput: []byte(`{"content":[{"text":"charge the generated response"}]}`),
+	}
+
+	applyGatewayUsageFallback(
+		result,
+		[]byte(`{"messages":[{"role":"user","content":"charge this request"}]}`),
+	)
+
+	require.Equal(t, UsageSourceEstimated, result.UsageSource)
+	require.Equal(t, "tokenizer", result.UsageEstimationMethod)
+	require.Greater(t, result.Usage.InputTokens, fallbackUsageMinimumTokens)
+	require.Greater(t, result.Usage.OutputTokens, 0)
+}
+
+func TestApplyGatewayUsageFallbackBillsObservedOutputWithoutRequestBody(t *testing.T) {
+	result := &ForwardResult{
+		Model:                  "gpt-5.4",
+		FallbackSemanticOutput: []byte(`{"content":[{"text":"observed output"}]}`),
+	}
+
+	applyGatewayUsageFallback(result, nil)
+
+	require.GreaterOrEqual(t, result.Usage.InputTokens, fallbackUsageMinimumTokens)
+	require.Greater(t, result.Usage.OutputTokens, 0)
+	require.NotEqual(t, UsageSourceUnknown, result.UsageSource)
+}
