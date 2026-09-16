@@ -105,6 +105,7 @@ func TestMigrationChecksumCompatibilityRules_CoverEditedUpgradeCompatibilityMigr
 		"120_enforce_payment_orders_out_trade_no_unique_notx.sql",
 		"123_fix_legacy_auth_source_grant_on_signup_defaults.sql",
 		"186_registration_email_suffix_blacklist.sql",
+		"237_add_minimax_platform.sql",
 		"269_drop_video_manual_review.sql",
 		"269_drop_video_manual_review_notx.sql",
 	} {

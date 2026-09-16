@@ -201,6 +201,35 @@ func TestIsMigrationChecksumCompatible(t *testing.T) {
 		)
 		require.True(t, ok)
 	})
+
+	// 生产（release 血脉，2.0.4~2.0.7）应用的是 v0.2.4 合并版 237，升级到合并后的镜像时
+	// 正是卡在这一条上崩溃循环。
+	t.Run("237生产在野版本checksum兼容修订版", func(t *testing.T) {
+		ok := isMigrationChecksumCompatible(
+			"237_add_minimax_platform.sql",
+			"efbd2cf5a80d6e89c06c205fe88bc7d07636833c1d87181f3c30fac012e73ad6",
+			"5c931f91071c1a333ff0ba05ee5887d11385a0510dcc85f5392c6bf339f0ebc2",
+		)
+		require.True(t, ok)
+	})
+
+	t.Run("237首版checksum兼容修订版", func(t *testing.T) {
+		ok := isMigrationChecksumCompatible(
+			"237_add_minimax_platform.sql",
+			"f4c73d2dbce114ca7ade1aac51998c3465490f4f3c9b3e868e53590f3fa8601b",
+			"5c931f91071c1a333ff0ba05ee5887d11385a0510dcc85f5392c6bf339f0ebc2",
+		)
+		require.True(t, ok)
+	})
+
+	t.Run("237在未知库checksum下不兼容", func(t *testing.T) {
+		ok := isMigrationChecksumCompatible(
+			"237_add_minimax_platform.sql",
+			"0000000000000000000000000000000000000000000000000000000000000000",
+			"5c931f91071c1a333ff0ba05ee5887d11385a0510dcc85f5392c6bf339f0ebc2",
+		)
+		require.False(t, ok)
+	})
 }
 
 // migrationChecksumRulesWithKnownDrift 记录 fileChecksum 已经和文件内容对不上的
