@@ -1272,9 +1272,16 @@ type GatewayConfig struct {
 	MaxAccountSwitchesGemini int `mapstructure:"max_account_switches_gemini"`
 	// OpenAI request-scoped capacity recovery budget. Values above the built-in
 	// safety ceilings are clamped; zero uses the defaults.
-	OpenAICapacityRetryMaxAttempts   int `mapstructure:"openai_capacity_retry_max_attempts"`
+	// OpenAICapacityRetryMaxAttempts 同账号重试上限（默认 3，硬顶 3）。
+	// 广度优先策略下第 1 轮不做同账号重试，该上限从第 2 轮起生效。
+	OpenAICapacityRetryMaxAttempts int `mapstructure:"openai_capacity_retry_max_attempts"`
+	// OpenAICapacityRetryBudgetSeconds 降载重试的墙钟上限。
+	// 0（默认）表示不设上限：一直重试到客户端自己断开，尽量不把 overloaded
+	// 文案吐给用户；>0 时作为运维可设的可选上限。
 	OpenAICapacityRetryBudgetSeconds int `mapstructure:"openai_capacity_retry_budget_seconds"`
-	OpenAICapacityRetryMaxRounds     int `mapstructure:"openai_capacity_retry_max_rounds"`
+	// OpenAICapacityRetryMaxRounds 整池轮次上限。0（默认）表示不限轮次；
+	// >0 为显式上限；<0 关闭整套降载恢复，退回普通 failover（运维杀手锏）。
+	OpenAICapacityRetryMaxRounds int `mapstructure:"openai_capacity_retry_max_rounds"`
 
 	// Antigravity 429 fallback 限流时间（分钟），解析重置时间失败时使用
 	AntigravityFallbackCooldownMinutes int `mapstructure:"antigravity_fallback_cooldown_minutes"`

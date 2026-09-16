@@ -214,6 +214,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 					continue
 				}
 				if lastFailoverErr != nil && capacityRecovery.IsCapacityFailure(lastFailoverErr) {
+					logOpenAICapacityRecoveryExhausted(c.Request.Context(), capacityRecovery, 0, lastFailoverErr, "")
 					h.handleFailoverExhausted(c, lastFailoverErr, streamStarted)
 					return
 				}
@@ -349,7 +350,10 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 						return
 					}
 					if c.Writer.Size() != writerSizeBeforeForward {
-						if !failoverErr.IsOpenAICapacityShed() {
+						if failoverErr.IsOpenAICapacityShed() {
+							logOpenAICapacityRecoveryExhausted(c.Request.Context(), capacityRecovery, account.ID, failoverErr,
+								openAICapacityExhaustedReasonClientOutput)
+						} else {
 							h.gatewayService.ObserveOpenAIAccountHealthFailure(c.Request.Context(), account, err)
 						}
 						h.handleFailoverExhausted(c, failoverErr, true)
@@ -363,31 +367,20 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 						return
 					}
 					if capacityRecovery.IsCapacityFailure(failoverErr) {
-						if retryCount, retryDelay, ok := capacityRecovery.BeginSameAccountRetry(account.ID, failoverErr); ok {
-							reqLog.Warn("openai_chat_completions.capacity_same_account_retry",
-								zap.Int64("account_id", account.ID),
-								zap.Int("retry_count", retryCount),
-								zap.Int("retry_max", capacityRecovery.MaxAttempts()),
-								zap.Int("round", capacityRecovery.Round()),
-								zap.Int("round_max", capacityRecovery.MaxRounds()),
-								zap.Duration("retry_delay", retryDelay),
-								zap.Duration("remaining_budget", capacityRecovery.Remaining()),
-							)
-							select {
-							case <-c.Request.Context().Done():
-								return
-							case <-time.After(retryDelay):
-							}
+						switch capacityRecovery.Decide(c.Request.Context(), account.ID, failoverErr) {
+						case OpenAICapacityRetrySameAccount:
 							continue
-						}
-						if capacityRecovery.Exhausted() {
+						case OpenAICapacityRetryNextAccount:
+							failedAccountIDs[account.ID] = struct{}{}
+							lastFailoverErr = failoverErr
+							continue
+						case OpenAICapacityRetryCanceled:
+							return
+						default:
+							logOpenAICapacityRecoveryExhausted(c.Request.Context(), capacityRecovery, account.ID, failoverErr, "")
 							h.handleFailoverExhausted(c, failoverErr, streamStarted)
 							return
 						}
-						capacityRecovery.MarkAccountFailed(account.ID)
-						failedAccountIDs[account.ID] = struct{}{}
-						lastFailoverErr = failoverErr
-						continue
 					}
 					// Pool mode: retry on the same account
 					if failoverErr.RetryableOnSameAccount {

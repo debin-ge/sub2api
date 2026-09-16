@@ -597,7 +597,10 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			if shouldFailover && (turn == 1 || resp.StatusCode == http.StatusTooManyRequests) {
 				return nil, newOpenAIUpstreamFailoverError(resp.StatusCode, resp.Header, respBody, upstreamMsg, false)
 			}
-		} else if shouldFailover && (turn == 1 || resp.StatusCode == http.StatusTooManyRequests) {
+		} else if shouldFailover &&
+			(turn == 1 || resp.StatusCode == http.StatusTooManyRequests ||
+				isOpenAIRequestScopedCapacityShed(upstreamMsg, respBody)) {
+			// 降载也可能以 4xx/5xx 到达：与 SSE 分支同规则跨 turn 放行。
 			return nil, s.handleFailoverErrorResponsePassthrough(ctx, resp, c, account, body, respBody)
 		}
 		if account.Platform != PlatformGrok && (shouldFailover || shouldCooldownOpenAITransientUpstreamError(resp.StatusCode, respBody)) {
@@ -834,7 +837,11 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 					s.handleGrokAccountUpstreamError(ctx, account, statusCode, resp.Header, upstreamMessage)
 				}
 			}
-			if !wroteDownstream && shouldFailover && (turn == 1 || statusCode == http.StatusTooManyRequests) {
+			// 容量降载是请求级信号：只要下游还一字未写，就允许跨 turn 换号重放
+			// （turn>1 的重放由 openai_ws_forwarder_ingress 的当前轮重试载荷承接），
+			// 否则 turn>1 的降载只能把 overloaded 文案直接吐给用户。
+			if !wroteDownstream && shouldFailover &&
+				(turn == 1 || statusCode == http.StatusTooManyRequests || requestScopedCapacity) {
 				if account.Platform == PlatformGrok {
 					return nil, newOpenAIUpstreamFailoverError(statusCode, resp.Header, upstreamMessage, errMessage, false)
 				}

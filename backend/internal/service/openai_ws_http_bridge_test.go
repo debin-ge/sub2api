@@ -821,10 +821,14 @@ func TestProxyOpenAIWSHTTPBridgeTurnTransportErrorFailoverSafety(t *testing.T) {
 func TestProxyOpenAIWSHTTPBridgeTurnHTTPStatusFailoverSafety(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
+	const defaultErrorBody = `{"error":{"type":"server_error","message":"temporary upstream failure"}}`
+	const capacityShedBody = `{"error":{"type":"server_error","code":"server_is_overloaded","message":"Our servers are currently overloaded. Please try again later."}}`
+
 	tests := []struct {
 		name         string
 		turn         int
 		status       int
+		body         string
 		wantFailover bool
 		wantWrites   int
 	}{
@@ -832,13 +836,25 @@ func TestProxyOpenAIWSHTTPBridgeTurnHTTPStatusFailoverSafety(t *testing.T) {
 		{name: "first_turn_429", turn: 1, status: http.StatusTooManyRequests, wantFailover: true},
 		{name: "first_turn_500", turn: 1, status: http.StatusInternalServerError, wantFailover: true},
 		{name: "later_turn_500_does_not_replay", turn: 2, status: http.StatusInternalServerError, wantWrites: 1},
+		{
+			// 降载是请求级信号，也可能以 4xx/5xx 到达：下游一字未写时跨 turn 放行换号。
+			name:         "later_turn_capacity_shed_replays",
+			turn:         2,
+			status:       http.StatusServiceUnavailable,
+			body:         capacityShedBody,
+			wantFailover: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			respBody := tt.body
+			if respBody == "" {
+				respBody = defaultErrorBody
+			}
 			upstream := &httpUpstreamRecorder{resp: &http.Response{
 				StatusCode: tt.status,
 				Header:     make(http.Header),
-				Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"server_error","message":"temporary upstream failure"}}`)),
+				Body:       io.NopCloser(strings.NewReader(respBody)),
 			}}
 			svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
 			account := &Account{ID: 9, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Concurrency: 1}
@@ -955,11 +971,71 @@ func TestProxyOpenAIWSHTTPBridgeTurnSSEErrorFailoverSafety(t *testing.T) {
 	}
 }
 
+// 容量降载是请求级信号（上游让这次请求稍后再试），不是账号故障：只要下游还一字
+// 未写，turn>1 也必须允许换号重放，否则后续轮次的降载只能把 overloaded 文案直接
+// 吐给用户。turn>1 的重放由 openai_ws_forwarder_ingress 的当前轮重试载荷承接。
+func TestProxyOpenAIWSHTTPBridgeTurnFailsOverCapacityShedAfterFirstTurn(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "error_frame",
+			body: "data: {\"type\":\"error\",\"error\":{\"type\":\"service_unavailable_error\",\"code\":\"server_is_overloaded\",\"message\":\"Our servers are currently overloaded. Please try again later.\"}}\n\n",
+		},
+		{
+			name: "bare_response_failed",
+			body: "data: {\"type\":\"response.failed\",\"response\":{\"id\":\"resp_shed\",\"status\":\"failed\",\"error\":{\"code\":\"server_is_overloaded\",\"message\":\"Our servers are currently overloaded. Please try again later.\"}}}\n\n",
+		},
+		{
+			name: "slow_down",
+			body: "data: {\"type\":\"response.failed\",\"response\":{\"id\":\"resp_shed\",\"status\":\"failed\",\"error\":{\"code\":\"slow_down\",\"message\":\"Our servers are currently overloaded. Please try again later.\"}}}\n\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			upstream := &httpUpstreamRecorder{resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(tt.body)),
+			}}
+			svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+			account := &Account{ID: 11, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 1}
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			c.Request = httptest.NewRequest(http.MethodGet, "/v1/responses", nil)
+			payload := []byte(`{"type":"response.create","model":"gpt-5","input":"hi"}`)
+			var writes [][]byte
+
+			result, err := svc.proxyOpenAIWSHTTPBridgeTurn(
+				context.Background(), c, account, "sk-test", payload, len(payload),
+				"gpt-5", "", "", "", "", 2,
+				func(message []byte) error {
+					writes = append(writes, append([]byte(nil), message...))
+					return nil
+				},
+			)
+
+			var failoverErr *UpstreamFailoverError
+			require.Nil(t, result)
+			require.ErrorAs(t, err, &failoverErr)
+			require.Empty(t, writes)
+		})
+	}
+}
+
 // 桥接转发 error / response.failed 给 WS 客户端前必须把容量降载码改写为可重试
 // 的 server_error：Codex 对 server_is_overloaded/slow_down 判致命并终止会话。
 // 账号状态判定使用改写前的原始事件，不受影响。
+// 语义输出已写给下游后换号重放会重复输出，改写是此时唯一的补救手段。
 func TestProxyOpenAIWSHTTPBridgeTurnRewritesCapacityShedCodeForClient(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+
+	// 先写出语义输出，使桥接无法再 failover，走客户端副本改写路径。
+	semanticPrefix := "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_shed\"}}\n\n" +
+		"data: {\"type\":\"response.output_text.delta\",\"response_id\":\"resp_shed\",\"delta\":\"partial\"}\n\n"
 
 	tests := []struct {
 		name    string
@@ -970,14 +1046,13 @@ func TestProxyOpenAIWSHTTPBridgeTurnRewritesCapacityShedCodeForClient(t *testing
 		{
 			name:    "turn2_error_frame",
 			turn:    2,
-			body:    "data: {\"type\":\"error\",\"error\":{\"type\":\"service_unavailable_error\",\"code\":\"server_is_overloaded\",\"message\":\"Our servers are currently overloaded. Please try again later.\"}}\n\n",
+			body:    semanticPrefix + "data: {\"type\":\"error\",\"error\":{\"type\":\"service_unavailable_error\",\"code\":\"server_is_overloaded\",\"message\":\"Our servers are currently overloaded. Please try again later.\"}}\n\n",
 			wantErr: true,
 		},
 		{
-			// 后续 turn 不允许 replay，容量错误必须改写后交给客户端重试。
 			name: "turn2_bare_response_failed",
 			turn: 2,
-			body: "data: {\"type\":\"response.failed\",\"response\":{\"id\":\"resp_shed\",\"status\":\"failed\",\"error\":{\"code\":\"server_is_overloaded\",\"message\":\"Our servers are currently overloaded. Please try again later.\"}}}\n\n",
+			body: semanticPrefix + "data: {\"type\":\"response.failed\",\"response\":{\"id\":\"resp_shed\",\"status\":\"failed\",\"error\":{\"code\":\"server_is_overloaded\",\"message\":\"Our servers are currently overloaded. Please try again later.\"}}}\n\n",
 		},
 	}
 	for _, tt := range tests {
@@ -1004,15 +1079,17 @@ func TestProxyOpenAIWSHTTPBridgeTurnRewritesCapacityShedCodeForClient(t *testing
 				},
 			)
 
+			var failoverErr *UpstreamFailoverError
+			require.False(t, errors.As(err, &failoverErr))
 			if tt.wantErr {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
 			}
-			require.Len(t, writes, 1)
-			require.Contains(t, string(writes[0]), `"code":"server_error"`)
-			require.NotContains(t, string(writes[0]), "server_is_overloaded")
-			require.Contains(t, string(writes[0]), "Our servers are currently overloaded")
+			require.Len(t, writes, 3)
+			require.Contains(t, string(writes[2]), `"code":"server_error"`)
+			require.NotContains(t, string(writes[2]), "server_is_overloaded")
+			require.Contains(t, string(writes[2]), "Our servers are currently overloaded")
 		})
 	}
 }

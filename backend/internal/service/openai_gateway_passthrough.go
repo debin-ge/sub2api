@@ -1674,10 +1674,13 @@ func openAIStreamFailedEventRetryableOnSameAccount(account *Account, payload []b
 	if account == nil {
 		return false
 	}
-	// 容量降载是请求级信号，不是账号级故障：上游只是让本次请求稍后再试。
-	// 换账号并不改变被降载的因素（客户端身份、模型容量都与账号无关），
-	// 只会让单个请求把整池账号逐个消耗掉，最终仍以同一个错误告终。
-	// 因此先在同一账号上做有界重试，用尽后才按常规流程切号。
+	// 容量降载是请求级信号，不是账号级故障：上游只是让本次请求稍后再试，
+	// 因此这里返回 true，允许在同一账号上重试而不把它判成账号故障。
+	//
+	// 但重试「顺序」由 handler 侧的 OpenAICapacityRecoveryState 决定，且已改为
+	// 广度优先：账号分属不同组织/套餐，实测换号确有收益，所以第 1 轮先零睡眠地
+	// 把整池探一遍，扫不通再从第 2 轮起做同账号退避重试——原先「换号无用」的
+	// 论据被保留为第 2 轮起的兜底，而不是第 1 优先级。
 	if isOpenAIUpstreamCapacityShedEvent(payload) {
 		return true
 	}

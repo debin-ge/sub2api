@@ -335,6 +335,10 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 			if errors.As(err, &failoverErr) {
 				// Can't failover if streaming content already sent
 				if c.Writer.Size() != writerSizeBeforeForward {
+					if failoverErr.IsOpenAICapacityShed() {
+						logOpenAICapacityRecoveryExhausted(requestCtx, fs.openAICapacityRecovery(h.cfg), account.ID, failoverErr,
+							openAICapacityExhaustedReasonClientOutput)
+					}
 					h.handleResponsesFailoverExhausted(c, failoverErr, true)
 					return
 				}

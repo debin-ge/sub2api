@@ -330,6 +330,10 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
 				if c.Writer.Size() != writerSizeBeforeForward {
+					if failoverErr.IsOpenAICapacityShed() {
+						logOpenAICapacityRecoveryExhausted(c.Request.Context(), fs.openAICapacityRecovery(h.cfg), account.ID, failoverErr,
+							openAICapacityExhaustedReasonClientOutput)
+					}
 					h.handleCCFailoverExhausted(c, failoverErr, true)
 					return
 				}
