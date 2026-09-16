@@ -231,7 +231,8 @@ const upstreamSyncPlatforms = new Set([
   'minimax',
   'glm',
   'windsurf',
-  'opencode'
+  'opencode',
+  'bytedance'
 ])
 const canSyncUpstream = computed(() => {
   if (props.accountId) {

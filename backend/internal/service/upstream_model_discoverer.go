@@ -199,6 +199,8 @@ func (d *UpstreamModelDiscoverer) buildUpstreamModelsRequest(ctx context.Context
 		return d.buildWindsurfUpstreamModelsRequest(ctx, account)
 	case account.Platform == PlatformOpenCode:
 		return d.buildOpenCodeUpstreamModelsRequest(ctx, account)
+	case account.Platform == PlatformByteDance:
+		return d.buildByteDanceUpstreamModelsRequest(ctx, account)
 	case account.Platform == PlatformAntigravity && account.Type == AccountTypeUpstream:
 		return d.buildAntigravityUpstreamModelsRequest(ctx, account)
 	case account.Platform == PlatformAntigravity:
@@ -398,6 +400,37 @@ func (d *UpstreamModelDiscoverer) buildOpenCodeUpstreamModelsRequest(ctx context
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Accept", "application/json")
+	return req, nil
+}
+
+// buildByteDanceUpstreamModelsRequest probes the OpenAI-shaped model list of an
+// Ark account or of the relay that fronts it. Ark's own video API is the native
+// asynchronous protocol, so the list endpoint is only a best-effort discovery:
+// an upstream without /models answers 404 and the sync surfaces that verbatim
+// rather than inventing a catalog.
+func (d *UpstreamModelDiscoverer) buildByteDanceUpstreamModelsRequest(ctx context.Context, account *Account) (*http.Request, error) {
+	if account == nil || account.Type != AccountTypeAPIKey {
+		return nil, newUpstreamModelSyncUnsupportedError("Unsupported ByteDance account for upstream model sync", nil)
+	}
+	apiKey := strings.TrimSpace(account.GetCredential("api_key"))
+	if apiKey == "" {
+		return nil, newUpstreamModelSyncConfigError("No ByteDance API key is available", nil)
+	}
+	baseURL := strings.TrimSpace(account.GetCredential("base_url"))
+	if baseURL == "" {
+		baseURL = byteDanceDefaultBaseURL
+	}
+	validatedBaseURL, err := d.validateUpstreamBaseURL(baseURL)
+	if err != nil {
+		return nil, newUpstreamModelSyncConfigError("Invalid ByteDance base URL", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, buildOpenAIModelsURL(validatedBaseURL), nil)
+	if err != nil {
+		return nil, newUpstreamModelSyncConfigError("Invalid ByteDance model list URL", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	account.ApplyHeaderOverrides(req.Header)
 	return req, nil
 }
 

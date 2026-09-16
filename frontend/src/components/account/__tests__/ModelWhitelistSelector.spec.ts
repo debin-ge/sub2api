@@ -309,4 +309,34 @@ describe('ModelWhitelistSelector', () => {
     expect(wrapper.emitted('upstream-synced')).toEqual([[]])
     expect(wrapper.emitted('update:modelValue')).toEqual([[['x-preview-f-free']]])
   })
+
+  it('offers the upstream sync button for a ByteDance Ark account', async () => {
+    syncUpstreamModelsPreviewMock.mockReset()
+    syncUpstreamModelsPreviewMock.mockResolvedValue({ models: ['doubao-seedance-1-0-pro-250528'] })
+    const credentials = {
+      platform: 'bytedance',
+      type: 'apikey',
+      base_url: 'https://ark.cn-beijing.volces.com/api/v3',
+      api_key: 'ark-key'
+    }
+    const wrapper = mount(ModelWhitelistSelector, {
+      props: {
+        modelValue: [],
+        platform: 'bytedance',
+        syncCredentials: credentials
+      },
+      global: {
+        stubs: {
+          Icon: true,
+          ModelIcon: true
+        }
+      }
+    })
+
+    await wrapper.get('[data-testid="sync-upstream-models"]').trigger('click')
+    await flushPromises()
+
+    expect(syncUpstreamModelsPreviewMock).toHaveBeenCalledWith(credentials)
+    expect(wrapper.emitted('update:modelValue')?.[0]?.[0]).toEqual(['doubao-seedance-1-0-pro-250528'])
+  })
 })

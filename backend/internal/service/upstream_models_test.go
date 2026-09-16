@@ -877,6 +877,49 @@ func TestBuildUpstreamModelsRequestsForAPIKeyAccounts(t *testing.T) {
 	require.Equal(t, "antigravity-key", antigravityReq.Header.Get("x-api-key"))
 }
 
+// ByteDance upstream is Ark's video API, which has no documented model list
+// endpoint; the sync deliberately probes the OpenAI-shaped list anyway so a
+// relay that fronts Ark can answer it, and a bare Ark answers 404 verbatim.
+func TestBuildUpstreamModelsRequestForByteDanceAccounts(t *testing.T) {
+	t.Parallel()
+
+	svc := &UpstreamModelDiscoverer{cfg: upstreamModelSyncTestConfig()}
+	ctx := context.Background()
+
+	defaultReq, err := svc.buildUpstreamModelsRequest(ctx, &Account{
+		Platform:    PlatformByteDance,
+		Type:        AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "ark-key"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, http.MethodGet, defaultReq.Method)
+	require.Equal(t, "https://ark.cn-beijing.volces.com/api/v3/models", defaultReq.URL.String())
+	require.Equal(t, "Bearer ark-key", defaultReq.Header.Get("Authorization"))
+
+	relayReq, err := svc.buildUpstreamModelsRequest(ctx, &Account{
+		Platform: PlatformByteDance,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":  "relay-key",
+			"base_url": "https://relay.example.com",
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "https://relay.example.com/v1/models", relayReq.URL.String())
+	require.Equal(t, "Bearer relay-key", relayReq.Header.Get("Authorization"))
+
+	_, err = svc.buildUpstreamModelsRequest(ctx, &Account{
+		Platform:    PlatformByteDance,
+		Type:        AccountTypeAPIKey,
+		Credentials: map[string]any{},
+	})
+	require.Error(t, err)
+	var syncErr *UpstreamModelSyncError
+	require.True(t, errors.As(err, &syncErr))
+	require.Equal(t, UpstreamModelSyncErrorConfiguration, syncErr.Kind)
+	require.Contains(t, syncErr.SafeMessage(), "No ByteDance API key is available")
+}
+
 func TestBuildUpstreamModelsRequestSupportsGrokOAuth(t *testing.T) {
 	t.Parallel()
 
