@@ -112,8 +112,9 @@ func shouldKeepOpenAIResponsesToolCallNamespaces(
 }
 
 // hasOpenAIResponsesNamespaceToolDeclaration 扫描请求里全部工具声明载体：标准的
-// 顶层 tools，以及 Responses Lite 的 input[].additional_tools。Lite 协议把私有
-// namespace 声明放在后者（客户端原生就这么发，normalizeOpenAIResponsesLiteTools
+// 顶层 tools，以及 input 里的声明载体项（见
+// openAIResponsesNamespaceDeclarationCarrierTypes）。Responses Lite 把私有 namespace
+// 声明放在 input[].additional_tools（客户端原生就这么发，normalizeOpenAIResponsesLiteTools
 // 也会把顶层声明搬过去并删掉 tools），只看顶层会把 Lite 请求误判成「没有 namespace
 // 声明」，进而清掉历史调用项上的 namespace，触发上游 400 Missing namespace。
 // 与 openAIRequestBodyHasTools 的双载体约定保持一致。
@@ -123,7 +124,7 @@ func hasOpenAIResponsesNamespaceToolDeclaration(body []byte) bool {
 	}
 	found := false
 	gjson.GetBytes(body, "input").ForEach(func(_, item gjson.Result) bool {
-		if !item.IsObject() || !strings.EqualFold(strings.TrimSpace(item.Get("type").String()), "additional_tools") {
+		if !item.IsObject() || !isOpenAIResponsesNamespaceDeclarationCarrier(item.Get("type").String()) {
 			return true
 		}
 		if responsesToolsDeclareNamespace(item.Get("tools")) {
@@ -133,6 +134,28 @@ func hasOpenAIResponsesNamespaceToolDeclaration(body []byte) bool {
 		return true
 	})
 	return found
+}
+
+// openAIResponsesNamespaceDeclarationCarrierTypes 是 input 里可能携带工具声明的项类型：
+//
+//   - additional_tools：Responses Lite 的私有工具载体。
+//   - tool_search_output：tool_search 的发现结果。discovery 与声明同构，同样可以是
+//     {"type":"namespace","name":...,"tools":[...]}（见 apicompat
+//     promotedResponsesToolSearchDiscoveries），上游据此认为该 namespace 可寻址，
+//     后续历史里就会出现带 namespace 的调用项。
+//
+// tool_search_output 不按 status 过滤：本判定只决定「要不要保留历史调用项上的
+// namespace」，而两个方向的代价不对称——漏判直接 400 Missing namespace 且没有补救
+// （isExplicitOpenAIResponsesFieldRejection 只认 unknown/unsupported parameter）；多判
+// 最坏是上游回 Unknown parameter: input[N].namespace，反应式重试会摘掉该字段重发（见
+// openai_responses_rejected_field_retry.go）。所以取宽松侧。
+var openAIResponsesNamespaceDeclarationCarrierTypes = map[string]bool{
+	"additional_tools":   true,
+	"tool_search_output": true,
+}
+
+func isOpenAIResponsesNamespaceDeclarationCarrier(itemType string) bool {
+	return openAIResponsesNamespaceDeclarationCarrierTypes[strings.ToLower(strings.TrimSpace(itemType))]
 }
 
 func responsesToolsDeclareNamespace(tools gjson.Result) bool {

@@ -225,6 +225,48 @@ func TestOpenAIGatewayService_APIKeyPreservesLiteCarrierNamespaceToolCalls(t *te
 	}
 }
 
+// codexToolSearchNamespaceRequestBody 模拟 tool_search 形态：namespace 声明只以
+// discovery 的身份出现在 input[].tool_search_output.tools 里，顶层 tools 只有
+// tool_search 本身。
+const codexToolSearchNamespaceRequestBody = `{
+	"model":"gpt-5.6-terra",
+	"stream":false,
+	"instructions":"test",
+	"tools":[{"type":"tool_search"}],
+	"input":[
+		{"type":"tool_search_output","call_id":"call_search_1","status":"completed","tools":[
+			{"type":"namespace","name":"mcp__codex_apps__gmail","tools":[
+				{"type":"function","name":"send_email","parameters":{"type":"object"}}
+			]}
+		]},
+		{"type":"function_call","namespace":"mcp__codex_apps__gmail","name":"send_email","call_id":"call_1","arguments":"{}"},
+		{"type":"message","role":"user","namespace":"leftover","content":[{"type":"input_text","text":"hello"}]}
+	]
+}`
+
+// tool_search 载体回归：声明只在 discovery 里出现时，调用项上的 namespace 同样必须
+// 原样送达。
+func TestOpenAIGatewayService_APIKeyPreservesToolSearchNamespaceToolCalls(t *testing.T) {
+	body := []byte(codexToolSearchNamespaceRequestBody)
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		newOpenAIRejectedFieldTestResponse(http.StatusOK, namespaceForwardOKResponse),
+	}}
+	c := newOpenAIRejectedFieldTestContext(body)
+
+	_, err := newOpenAIRejectedFieldTestService(upstream).Forward(
+		context.Background(), c, newOpenAIRejectedFieldTestAccount(), body,
+	)
+
+	require.NoError(t, err)
+	require.Len(t, upstream.bodies, 1)
+	forwarded := upstream.bodies[0]
+
+	require.Equal(t, "mcp__codex_apps__gmail", gjson.GetBytes(forwarded, `input.#(type=="function_call").namespace`).String())
+	require.Equal(t, "send_email", gjson.GetBytes(forwarded, `input.#(type=="function_call").name`).String())
+	// 非调用项上的残留 namespace 仍要清掉。
+	require.False(t, gjson.GetBytes(forwarded, `input.#(type=="message").namespace`).Exists())
+}
+
 // OAuth 默认不摊平：Lite 载体同样原样送达。
 func TestOpenAIGatewayService_OAuthPreservesLiteCarrierNamespaceToolCalls(t *testing.T) {
 	body := []byte(codexLiteNamespaceRequestBody)

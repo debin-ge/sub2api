@@ -104,6 +104,13 @@ func TestShouldKeepOpenAIResponsesToolCallNamespaces(t *testing.T) {
 		// tools 只剩普通函数工具；只看顶层会误判成「没有声明」并清掉历史调用项。
 		{name: "apikey_with_lite_carrier_namespace_tool_keeps", account: apiKey, transport: OpenAIUpstreamTransportHTTPSSE, body: []byte(`{"tools":[{"type":"function","name":"exec"}],"input":[{"type":"additional_tools","tools":[{"type":"namespace","name":"collaboration","tools":[]}]}]}`), want: true},
 		{name: "apikey_with_lite_carrier_without_tools_strips", account: apiKey, transport: OpenAIUpstreamTransportHTTPSSE, body: []byte(`{"input":[{"type":"additional_tools","tools":[{"type":"function","name":"exec"}]}]}`), want: false},
+		// tool_search 的发现结果也是声明载体：discovery 本身可以是 namespace 工具，
+		// 上游据此认为该 namespace 可寻址，后续历史里的调用项必须带 namespace。
+		{name: "apikey_with_tool_search_output_namespace_tool_keeps", account: apiKey, transport: OpenAIUpstreamTransportHTTPSSE, body: []byte(`{"tools":[{"type":"tool_search"}],"input":[{"type":"tool_search_output","status":"completed","tools":[{"type":"namespace","name":"mcp__codex_apps__gmail","tools":[]}]}]}`), want: true},
+		// 未完成的发现结果同样按「有声明」处理：漏判会直接 400 Missing namespace 且
+		// 无补救，多判则由反应式重试摘字段重发，取宽松侧。
+		{name: "apikey_with_pending_tool_search_output_namespace_tool_keeps", account: apiKey, transport: OpenAIUpstreamTransportHTTPSSE, body: []byte(`{"tools":[{"type":"tool_search"}],"input":[{"type":"tool_search_output","status":"in_progress","tools":[{"type":"namespace","name":"mcp__codex_apps__gmail","tools":[]}]}]}`), want: true},
+		{name: "apikey_with_tool_search_output_without_namespace_strips", account: apiKey, transport: OpenAIUpstreamTransportHTTPSSE, body: []byte(`{"tools":[{"type":"tool_search"}],"input":[{"type":"tool_search_output","status":"completed","tools":[{"type":"function","name":"gmail_send"}]}]}`), want: false},
 		// Lite 允许 input 为字符串，扫描不得因此误判或炸掉。
 		{name: "apikey_with_string_input_strips", account: apiKey, transport: OpenAIUpstreamTransportHTTPSSE, body: []byte(`{"input":"hello"}`), want: false},
 		// 摊平开关打开时 preserved 名单（image_gen）仍以原生 namespace 声明送达，
