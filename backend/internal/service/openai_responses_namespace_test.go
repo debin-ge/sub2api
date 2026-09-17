@@ -100,6 +100,15 @@ func TestShouldKeepOpenAIResponsesToolCallNamespaces(t *testing.T) {
 		{name: "apikey_with_mixed_case_namespace_tool_keeps", account: apiKey, transport: OpenAIUpstreamTransportHTTPSSE, body: []byte(`{"tools":[{"type":" Namespace ","name":"mcp__codex_app","tools":[]}]}`), want: true},
 		{name: "apikey_function_tool_with_namespace_field_strips", account: apiKey, transport: OpenAIUpstreamTransportHTTPSSE, body: []byte(`{"tools":[{"type":"function","name":"automation_update","namespace":"mcp__codex_app"}]}`), want: false},
 		{name: "apikey_compact_with_namespace_tool_strips", account: apiKey, transport: OpenAIUpstreamTransportHTTPSSE, compactPath: true, body: []byte(`{"tools":[{"type":"namespace","name":"mcp__codex_app","tools":[]}]}`), want: false},
+		// Responses Lite 把私有 namespace 声明放在 input[].additional_tools，顶层
+		// tools 只剩普通函数工具；只看顶层会误判成「没有声明」并清掉历史调用项。
+		{name: "apikey_with_lite_carrier_namespace_tool_keeps", account: apiKey, transport: OpenAIUpstreamTransportHTTPSSE, body: []byte(`{"tools":[{"type":"function","name":"exec"}],"input":[{"type":"additional_tools","tools":[{"type":"namespace","name":"collaboration","tools":[]}]}]}`), want: true},
+		{name: "apikey_with_lite_carrier_without_tools_strips", account: apiKey, transport: OpenAIUpstreamTransportHTTPSSE, body: []byte(`{"input":[{"type":"additional_tools","tools":[{"type":"function","name":"exec"}]}]}`), want: false},
+		// Lite 允许 input 为字符串，扫描不得因此误判或炸掉。
+		{name: "apikey_with_string_input_strips", account: apiKey, transport: OpenAIUpstreamTransportHTTPSSE, body: []byte(`{"input":"hello"}`), want: false},
+		// 摊平开关打开时 preserved 名单（image_gen）仍以原生 namespace 声明送达，
+		// 其调用项必须保留 namespace，否则同样触发 Missing namespace。
+		{name: "oauth_flatten_enabled_with_preserved_namespace_keeps", account: flattenOAuth, transport: OpenAIUpstreamTransportHTTPSSE, body: []byte(`{"tools":[{"type":"namespace","name":"image_gen","tools":[]}]}`), want: true},
 		{name: "setup_token_keeps", account: setupToken, transport: OpenAIUpstreamTransportHTTPSSE, want: true},
 		{name: "nil_account", account: nil, transport: OpenAIUpstreamTransportHTTPSSE, want: false},
 	}

@@ -20,64 +20,126 @@ func FlattenResponsesNamespaces(req map[string]any) (map[string]ResponsesNamespa
 
 // FlattenResponsesNamespacesExcept is FlattenResponsesNamespaces with a set of
 // service-owned namespace names that must remain native in the request.
+//
+// Declarations are read from every carrier the Responses dialects use: the
+// standard top-level tools array and the Responses Lite input[].additional_tools
+// items. Missing the Lite carrier would leave its namespace declarations intact
+// while the call rewrite below still deleted the namespace from history items,
+// and the upstream would reject the mismatch with "Missing namespace for
+// function_call". Each carrier is flattened in place so the Lite private-tool
+// channel keeps carrying its own declarations.
 func FlattenResponsesNamespacesExcept(req map[string]any, preserved map[string]bool) (map[string]ResponsesNamespaceName, bool, error) {
 	if req == nil {
 		return nil, false, nil
 	}
-	tools, ok := req["tools"].([]any)
-	if !ok || len(tools) == 0 {
+	carriers := responsesNamespaceToolCarriers(req)
+	if len(carriers) == 0 {
 		return nil, false, nil
 	}
 
-	topLevel := make(map[string]bool)
-	for _, raw := range tools {
-		tool, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		typ := strings.TrimSpace(stringValue(tool["type"]))
-		name := strings.TrimSpace(stringValue(tool["name"]))
-		if (typ == "function" || typ == "custom") && name != "" {
-			topLevel[name] = true
+	declared := make(map[string]bool)
+	for _, carrier := range carriers {
+		for _, raw := range carrier.tools {
+			tool, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			typ := strings.TrimSpace(stringValue(tool["type"]))
+			name := strings.TrimSpace(stringValue(tool["name"]))
+			if (typ == "function" || typ == "custom") && name != "" {
+				declared[name] = true
+			}
 		}
 	}
 
 	names := make(map[string]ResponsesNamespaceName)
-	for _, raw := range tools {
-		tool, ok := raw.(map[string]any)
-		if !ok || strings.TrimSpace(stringValue(tool["type"])) != "namespace" {
-			continue
-		}
-		namespace := strings.TrimSpace(stringValue(tool["name"]))
-		if namespace == "" || preserved[namespace] {
-			continue
-		}
-		for _, rawChild := range namespaceChildren(tool) {
-			child, ok := rawChild.(map[string]any)
-			if !ok || strings.TrimSpace(stringValue(child["type"])) != "function" {
+	for _, carrier := range carriers {
+		for _, raw := range carrier.tools {
+			tool, ok := raw.(map[string]any)
+			if !ok || strings.TrimSpace(stringValue(tool["type"])) != "namespace" {
 				continue
 			}
-			name := strings.TrimSpace(stringValue(child["name"]))
-			if name == "" {
+			namespace := strings.TrimSpace(stringValue(tool["name"]))
+			if namespace == "" || preserved[namespace] {
 				continue
 			}
-			flat := flattenNamespaceToolName(namespace, name)
-			entry := ResponsesNamespaceName{Namespace: namespace, Name: name}
-			if topLevel[flat] {
-				return nil, false, fmt.Errorf("namespace tool %q/%q flattens to %q which conflicts with a top-level tool of the same name; this upstream cannot disambiguate them, rename one of the tools", namespace, name, flat)
+			for _, rawChild := range namespaceChildren(tool) {
+				child, ok := rawChild.(map[string]any)
+				if !ok || strings.TrimSpace(stringValue(child["type"])) != "function" {
+					continue
+				}
+				name := strings.TrimSpace(stringValue(child["name"]))
+				if name == "" {
+					continue
+				}
+				flat := flattenNamespaceToolName(namespace, name)
+				entry := ResponsesNamespaceName{Namespace: namespace, Name: name}
+				if declared[flat] {
+					return nil, false, fmt.Errorf("namespace tool %q/%q flattens to %q which conflicts with a top-level tool of the same name; this upstream cannot disambiguate them, rename one of the tools", namespace, name, flat)
+				}
+				if prev, exists := names[flat]; exists && prev != entry {
+					return nil, false, fmt.Errorf("namespace tools %q/%q and %q/%q both flatten to %q; this upstream cannot disambiguate them, rename one of the tools", prev.Namespace, prev.Name, namespace, name, flat)
+				}
+				names[flat] = entry
 			}
-			if prev, exists := names[flat]; exists && prev != entry {
-				return nil, false, fmt.Errorf("namespace tools %q/%q and %q/%q both flatten to %q; this upstream cannot disambiguate them, rename one of the tools", prev.Namespace, prev.Name, namespace, name, flat)
-			}
-			names[flat] = entry
 		}
 	}
 	if len(names) == 0 {
 		return nil, false, nil
 	}
 
-	flattened := make([]any, 0, len(tools)+len(names))
+	// seen spans carriers: the same namespace child declared in both the
+	// top-level tools and the Lite carrier must not flatten into two identical
+	// declarations the upstream would reject as duplicates.
 	seen := make(map[string]bool)
+	for _, carrier := range carriers {
+		carrier.container["tools"] = flattenResponsesNamespaceCarrier(carrier.tools, preserved, seen)
+	}
+	rewriteNamespaceQualifiedCalls(req["input"], names)
+	if choice, ok := req["tool_choice"].(map[string]any); ok {
+		choiceNamespace := strings.TrimSpace(stringValue(choice["name"]))
+		if strings.TrimSpace(stringValue(choice["type"])) == "namespace" && !preserved[choiceNamespace] {
+			req["tool_choice"] = "auto"
+		} else {
+			rewriteNamespaceQualifiedCall(choice, names)
+		}
+	}
+	return names, true, nil
+}
+
+// responsesToolCarrier is a map owning a "tools" array of declarations.
+type responsesToolCarrier struct {
+	container map[string]any
+	tools     []any
+}
+
+// responsesNamespaceToolCarriers returns every declaration carrier in request
+// order: top-level tools first, then each input[].additional_tools item.
+func responsesNamespaceToolCarriers(req map[string]any) []responsesToolCarrier {
+	carriers := make([]responsesToolCarrier, 0, 2)
+	if tools, ok := req["tools"].([]any); ok && len(tools) > 0 {
+		carriers = append(carriers, responsesToolCarrier{container: req, tools: tools})
+	}
+	input, ok := req["input"].([]any)
+	if !ok {
+		return carriers
+	}
+	for _, rawItem := range input {
+		item, ok := rawItem.(map[string]any)
+		if !ok || strings.TrimSpace(stringValue(item["type"])) != "additional_tools" {
+			continue
+		}
+		tools, ok := item["tools"].([]any)
+		if !ok || len(tools) == 0 {
+			continue
+		}
+		carriers = append(carriers, responsesToolCarrier{container: item, tools: tools})
+	}
+	return carriers
+}
+
+func flattenResponsesNamespaceCarrier(tools []any, preserved, seen map[string]bool) []any {
+	flattened := make([]any, 0, len(tools))
 	for _, raw := range tools {
 		tool, ok := raw.(map[string]any)
 		if !ok || strings.TrimSpace(stringValue(tool["type"])) != "namespace" {
@@ -108,17 +170,7 @@ func FlattenResponsesNamespacesExcept(req map[string]any, preserved map[string]b
 			flattened = append(flattened, flatChild)
 		}
 	}
-	req["tools"] = flattened
-	rewriteNamespaceQualifiedCalls(req["input"], names)
-	if choice, ok := req["tool_choice"].(map[string]any); ok {
-		choiceNamespace := strings.TrimSpace(stringValue(choice["name"]))
-		if strings.TrimSpace(stringValue(choice["type"])) == "namespace" && !preserved[choiceNamespace] {
-			req["tool_choice"] = "auto"
-		} else {
-			rewriteNamespaceQualifiedCall(choice, names)
-		}
-	}
-	return names, true, nil
+	return flattened
 }
 
 // RestoreResponsesNamespaceCalls restores flattened function calls in a JSON

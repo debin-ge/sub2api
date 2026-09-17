@@ -80,7 +80,12 @@ func shouldStripOpenAIResponsesInputNamespaces(account *Account, transport OpenA
 //   - API Key 出口默认按标准 Responses API 处理并清理该字段；但当请求本身声明
 //     namespace 工具时，上游显然使用了 namespace 扩展，此时必须保留调用项上的
 //     namespace，否则声明与历史调用会失配并触发 Missing namespace。
-//   - 摊平模式下调用项已被改写成平名，残留 namespace 指向的声明已不存在，一律清理。
+//   - 摊平模式下非保留命名空间的调用项已被改写成平名、namespace 也已删除，但
+//     preserved 名单（image_gen）与摊平摸不到的声明仍是原生 namespace 工具，因此
+//     改按「摊平后的 body 里还有没有 namespace 声明」判定，而不是一律清理。
+//
+// body 必须是摊平之后的请求体（见 openai_gateway_forward.go 的调用顺序），否则
+// 摊平分支会把已经改写掉的声明也算进来。
 func shouldKeepOpenAIResponsesToolCallNamespaces(
 	account *Account,
 	transport OpenAIUpstreamTransport,
@@ -100,11 +105,37 @@ func shouldKeepOpenAIResponsesToolCallNamespaces(
 	if !account.IsOpenAIOAuthLike() {
 		return false
 	}
-	return !shouldFlattenOpenAIResponsesNamespaces(account, transport, passthroughEnabled, compactPath)
+	if !shouldFlattenOpenAIResponsesNamespaces(account, transport, passthroughEnabled, compactPath) {
+		return true
+	}
+	return hasOpenAIResponsesNamespaceToolDeclaration(body)
 }
 
+// hasOpenAIResponsesNamespaceToolDeclaration 扫描请求里全部工具声明载体：标准的
+// 顶层 tools，以及 Responses Lite 的 input[].additional_tools。Lite 协议把私有
+// namespace 声明放在后者（客户端原生就这么发，normalizeOpenAIResponsesLiteTools
+// 也会把顶层声明搬过去并删掉 tools），只看顶层会把 Lite 请求误判成「没有 namespace
+// 声明」，进而清掉历史调用项上的 namespace，触发上游 400 Missing namespace。
+// 与 openAIRequestBodyHasTools 的双载体约定保持一致。
 func hasOpenAIResponsesNamespaceToolDeclaration(body []byte) bool {
-	tools := gjson.GetBytes(body, "tools")
+	if responsesToolsDeclareNamespace(gjson.GetBytes(body, "tools")) {
+		return true
+	}
+	found := false
+	gjson.GetBytes(body, "input").ForEach(func(_, item gjson.Result) bool {
+		if !item.IsObject() || !strings.EqualFold(strings.TrimSpace(item.Get("type").String()), "additional_tools") {
+			return true
+		}
+		if responsesToolsDeclareNamespace(item.Get("tools")) {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
+}
+
+func responsesToolsDeclareNamespace(tools gjson.Result) bool {
 	if !tools.IsArray() {
 		return false
 	}

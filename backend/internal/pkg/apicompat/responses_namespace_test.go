@@ -162,3 +162,105 @@ func TestRestoreResponsesNamespaceCalls_RewritesLifecycleItems(t *testing.T) {
 		})
 	}
 }
+
+// Responses Lite carries private namespace declarations in
+// input[].additional_tools. Flattening must rewrite that carrier in place;
+// leaving the declaration as a namespace tool while the history call is
+// rewritten makes the upstream reject the request.
+func TestFlattenResponsesNamespaces_FlattensLiteAdditionalToolsCarrier(t *testing.T) {
+	req := map[string]any{
+		"tools": []any{map[string]any{"type": "function", "name": "exec"}},
+		"input": []any{
+			map[string]any{"type": "additional_tools", "tools": []any{
+				map[string]any{"type": "namespace", "name": "collaboration", "tools": []any{
+					map[string]any{"type": "function", "name": "spawn_agent", "parameters": map[string]any{"type": "object"}},
+				}},
+			}},
+			map[string]any{"type": "function_call", "call_id": "call_1", "name": "spawn_agent", "namespace": "collaboration", "arguments": "{}"},
+		},
+	}
+
+	names, changed, err := FlattenResponsesNamespaces(req)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, ResponsesNamespaceName{Namespace: "collaboration", Name: "spawn_agent"}, names["collaboration__spawn_agent"])
+
+	input := req["input"].([]any)
+	carrier := input[0].(map[string]any)
+	carrierTools := carrier["tools"].([]any)
+	require.Len(t, carrierTools, 1)
+	flatTool := carrierTools[0].(map[string]any)
+	require.Equal(t, "function", flatTool["type"])
+	require.Equal(t, "collaboration__spawn_agent", flatTool["name"])
+
+	call := input[1].(map[string]any)
+	require.Equal(t, "collaboration__spawn_agent", call["name"])
+	require.NotContains(t, call, "namespace")
+
+	// Top-level declarations stay untouched.
+	tools := req["tools"].([]any)
+	require.Len(t, tools, 1)
+	require.Equal(t, "exec", tools[0].(map[string]any)["name"])
+}
+
+// Preserved namespaces stay native in the Lite carrier too, so their calls keep
+// the namespace identity.
+func TestFlattenResponsesNamespacesExcept_PreservesLiteCarrierNamespace(t *testing.T) {
+	req := map[string]any{
+		"tools": []any{map[string]any{"type": "namespace", "name": "collaboration", "tools": []any{
+			map[string]any{"type": "function", "name": "spawn_agent"},
+		}}},
+		"input": []any{
+			map[string]any{"type": "additional_tools", "tools": []any{
+				map[string]any{"type": "namespace", "name": "image_gen", "tools": []any{
+					map[string]any{"type": "function", "name": "generate"},
+				}},
+			}},
+			map[string]any{"type": "function_call", "name": "generate", "namespace": "image_gen", "arguments": "{}"},
+		},
+	}
+
+	_, changed, err := FlattenResponsesNamespacesExcept(req, map[string]bool{"image_gen": true})
+	require.NoError(t, err)
+	require.True(t, changed)
+
+	input := req["input"].([]any)
+	carrierTool := input[0].(map[string]any)["tools"].([]any)[0].(map[string]any)
+	require.Equal(t, "namespace", carrierTool["type"])
+	require.Equal(t, "image_gen", carrierTool["name"])
+	require.Equal(t, "image_gen", input[1].(map[string]any)["namespace"])
+}
+
+// Flat-name collisions must be detected across carriers, not per array.
+func TestFlattenResponsesNamespaces_RejectsCollisionAcrossCarriers(t *testing.T) {
+	req := map[string]any{
+		"tools": []any{map[string]any{"type": "function", "name": "collaboration__spawn_agent"}},
+		"input": []any{map[string]any{"type": "additional_tools", "tools": []any{
+			map[string]any{"type": "namespace", "name": "collaboration", "tools": []any{
+				map[string]any{"type": "function", "name": "spawn_agent"},
+			}},
+		}}},
+	}
+
+	_, _, err := FlattenResponsesNamespaces(req)
+	require.ErrorContains(t, err, "conflicts with a top-level tool of the same name")
+}
+
+// A request whose declarations live only in the Lite carrier must still flatten
+// even though the top-level tools array is absent.
+func TestFlattenResponsesNamespaces_FlattensWithoutTopLevelTools(t *testing.T) {
+	req := map[string]any{
+		"input": []any{map[string]any{"type": "additional_tools", "tools": []any{
+			map[string]any{"type": "namespace", "name": "collaboration", "tools": []any{
+				map[string]any{"type": "function", "name": "spawn_agent"},
+			}},
+		}}},
+	}
+
+	_, changed, err := FlattenResponsesNamespaces(req)
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.NotContains(t, req, "tools")
+	carrierTools := req["input"].([]any)[0].(map[string]any)["tools"].([]any)
+	require.Equal(t, "collaboration__spawn_agent", carrierTools[0].(map[string]any)["name"])
+}
