@@ -319,8 +319,8 @@ func (h *AccountHandler) importData(ctx context.Context, req DataImportRequest) 
 						Protocol:       proxy.Protocol,
 						Host:           proxy.Host,
 						Port:           proxy.Port,
-						Username:       proxy.Username,
-						Password:       proxy.Password,
+						Username:       &proxy.Username,
+						Password:       &proxy.Password,
 					})
 				}
 			}
@@ -395,8 +395,8 @@ func (h *AccountHandler) importData(ctx context.Context, req DataImportRequest) 
 				Protocol:       created.Protocol,
 				Host:           created.Host,
 				Port:           created.Port,
-				Username:       created.Username,
-				Password:       created.Password,
+				Username:       &created.Username,
+				Password:       &created.Password,
 			})
 		}
 	}
@@ -743,17 +743,13 @@ func validateDataAccount(item DataAccount) error {
 			return errors.New("windsurf account api_key is required")
 		}
 	}
-	if item.Platform == service.PlatformOpenCode {
+	if item.Platform == service.PlatformOpenCodeGo {
 		if item.Type != service.AccountTypeAPIKey {
-			return errors.New("opencode account type must be apikey")
+			return errors.New("opencode_go account type must be apikey")
 		}
 		apiKey, _ := item.Credentials["api_key"].(string)
 		if strings.TrimSpace(apiKey) == "" {
-			return errors.New("opencode account api_key is required")
-		}
-		baseURL, _ := item.Credentials["base_url"].(string)
-		if strings.TrimSpace(baseURL) == "" {
-			return errors.New("opencode account base_url is required")
+			return errors.New("opencode_go account api_key is required")
 		}
 	}
 	if item.Platform == service.PlatformByteDance {

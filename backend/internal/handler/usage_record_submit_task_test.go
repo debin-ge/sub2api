@@ -248,12 +248,6 @@ func TestSpecializedGatewayUsageRecordTasks_BypassPool(t *testing.T) {
 				return (&WindsurfGatewayHandler{usageRecordWorkerPool: pool}).submitUsageRecordTask
 			},
 		},
-		{
-			name: "opencode",
-			factory: func(pool *service.UsageRecordWorkerPool) submitFunc {
-				return (&OpenCodeGatewayHandler{usageRecordWorkerPool: pool}).submitUsageRecordTask
-			},
-		},
 	}
 
 	for _, tt := range tests {

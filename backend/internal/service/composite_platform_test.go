@@ -228,7 +228,7 @@ func TestSchedulerHasAllCanonicalPlatformBuckets(t *testing.T) {
 			PlatformKimi,
 			PlatformDeepSeek,
 			PlatformWindsurf,
-			PlatformOpenCode,
+			PlatformOpenCodeGo,
 		},
 		platforms,
 	)
@@ -238,7 +238,7 @@ func TestCompositeCatalogPlatformsIncludeAllSupportedProviders(t *testing.T) {
 	require.ElementsMatch(t,
 		[]string{
 			PlatformAnthropic, PlatformGemini, PlatformOpenAI, PlatformAntigravity, PlatformGrok,
-			PlatformKimi, PlatformZhipu, PlatformDeepSeek, PlatformMiniMax, PlatformWindsurf, PlatformOpenCode,
+			PlatformKimi, PlatformZhipu, PlatformDeepSeek, PlatformMiniMax, PlatformWindsurf, PlatformOpenCodeGo,
 			PlatformByteDance,
 		},
 		compositeModelCatalogPlatforms,
@@ -248,7 +248,7 @@ func TestCompositeCatalogPlatformsIncludeAllSupportedProviders(t *testing.T) {
 func TestCompositeConcretePlatformsIncludeCNAndLocalProviders(t *testing.T) {
 	for _, platform := range []string{
 		PlatformKimi, PlatformZhipu, PlatformGLM, PlatformDeepseek,
-		PlatformMiniMax, PlatformWindsurf, PlatformOpenCode, PlatformByteDance,
+		PlatformMiniMax, PlatformWindsurf, PlatformOpenCodeGo, PlatformByteDance,
 	} {
 		require.True(t, isConcreteRequestPlatform(platform))
 		require.True(t, canCopyAccountsFromGroupPlatform(PlatformComposite, platform))

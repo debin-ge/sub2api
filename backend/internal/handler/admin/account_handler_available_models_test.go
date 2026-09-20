@@ -248,7 +248,7 @@ func TestAccountHandlerGetAvailableModels_DomesticPlatformsDoNotFallBackToClaude
 		},
 		{
 			name:          "opencode",
-			platform:      service.PlatformOpenCode,
+			platform:      service.PlatformOpenCodeGo,
 			wantContains:  "opencode/big-pickle",
 			wantForbidden: "claude-fable-5",
 		},

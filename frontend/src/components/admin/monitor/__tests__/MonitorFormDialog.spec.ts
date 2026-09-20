@@ -78,7 +78,7 @@ describe('MonitorFormDialog', () => {
       'monitorCommon.providers.kimi',
       'monitorCommon.providers.deepseek',
       'monitorCommon.providers.windsurf',
-      'monitorCommon.providers.opencode'
+      'monitorCommon.providers.opencode_go'
     ]))
     expect(labels).toHaveLength(PROVIDERS.length)
   })

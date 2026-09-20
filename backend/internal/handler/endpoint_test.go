@@ -368,6 +368,18 @@ func TestResolveOpenAIUpstreamEndpointPrefersForwardResult(t *testing.T) {
 			result:  &service.OpenAIForwardResult{},
 			want:    EndpointResponses,
 		},
+		{
+			name:    "opencode go conversion result reports responses",
+			account: &service.Account{Platform: service.PlatformOpenCodeGo, Type: service.AccountTypeAPIKey},
+			result:  &service.OpenAIForwardResult{UpstreamEndpoint: EndpointResponses},
+			want:    EndpointResponses,
+		},
+		{
+			name:    "opencode go empty result without runtime stays inbound",
+			account: &service.Account{Platform: service.PlatformOpenCodeGo, Type: service.AccountTypeAPIKey},
+			result:  &service.OpenAIForwardResult{},
+			want:    EndpointChatCompletions,
+		},
 	}
 
 	for _, tt := range tests {
@@ -514,7 +526,7 @@ func TestGetUpstreamEndpoint_ProviderResponsesGETRemainsResponses(t *testing.T) 
 }
 
 func TestGetUpstreamEndpoint_OpenCodeResponsesRootPOSTRemainsResponses(t *testing.T) {
-	require.Equal(t, EndpointResponses, getUpstreamEndpointForRequest(t, http.MethodPost, "/v1/responses", service.PlatformOpenCode))
+	require.Equal(t, EndpointResponses, getUpstreamEndpointForRequest(t, http.MethodPost, "/v1/responses", service.PlatformOpenCodeGo))
 }
 
 func getUpstreamEndpointForRequest(t *testing.T, method, path, platform string) string {

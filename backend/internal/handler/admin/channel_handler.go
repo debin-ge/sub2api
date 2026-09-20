@@ -670,6 +670,7 @@ var platformToPricingCatalogProvider = map[string]string{
 	service.PlatformGLM:         "zhipu",
 	service.PlatformDeepseek:    "deepseek",
 	service.PlatformMiniMax:     "minimax",
+	service.PlatformOpenCodeGo:  "opencode-go",
 }
 
 // SyncPricingModels 返回配置化模型价格目录中指定平台的最新模型列表。

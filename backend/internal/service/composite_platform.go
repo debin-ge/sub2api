@@ -128,7 +128,7 @@ func DetectModelPlatform(model string) (string, bool) {
 		case "windsurf":
 			return PlatformWindsurf, true
 		case "opencode":
-			return PlatformOpenCode, true
+			return PlatformOpenCodeGo, true
 		}
 		if rest != "" {
 			normalized = strings.TrimPrefix(rest, "models/")
@@ -219,7 +219,7 @@ func (s *GatewayService) resolveCompositeRouteDecision(ctx context.Context, grou
 func isConcreteRequestPlatform(platform string) bool {
 	switch CanonicalCNPlatform(strings.TrimSpace(platform)) {
 	case PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok,
-		PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformWindsurf, PlatformOpenCode,
+		PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformWindsurf, PlatformOpenCodeGo,
 		PlatformByteDance:
 		return true
 	default:

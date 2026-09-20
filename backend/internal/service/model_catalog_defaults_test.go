@@ -10,7 +10,7 @@ func TestDefaultModelCatalogIDs_AllPlatforms(t *testing.T) {
 	platforms := []string{
 		PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity,
 		PlatformGrok, PlatformMiniMax, PlatformZhipu, PlatformGLM, PlatformKimi,
-		PlatformDeepSeek, PlatformWindsurf, PlatformOpenCode, PlatformByteDance,
+		PlatformDeepSeek, PlatformWindsurf, PlatformOpenCodeGo, PlatformByteDance,
 	}
 	for _, platform := range platforms {
 		t.Run(platform, func(t *testing.T) {

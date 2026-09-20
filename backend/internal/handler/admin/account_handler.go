@@ -1497,12 +1497,6 @@ func validateCreateAccountRequest(req CreateAccountRequest) error {
 	if strings.TrimSpace(apiKey) == "" {
 		return fmt.Errorf("%s account api_key is required", req.Platform)
 	}
-	if req.Platform == service.PlatformOpenCode {
-		baseURL, _ := req.Credentials["base_url"].(string)
-		if strings.TrimSpace(baseURL) == "" {
-			return fmt.Errorf("%s account base_url is required", req.Platform)
-		}
-	}
 	if err := validateOptionalAccountBaseURL(req.Platform, req.Credentials); err != nil {
 		return err
 	}
@@ -1532,12 +1526,6 @@ func validateUpdateAccountRequest(account *service.Account, req UpdateAccountReq
 	if strings.TrimSpace(apiKey) == "" {
 		return fmt.Errorf("%s account api_key is required", account.Platform)
 	}
-	if account.Platform == service.PlatformOpenCode {
-		baseURL, _ := credentials["base_url"].(string)
-		if strings.TrimSpace(baseURL) == "" {
-			return fmt.Errorf("%s account base_url is required", account.Platform)
-		}
-	}
 	if err := validateOptionalAccountBaseURL(account.Platform, credentials); err != nil {
 		return err
 	}
@@ -1564,7 +1552,7 @@ func validateOptionalAccountBaseURL(platform string, credentials map[string]any)
 func requiresAPIKeyAccount(platform string) bool {
 	switch service.CanonicalCNPlatform(platform) {
 	case service.PlatformZhipu, service.PlatformKimi, service.PlatformDeepSeek, service.PlatformWindsurf,
-		service.PlatformOpenCode, service.PlatformByteDance:
+		service.PlatformOpenCodeGo, service.PlatformByteDance:
 		return true
 	default:
 		return false
@@ -1931,6 +1919,7 @@ func (h *AccountHandler) Refresh(c *gin.Context) {
 
 	if warning == "missing_project_id_temporary" {
 		response.Success(c, gin.H{
+			"account": h.buildAccountResponseWithRuntime(c.Request.Context(), updatedAccount),
 			"message": "Token refreshed successfully, but project_id could not be retrieved (will retry automatically)",
 			"warning": "missing_project_id_temporary",
 		})
@@ -3282,7 +3271,7 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 		response.Success(c, buildAntigravityAdminModels(modelIDs))
 	case service.PlatformZhipu:
 		response.Success(c, buildGLMAdminModels(modelIDs))
-	case service.PlatformKimi, service.PlatformDeepSeek, service.PlatformWindsurf, service.PlatformOpenCode:
+	case service.PlatformKimi, service.PlatformDeepSeek, service.PlatformWindsurf, service.PlatformOpenCodeGo:
 		response.Success(c, buildDomesticClaudeShapeAdminModels(modelIDs))
 	default:
 		response.Success(c, buildClaudeShapeAdminModels(modelIDs))

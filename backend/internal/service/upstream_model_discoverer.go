@@ -197,8 +197,6 @@ func (d *UpstreamModelDiscoverer) buildUpstreamModelsRequest(ctx context.Context
 	switch {
 	case account.Platform == PlatformWindsurf:
 		return d.buildWindsurfUpstreamModelsRequest(ctx, account)
-	case account.Platform == PlatformOpenCode:
-		return d.buildOpenCodeUpstreamModelsRequest(ctx, account)
 	case account.Platform == PlatformByteDance:
 		return d.buildByteDanceUpstreamModelsRequest(ctx, account)
 	case account.Platform == PlatformAntigravity && account.Type == AccountTypeUpstream:
@@ -210,6 +208,9 @@ func (d *UpstreamModelDiscoverer) buildUpstreamModelsRequest(ctx context.Context
 	case account.IsCNProvider():
 		// kimi/zhipu/deepseek（含本地 glm 别名）复用 OpenAI /v1/models，按 account_mode 选默认 base。
 		return d.buildCNProviderUpstreamModelsRequest(ctx, account)
+	case account.IsOpenCodeGo():
+		// OpenCode Go/Zen 按 account_mode 选默认 base，复用 OpenAI 协议族 apiKey/baseURL 解析。
+		return d.buildOpenCodeUpstreamModelsRequest(ctx, account)
 	case providerSupportsLiveModelDiscovery(account.Platform):
 		return d.buildDomesticCompatibleUpstreamModelsRequest(ctx, account)
 	case account.IsOpenAI():
@@ -365,6 +366,32 @@ func (d *UpstreamModelDiscoverer) buildDomesticCompatibleUpstreamModelsRequest(c
 	return req, nil
 }
 
+func (d *UpstreamModelDiscoverer) buildOpenCodeUpstreamModelsRequest(ctx context.Context, account *Account) (*http.Request, error) {
+	if account == nil || account.Type != AccountTypeAPIKey || !account.IsOpenCodeGo() {
+		return nil, newUpstreamModelSyncUnsupportedError("Unsupported OpenCode account for upstream model sync", nil)
+	}
+	apiKey := strings.TrimSpace(account.GetOpenAIProtocolAPIKey())
+	if apiKey == "" {
+		return nil, newUpstreamModelSyncConfigError("No OpenCode API key is available", nil)
+	}
+	baseURL := account.GetOpenAIFormatBaseURL()
+	if strings.TrimSpace(baseURL) == "" {
+		return nil, newUpstreamModelSyncConfigError("OpenCode base URL is empty", nil)
+	}
+	validatedBaseURL, err := d.validateUpstreamBaseURL(baseURL)
+	if err != nil {
+		return nil, newUpstreamModelSyncConfigError("Invalid OpenCode model list URL", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, buildOpenAIModelsURL(validatedBaseURL), nil)
+	if err != nil {
+		return nil, newUpstreamModelSyncConfigError("Invalid OpenCode model list URL", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	account.ApplyHeaderOverrides(req.Header)
+	return req, nil
+}
+
 func (d *UpstreamModelDiscoverer) buildWindsurfUpstreamModelsRequest(ctx context.Context, account *Account) (*http.Request, error) {
 	apiKey, err := validateWindsurfAccount(account)
 	if err != nil {
@@ -378,25 +405,6 @@ func (d *UpstreamModelDiscoverer) buildWindsurfUpstreamModelsRequest(ctx context
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, validatedURL, nil)
 	if err != nil {
 		return nil, newUpstreamModelSyncConfigError("Invalid Windsurf model list URL", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-	req.Header.Set("Accept", "application/json")
-	return req, nil
-}
-
-func (d *UpstreamModelDiscoverer) buildOpenCodeUpstreamModelsRequest(ctx context.Context, account *Account) (*http.Request, error) {
-	apiKey, baseURL, err := validateOpenCodeAccount(account)
-	if err != nil {
-		return nil, newUpstreamModelSyncConfigError("Invalid OpenCode account configuration", err)
-	}
-	modelsURL := openCodeEndpointURL(baseURL, "/v1/models")
-	validatedURL, err := d.validateUpstreamBaseURL(modelsURL)
-	if err != nil {
-		return nil, newUpstreamModelSyncConfigError("Invalid OpenCode model list URL", err)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, validatedURL, nil)
-	if err != nil {
-		return nil, newUpstreamModelSyncConfigError("Invalid OpenCode model list URL", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Accept", "application/json")
@@ -874,8 +882,6 @@ func parseDiscoveredUpstreamModelIDs(platform string, body []byte) ([]string, er
 	switch platform {
 	case PlatformWindsurf:
 		return parseWindsurfModelListBody(body)
-	case PlatformOpenCode:
-		return parseOpenCodeModelListBody(body)
 	case PlatformGrok:
 		return extractGrokUpstreamModelIDs(body)
 	default:

@@ -431,7 +431,6 @@ func TestForkGatewaysClassifyEverySelectionFailureExit(t *testing.T) {
 		"deepseek_gateway_handler.go": 3,
 		"kimi_gateway_handler.go":     3,
 		"minimax_gateway_handler.go":  3,
-		"opencode_gateway_handler.go": 2,
 	} {
 		t.Run(filename, func(t *testing.T) {
 			source, err := os.ReadFile(filename)

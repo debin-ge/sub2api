@@ -75,7 +75,8 @@ func RegisterGatewayRoutes(
 	isOpenAIResponsesCompatibleGatewayPlatform := func(c *gin.Context) bool {
 		switch getGroupPlatform(c) {
 		case service.PlatformOpenAI, service.PlatformGrok,
-			service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM, service.PlatformMiniMax:
+			service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM,
+			service.PlatformMiniMax, service.PlatformOpenCodeGo:
 			// 国产 OpenAI 兼容供应商与 openai/grok 一样经 OpenAI 网关转发。
 			return true
 		default:
@@ -84,7 +85,8 @@ func RegisterGatewayRoutes(
 	}
 	countTokensHandler := func(c *gin.Context) {
 		switch getGroupPlatform(c) {
-		case service.PlatformOpenAI, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM:
+		case service.PlatformOpenAI, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM,
+			service.PlatformOpenCodeGo:
 			h.CompatibleGateway.CountTokens(c)
 		case service.PlatformGrok:
 			h.CompatibleGateway.GrokCountTokens(c)
@@ -92,8 +94,6 @@ func RegisterGatewayRoutes(
 			writeMiniMaxUnsupported(c, h)
 		case service.PlatformWindsurf:
 			writeWindsurfUnsupported(c, h)
-		case service.PlatformOpenCode:
-			writeOpenCodeUnsupported(c, h)
 		default:
 			h.Gateway.CountTokens(c)
 		}
@@ -102,10 +102,6 @@ func RegisterGatewayRoutes(
 		dispatchCodexModelsGateway(c, h.OpenAIGateway.CodexModels, h.Gateway.CodexModels)
 	}
 	modelsHandler := func(c *gin.Context) {
-		if getGroupPlatform(c) == service.PlatformOpenCode {
-			writeOpenCodeModels(c, h)
-			return
-		}
 		if c.Query("client_version") != "" {
 			codexModelsHandler(c)
 			return
@@ -125,8 +121,6 @@ func RegisterGatewayRoutes(
 			writeMiniMaxUnsupported(c, h)
 		case service.PlatformWindsurf:
 			writeWindsurfUnsupported(c, h)
-		case service.PlatformOpenCode:
-			writeOpenCodeUnsupported(c, h)
 		default:
 			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
 			c.JSON(http.StatusNotFound, gin.H{
@@ -323,7 +317,7 @@ func RegisterGatewayRoutes(
 		// /v1/messages: auto-route based on group platform
 		gateway.POST("/messages", func(c *gin.Context) {
 			switch getGroupPlatform(c) {
-			case service.PlatformOpenAI, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM:
+			case service.PlatformOpenAI, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM, service.PlatformOpenCodeGo:
 				h.CompatibleGateway.Messages(c)
 				return
 			case service.PlatformMiniMax:
@@ -352,9 +346,6 @@ func RegisterGatewayRoutes(
 				}
 				h.WindsurfGateway.Messages(c)
 				return
-			case service.PlatformOpenCode:
-				writeOpenCodeUnsupported(c, h)
-				return
 			}
 			h.Gateway.Messages(c)
 		})
@@ -365,6 +356,8 @@ func RegisterGatewayRoutes(
 		// /models endpoint with a client_version query and expect the ChatGPT
 		// Codex manifest format; other clients keep the OpenAI-style list.
 		gateway.GET("/models", modelsHandler)
+		// Single-model discovery never selects the Codex client_version manifest.
+		gateway.GET("/models/:model", h.Gateway.Models)
 		gateway.GET("/balance", h.Gateway.Balance)
 		// /v1/usage 是纯本地端点（用量/额度/限速/余额均取自本地库，不回源上游），
 		// 因此对所有分组平台一律放行，与相邻的 /v1/balance 保持一致。
@@ -374,7 +367,7 @@ func RegisterGatewayRoutes(
 		// OpenAI Responses API: auto-route based on group platform
 		gateway.POST("/responses", func(c *gin.Context) {
 			switch getGroupPlatform(c) {
-			case service.PlatformOpenAI, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM:
+			case service.PlatformOpenAI, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM, service.PlatformOpenCodeGo:
 				h.CompatibleGateway.Responses(c)
 				return
 			case service.PlatformMiniMax:
@@ -383,15 +376,12 @@ func RegisterGatewayRoutes(
 			case service.PlatformWindsurf:
 				writeWindsurfResponses(c, h)
 				return
-			case service.PlatformOpenCode:
-				writeOpenCodeResponses(c, h)
-				return
 			}
 			h.Gateway.Responses(c)
 		})
 		gateway.POST("/responses/*subpath", guardResponsesSubpath(func(c *gin.Context) {
 			switch getGroupPlatform(c) {
-			case service.PlatformOpenAI, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM:
+			case service.PlatformOpenAI, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM, service.PlatformOpenCodeGo:
 				h.CompatibleGateway.Responses(c)
 				return
 			case service.PlatformMiniMax:
@@ -399,9 +389,6 @@ func RegisterGatewayRoutes(
 				return
 			case service.PlatformWindsurf:
 				writeWindsurfUnsupported(c, h)
-				return
-			case service.PlatformOpenCode:
-				writeOpenCodeResponses(c, h)
 				return
 			}
 			h.Gateway.Responses(c)
@@ -416,16 +403,12 @@ func RegisterGatewayRoutes(
 				writeWindsurfUnsupported(c, h)
 				return
 			}
-			if getGroupPlatform(c) == service.PlatformOpenCode {
-				writeOpenCodeUnsupported(c, h)
-				return
-			}
 			h.CompatibleGateway.ResponsesWebSocket(c)
 		})
 		// OpenAI Chat Completions API: auto-route based on group platform
 		gateway.POST("/chat/completions", func(c *gin.Context) {
 			switch getGroupPlatform(c) {
-			case service.PlatformOpenAI, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM:
+			case service.PlatformOpenAI, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM, service.PlatformOpenCodeGo:
 				h.CompatibleGateway.ChatCompletions(c)
 				return
 			case service.PlatformMiniMax:
@@ -433,9 +416,6 @@ func RegisterGatewayRoutes(
 				return
 			case service.PlatformWindsurf:
 				writeWindsurfChatCompletions(c, h)
-				return
-			case service.PlatformOpenCode:
-				writeOpenCodeChatCompletions(c, h)
 				return
 			}
 			h.Gateway.ChatCompletions(c)
@@ -566,7 +546,7 @@ func RegisterGatewayRoutes(
 	// OpenAI Responses API（不带v1前缀的别名）— auto-route based on group platform
 	responsesHandler := func(c *gin.Context) {
 		switch getGroupPlatform(c) {
-		case service.PlatformOpenAI, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM:
+		case service.PlatformOpenAI, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM, service.PlatformOpenCodeGo:
 			h.CompatibleGateway.Responses(c)
 			return
 		case service.PlatformMiniMax:
@@ -575,15 +555,12 @@ func RegisterGatewayRoutes(
 		case service.PlatformWindsurf:
 			writeWindsurfResponses(c, h)
 			return
-		case service.PlatformOpenCode:
-			writeOpenCodeResponses(c, h)
-			return
 		}
 		h.Gateway.Responses(c)
 	}
 	responsesSubpathHandler := func(c *gin.Context) {
 		switch getGroupPlatform(c) {
-		case service.PlatformOpenAI, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM:
+		case service.PlatformOpenAI, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM, service.PlatformOpenCodeGo:
 			h.CompatibleGateway.Responses(c)
 			return
 		case service.PlatformMiniMax:
@@ -592,15 +569,17 @@ func RegisterGatewayRoutes(
 		case service.PlatformWindsurf:
 			writeWindsurfUnsupported(c, h)
 			return
-		case service.PlatformOpenCode:
-			writeOpenCodeResponses(c, h)
-			return
 		}
 		h.Gateway.Responses(c)
 	}
 	// Root aliases share the same allowlist and composite-routing middleware.
 	rootRoute := func(method, path string, limit gin.HandlerFunc, handler gin.HandlerFunc) {
 		r.Handle(method, path, limit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, byteDanceVideoOnly, requireGroupAnthropic, handler)
+	}
+	for _, prefix := range []string{"/api/v3", "/v3", "/v1", ""} {
+		rootRoute(http.MethodPost, prefix+"/contents/generations/tasks", bodyLimit, h.OpenAIGateway.SeedanceTasks)
+		rootRoute(http.MethodGet, prefix+"/contents/generations/tasks/:task_id", bodyLimit, h.OpenAIGateway.SeedanceTasks)
+		rootRoute(http.MethodDelete, prefix+"/contents/generations/tasks/:task_id", bodyLimit, h.OpenAIGateway.SeedanceTasks)
 	}
 	rootRoute(http.MethodPost, "/responses", bodyLimit, responsesHandler)
 	rootRoute(http.MethodPost, "/responses/*subpath", bodyLimit, guardResponsesSubpath(responsesSubpathHandler))
@@ -614,13 +593,10 @@ func RegisterGatewayRoutes(
 			writeWindsurfUnsupported(c, h)
 			return
 		}
-		if getGroupPlatform(c) == service.PlatformOpenCode {
-			writeOpenCodeUnsupported(c, h)
-			return
-		}
 		h.CompatibleGateway.ResponsesWebSocket(c)
 	})
 	rootRoute(http.MethodGet, "/models", bodyLimit, modelsHandler)
+	rootRoute(http.MethodGet, "/models/:model", bodyLimit, h.Gateway.Models)
 	rootRoute(http.MethodPost, "/messages/count_tokens", bodyLimit, countTokensHandler)
 	codexDirect := r.Group("/backend-api/codex")
 	codexDirect.Use(bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, byteDanceVideoOnly, requireGroupAnthropic)
@@ -639,10 +615,6 @@ func RegisterGatewayRoutes(
 				writeWindsurfUnsupported(c, h)
 				return
 			}
-			if getGroupPlatform(c) == service.PlatformOpenCode {
-				writeOpenCodeUnsupported(c, h)
-				return
-			}
 			h.CompatibleGateway.ResponsesWebSocket(c)
 		})
 		codexDirect.GET("/models", codexModelsHandler)
@@ -650,7 +622,7 @@ func RegisterGatewayRoutes(
 	// OpenAI Chat Completions API（不带v1前缀的别名）— auto-route based on group platform
 	rootRoute(http.MethodPost, "/chat/completions", bodyLimit, func(c *gin.Context) {
 		switch getGroupPlatform(c) {
-		case service.PlatformOpenAI, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM:
+		case service.PlatformOpenAI, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek, service.PlatformGLM, service.PlatformOpenCodeGo:
 			h.CompatibleGateway.ChatCompletions(c)
 			return
 		case service.PlatformMiniMax:
@@ -658,9 +630,6 @@ func RegisterGatewayRoutes(
 			return
 		case service.PlatformWindsurf:
 			writeWindsurfChatCompletions(c, h)
-			return
-		case service.PlatformOpenCode:
-			writeOpenCodeChatCompletions(c, h)
 			return
 		}
 		h.Gateway.ChatCompletions(c)
@@ -903,62 +872,6 @@ func writeWindsurfChatCompletions(c *gin.Context, h *handler.Handlers) {
 		"error": gin.H{
 			"type":    "api_error",
 			"message": "windsurf gateway service unavailable",
-		},
-	})
-}
-
-func writeOpenCodeUnsupported(c *gin.Context, h *handler.Handlers) {
-	if h != nil && h.OpenCodeGateway != nil {
-		h.OpenCodeGateway.Unsupported(c)
-		return
-	}
-	c.JSON(http.StatusNotFound, gin.H{
-		"type": "error",
-		"error": gin.H{
-			"type":    "not_found_error",
-			"message": "OpenCode gateway does not support this endpoint",
-		},
-	})
-}
-
-func writeOpenCodeChatCompletions(c *gin.Context, h *handler.Handlers) {
-	if h != nil && h.OpenCodeGateway != nil {
-		h.OpenCodeGateway.ChatCompletions(c)
-		return
-	}
-	c.JSON(http.StatusServiceUnavailable, gin.H{
-		"type": "error",
-		"error": gin.H{
-			"type":    "api_error",
-			"message": "opencode gateway service unavailable",
-		},
-	})
-}
-
-func writeOpenCodeResponses(c *gin.Context, h *handler.Handlers) {
-	if h != nil && h.OpenCodeGateway != nil {
-		h.OpenCodeGateway.Responses(c)
-		return
-	}
-	c.JSON(http.StatusServiceUnavailable, gin.H{
-		"type": "error",
-		"error": gin.H{
-			"type":    "api_error",
-			"message": "opencode gateway service unavailable",
-		},
-	})
-}
-
-func writeOpenCodeModels(c *gin.Context, h *handler.Handlers) {
-	if h != nil && h.OpenCodeGateway != nil {
-		h.OpenCodeGateway.Models(c)
-		return
-	}
-	c.JSON(http.StatusServiceUnavailable, gin.H{
-		"type": "error",
-		"error": gin.H{
-			"type":    "api_error",
-			"message": "opencode gateway service unavailable",
 		},
 	})
 }

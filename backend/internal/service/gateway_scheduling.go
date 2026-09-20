@@ -2910,11 +2910,11 @@ func (s *GatewayService) isModelSupportedByAccount(account *Account, requestedMo
 		return account.IsDeepSeekModelSupported(requestedModel)
 	case PlatformWindsurf:
 		return account.IsWindsurfModelSupported(requestedModel)
-	case PlatformOpenCode:
+	case PlatformOpenCodeGo:
 		if strings.TrimSpace(requestedModel) == "" {
 			return true
 		}
-		return account.IsOpenCodeModelSupported(requestedModel)
+		return isFlexibleProviderModelSupported(account, PlatformOpenCodeGo, requestedModel)
 	}
 	if account.Platform == PlatformAntigravity {
 		if strings.TrimSpace(requestedModel) == "" {

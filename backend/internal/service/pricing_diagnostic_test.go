@@ -81,7 +81,7 @@ func enumeratePlatformModels() []struct {
 	push(PlatformAntigravity, antigrIDs)
 	for _, platform := range []string{
 		PlatformMiniMax, PlatformGLM, PlatformKimi, PlatformDeepSeek,
-		PlatformWindsurf, PlatformOpenCode,
+		PlatformWindsurf, PlatformOpenCodeGo,
 	} {
 		if caps, ok := GetProviderGatewayCapabilities(platform); ok {
 			push(platform, caps.DefaultModelIDs)

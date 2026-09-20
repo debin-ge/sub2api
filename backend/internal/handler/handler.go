@@ -72,7 +72,6 @@ type Handlers struct {
 	KimiGateway      *KimiGatewayHandler
 	DeepSeekGateway  *DeepSeekGatewayHandler
 	WindsurfGateway  *WindsurfGatewayHandler
-	OpenCodeGateway  *OpenCodeGatewayHandler
 	Setting          *SettingHandler
 	Captcha          *CaptchaHandler
 	Totp             *TotpHandler

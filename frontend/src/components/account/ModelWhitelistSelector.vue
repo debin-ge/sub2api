@@ -231,7 +231,7 @@ const upstreamSyncPlatforms = new Set([
   'minimax',
   'glm',
   'windsurf',
-  'opencode',
+  'opencode_go',
   'bytedance'
 ])
 const canSyncUpstream = computed(() => {

@@ -152,6 +152,13 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 				}
 			}
 		}
+		// 透传客户端 Accept-Encoding：不走共享白名单（该字段在 API Key 透传路径
+		// 上刻意不透传，详见 gateway_anthropic_passthrough.go 的 zstd 兼容性考量），
+		// 仅本函数（OAuth/原生网关路径）按客户端声明值原样转发；客户端未声明时留空，
+		// 由 net/http.Transport 自动协商 gzip 并透明解压。
+		if acceptEncoding := getHeaderRaw(clientHeaders, "accept-encoding"); acceptEncoding != "" {
+			setHeaderRaw(req.Header, resolveWireCasing("accept-encoding"), acceptEncoding)
+		}
 	}
 
 	// OAuth账号：应用缓存的指纹到请求头（覆盖白名单透传的头）

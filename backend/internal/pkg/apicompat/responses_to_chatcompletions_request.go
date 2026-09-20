@@ -32,12 +32,13 @@ func ResponsesToChatCompletionsRequest(req *ResponsesRequest) (*ChatCompletionsR
 	}
 
 	out := &ChatCompletionsRequest{
-		Model:       req.Model,
-		Messages:    messages,
-		Temperature: req.Temperature,
-		TopP:        req.TopP,
-		Stream:      req.Stream,
-		ServiceTier: req.ServiceTier,
+		Model:             req.Model,
+		Messages:          messages,
+		Temperature:       req.Temperature,
+		TopP:              req.TopP,
+		Stream:            req.Stream,
+		ServiceTier:       req.ServiceTier,
+		ParallelToolCalls: req.ParallelToolCalls,
 	}
 
 	if req.MaxOutputTokens != nil {
@@ -111,6 +112,29 @@ func convertResponsesInputToChatMessages(input json.RawMessage) ([]ChatMessage, 
 				if pendingReasoning != "" {
 					lastTurnReasoning = pendingReasoning
 				}
+				continue
+			}
+			if item.Type == "additional_tools" {
+				// additional_tools items only declare client-executable tools inline;
+				// EffectiveResponsesTools already lowers them into the outgoing Tools
+				// list, so the item itself must not become a spurious chat message.
+				pendingReasoning = ""
+				continue
+			}
+			if item.Type == "agent_message" {
+				// Codex multi_agent_v2 用 agent_message 在父线程与子智能体之间传递任务和
+				// 回复，chat 上游没有对应条目，按原顺序拼成一条 user 消息；拼不出文本时跳过。
+				text := agentMessageText(item.Content)
+				pendingReasoning = ""
+				if text == "" {
+					continue
+				}
+				content, err := json.Marshal(text)
+				if err != nil {
+					return nil, fmt.Errorf("marshal responses agent_message %d: %w", i, err)
+				}
+				messages = append(messages, ChatMessage{Role: "user", Content: content})
+				lastTurnReasoning = ""
 				continue
 			}
 			if isResponsesToolOutputItemType(item.Type) {

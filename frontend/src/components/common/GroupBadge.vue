@@ -148,7 +148,7 @@ const labelClass = computed(() => {
   if (props.platform === 'windsurf') {
     return `${base} bg-teal-200/60 text-teal-800 dark:bg-teal-800/40 dark:text-teal-300`
   }
-  if (props.platform === 'opencode') {
+  if (props.platform === 'opencode_go') {
     return `${base} bg-slate-200/60 text-slate-800 dark:bg-slate-800/50 dark:text-slate-300`
   }
   if (props.platform === 'composite') {
@@ -205,7 +205,7 @@ const badgeClass = computed(() => {
       ? 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300'
       : 'bg-teal-50 text-teal-700 dark:bg-teal-900/20 dark:text-teal-300'
   }
-  if (props.platform === 'opencode') {
+  if (props.platform === 'opencode_go') {
     return isSubscription.value
       ? 'bg-slate-100 text-slate-700 dark:bg-slate-800/60 dark:text-slate-300'
       : 'bg-slate-50 text-slate-700 dark:bg-slate-900/30 dark:text-slate-300'

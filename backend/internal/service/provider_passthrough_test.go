@@ -1,6 +1,9 @@
 package service
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // domesticPassthroughPlatforms 列出共用 isFlexibleProviderModelSupported 的六个国产网关。
 // 每条给一个"账号里已配好的老模型"和一个"上游刚上线、mapping 里没有的新模型"。
@@ -36,8 +39,17 @@ var domesticPassthroughPlatforms = []struct {
 		mappedFor: func(a *Account, m string) string { return a.GetWindsurfMappedModel(m) },
 	},
 	{
-		platform: PlatformOpenCode, oldModel: "gpt5-nano", upstream: "gpt5-nano", newModel: "opencode/tiny-pickle",
-		mappedFor: func(a *Account, m string) string { return a.GetOpenCodeMappedModel(m) },
+		platform: PlatformOpenCodeGo, oldModel: "gpt5-nano", upstream: "gpt5-nano", newModel: "opencode/tiny-pickle",
+		mappedFor: func(a *Account, m string) string {
+			trimmed := strings.TrimSpace(m)
+			if a.IsProviderPassthroughEnabled() {
+				return trimmed
+			}
+			if mapped, ok := ResolveAccountProviderModel(a, trimmed); ok {
+				return mapped.UpstreamModel
+			}
+			return trimmed
+		},
 	},
 }
 

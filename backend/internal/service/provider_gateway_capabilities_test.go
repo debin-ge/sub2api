@@ -12,7 +12,7 @@ func TestProviderGatewayCapabilitiesDomesticDefaults(t *testing.T) {
 		{platform: PlatformKimi, models: []string{"kimi-for-coding"}},
 		{platform: PlatformDeepSeek, models: []string{"deepseek-v4-flash", "deepseek-v4-pro"}},
 		{platform: PlatformWindsurf, models: windsurfOfficialModelIDs},
-		{platform: PlatformOpenCode, models: []string{"opencode/big-pickle", "opencode/gpt5-nano", "gpt5-nano"}},
+		{platform: PlatformOpenCodeGo, models: DefaultOpenCodeGoModelIDs()},
 	}
 
 	for _, tc := range cases {
@@ -72,7 +72,7 @@ func TestDefaultMiniMaxModelIDs(t *testing.T) {
 }
 
 func TestFlexibleDomesticProvidersAllowUnknownModelsAndLiveDiscovery(t *testing.T) {
-	for _, platform := range []string{PlatformMiniMax, PlatformGLM, PlatformZhipu, PlatformKimi, PlatformDeepSeek, PlatformWindsurf, PlatformOpenCode} {
+	for _, platform := range []string{PlatformMiniMax, PlatformGLM, PlatformZhipu, PlatformKimi, PlatformDeepSeek, PlatformWindsurf, PlatformOpenCodeGo} {
 		if !providerSupportsUpstreamModel(platform, "provider-future-model") {
 			t.Fatalf("platform %q should allow future upstream models", platform)
 		}

@@ -47,7 +47,7 @@ var (
 	openAIGPTImage25FallbackPricing = &LiteLLMModelPricing{
 		InputCostPerToken:       5e-06,
 		CacheReadInputTokenCost: 1.25e-06,
-		InputCostPerImageToken:  8e-06,
+		InputCostPerImageToken:  8e-06, CacheReadInputImageTokenCost: 2e-06,
 		OutputCostPerImageToken: 3e-05,
 		PricingCatalogProvider:  "openai",
 		Mode:                    "image_generation",
@@ -162,6 +162,7 @@ type ModelPriceEntry struct {
 	OutputCostPerImage                  float64             `json:"output_cost_per_image"`       // 图片生成模型每张图片价格
 	OutputCostPerImageToken             float64             `json:"output_cost_per_image_token"` // 图片输出 token 价格
 	InputCostPerImageToken              float64             `json:"input_cost_per_image_token"`  // 图片输入 token 价格（如 gpt-image-2 图片编辑）
+	CacheReadInputImageTokenCost        float64             `json:"cache_read_input_image_token_cost"`
 	VideoPricing                        *VideoPricingConfig `json:"video_pricing,omitempty"`
 	OutputCostPerImageExplicit          bool                `json:"-"`
 	ImageOutputPriceExplicit            bool                `json:"-"`
@@ -225,6 +226,7 @@ type RawModelPriceEntry struct {
 	OutputCostPerImage                  *float64            `json:"output_cost_per_image"`
 	OutputCostPerImageToken             *float64            `json:"output_cost_per_image_token"`
 	InputCostPerImageToken              *float64            `json:"input_cost_per_image_token"`
+	CacheReadInputImageTokenCost        *float64            `json:"cache_read_input_image_token_cost"`
 	VideoPricing                        *VideoPricingConfig `json:"video_pricing"`
 }
 
@@ -921,7 +923,6 @@ func (s *PricingService) parsePricingData(body []byte) (map[string]*ModelPriceEn
 		} else {
 			entry.Currency = normalized
 		}
-
 		pricing := buildModelPriceEntry(modelName, &entry)
 		pricing.LongContextThresholdInclusive = strings.EqualFold(strings.TrimSpace(entry.PricingCatalogProvider), "xai")
 		hasExplicitLongContext := entry.LongContextInputTokenThreshold != nil ||

@@ -58,7 +58,7 @@ func TestNormalizeInternalRelayCreateExtra(t *testing.T) {
 		PlatformGemini,
 		PlatformGrok,
 		PlatformWindsurf,
-		PlatformOpenCode,
+		PlatformOpenCodeGo,
 	} {
 		t.Run("supports "+platform+" API key", func(t *testing.T) {
 			extra, err := normalizeInternalRelayCreateExtra(

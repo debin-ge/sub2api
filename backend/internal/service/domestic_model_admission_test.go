@@ -17,8 +17,8 @@ func isDomesticModelSupported(t *testing.T, account *Account, model string) bool
 		return account.IsDeepSeekModelSupported(model)
 	case PlatformWindsurf:
 		return account.IsWindsurfModelSupported(model)
-	case PlatformOpenCode:
-		return account.IsOpenCodeModelSupported(model)
+	case PlatformOpenCodeGo:
+		return isFlexibleProviderModelSupported(account, PlatformOpenCodeGo, model)
 	}
 	t.Fatalf("unhandled platform %q", account.Platform)
 	return false

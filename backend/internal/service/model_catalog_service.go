@@ -39,7 +39,7 @@ var modelCatalogPlatforms = [...]string{
 	PlatformKimi,
 	PlatformDeepSeek,
 	PlatformWindsurf,
-	PlatformOpenCode,
+	PlatformOpenCodeGo,
 	PlatformByteDance,
 	PlatformComposite,
 	modelCatalogPlatformUnknown,
@@ -56,7 +56,7 @@ var compositeModelCatalogPlatforms = [...]string{
 	PlatformDeepSeek,
 	PlatformMiniMax,
 	PlatformWindsurf,
-	PlatformOpenCode,
+	PlatformOpenCodeGo,
 	PlatformByteDance,
 }
 

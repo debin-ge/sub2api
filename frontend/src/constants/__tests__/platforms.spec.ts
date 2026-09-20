@@ -13,7 +13,7 @@ const concretePlatforms = [
   'glm',
   'deepseek',
   'windsurf',
-  'opencode',
+  'opencode_go',
   'bytedance'
 ]
 

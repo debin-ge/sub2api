@@ -22,7 +22,7 @@ export const CONCRETE_PLATFORM_OPTIONS = [
   { value: 'glm', label: 'GLM (Legacy)' },
   { value: 'deepseek', label: 'DeepSeek' },
   { value: 'windsurf', label: 'Windsurf' },
-  { value: 'opencode', label: 'OpenCode' },
+  { value: 'opencode_go', label: 'OpenCode' },
   { value: 'bytedance', label: 'ByteDance' }
 ] as const satisfies readonly PlatformOption<AccountPlatform>[]
 

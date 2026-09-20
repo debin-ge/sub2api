@@ -549,6 +549,7 @@ func TestFinalizeOAuthRegistrationPostCommit_SnapshotsPlatformQuotaDefaults(t *t
 	require.Len(t, quotaRepo.bulkInsertCalls, 1, "post-commit finalization must call BulkInsertInitial once on successful OAuth signup")
 
 	records := quotaRepo.bulkInsertCalls[0]
+	require.Len(t, records, 1, "only platforms with a configured limit get a row")
 	var anthropicRecord *UserPlatformQuotaRecord
 	for i := range records {
 		if records[i].Platform == "anthropic" {

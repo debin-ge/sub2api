@@ -686,7 +686,7 @@ func TestAccountHandlerUpdateKeepsExistingAPIKeyWhenCredentialsOmitIt(t *testing
 			updateCredentials:   map[string]any{"base_url": "https://server.codeium.com"},
 		},
 		{
-			platform: service.PlatformOpenCode,
+			platform: service.PlatformOpenCodeGo,
 			existingCredentials: map[string]any{
 				"api_key":  "sk-opencode",
 				"base_url": "https://opencode.example.com",

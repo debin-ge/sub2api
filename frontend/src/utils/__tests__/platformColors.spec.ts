@@ -65,11 +65,11 @@ describe('platformColors', () => {
   })
 
   it('returns OpenCode labels and a distinct slate visual style', () => {
-    expect(platformLabel('opencode')).toBe('OpenCode')
-    expect(platformBadgeClass('opencode')).toContain('slate')
-    expect(platformButtonClass('opencode')).toContain('slate')
-    expect(platformBadgeClass('opencode')).not.toBe(platformBadgeClass('openai'))
-    expect(platformBadgeClass('opencode')).not.toBe(platformBadgeClass('windsurf'))
+    expect(platformLabel('opencode_go')).toBe('OpenCode')
+    expect(platformBadgeClass('opencode_go')).toContain('slate')
+    expect(platformButtonClass('opencode_go')).toContain('slate')
+    expect(platformBadgeClass('opencode_go')).not.toBe(platformBadgeClass('openai'))
+    expect(platformBadgeClass('opencode_go')).not.toBe(platformBadgeClass('windsurf'))
   })
 
   it('returns Grok labels and a distinct neutral visual style', () => {
@@ -77,6 +77,6 @@ describe('platformColors', () => {
     expect(platformBadgeClass('grok')).toContain('zinc')
     expect(platformButtonClass('grok')).toContain('zinc')
     expect(platformBadgeClass('grok')).not.toBe(platformBadgeClass('openai'))
-    expect(platformBadgeClass('grok')).not.toBe(platformBadgeClass('opencode'))
+    expect(platformBadgeClass('grok')).not.toBe(platformBadgeClass('opencode_go'))
   })
 })

@@ -259,7 +259,7 @@ func CatalogOverridePlatforms() []string {
 		PlatformKimi,
 		PlatformDeepSeek,
 		PlatformWindsurf,
-		PlatformOpenCode,
+		PlatformOpenCodeGo,
 		PlatformByteDance,
 		PlatformComposite,
 	}
@@ -557,6 +557,9 @@ func buildModelPriceEntry(model string, raw *RawModelPriceEntry) *ModelPriceEntr
 	}
 	if raw.InputCostPerImageToken != nil {
 		entry.InputCostPerImageToken = *raw.InputCostPerImageToken
+	}
+	if raw.CacheReadInputImageTokenCost != nil {
+		entry.CacheReadInputImageTokenCost = *raw.CacheReadInputImageTokenCost
 	}
 	return entry
 }

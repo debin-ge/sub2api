@@ -371,68 +371,6 @@ func TestGetModelPricing_KimiForCodingFallback(t *testing.T) {
 	require.False(t, pricing.SupportsCacheBreakdown)
 }
 
-func TestGetModelPricing_DeepSeekFallback(t *testing.T) {
-	svc := newTestBillingService()
-
-	tests := []struct {
-		model             string
-		expectedInput     float64
-		expectedOutput    float64
-		expectedCacheRead float64
-	}{
-		{
-			model:             "deepseek-v4-flash",
-			expectedInput:     2.2e-7,
-			expectedOutput:    6.6e-7,
-			expectedCacheRead: 7e-9,
-		},
-		{
-			model:             "DeepSeek-V4-Pro",
-			expectedInput:     6.6e-7,
-			expectedOutput:    1.98e-6,
-			expectedCacheRead: 2.2e-8,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.model, func(t *testing.T) {
-			pricing, err := svc.GetModelPricing(tt.model)
-			require.NoError(t, err)
-			require.NotNil(t, pricing)
-			require.InDelta(t, tt.expectedInput, pricing.InputPricePerToken, 1e-12)
-			require.InDelta(t, tt.expectedOutput, pricing.OutputPricePerToken, 1e-12)
-			require.InDelta(t, tt.expectedCacheRead, pricing.CacheReadPricePerToken, 1e-12)
-			require.Zero(t, pricing.CacheCreationPricePerToken)
-			require.False(t, pricing.SupportsCacheBreakdown)
-		})
-	}
-}
-
-func TestGetFallbackPricing_DeepSeekCompatNamesDoNotAlias(t *testing.T) {
-	svc := newTestBillingService()
-
-	require.Nil(t, svc.getFallbackPricing("deepseek-chat"))
-	require.Nil(t, svc.getFallbackPricing("deepseek-reasoner"))
-}
-
-func TestCalculateCost_DeepSeekFallbackUsesCacheMissAndHitPrices(t *testing.T) {
-	svc := newTestBillingService()
-
-	cost, err := svc.CalculateCost("deepseek-v4-flash", UsageTokens{
-		InputTokens:     1_000_000,
-		OutputTokens:    1_000_000,
-		CacheReadTokens: 1_000_000,
-	}, 1.0)
-	require.NoError(t, err)
-
-	expectedTotal := 0.22 + 0.66 + 0.007
-	require.InDelta(t, 0.22, cost.InputCost, 1e-10)
-	require.InDelta(t, 0.66, cost.OutputCost, 1e-10)
-	require.InDelta(t, 0.007, cost.CacheReadCost, 1e-10)
-	require.InDelta(t, expectedTotal, cost.TotalCost, 1e-10)
-	require.InDelta(t, expectedTotal, cost.ActualCost, 1e-10)
-}
-
 func TestCalculateCost_GLMFallback(t *testing.T) {
 	svc := newTestBillingService()
 
@@ -705,31 +643,46 @@ func TestGetFallbackPricing_FamilyMatching(t *testing.T) {
 		{
 			name:              "deepseek v4 flash",
 			model:             "deepseek-v4-flash",
-			expectedInput:     2.2e-7,
-			expectedOutput:    floatPtr(6.6e-7),
-			expectedCacheRead: floatPtr(7e-9),
+			expectedInput:     1.5e-7,
+			expectedOutput:    floatPtr(6e-7),
+			expectedCacheRead: floatPtr(3e-9),
+		},
+		{
+			// deepseek-flash（= V4.1-Flash 新名）经前缀兜底同样命中 flash 价卡。
+			name:              "deepseek flash v41 name maps to flash",
+			model:             "deepseek-flash",
+			expectedInput:     1.5e-7,
+			expectedOutput:    floatPtr(6e-7),
+			expectedCacheRead: floatPtr(3e-9),
 		},
 		{
 			name:              "deepseek v4 flash vision exp",
 			model:             "deepseek-v4-flash-vision-exp",
-			expectedInput:     2.2e-7,
-			expectedOutput:    floatPtr(6.6e-7),
-			expectedCacheRead: floatPtr(7e-9),
+			expectedInput:     1.5e-7,
+			expectedOutput:    floatPtr(6e-7),
+			expectedCacheRead: floatPtr(3e-9),
 		},
 		{
-			name:             "deepseek chat requires resolved upstream model",
-			model:            "deepseek-chat",
-			expectNilPricing: true,
+			// deepseek-chat / deepseek-reasoner 已停止服务，统一按 flash 价兜底。
+			name:              "deepseek chat discontinued maps to flash",
+			model:             "deepseek-chat",
+			expectedInput:     1.5e-7,
+			expectedOutput:    floatPtr(6e-7),
+			expectedCacheRead: floatPtr(3e-9),
 		},
 		{
-			name:             "deepseek reasoner requires resolved upstream model",
-			model:            "deepseek-reasoner",
-			expectNilPricing: true,
+			name:              "deepseek reasoner discontinued maps to flash",
+			model:             "deepseek-reasoner",
+			expectedInput:     1.5e-7,
+			expectedOutput:    floatPtr(6e-7),
+			expectedCacheRead: floatPtr(3e-9),
 		},
 		{
-			name:             "unknown deepseek remains unpriced",
-			model:            "deepseek-foo",
-			expectNilPricing: true,
+			name:              "unknown deepseek maps to flash",
+			model:             "deepseek-foo",
+			expectedInput:     1.5e-7,
+			expectedOutput:    floatPtr(6e-7),
+			expectedCacheRead: floatPtr(3e-9),
 		},
 
 		// ---- 智谱 GLM（z.ai 国际版 USD 报价，整表统一口径）----

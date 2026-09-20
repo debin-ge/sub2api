@@ -341,7 +341,7 @@ const defaultClientTab = computed(() => {
       return 'gemini'
     case 'antigravity':
       return 'claude'
-    case 'opencode':
+    case 'opencode_go':
       return 'opencode'
     default:
       return 'claude'
@@ -470,7 +470,7 @@ const clientTabs = computed((): TabConfig[] => {
         { id: 'codex', label: t('keys.useKeyModal.cliTabs.codexCli'), icon: TerminalIcon },
         { id: 'opencode', label: t('keys.useKeyModal.cliTabs.opencode'), icon: TerminalIcon }
       ]
-    case 'opencode':
+    case 'opencode_go':
       return [
         { id: 'opencode', label: t('keys.useKeyModal.cliTabs.opencode'), icon: TerminalIcon }
       ]
@@ -738,8 +738,8 @@ const currentFiles = computed((): FileConfig[] => {
         return [generateOpenCodeConfig('glm', apiBase, apiKey, 'opencode.json (GLM)')]
       case 'kimi':
         return [generateOpenCodeConfig('kimi', apiBase, apiKey, 'opencode.json (Kimi)')]
-      case 'opencode':
-        return [generateOpenCodeConfig('opencode', apiBase, apiKey, 'opencode.json (OpenCode)')]
+      case 'opencode_go':
+        return [generateOpenCodeConfig('opencode_go', apiBase, apiKey, 'opencode.json (OpenCode)')]
       case 'grok':
         return [generateOpenCodeConfig('grok', apiBase, apiKey)]
       default:
@@ -1250,6 +1250,7 @@ function generateRoutedCodexFiles(
     zhipu: 'glm-4.7',
     deepseek: 'deepseek-v4-pro',
     minimax: 'MiniMax-M3',
+    opencode_go: 'glm-5.3',
     composite: 'gpt-5.5'
   }
   const preferredModel = preferredModels[platform] || ''
@@ -1266,7 +1267,7 @@ function generateRoutedCodexFiles(
     minimax: 'MiniMax',
     glm: 'GLM (Legacy)',
     windsurf: 'Windsurf',
-    opencode: 'OpenCode',
+    opencode_go: 'OpenCode',
     bytedance: 'ByteDance',
     composite: 'Composite'
   }
@@ -2052,7 +2053,7 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     provider[platform].npm = '@ai-sdk/openai'
     provider[platform].name = 'Windsurf'
     provider[platform].models = windsurfModels
-  } else if (platform === 'opencode') {
+  } else if (platform === 'opencode_go') {
     provider[platform].npm = '@ai-sdk/openai'
     provider[platform].name = 'OpenCode'
     provider[platform].models = opencodeModels

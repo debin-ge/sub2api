@@ -34,20 +34,20 @@ vi.mock('vue-i18n', async () => {
 })
 
 vi.mock('@/stores/app', () => ({
-	useAppStore: () => ({
-		showError,
+  useAppStore: () => ({
+    showError,
     showSuccess,
-		showInfo,
-		showWarning
+    showInfo,
+    showWarning
   })
 }))
 
 vi.mock('@/api/admin/accounts', () => ({
-	accountsAPI: {
-		syncUpstreamModels: syncUpstreamModelsMock,
-		syncUpstreamModelsPreview: syncUpstreamModelsPreviewMock
-	},
-	getAntigravityDefaultModelMapping: vi.fn().mockResolvedValue({})
+  accountsAPI: {
+    syncUpstreamModels: syncUpstreamModelsMock,
+    syncUpstreamModelsPreview: syncUpstreamModelsPreviewMock
+  },
+  getAntigravityDefaultModelMapping: vi.fn().mockResolvedValue({})
 }))
 
 vi.mock('@/composables/useClipboard', () => ({
@@ -338,5 +338,23 @@ describe('ModelWhitelistSelector', () => {
 
     expect(syncUpstreamModelsPreviewMock).toHaveBeenCalledWith(credentials)
     expect(wrapper.emitted('update:modelValue')?.[0]?.[0]).toEqual(['doubao-seedance-1-0-pro-250528'])
+  })
+
+  it('shows the upstream sync button for OpenCode Go create-account credentials', () => {
+    const wrapper = mountSelector({
+      platform: 'opencode_go',
+      syncCredentials: {
+        platform: 'opencode_go',
+        type: 'apikey',
+        base_url: 'https://opencode.ai/zen/go/v1',
+        api_key: 'sk-test',
+      },
+    })
+    const syncButton = wrapper
+      .findAll('button')
+      .find(button => button.text() === 'admin.accounts.syncUpstreamModels')
+
+    expect(syncButton).toBeDefined()
+    expect(syncButton?.exists()).toBe(true)
   })
 })

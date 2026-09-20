@@ -58,7 +58,7 @@ func EvaluateAccountSchedulingThreshold(account *Account, thresholds map[string]
 		winner = pickLatestResetSchedulingCandidate(anthropicThresholdCandidates(account, now), threshold, now)
 	case PlatformGrok:
 		winner = pickLatestResetSchedulingCandidate(grokThresholdCandidates(account, now), threshold, now)
-	case PlatformKimi, PlatformZhipu, PlatformMiniMax:
+	case PlatformKimi, PlatformZhipu, PlatformMiniMax, PlatformOpenCodeGo:
 		winner = pickLatestResetSchedulingCandidate(cnProviderThresholdCandidates(account, decision.Platform, now), threshold, now)
 	default:
 		return decision
@@ -359,10 +359,14 @@ func cnProviderThresholdCandidates(account *Account, provider string, now time.T
 	if account == nil || len(account.Extra) == 0 {
 		return nil
 	}
-	return []*accountSchedulingThresholdCandidate{
+	candidates := []*accountSchedulingThresholdCandidate{
 		cnThresholdCandidate(account.Extra, provider, "5h", now),
 		cnThresholdCandidate(account.Extra, provider, "weekly", now),
 	}
+	if provider == PlatformOpenCodeGo {
+		candidates = append(candidates, cnThresholdCandidate(account.Extra, provider, "monthly", now))
+	}
+	return candidates
 }
 
 func cnThresholdCandidate(extra map[string]any, provider, window string, now time.Time) *accountSchedulingThresholdCandidate {
@@ -377,6 +381,10 @@ func cnThresholdCandidate(extra map[string]any, provider, window string, now tim
 		usedKey = cnExtraKey(provider, cnExtraSuffixWeeklyUsed)
 		resetKey = cnExtraKey(provider, cnExtraSuffixWeeklyReset)
 		maxAge = schedulingMax7dResetAge
+	case "monthly":
+		usedKey = cnExtraKey(provider, cnExtraSuffixMonthlyUsed)
+		resetKey = cnExtraKey(provider, cnExtraSuffixMonthlyReset)
+		maxAge = schedulingMax31dResetAge
 	default:
 		return nil
 	}
@@ -492,6 +500,8 @@ const (
 	// schedulingMaxGrokResetAge 对应 grok_sched_reset_at（写入侧已限制在 now+25h 内），
 	// 读侧留出余量作为纵深防御。
 	schedulingMaxGrokResetAge = 48 * time.Hour
+	// schedulingMax31dResetAge 是 monthly（OpenCode Go 订阅额度窗口）reset 时间的合理性上限。
+	schedulingMax31dResetAge = 32 * 24 * time.Hour
 )
 
 // boundedSchedulingTime 校验一个绝对时间是否落在 (now, now+maxAge] 内，越界返回 nil。

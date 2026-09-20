@@ -593,23 +593,23 @@ func TestUpstreamModelDiscoverer_ProviderDispatch(t *testing.T) {
 			},
 		},
 		{
-			name: "opencode",
+			name: "opencode_go",
 			run: func(t *testing.T) {
 				upstream := &httpUpstreamRecorder{resp: &http.Response{
 					StatusCode: http.StatusOK,
 					Header:     http.Header{"Content-Type": []string{"application/json"}},
-					Body:       io.NopCloser(strings.NewReader(`{"data":[{"id":"opencode-new"}]}`)),
+					Body:       io.NopCloser(strings.NewReader(`{"data":[{"id":"opencode-go-new"}]}`)),
 				}}
 				discoverer := &UpstreamModelDiscoverer{httpUpstream: upstream, cfg: upstreamModelSyncTestConfig()}
 
 				models, err := discoverer.Discover(context.Background(), &Account{
-					ID: 12, Platform: PlatformOpenCode, Type: AccountTypeAPIKey,
-					Credentials: map[string]any{"api_key": "opencode-key", "base_url": "https://opencode.example.com"},
+					ID: 12, Platform: PlatformOpenCodeGo, Type: AccountTypeAPIKey,
+					Credentials: map[string]any{"api_key": "opencode-key"},
 				})
 
 				require.NoError(t, err)
-				require.Equal(t, []string{"opencode-new"}, models)
-				require.Equal(t, "https://opencode.example.com/v1/models", upstream.lastReq.URL.String())
+				require.Equal(t, []string{"opencode-go-new"}, models)
+				require.Equal(t, "https://opencode.ai/zen/go/v1/models", upstream.lastReq.URL.String())
 				require.Equal(t, "Bearer opencode-key", upstream.lastReq.Header.Get("Authorization"))
 			},
 		},
@@ -679,7 +679,6 @@ func TestUpstreamModelDiscoverer_CompatibleProvidersRejectDisallowedURLs(t *test
 		platform string
 	}{
 		{name: "windsurf", platform: PlatformWindsurf},
-		{name: "opencode", platform: PlatformOpenCode},
 	}
 
 	for _, tt := range tests {
@@ -717,7 +716,7 @@ func TestUpstreamModelDiscoverer_CompatibleProvidersUseProxyAndHTTPUpstream(t *t
 		want     []string
 	}{
 		{name: "windsurf", platform: PlatformWindsurf, body: `{"data":[{"id":"windsurf-new"}]}`, want: []string{"windsurf-new"}},
-		{name: "opencode", platform: PlatformOpenCode, body: `{"data":[{"id":"opencode-new"}]}`, want: []string{"opencode-new"}},
+		{name: "opencode", platform: PlatformOpenCodeGo, body: `{"data":[{"id":"opencode-new"}]}`, want: []string{"opencode-new"}},
 	}
 
 	for _, tt := range tests {
@@ -755,7 +754,7 @@ func TestUpstreamModelDiscoverer_CompatibleProvidersUseCommonBodyLimit(t *testin
 		platform string
 	}{
 		{name: "windsurf", platform: PlatformWindsurf},
-		{name: "opencode", platform: PlatformOpenCode},
+		{name: "opencode", platform: PlatformOpenCodeGo},
 	}
 	largeBody := strings.Repeat("x", int(config.DefaultModelsListReadMaxBytes)+1)
 

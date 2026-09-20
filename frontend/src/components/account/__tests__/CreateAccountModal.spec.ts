@@ -111,7 +111,7 @@ const ModelWhitelistSelectorStub = defineComponent({
       <button
         type="button"
         data-testid="select-models"
-        @click="$emit('update:modelValue', platform === 'zhipu' || platform === 'glm' ? ['GLM-4.7'] : platform === 'kimi' ? ['kimi-for-coding'] : platform === 'deepseek' ? ['deepseek-v4-pro'] : platform === 'windsurf' ? ['claude-sonnet-4.6'] : platform === 'opencode' ? ['opencode/gpt5-nano'] : platform === 'bytedance' ? ['doubao-seedance-1-0-pro-250528'] : ['gpt-5.2'])"
+        @click="$emit('update:modelValue', platform === 'zhipu' || platform === 'glm' ? ['GLM-4.7'] : platform === 'kimi' ? ['kimi-for-coding'] : platform === 'deepseek' ? ['deepseek-v4-pro'] : platform === 'windsurf' ? ['claude-sonnet-4.6'] : platform === 'opencode_go' ? ['opencode/gpt5-nano'] : platform === 'bytedance' ? ['doubao-seedance-1-0-pro-250528'] : ['gpt-5.2'])"
       >
         select
       </button>
@@ -645,6 +645,65 @@ describe('CreateAccountModal', () => {
     expect(probeUpstreamBillingMock).not.toHaveBeenCalled()
   })
 
+  it('submits OpenCode Zen default protocol rules with adaptive endpoints', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenCode')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('oc')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('sk-opencode-zen')
+
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock).toHaveBeenCalledTimes(1)
+    expect(createAccountMock.mock.calls[0]?.[0]?.credentials).toMatchObject({
+      account_mode: 'zen',
+      api_protocol: 'adaptive',
+      base_url: 'https://opencode.ai/zen/v1',
+      api_base_urls: {
+        chat_completions: 'https://opencode.ai/zen/v1',
+        anthropic: 'https://opencode.ai/zen',
+        responses: 'https://opencode.ai/zen/v1'
+      },
+      protocol_rules: [
+        { pattern: 'grok-*', protocol: 'responses' },
+        { pattern: 'gpt-*', protocol: 'responses' },
+        { pattern: 'muse-spark-*', protocol: 'responses' },
+        { pattern: 'claude-*', protocol: 'anthropic' },
+        { pattern: 'qwen*', protocol: 'anthropic' }
+      ]
+    })
+  })
+
+  it('submits OpenCode GO endpoints after switching account type', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenCode')
+    await selectButtonByText(wrapper, 'admin.accounts.opencodeGo.accountMode.go')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('oc-go')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('sk-opencode-go')
+
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock).toHaveBeenCalledTimes(1)
+    expect(createAccountMock.mock.calls[0]?.[0]?.credentials).toMatchObject({
+      account_mode: 'go',
+      api_protocol: 'adaptive',
+      base_url: 'https://opencode.ai/zen/go/v1',
+      api_base_urls: {
+        chat_completions: 'https://opencode.ai/zen/go/v1',
+        anthropic: 'https://opencode.ai/zen/go',
+        responses: 'https://opencode.ai/zen/go/v1'
+      },
+      protocol_rules: [
+        { pattern: 'grok-*', protocol: 'responses' },
+        { pattern: 'gpt-*', protocol: 'responses' },
+        { pattern: 'muse-spark-*', protocol: 'responses' },
+        { pattern: 'minimax-*', protocol: 'anthropic' },
+        { pattern: 'qwen*', protocol: 'anthropic' }
+      ]
+    })
+  })
+
   it('submits adaptive Kimi protocol endpoints', async () => {
     const wrapper = mountModal()
     await selectButtonByText(wrapper, 'Kimi')
@@ -1040,7 +1099,7 @@ describe('CreateAccountModal', () => {
     expect(checkMixedChannelRiskMock).not.toHaveBeenCalled()
   })
 
-  it('submits OpenCode API key credentials with a single OpenCode2API base URL', async () => {
+  it('submits OpenCode API key credentials with a single chat_completions base URL', async () => {
     createAccountMock.mockReset()
     checkMixedChannelRiskMock.mockReset()
     createAccountMock.mockResolvedValue({ id: 6 })
@@ -1051,14 +1110,16 @@ describe('CreateAccountModal', () => {
 
     await wrapper.get('[data-tour="account-form-name"]').setValue('OpenCode Gateway')
     await wrapper.get('[data-testid="create-platform-opencode"]').trigger('click')
+    await wrapper.get('[data-testid="cn-api-protocol-chat_completions"]').trigger('click')
     expect(wrapper.text()).toContain('admin.accounts.opencode.apiKeyHint')
-    expect(wrapper.find('[data-testid="opencode-base-url"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="api-key-base-url"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="api-key-value"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="model-whitelist-selector"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="model-whitelist-platform"]').text()).toBe('opencode')
+    expect(wrapper.get('[data-testid="model-whitelist-platform"]').text()).toBe('opencode_go')
     expect(wrapper.find('[data-testid="quota-limit-card"]').exists()).toBe(false)
 
-    await wrapper.get('[data-testid="opencode-api-key"]').setValue('sk-opencode-test')
-    await wrapper.get('[data-testid="opencode-base-url"]').setValue('https://custom.example/opencode')
+    await wrapper.get('[data-testid="api-key-value"]').setValue('sk-opencode-test')
+    await wrapper.get('[data-testid="api-key-base-url"]').setValue('https://custom.example/opencode')
     await wrapper.get('[data-testid="select-models"]').trigger('click')
     expect(wrapper.get('[data-testid="model-whitelist-value"]').text()).toBe('opencode/gpt5-nano')
     await wrapper.get('form#create-account-form').trigger('submit.prevent')
@@ -1068,17 +1129,26 @@ describe('CreateAccountModal', () => {
     const payload = createAccountMock.mock.calls[0]?.[0]
     expect(payload).toEqual(expect.objectContaining({
       name: 'OpenCode Gateway',
-      platform: 'opencode',
+      platform: 'opencode_go',
       type: 'apikey',
       credentials: expect.objectContaining({
         api_key: 'sk-opencode-test',
+        account_mode: 'zen',
+        api_protocol: 'chat_completions',
         base_url: 'https://custom.example/opencode',
         model_mapping: {
           'opencode/gpt5-nano': 'opencode/gpt5-nano'
         }
       })
     }))
-    expect(Object.keys(payload.credentials).sort()).toEqual(['api_key', 'base_url', 'model_mapping'])
+    expect(Object.keys(payload.credentials).sort()).toEqual([
+      'account_mode',
+      'api_key',
+      'api_protocol',
+      'base_url',
+      'model_mapping',
+      'protocol_rules'
+    ])
     expect(payload.credentials.base_url_anthropic).toBeUndefined()
     expect(payload.credentials.base_url_openai).toBeUndefined()
     expect(checkMixedChannelRiskMock).not.toHaveBeenCalled()
