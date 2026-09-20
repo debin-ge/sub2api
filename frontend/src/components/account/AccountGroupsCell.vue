@@ -1,7 +1,21 @@
 <template>
   <div v-if="groups && groups.length > 0" class="relative max-w-56">
-    <!-- 分组容器：固定最大宽度，最多显示2行 -->
-    <div class="flex flex-wrap gap-1 max-h-14 overflow-hidden">
+    <!--
+      分组容器：固定最大宽度，最多显示2行。
+      名称被截断或还有折叠分组时，整块区域可点击/回车展开 popover 查看完整名称。
+    -->
+    <div
+      ref="triggerRef"
+      class="flex flex-wrap gap-1 max-h-14 overflow-hidden"
+      :class="canExpand ? 'cursor-pointer' : null"
+      :role="canExpand ? 'button' : undefined"
+      :tabindex="canExpand ? 0 : undefined"
+      :aria-expanded="canExpand ? showPopover : undefined"
+      :aria-label="canExpand ? t('admin.accounts.viewAllGroups') : undefined"
+      @click.stop="handleTriggerActivate"
+      @keydown.enter.prevent="handleTriggerActivate"
+      @keydown.space.prevent="handleTriggerActivate"
+    >
       <GroupBadge
         v-for="group in displayGroups"
         :key="group.id"
@@ -10,20 +24,19 @@
         :subscription-type="group.subscription_type"
         :rate-multiplier="group.rate_multiplier"
         :show-rate="false"
-        class="max-w-24"
+        :title="group.name"
+        :class="badgeWidthClass"
       />
       <!-- 更多数量徽章 -->
-      <button
+      <span
         v-if="hiddenCount > 0"
-        ref="moreButtonRef"
-        @click.stop="showPopover = !showPopover"
-        class="inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-300 dark:hover:bg-dark-500 transition-colors cursor-pointer whitespace-nowrap"
+        class="inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-300 dark:hover:bg-dark-500 transition-colors whitespace-nowrap"
       >
-        <span>+{{ hiddenCount }}</span>
-      </button>
+        +{{ hiddenCount }}
+      </span>
     </div>
 
-    <!-- Popover 显示完整列表 -->
+    <!-- Popover 显示完整列表（名称换行，不再截断） -->
     <Teleport to="body">
       <Transition
         enter-active-class="transition duration-150 ease-out"
@@ -52,7 +65,7 @@
               </svg>
             </button>
           </div>
-          <div class="flex flex-wrap gap-1.5 max-h-64 overflow-y-auto">
+          <div class="flex flex-wrap items-start gap-1.5 max-h-64 overflow-y-auto">
             <GroupBadge
               v-for="group in groups"
               :key="group.id"
@@ -61,6 +74,8 @@
               :subscription-type="group.subscription_type"
               :rate-multiplier="group.rate_multiplier"
               :show-rate="false"
+              wrap-name
+              class="max-w-full"
             />
           </div>
         </div>
@@ -78,7 +93,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import GroupBadge from '@/components/common/GroupBadge.vue'
 import type { Group } from '@/types'
@@ -94,9 +109,16 @@ const props = withDefaults(defineProps<Props>(), {
 
 const { t } = useI18n()
 
-const moreButtonRef = ref<HTMLElement | null>(null)
+// popover 定位用的估算尺寸，与模板上的 max-w-96 / max-h-64 对应
+const POPOVER_WIDTH = 384
+const POPOVER_HEIGHT = 280
+
+const triggerRef = ref<HTMLElement | null>(null)
 const popoverRef = ref<HTMLElement | null>(null)
 const showPopover = ref(false)
+const popoverStyle = ref<Record<string, string>>({})
+// 名称被截断、或徽章被 max-h-14 裁掉（内容放不下时才提供展开入口）
+const hasClippedContent = ref(false)
 
 // 显示的分组（最多显示 maxDisplay 个）
 const displayGroups = computed(() => {
@@ -115,31 +137,71 @@ const hiddenCount = computed(() => {
   return props.groups.length - (props.maxDisplay - 1)
 })
 
-// Popover 位置样式
-const popoverStyle = computed(() => {
-  if (!moreButtonRef.value) return {}
-  const rect = moreButtonRef.value.getBoundingClientRect()
-  const viewportHeight = window.innerHeight
-  const viewportWidth = window.innerWidth
+// 只有一个分组时放宽到 max-w-48：列宽上限仍由两个 max-w-24 徽章决定，表格不会变宽
+const badgeWidthClass = computed(() =>
+  displayGroups.value.length === 1 && hiddenCount.value === 0 ? 'max-w-48' : 'max-w-24'
+)
+
+// 有内容被裁掉，或还有没显示出来的分组时，才允许展开
+const canExpand = computed(() => hiddenCount.value > 0 || hasClippedContent.value)
+
+// 量测两种裁剪：名称横向被 truncate 掉，以及徽章整行被容器高度裁掉
+const measureClipping = () => {
+  const el = triggerRef.value
+  if (!el) {
+    hasClippedContent.value = false
+    return
+  }
+  if (el.scrollHeight - el.clientHeight > 1) {
+    hasClippedContent.value = true
+    return
+  }
+  hasClippedContent.value = Array.from(el.querySelectorAll<HTMLElement>('span')).some(
+    node => node.scrollWidth - node.clientWidth > 1
+  )
+}
+
+let resizeObserver: ResizeObserver | null = null
+
+const observeTrigger = () => {
+  if (!resizeObserver) return
+  resizeObserver.disconnect()
+  if (triggerRef.value) resizeObserver.observe(triggerRef.value)
+}
+
+// 打开时按触发区域实时定位（不能用 computed 缓存，滚动后 rect 会失效）
+const updatePopoverPosition = () => {
+  const rect = triggerRef.value?.getBoundingClientRect()
+  if (!rect) return
 
   let top = rect.bottom + 8
   let left = rect.left
 
   // 如果下方空间不足，显示在上方
-  if (top + 280 > viewportHeight) {
-    top = Math.max(8, rect.top - 280)
+  if (top + POPOVER_HEIGHT > window.innerHeight) {
+    top = Math.max(8, rect.top - POPOVER_HEIGHT)
   }
 
   // 如果右侧空间不足，向左偏移
-  if (left + 384 > viewportWidth) {
-    left = Math.max(8, viewportWidth - 392)
+  if (left + POPOVER_WIDTH > window.innerWidth) {
+    left = Math.max(8, window.innerWidth - POPOVER_WIDTH - 8)
   }
 
-  return {
+  popoverStyle.value = {
     top: `${top}px`,
     left: `${left}px`
   }
-})
+}
+
+const handleTriggerActivate = () => {
+  if (!canExpand.value) return
+  if (showPopover.value) {
+    showPopover.value = false
+    return
+  }
+  updatePopoverPosition()
+  showPopover.value = true
+}
 
 // 关闭 popover 的键盘事件
 const handleKeydown = (e: KeyboardEvent) => {
@@ -148,11 +210,30 @@ const handleKeydown = (e: KeyboardEvent) => {
   }
 }
 
+watch(triggerRef, () => {
+  observeTrigger()
+  measureClipping()
+})
+
+watch(
+  () => props.groups,
+  () => {
+    nextTick(measureClipping)
+  }
+)
+
 onMounted(() => {
   window.addEventListener('keydown', handleKeydown)
+  if (typeof ResizeObserver !== 'undefined') {
+    resizeObserver = new ResizeObserver(() => measureClipping())
+  }
+  observeTrigger()
+  nextTick(measureClipping)
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)
+  resizeObserver?.disconnect()
+  resizeObserver = null
 })
 </script>

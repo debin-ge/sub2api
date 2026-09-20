@@ -8,7 +8,7 @@
     <!-- Platform logo -->
     <PlatformIcon v-if="platform" :platform="platform" size="sm" />
     <!-- Group name -->
-    <span class="truncate">{{ name }}</span>
+    <span :class="wrapName ? 'whitespace-normal break-words' : 'truncate'">{{ name }}</span>
     <!-- Right side label -->
     <span v-if="showLabel" :class="labelClass">
       <template v-if="hasCustomRate">
@@ -43,6 +43,11 @@ interface Props {
    * 只关心费率、不关心有效期的场景）。
    */
   alwaysShowRate?: boolean
+  /**
+   * 默认单行截断（列表里保持行高稳定）；
+   * 开启后名称改为换行展示，用于 popover/详情这类需要看到完整名称的场景。
+   */
+  wrapName?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -50,7 +55,8 @@ const props = withDefaults(defineProps<Props>(), {
   showRate: true,
   daysRemaining: null,
   userRateMultiplier: null,
-  alwaysShowRate: false
+  alwaysShowRate: false,
+  wrapName: false
 })
 
 const { t } = useI18n()

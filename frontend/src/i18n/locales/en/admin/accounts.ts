@@ -128,6 +128,7 @@ export default {
       schedulableDisabled: 'Scheduling disabled',
       failedToToggleSchedulable: 'Failed to toggle scheduling status',
       groupCountTotal: '{count} groups total',
+      viewAllGroups: 'View all group names',
       platforms: {
         anthropic: 'Anthropic',
         claude: 'Claude',

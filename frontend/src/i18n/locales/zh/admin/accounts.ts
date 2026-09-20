@@ -126,6 +126,7 @@ export default {
       schedulableDisabled: '调度已关闭',
       failedToToggleSchedulable: '切换调度状态失败',
       groupCountTotal: '共 {count} 个分组',
+      viewAllGroups: '查看全部分组名称',
       columns: {
         name: '名称',
         id: '账号ID',
