@@ -1556,6 +1556,11 @@ func (s *BillingService) GetModelPricingForPlatforms(platforms []string, model s
 
 // getModelPricingAt 是 GetModelPricing 的带显式计费时点内部变体（无 platform
 // 约束），供历史补账/固定时点场景与测试使用，避免依赖墙上时钟。
+//
+// 仅被 deepseek_pricing_test.go（//go:build unit）调用；golangci-lint 的 unused
+// 检查未启用该 build tag，因此看不到这个调用点，属已知的 lint 盲区，非死代码。
+//
+//nolint:unused
 func (s *BillingService) getModelPricingAt(model string, pricingAt time.Time) (*ModelPricing, error) {
 	return s.getModelPricingForPlatforms(nil, model, true, pricingAt)
 }
