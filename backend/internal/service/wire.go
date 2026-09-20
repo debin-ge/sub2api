@@ -388,6 +388,21 @@ func ProvideAccountTestService(
 	return service
 }
 
+// ProvidePluginManager 在装配阶段注入账号目录（敏感能力，见 PluginManager.buildHostServices），
+// 使插件宿主服务能按清单声明的能力把 OpenAI OAuth 出站身份解析开放给对应插件。
+func ProvidePluginManager(
+	repo PluginRepository,
+	encryptor SecretEncryptor,
+	cfg *config.Config,
+	hostInfo PluginHostInfo,
+	kvStore PluginKVStore,
+	openAIGatewayService *OpenAIGatewayService,
+) *PluginManager {
+	pluginManager := NewPluginManager(repo, encryptor, cfg, hostInfo, kvStore)
+	pluginManager.SetAccountDirectory(openAIGatewayService)
+	return pluginManager
+}
+
 // ProvideRadarQuotaAggregator statically constructs the single quota
 // aggregator instance consumed by RadarRunner through the server lifecycle.
 func ProvideRadarQuotaAggregator(
@@ -1146,7 +1161,7 @@ var ProviderSet = wire.NewSet(
 	NewTotpService,
 	NewErrorPassthroughService,
 	NewTLSFingerprintProfileService,
-	NewPluginManager,
+	ProvidePluginManager,
 	NewDigestSessionStore,
 	ProvideIdempotencyCoordinator,
 	ProvideSystemOperationLockService,
