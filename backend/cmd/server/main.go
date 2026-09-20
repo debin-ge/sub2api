@@ -196,8 +196,31 @@ func runMainServer() {
 		log.Printf("WARNING: shutdown timed out with connections still open: %v", err)
 	}
 
+	releaseOwnConcurrencySlots(app)
+
 	log.Println("Server exited")
 }
+
+// releaseOwnConcurrencySlots 归还本进程仍持有的并发槽位。
+// 排空超时后仍在跑的请求执行不到自己的 release，这些槽位会一直占到
+// gateway.concurrency_slot_ttl_minutes 到期（默认 30 分钟），期间账号并发显示虚高，
+// 严重时残留占满上限导致账号完全不被调度。只删本进程前缀，多实例并存时也安全。
+// 用独立的短超时上下文：排空若已超时，上面的 ctx 已经失效。
+func releaseOwnConcurrencySlots(app *Application) {
+	if app == nil || app.Concurrency == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), concurrencyReleaseTimeout)
+	defer cancel()
+	if err := app.Concurrency.ReleaseOwnProcessSlots(ctx); err != nil {
+		// 失败不阻断退出：残留槽位仍会在 slot TTL 到期后收敛。
+		log.Printf("WARNING: release own concurrency slots failed: %v", err)
+	}
+}
+
+// concurrencyReleaseTimeout 是归还自身并发槽位的上限，只做少量 Redis 写，
+// 不应拖长关闭时间。
+const concurrencyReleaseTimeout = 5 * time.Second
 
 // defaultShutdownTimeout 是优雅关闭的默认等待窗口。作为流式网关，
 // 5 秒的历史默认值会截断所有在途 SSE 流，因此基线上调至 30 秒；

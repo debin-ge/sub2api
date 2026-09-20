@@ -591,8 +591,9 @@ func ProvideDeferredService(accountRepo AccountRepository, timingWheel *TimingWh
 func ProvideConcurrencyService(cache ConcurrencyCache, accountRepo AccountRepository, cfg *config.Config) *ConcurrencyService {
 	svc := NewConcurrencyService(cache)
 	// 启动清理会清空「非本进程前缀」的全部槽位——蓝绿并存窗口内这会误清
-	// 另一个存活实例的活跃槽位，使并发限制失效，多实例部署需跳过
-	// （残留槽位由周期清理与 key TTL 收敛）。
+	// 另一个存活实例的活跃槽位，使并发限制失效，多实例部署需跳过。
+	// 注意跳过的代价：周期清理只按分数裁剪过期成员、不认进程前缀，残留槽位
+	// 只能等 slot TTL（默认 30 分钟）自然过期，期间账号并发虚高甚至不被调度。
 	if cfg != nil && cfg.Gateway.Scheduling.StartupSlotCleanupDisabled {
 		logger.LegacyPrintf("service.concurrency", "Startup stale-slot cleanup disabled (multi-instance deployment)")
 	} else if err := svc.CleanupStaleProcessSlots(context.Background()); err != nil {

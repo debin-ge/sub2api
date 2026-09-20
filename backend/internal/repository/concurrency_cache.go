@@ -330,17 +330,22 @@ var (
 		return 1
 	`)
 
-	// startupCleanupSlotScript 清理单个槽位 key 中非当前进程前缀的成员，避免 Redis Cluster CROSSSLOT。
-	// KEYS[1] 是有序集合键，ARGV[1] 是当前进程前缀，ARGV[2] 是槽位 TTL。
+	// cleanupSlotByPrefixScript 按进程前缀清理单个槽位 key 中的成员，一次只碰一个 key，
+	// 避免 Redis Cluster CROSSSLOT。
+	// KEYS[1] 是有序集合键，ARGV[1] 是本进程前缀，ARGV[2] 是槽位 TTL，ARGV[3] 是匹配模式：
+	//   prefixMatchOther —— 移除前缀「不等于」本进程的成员（启动清理：回收死进程残留）
+	//   prefixMatchSelf  —— 移除前缀「等于」本进程的成员（优雅关闭：归还本进程残留）
 	// 返回 {清除数量, 剩余成员数}，Go 侧据剩余数决定索引 member 去留，无需再回读槽位。
-	startupCleanupSlotScript = redis.NewScript(`
+	cleanupSlotByPrefixScript = redis.NewScript(`
 		local key = KEYS[1]
 		local activePrefix = ARGV[1]
 		local slotTTL = tonumber(ARGV[2])
+		local matchSelf = ARGV[3] == 'self'
 		local removed = 0
 		local members = redis.call('ZRANGE', key, 0, -1)
 		for _, member in ipairs(members) do
-			if string.sub(member, 1, string.len(activePrefix)) ~= activePrefix then
+			local isSelf = string.sub(member, 1, string.len(activePrefix)) == activePrefix
+			if isSelf == matchSelf then
 				removed = removed + redis.call('ZREM', key, member)
 			end
 		end
@@ -352,6 +357,14 @@ var (
 		end
 		return {removed, remaining}
 	`)
+)
+
+// 槽位清理的前缀匹配模式，对应 cleanupSlotByPrefixScript 的 ARGV[3]。
+const (
+	// prefixMatchOther 移除「非本进程前缀」的成员：启动时回收死进程残留。
+	prefixMatchOther = "other"
+	// prefixMatchSelf 移除「本进程前缀」的成员：优雅关闭时归还自己仍持有的槽位。
+	prefixMatchSelf = "self"
 )
 
 type concurrencyCache struct {
@@ -1150,6 +1163,24 @@ func (c *concurrencyCache) CleanupStaleProcessSlots(ctx context.Context, activeR
 	if err := c.sweepLegacyWaitKeysOnce(ctx); err != nil {
 		return err
 	}
+	return c.cleanupProcessSlots(ctx, activeRequestPrefix, prefixMatchOther)
+}
+
+// ReleaseOwnProcessSlots 归还本进程仍持有的并发槽位，供优雅关闭在排空结束后调用。
+// 排空超时后仍在跑的 handler 永远执行不到 release，这些槽位会一直占到 slot TTL
+// 到期（默认 30 分钟）为止；关闭前主动清掉可以避免重启后的并发虚高。
+// 只删「本进程前缀」的成员，因此在多实例并存时也是安全的。
+// 等待计数是跨实例共享的计数器，不在这里清理：本进程 waiter 由 handler 的 defer
+// 递减，漏掉的部分靠等待键自身 TTL 收敛。
+func (c *concurrencyCache) ReleaseOwnProcessSlots(ctx context.Context, activeRequestPrefix string) error {
+	if activeRequestPrefix == "" {
+		return nil
+	}
+	return c.cleanupProcessSlots(ctx, activeRequestPrefix, prefixMatchSelf)
+}
+
+// cleanupProcessSlots 按 matchMode 遍历两个活跃索引清理槽位。
+func (c *concurrencyCache) cleanupProcessSlots(ctx context.Context, activeRequestPrefix, matchMode string) error {
 	now, err := c.redisUnixSeconds(ctx)
 	if err != nil {
 		return err
@@ -1159,7 +1190,7 @@ func (c *concurrencyCache) CleanupStaleProcessSlots(ctx context.Context, activeR
 	if err != nil {
 		return err
 	}
-	if err := c.cleanupStaleProcessSlotsForIndex(ctx, accountSlotIndex, accountMembers, activeRequestPrefix, now); err != nil {
+	if err := c.cleanupProcessSlotsForIndex(ctx, accountSlotIndex, accountMembers, activeRequestPrefix, matchMode, now); err != nil {
 		return err
 	}
 
@@ -1167,7 +1198,7 @@ func (c *concurrencyCache) CleanupStaleProcessSlots(ctx context.Context, activeR
 	if err != nil {
 		return err
 	}
-	return c.cleanupStaleProcessSlotsForIndex(ctx, userSlotIndex, userMembers, activeRequestPrefix, now)
+	return c.cleanupProcessSlotsForIndex(ctx, userSlotIndex, userMembers, activeRequestPrefix, matchMode, now)
 }
 
 // sweepLegacyWaitKeysOnce 一次性清扫活跃索引机制上线前遗留的等待计数键。
@@ -1216,14 +1247,15 @@ func (c *concurrencyCache) allIndexMembers(ctx context.Context, indexKey string)
 	return members, nil
 }
 
-// cleanupStaleProcessSlotsForIndex 逐个处理索引中的账号/用户。
-// Lua 脚本一次只碰一个槽位 key，兼容 Redis Cluster，随后删除重启后已失效的等待计数；
-// 索引 member 的去留由脚本返回的剩余槽位数决定，最后批量写回。
-func (c *concurrencyCache) cleanupStaleProcessSlotsForIndex(
+// cleanupProcessSlotsForIndex 逐个处理索引中的账号/用户。
+// Lua 脚本一次只碰一个槽位 key，兼容 Redis Cluster；索引 member 的去留由脚本返回的
+// 剩余槽位数决定，最后批量写回。
+func (c *concurrencyCache) cleanupProcessSlotsForIndex(
 	ctx context.Context,
 	spec slotIndexSpec,
 	members []string,
 	activeRequestPrefix string,
+	matchMode string,
 	now int64,
 ) error {
 	staleMembers := make([]string, 0)
@@ -1235,13 +1267,16 @@ func (c *concurrencyCache) cleanupStaleProcessSlotsForIndex(
 			continue
 		}
 
-		_, remaining, err := runScriptInt64Pair(ctx, c.rdb, startupCleanupSlotScript, []string{spec.slotKey(id)}, activeRequestPrefix, c.slotTTLSeconds)
+		_, remaining, err := runScriptInt64Pair(ctx, c.rdb, cleanupSlotByPrefixScript, []string{spec.slotKey(id)}, activeRequestPrefix, c.slotTTLSeconds, matchMode)
 		if err != nil {
-			return fmt.Errorf("cleanup stale process slots %s: %w", spec.slotKey(id), err)
+			return fmt.Errorf("cleanup process slots %s: %w", spec.slotKey(id), err)
 		}
-		// 等待计数属于已死进程，直接删除；剩余槽位（当前进程前缀）决定索引 member 去留。
-		if err := c.rdb.Del(ctx, spec.waitKey(id)).Err(); err != nil {
-			return fmt.Errorf("delete stale wait key %s: %w", spec.waitKey(id), err)
+		// 启动清理时等待计数全部属于已死进程，直接删除；关闭清理时它是跨实例共享的
+		// 计数器，本进程 waiter 由 handler 的 defer 递减，不能在这里连带清掉。
+		if matchMode == prefixMatchOther {
+			if err := c.rdb.Del(ctx, spec.waitKey(id)).Err(); err != nil {
+				return fmt.Errorf("delete stale wait key %s: %w", spec.waitKey(id), err)
+			}
 		}
 		if remaining > 0 {
 			refreshed = append(refreshed, redis.Z{

@@ -650,7 +650,17 @@ gateway:
     load_batch_cache_ttl_ms: 200
     # Slot cleanup interval (duration)
     # 并发槽位清理周期（时间段）
+    # 注意：该周期任务只按分数裁剪「已过期」的槽位成员，不识别进程前缀，
+    # 因此它替代不了下面的启动清理。
     slot_cleanup_interval: 30s
+    # 蓝绿/多实例部署时才置 true：跳过启动时按进程前缀清理并发槽位。
+    # 启动清理会把「非本进程前缀」的槽位全部清空，并存窗口内会误清另一个
+    # 存活实例的活跃槽位，使并发限制短暂失效。
+    # 代价：跳过之后，非优雅退出（SIGKILL/崩溃）留下的残留槽位只能等
+    # gateway.concurrency_slot_ttl_minutes 自然过期（默认 30 分钟），
+    # 期间账号并发显示虚高，甚至因残留占满上限而完全不被调度。
+    # 单实例部署保持 false。
+    startup_slot_cleanup_disabled: false
     # 是否允许受控回源到 DB（默认 true，保持现有行为）
     db_fallback_enabled: true
     # 受控回源超时（秒），0 表示不额外收紧超时

@@ -82,6 +82,9 @@ func (c StubConcurrencyCache) CleanupExpiredAccountSlotKeys(_ context.Context) e
 func (c StubConcurrencyCache) CleanupStaleProcessSlots(_ context.Context, _ string) error {
 	return nil
 }
+func (c StubConcurrencyCache) ReleaseOwnProcessSlots(_ context.Context, _ string) error {
+	return nil
+}
 
 // ============================================================
 // StubGatewayCache — service.GatewayCache 的空实现

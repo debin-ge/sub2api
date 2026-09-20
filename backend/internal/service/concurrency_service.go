@@ -53,6 +53,9 @@ type ConcurrencyCache interface {
 
 	// 启动时清理旧进程遗留槽位与等待计数
 	CleanupStaleProcessSlots(ctx context.Context, activeRequestPrefix string) error
+
+	// 优雅关闭时归还本进程仍持有的槽位（只删自身前缀，多实例安全）
+	ReleaseOwnProcessSlots(ctx context.Context, activeRequestPrefix string) error
 }
 
 type APIKeyConcurrencyCache interface {
@@ -214,6 +217,17 @@ func (s *ConcurrencyService) CleanupStaleProcessSlots(ctx context.Context) error
 		return nil
 	}
 	return s.cache.CleanupStaleProcessSlots(ctx, RequestIDPrefix())
+}
+
+// ReleaseOwnProcessSlots 归还本进程仍持有的并发槽位，供优雅关闭在排空结束后调用。
+// 排空超时后仍在跑的请求执行不到自己的 release，槽位会一直占到 slot TTL 到期；
+// 关闭前主动归还可避免重启后账号并发虚高，甚至因残留占满上限而不被调度。
+// 只删本进程前缀，多实例并存时也安全。
+func (s *ConcurrencyService) ReleaseOwnProcessSlots(ctx context.Context) error {
+	if s == nil || s.cache == nil {
+		return nil
+	}
+	return s.cache.ReleaseOwnProcessSlots(ctx, RequestIDPrefix())
 }
 
 const (

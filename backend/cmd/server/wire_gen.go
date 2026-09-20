@@ -444,7 +444,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	mainCleanupFactory := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, opsService, opsIngressRejectAggregator, apiKeyService, authCacheInvalidationWorker, notificationEmailOutboxWorker, apiKeyRotationService, usageBillingOutboxWorker, schedulerSnapshotService, tokenRefreshService, accountExpiryService, cnProviderBalanceCheckService, openAICodexVersionSyncService, proxyExpiryService, subscriptionExpiryService, vipReconcileService, vipIncrementalReconcileService, usageCleanupService, idempotencyCleanupService, batchImageCleanupService, batchImageWorkerRuntime, videoSpoolRuntime, videoTaskRuntime, videoCallbackRuntime, videoCapabilityProbeRuntime, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, billingRecoveryService, miniMaxRemainsSyncRunner, deepSeekBalanceHealthRunner, channelMonitorRunner, channelMonitorV2Aggregator, modelCatalogRefreshRunner, userPlatformQuotaUsageFlusher, upstreamBillingProbeService, ollamaCloudUsageService, auditLogService, openAIQuotaAutoResetService, promptService, pluginManager)
 	mainRadarQuotaAggregatorConstructor := provideRadarQuotaAggregatorConstructor(accountRepository, accountUsageService, usageLogRepository, radarCacheRepository, configConfig)
 	mainRadarFetchersConstructor := provideRadarFetchersConstructor(modelCatalogService)
-	application, err := provideApplication(httpServer, promptService, pluginManager, configConfig, radarCacheRepository, radarRuntimeSettingReader, radarAdminController, mainCleanupFactory, mainRadarQuotaAggregatorConstructor, mainRadarFetchersConstructor)
+	application, err := provideApplication(httpServer, promptService, pluginManager, concurrencyService, configConfig, radarCacheRepository, radarRuntimeSettingReader, radarAdminController, mainCleanupFactory, mainRadarQuotaAggregatorConstructor, mainRadarFetchersConstructor)
 	if err != nil {
 		return nil, err
 	}
@@ -457,7 +457,9 @@ type Application struct {
 	Server        *http.Server
 	PromptAudit   *securityaudit.PromptService
 	PluginManager *service.PluginManager
-	Cleanup       func()
+	// Concurrency 供优雅关闭归还本进程仍持有的并发槽位。
+	Concurrency *service.ConcurrencyService
+	Cleanup     func()
 }
 
 type cleanupFactory func(radarRunner *service.RadarRunner) func()
@@ -511,6 +513,7 @@ func provideApplication(
 	httpServer *http.Server,
 	promptAudit *securityaudit.PromptService,
 	pluginManager *service.PluginManager,
+	concurrencyService *service.ConcurrencyService,
 	cfg *config.Config,
 	radarRepo service.RadarCacheRepository,
 	runtimeGate service.RadarRuntimeSettingReader,
@@ -523,6 +526,7 @@ func provideApplication(
 		httpServer,
 		promptAudit,
 		pluginManager,
+		concurrencyService,
 		cfg,
 		radarRepo,
 		runtimeGate,
@@ -537,6 +541,7 @@ func provideApplicationWithRadarConstructors(
 	httpServer *http.Server,
 	promptAudit *securityaudit.PromptService,
 	pluginManager *service.PluginManager,
+	concurrencyService *service.ConcurrencyService,
 	cfg *config.Config,
 	radarRepo service.RadarCacheRepository,
 	runtimeGate service.RadarRuntimeSettingReader,
@@ -570,7 +575,7 @@ func provideApplicationWithRadarConstructors(
 		return nil, err
 	}
 	radarRunner.Start()
-	return &Application{Server: httpServer, PromptAudit: promptAudit, PluginManager: pluginManager, Cleanup: cleanup}, nil
+	return &Application{Server: httpServer, PromptAudit: promptAudit, PluginManager: pluginManager, Concurrency: concurrencyService, Cleanup: cleanup}, nil
 }
 
 func providePluginHostInfo(buildInfo handler.BuildInfo) service.PluginHostInfo {

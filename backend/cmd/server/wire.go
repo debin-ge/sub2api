@@ -28,7 +28,9 @@ type Application struct {
 	Server        *http.Server
 	PromptAudit   *securityaudit.PromptService
 	PluginManager *service.PluginManager
-	Cleanup       func()
+	// Concurrency 供优雅关闭归还本进程仍持有的并发槽位。
+	Concurrency *service.ConcurrencyService
+	Cleanup     func()
 }
 
 type cleanupFactory func(radarRunner *service.RadarRunner) func()
@@ -118,6 +120,7 @@ func provideApplication(
 	httpServer *http.Server,
 	promptAudit *securityaudit.PromptService,
 	pluginManager *service.PluginManager,
+	concurrencyService *service.ConcurrencyService,
 	cfg *config.Config,
 	radarRepo service.RadarCacheRepository,
 	runtimeGate service.RadarRuntimeSettingReader,
@@ -130,6 +133,7 @@ func provideApplication(
 		httpServer,
 		promptAudit,
 		pluginManager,
+		concurrencyService,
 		cfg,
 		radarRepo,
 		runtimeGate,
@@ -145,6 +149,7 @@ func provideApplicationWithRadarConstructors(
 	httpServer *http.Server,
 	promptAudit *securityaudit.PromptService,
 	pluginManager *service.PluginManager,
+	concurrencyService *service.ConcurrencyService,
 	cfg *config.Config,
 	radarRepo service.RadarCacheRepository,
 	runtimeGate service.RadarRuntimeSettingReader,
@@ -178,7 +183,7 @@ func provideApplicationWithRadarConstructors(
 		return nil, err
 	}
 	radarRunner.Start()
-	return &Application{Server: httpServer, PromptAudit: promptAudit, PluginManager: pluginManager, Cleanup: cleanup}, nil
+	return &Application{Server: httpServer, PromptAudit: promptAudit, PluginManager: pluginManager, Concurrency: concurrencyService, Cleanup: cleanup}, nil
 }
 
 func providePluginHostInfo(buildInfo handler.BuildInfo) service.PluginHostInfo {

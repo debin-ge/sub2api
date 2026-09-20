@@ -175,6 +175,10 @@ func (s *helperConcurrencyCacheStub) CleanupStaleProcessSlots(ctx context.Contex
 	return nil
 }
 
+func (s *helperConcurrencyCacheStub) ReleaseOwnProcessSlots(ctx context.Context, activeRequestPrefix string) error {
+	return nil
+}
+
 func newHelperTestContext(method, path string) (*gin.Context, *httptest.ResponseRecorder) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()

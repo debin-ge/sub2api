@@ -580,7 +580,7 @@ func TestProvideApplicationRollsBackWhenRunnerBudgetIsIncompatible(t *testing.T)
 	repo := &cleanupRadarRepositoryStub{}
 	probe := &applicationCleanupProbe{}
 
-	app, err := provideApplication(&http.Server{}, nil, nil, cfg, repo, cleanupRadarRuntimeGate(true), cleanupRadarAdminController(t, cfg, repo), probe.factory(), cleanupRadarAggregatorFactory(t, cfg, repo), cleanupRadarFetchersConstructor())
+	app, err := provideApplication(&http.Server{}, nil, nil, nil, cfg, repo, cleanupRadarRuntimeGate(true), cleanupRadarAdminController(t, cfg, repo), probe.factory(), cleanupRadarAggregatorFactory(t, cfg, repo), cleanupRadarFetchersConstructor())
 
 	require.Error(t, err)
 	require.Nil(t, app)
@@ -598,7 +598,7 @@ func TestProvideApplicationRollsBackAggregatorConstructionFailure(t *testing.T) 
 	var runnerConstructorCalls atomic.Int32
 
 	app, err := provideApplicationWithRadarConstructors(
-		&http.Server{}, nil, nil,
+		&http.Server{}, nil, nil, nil,
 
 		cfg,
 		repo,
@@ -641,7 +641,7 @@ func TestProvideApplicationRollsBackFetcherFailureWhileDisabled(t *testing.T) {
 	repo := &cleanupRadarRepositoryStub{}
 	probe := &applicationCleanupProbe{}
 
-	app, err := provideApplication(&http.Server{}, nil, nil, cfg, repo, cleanupRadarRuntimeGate(false), cleanupRadarAdminController(t, cfg, repo), probe.factory(), cleanupRadarAggregatorFactory(t, cfg, repo), cleanupRadarFetchersConstructor())
+	app, err := provideApplication(&http.Server{}, nil, nil, nil, cfg, repo, cleanupRadarRuntimeGate(false), cleanupRadarAdminController(t, cfg, repo), probe.factory(), cleanupRadarAggregatorFactory(t, cfg, repo), cleanupRadarFetchersConstructor())
 
 	require.Error(t, err)
 	require.Nil(t, app)
@@ -660,7 +660,7 @@ func TestProvideApplicationDisabledSucceedsWithoutScheduling(t *testing.T) {
 	probe := &applicationCleanupProbe{}
 	httpServer := &http.Server{}
 
-	app, err := provideApplication(httpServer, nil, nil, cfg, repo, cleanupRadarRuntimeGate(false), cleanupRadarAdminController(t, cfg, repo), probe.factory(), cleanupRadarAggregatorFactory(t, cfg, repo), cleanupRadarFetchersConstructor())
+	app, err := provideApplication(httpServer, nil, nil, nil, cfg, repo, cleanupRadarRuntimeGate(false), cleanupRadarAdminController(t, cfg, repo), probe.factory(), cleanupRadarAggregatorFactory(t, cfg, repo), cleanupRadarFetchersConstructor())
 
 	require.NoError(t, err)
 	require.NotNil(t, app)
@@ -691,7 +691,7 @@ func TestProvideApplicationStartsEnabledRunnerAfterAllFallibleConstruction(t *te
 	var runnerConstructorCalls atomic.Int32
 
 	app, err := provideApplicationWithRadarConstructors(
-		httpServer, nil, nil,
+		httpServer, nil, nil, nil,
 
 		cfg,
 		repo,

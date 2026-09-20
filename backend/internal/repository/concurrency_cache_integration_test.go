@@ -859,6 +859,61 @@ func (s *ConcurrencyCacheSuite) TestCleanupStaleProcessSlots_RemovesOldPrefixesA
 	require.ErrorIs(s.T(), err, redis.Nil)
 }
 
+// ReleaseOwnProcessSlots 是启动清理的镜像：只删本进程前缀的成员，
+// 其他实例的槽位与跨实例共享的等待计数都必须原样保留。
+func (s *ConcurrencyCacheSuite) TestReleaseOwnProcessSlots_RemovesOnlyOwnPrefix() {
+	accountID := int64(911)
+	userID := int64(912)
+	accountSlotKey := fmt.Sprintf("%s%d", accountSlotKeyPrefix, accountID)
+	userSlotKey := fmt.Sprintf("%s%d", userSlotKeyPrefix, userID)
+	accountWaitKey := fmt.Sprintf("%s%d", accountWaitKeyPrefix, accountID)
+	userWaitKey := fmt.Sprintf("%s%d", waitQueueKeyPrefix, userID)
+
+	now, err := s.rawCache.redisUnixSeconds(s.ctx)
+	require.NoError(s.T(), err)
+	require.NoError(s.T(), s.rdb.ZAdd(s.ctx, accountSlotKey,
+		redis.Z{Score: float64(now), Member: "selfproc-1"},
+		redis.Z{Score: float64(now), Member: "otherproc-1"},
+	).Err())
+	require.NoError(s.T(), s.rdb.Expire(s.ctx, accountSlotKey, testSlotTTL).Err())
+	require.NoError(s.T(), s.rdb.ZAdd(s.ctx, userSlotKey,
+		redis.Z{Score: float64(now), Member: "selfproc-2"},
+	).Err())
+	require.NoError(s.T(), s.rdb.Expire(s.ctx, userSlotKey, testSlotTTL).Err())
+	require.NoError(s.T(), s.rdb.Set(s.ctx, accountWaitKey, 2, testSlotTTL).Err())
+	require.NoError(s.T(), s.rdb.Set(s.ctx, userWaitKey, 3, testSlotTTL).Err())
+	require.NoError(s.T(), s.rdb.ZAdd(s.ctx, accountActiveIndexKey, redis.Z{
+		Score:  float64(now + 60),
+		Member: strconv.FormatInt(accountID, 10),
+	}).Err())
+	require.NoError(s.T(), s.rdb.ZAdd(s.ctx, userActiveIndexKey, redis.Z{
+		Score:  float64(now + 60),
+		Member: strconv.FormatInt(userID, 10),
+	}).Err())
+
+	require.NoError(s.T(), s.cache.ReleaseOwnProcessSlots(s.ctx, "selfproc-"))
+
+	accountMembers, err := s.rdb.ZRange(s.ctx, accountSlotKey, 0, -1).Result()
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), []string{"otherproc-1"}, accountMembers)
+
+	// 本进程成员清空后槽位键随之删除，索引 member 也应被摘掉。
+	exists, err := s.rdb.Exists(s.ctx, userSlotKey).Result()
+	require.NoError(s.T(), err)
+	require.EqualValues(s.T(), 0, exists)
+	userIndex, err := s.rdb.ZRange(s.ctx, userActiveIndexKey, 0, -1).Result()
+	require.NoError(s.T(), err)
+	require.NotContains(s.T(), userIndex, strconv.FormatInt(userID, 10))
+
+	// 等待计数跨实例共享，关闭清理不得连带删除。
+	accountWaiting, err := s.rdb.Get(s.ctx, accountWaitKey).Result()
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), "2", accountWaiting)
+	userWaiting, err := s.rdb.Get(s.ctx, userWaitKey).Result()
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), "3", userWaiting)
+}
+
 func (s *ConcurrencyCacheSuite) TestCleanupStaleProcessSlots_DeletesEmptySlotKeys() {
 	accountID := int64(903)
 	accountSlotKey := fmt.Sprintf("%s%d", accountSlotKeyPrefix, accountID)

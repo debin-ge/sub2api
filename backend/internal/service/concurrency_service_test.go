@@ -171,13 +171,23 @@ func (c *stubConcurrencyCacheForTest) CleanupStaleProcessSlots(_ context.Context
 	return c.cleanupErr
 }
 
+func (c *stubConcurrencyCacheForTest) ReleaseOwnProcessSlots(_ context.Context, _ string) error {
+	return c.cleanupErr
+}
+
 type trackingConcurrencyCache struct {
 	stubConcurrencyCacheForTest
 	cleanupPrefix string
+	releasePrefix string
 }
 
 func (c *trackingConcurrencyCache) CleanupStaleProcessSlots(_ context.Context, prefix string) error {
 	c.cleanupPrefix = prefix
+	return c.cleanupErr
+}
+
+func (c *trackingConcurrencyCache) ReleaseOwnProcessSlots(_ context.Context, prefix string) error {
+	c.releasePrefix = prefix
 	return c.cleanupErr
 }
 
@@ -191,6 +201,20 @@ func TestCleanupStaleProcessSlots_DelegatesPrefix(t *testing.T) {
 	svc := NewConcurrencyService(cache)
 	require.NoError(t, svc.CleanupStaleProcessSlots(context.Background()))
 	require.Equal(t, RequestIDPrefix(), cache.cleanupPrefix)
+}
+
+func TestReleaseOwnProcessSlots_NilCache(t *testing.T) {
+	svc := &ConcurrencyService{cache: nil}
+	require.NoError(t, svc.ReleaseOwnProcessSlots(context.Background()))
+}
+
+func TestReleaseOwnProcessSlots_DelegatesPrefix(t *testing.T) {
+	cache := &trackingConcurrencyCache{}
+	svc := NewConcurrencyService(cache)
+	require.NoError(t, svc.ReleaseOwnProcessSlots(context.Background()))
+	require.Equal(t, RequestIDPrefix(), cache.releasePrefix)
+	// 归还只走自身前缀，不应触碰启动清理路径。
+	require.Empty(t, cache.cleanupPrefix)
 }
 
 func TestAcquireAccountSlot_Success(t *testing.T) {

@@ -1705,8 +1705,15 @@ type GatewaySchedulingConfig struct {
 	SlotCleanupInterval time.Duration `mapstructure:"slot_cleanup_interval"`
 
 	// 蓝绿/多实例部署时置 true：跳过启动时按进程前缀清理并发槽位。
-	// 该清理会把其他存活实例的活跃槽位一并清空，导致并存窗口内并发限制失效；
-	// 跳过后，崩溃进程的残留槽位仍由周期清理（slot_cleanup_interval）与 key TTL 收敛。
+	// 该清理会把其他存活实例的活跃槽位一并清空，导致并存窗口内并发限制失效。
+	//
+	// 代价：周期清理（slot_cleanup_interval）只按分数裁剪过期成员，不认进程前缀，
+	// 所以它替代不了启动清理。跳过之后，被 SIGKILL / 崩溃的进程留下的残留槽位只能等
+	// concurrency_slot_ttl_minutes 自然过期（默认 30 分钟）；这段时间账号并发显示虚高，
+	// 且可能因残留占满上限而完全不被调度。优雅关闭会归还本进程槽位（见 main.go），
+	// 非优雅退出则无此保障。
+	//
+	// 单实例部署不要开启。
 	StartupSlotCleanupDisabled bool `mapstructure:"startup_slot_cleanup_disabled"`
 
 	// 受控回源配置
