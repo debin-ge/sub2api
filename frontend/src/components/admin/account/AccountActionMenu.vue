@@ -72,6 +72,7 @@ import { useResizeObserver, useWindowSize } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@/components/icons'
 import type { Account } from '@/types'
+import { FIXED_ENDPOINT_GATEWAY_PLATFORMS } from '@/constants/account'
 
 const props = defineProps<{ show: boolean; account: Account | null; anchorRect: DOMRect | null }>()
 const emit = defineEmits(['close', 'test', 'stats', 'schedule', 'duplicate', 'reauth', 'refresh-token', 'recover-state', 'reset-quota', 'set-privacy', 'sync-minimax-remains', 'create-spark-shadow'])
@@ -135,7 +136,7 @@ const isAntigravityOAuth = computed(() => props.account?.platform === 'antigravi
 const isOpenAIOAuth = computed(() => props.account?.platform === 'openai' && props.account?.type === 'oauth')
 const isMiniMaxApiKey = computed(() => props.account?.platform === 'minimax' && props.account?.type === 'apikey')
 const isFixedEndpointGatewayPlatform = computed(() =>
-  ['glm', 'kimi', 'deepseek', 'windsurf', 'opencode'].includes(props.account?.platform || '')
+  FIXED_ENDPOINT_GATEWAY_PLATFORMS.includes(props.account?.platform || '')
 )
 // 影子账号(链接型,持 parent_account_id)不持凭据、type 不可变,凭据/隐私类操作对其无效。
 const isShadow = computed(() => props.account?.parent_account_id != null)

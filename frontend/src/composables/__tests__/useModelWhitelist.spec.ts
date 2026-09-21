@@ -284,6 +284,17 @@ describe('useModelWhitelist', () => {
     ]))
   })
 
+  it('opencode_go 预设映射与 opencode 保持一致（当前平台取值，opencode 已废弃）', () => {
+    const mappings = getPresetMappingsByPlatform('opencode_go')
+
+    expect(mappings).toEqual(getPresetMappingsByPlatform('opencode'))
+    expect(mappings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ from: 'opencode/big-pickle', to: 'opencode/big-pickle' }),
+      expect.objectContaining({ from: 'opencode/gpt5-nano', to: 'opencode/gpt5-nano' }),
+      expect.objectContaining({ from: 'gpt5-nano', to: 'gpt5-nano' })
+    ]))
+  })
+
   it('combined 模式会同时保留白名单身份映射和模型映射', () => {
     const mapping = buildModelMappingObject(
       'combined',

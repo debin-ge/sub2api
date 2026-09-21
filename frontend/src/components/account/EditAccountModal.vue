@@ -3460,6 +3460,7 @@ import {
   WINDSURF_BASE_URL,
   OPENCODE_BASE_URL,
   PROVIDER_PASSTHROUGH_PLATFORMS,
+  FIXED_ENDPOINT_GATEWAY_PLATFORMS,
   VERTEX_LOCATION_OPTIONS
 } from '@/constants/account'
 import { allSelectedGroupsEnableLongContextPricing } from '@/components/account/longContextBilling'
@@ -3542,7 +3543,7 @@ const baseUrlHint = computed(() => {
 })
 
 const isFixedEndpointGatewayPlatformValue = (platform?: string) =>
-  platform === 'glm' || platform === 'windsurf' || platform === 'opencode_go'
+  FIXED_ENDPOINT_GATEWAY_PLATFORMS.includes(platform ?? '')
 const isFixedEndpointGatewayPlatform = computed(() => isFixedEndpointGatewayPlatformValue(props.account?.platform))
 
 const antigravityPresetMappings = computed(() => getPresetMappingsByPlatform('antigravity'))

@@ -667,7 +667,7 @@ export function getPresetMappingsByPlatform(platform: string) {
   if (platform === 'kimi') return kimiPresetMappings
   if (platform === 'deepseek') return deepseekPresetMappings
   if (platform === 'windsurf') return windsurfPresetMappings
-  if (platform === 'opencode') return opencodePresetMappings
+  if (platform === 'opencode' || platform === 'opencode_go') return opencodePresetMappings
   if (platform === 'antigravity') return antigravityPresetMappings
   if (platform === 'bedrock') return bedrockPresetMappings
   return anthropicPresetMappings

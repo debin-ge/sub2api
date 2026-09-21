@@ -4292,6 +4292,7 @@ import {
   GLM_OPENAI_BASE_URL,
   WINDSURF_BASE_URL,
   PROVIDER_PASSTHROUGH_PLATFORMS,
+  FIXED_ENDPOINT_GATEWAY_PLATFORMS,
   VERTEX_LOCATION_OPTIONS
 } from '@/constants/account'
 import {
@@ -4362,7 +4363,7 @@ const apiKeyHint = computed(() => {
 })
 
 const isFixedEndpointGatewayPlatformValue = (platform?: string) =>
-  platform === 'glm' || platform === 'windsurf' || platform === 'opencode_go'
+  FIXED_ENDPOINT_GATEWAY_PLATFORMS.includes(platform ?? '')
 const isFixedEndpointGatewayPlatform = computed(() => isFixedEndpointGatewayPlatformValue(form.platform))
 
 // Base URL / API Key 占位符：国产供应商随账号类型变化。

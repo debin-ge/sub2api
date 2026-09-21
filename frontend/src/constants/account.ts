@@ -32,11 +32,26 @@ export const OPENCODE_BASE_URL = ''
  */
 export const PROVIDER_PASSTHROUGH_PLATFORMS: readonly string[] = [
   'glm',
+  'zhipu',
   'minimax',
   'kimi',
   'deepseek',
   'windsurf',
-  'opencode'
+  'opencode_go'
+]
+
+/**
+ * 固定端点网关平台：无自定义 base_url、只支持 apikey 类型的国产/第三方网关。
+ * 必须与后端 requiresAPIKeyAccount（account_handler.go）保持一致——
+ * 该函数额外包含 bytedance，但 bytedance 支持自定义 base_url，不属于"固定端点"，故不列入此处。
+ */
+export const FIXED_ENDPOINT_GATEWAY_PLATFORMS: readonly string[] = [
+  'glm',
+  'zhipu',
+  'kimi',
+  'deepseek',
+  'windsurf',
+  'opencode_go'
 ]
 
 /** Vertex AI location options for Service Account accounts */
