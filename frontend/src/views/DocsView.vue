@@ -448,7 +448,7 @@ const currentApp = computed(() =>
 const activeSlug = computed(() => currentDoc.value?.slug ?? routeSlug.value ?? defaultUserDocSlug)
 const showAppsLanding = computed(() => activeTab.value === 'apps' && !routeSlug.value)
 
-const siteName = computed(() => appStore.cachedPublicSettings?.site_name || appStore.siteName || 'Sub2API')
+const siteName = computed(() => appStore.cachedPublicSettings?.site_name || appStore.siteName || 'ZenTok')
 const siteBaseUrl = computed(() => normalizeBaseUrl(appStore.cachedPublicSettings?.api_base_url || appStore.apiBaseUrl || ''))
 
 const uiText = computed(() => currentLocale.value === 'zh'

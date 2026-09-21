@@ -1,4 +1,4 @@
-const DEFAULT_SITE_NAME = 'Sub2API'
+const DEFAULT_SITE_NAME = 'ZenTok'
 
 export function renderAdminComplianceDocumentTemplate(content: string, siteName: string): string {
   const normalizedSiteName = siteName.trim() || DEFAULT_SITE_NAME

@@ -1,10 +1,10 @@
 <template>
   <div class="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-dark-800 dark:bg-dark-900">
-    <div class="border-b border-gray-200 px-4 pt-4 dark:border-dark-800 sm:px-6">
+    <div class="p-4 sm:p-6 sm:pb-0">
       <div
         role="tablist"
         :aria-label="t('radar.degradation.tabs', 'Benchmark views')"
-        class="flex gap-2 overflow-x-auto"
+        class="inline-flex flex-wrap gap-1 rounded-full border border-gray-200 bg-gray-50 p-1 dark:border-dark-700 dark:bg-dark-800/60"
       >
         <button
           v-for="tab in tabs"
@@ -16,10 +16,10 @@
           :aria-selected="activeTab === tab.key"
           :aria-controls="`degradation-panel-${tab.key}`"
           :tabindex="activeTab === tab.key ? 0 : -1"
-          class="-mb-px shrink-0 border-b-2 px-3 py-3 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+          class="shrink-0 rounded-full px-4 py-1.5 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
           :class="activeTab === tab.key
-            ? 'border-primary-500 text-primary-600 dark:text-primary-400'
-            : 'border-transparent text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'"
+            ? 'bg-gradient-to-r from-primary-600 to-cyan-500 text-white shadow-sm'
+            : 'text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white'"
           @click="activateTab(tab.key)"
           @keydown="handleTabKeydown"
         >
@@ -57,7 +57,7 @@
         <span
           v-if="latest?.stale"
           data-testid="degradation-stale"
-          class="inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-950/50 dark:text-amber-200"
+          class="inline-flex rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:bg-amber-950/40 dark:text-amber-400"
         >
           {{ t('radar.degradation.stale', 'Data may be outdated') }}
         </span>
@@ -82,7 +82,7 @@
         <div
           v-for="metric in metrics"
           :key="metric.key"
-          class="flex items-start gap-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-dark-800 dark:bg-dark-900"
+          class="flex items-start gap-3 rounded-2xl border border-gray-200 bg-white p-4 transition hover:shadow-glow dark:border-dark-800 dark:bg-dark-900"
         >
           <span
             class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
@@ -100,7 +100,7 @@
 
       <div v-if="allModels.length > 0" class="space-y-6">
         <div class="grid gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(20rem,5fr)]">
-          <div class="flex flex-col rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-dark-800 dark:bg-dark-900">
+          <div class="flex flex-col rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition hover:shadow-glow dark:border-dark-800 dark:bg-dark-900">
             <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
               <h3 class="font-semibold text-gray-950 dark:text-white">
                 {{ t('radar.degradation.chartTitle', 'Benchmark comparison') }}
@@ -135,7 +135,7 @@
           </div>
 
           <section
-            class="flex flex-col rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-dark-800 dark:bg-dark-900"
+            class="flex flex-col rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition hover:shadow-glow dark:border-dark-800 dark:bg-dark-900"
             aria-labelledby="aa-model-selector-heading"
           >
             <div class="flex items-baseline justify-between gap-3">
@@ -235,7 +235,7 @@
           <article
             v-for="(model, index) in radarModels"
             :key="model.slug"
-            class="flex flex-col rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-dark-800 dark:bg-dark-900"
+            class="flex flex-col rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition hover:shadow-glow dark:border-dark-800 dark:bg-dark-900"
           >
             <div class="flex items-start gap-2.5">
               <span
@@ -260,7 +260,7 @@
                     {{ metricValue(model, metric.key) ?? '—' }}
                   </dd>
                 </div>
-                <div class="mt-1 h-1.5 overflow-hidden rounded-full bg-gray-100 dark:bg-dark-800">
+                <div class="mt-1 h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-dark-800">
                   <div
                     class="h-full rounded-full"
                     :style="{ width: metricBarWidth(model, metric.key), backgroundColor: modelColor(index) }"
@@ -334,7 +334,7 @@
       <div
         v-if="leaderboard.length > 0"
         data-testid="lmarena-scroll"
-        class="overflow-x-auto rounded-xl border border-gray-200 dark:border-dark-800"
+        class="overflow-x-auto rounded-2xl border border-gray-200 dark:border-dark-800"
       >
         <table class="w-full min-w-[46rem] divide-y divide-gray-200 text-sm dark:divide-dark-800">
           <thead class="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500 dark:bg-dark-800/70 dark:text-gray-400">
@@ -372,7 +372,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRoute, useRouter } from 'vue-router'
 import {
   BarController,
   BarElement,
@@ -407,8 +406,6 @@ const props = withDefaults(defineProps<{
 })
 
 const { t, locale } = useI18n()
-const route = useRoute()
-const router = useRouter()
 const activeTab = ref<DegradationTab>('overview')
 const selectedModelSlugs = ref<string[]>([])
 const modelSearch = ref('')
@@ -504,13 +501,13 @@ const leaderboard = computed(() => [...(props.lmarena?.leaderboard ?? [])].sort(
 const aaFetchedAt = computed(() => props.latest?.sources_last_updated?.aa ?? null)
 
 const palette = [
-  '#2563eb',
+  '#4f46e5',
+  '#22d3ee',
   '#9333ea',
   '#059669',
   '#ea580c',
   '#db2777',
   '#0891b2',
-  '#4f46e5',
   '#65a30d',
   '#c026d3',
   '#dc2626',
@@ -574,10 +571,6 @@ watch(
   () => reconcileSelection(),
   { immediate: true }
 )
-watch(selectedModelSlugs, () => {
-  if (selectionInitialized.value) replaceModelsQuery(selectedModelSlugs.value)
-}, { deep: true })
-watch(() => route.query.models, () => reconcileSelection(true))
 
 function sanitizeModelSlugs(slugs: readonly string[]): string[] {
   const result: string[] = []
@@ -590,13 +583,6 @@ function sanitizeModelSlugs(slugs: readonly string[]): string[] {
   return result
 }
 
-function readModelsQuery(): string[] {
-  const queryValue = route.query.models
-  const raw = Array.isArray(queryValue) ? queryValue[0] : queryValue
-  if (typeof raw !== 'string' || raw.length === 0) return []
-  return sanitizeModelSlugs(raw.split(',').map((slug) => slug.trim()).filter(Boolean))
-}
-
 function fallbackModelSlugs(): string[] {
   const defaults = defaultModelSlugs.value
   return defaults.length > 0
@@ -604,34 +590,18 @@ function fallbackModelSlugs(): string[] {
     : allModels.value.slice(0, defaultModelCount.value).map((model) => model.slug)
 }
 
-function reconcileSelection(fromLocation = !selectionInitialized.value): void {
+function reconcileSelection(): void {
   if (props.latest === null || props.latest === undefined) return
   if (allModels.value.length === 0) {
     selectedModelSlugs.value = []
     selectionInitialized.value = true
-    replaceModelsQuery([])
     return
   }
-  const candidate = fromLocation
-    ? readModelsQuery()
-    : sanitizeModelSlugs(selectedModelSlugs.value)
+  const candidate = selectionInitialized.value
+    ? sanitizeModelSlugs(selectedModelSlugs.value)
+    : []
   selectedModelSlugs.value = candidate.length > 0 ? candidate : fallbackModelSlugs()
   selectionInitialized.value = true
-  replaceModelsQuery(selectedModelSlugs.value)
-}
-
-function replaceModelsQuery(slugs: readonly string[]): void {
-  const models = slugs.length > 0 ? slugs.join(',') : undefined
-  const routeModels = route.query.models
-  const alreadyCanonical = Array.isArray(routeModels)
-    ? routeModels.length === 1 && routeModels[0] === models
-    : routeModels === models
-  if (alreadyCanonical) return
-
-  const query = { ...route.query }
-  if (models === undefined) delete query.models
-  else query.models = models
-  void router.replace({ path: route.path, query, hash: route.hash })
 }
 
 function modelSearchText(model: DegradationModelDTO): string {

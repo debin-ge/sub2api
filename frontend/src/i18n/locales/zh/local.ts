@@ -17,13 +17,21 @@ export default {
       "sectionNavigation": "雷达页面导航",
       "health": "服务健康",
       "quota": "额度雷达",
-      "degradation": "降智雷达"
+      "degradation": "降智雷达",
+      "register": "免费注册"
     },
     "hero": {
-      "eyebrow": "公共数据看板",
-      "title": "模型雷达",
-      "description": "跟踪服务健康、匿名额度聚合，以及公开模型评测指标的变化。",
-      "clientUpdated": "页面数据获取时间"
+      "eyebrow": "模型雷达 · AI 网关",
+      "titleLead": "一个网关，",
+      "titleHighlight": "驾驭海量 AI 模型",
+      "description": "标准化协议一次接入，承载你的应用与上百个模型节点；密钥、额度集中管理，稳定可靠地支撑每一种 AI 场景。",
+      "clientUpdated": "页面数据获取时间",
+      "primaryCta": "立即开始",
+      "secondaryCta": "查看接入文档",
+      "gatewaySuffix": "网关",
+      "gatewaySubtitle": "统一计费 · 智能路由",
+      "badgeLatency": "平均延迟",
+      "badgeUptime": "可用率"
     },
     "state": {
       "loading": "数据加载中",
@@ -184,6 +192,72 @@ export default {
         "generic": "数据源不可用"
       },
       "disclaimer": "数据聚合自站内匿名统计与公开第三方来源。模型评测结果受评测方法影响；API 等值金额为统计估算，并非厂商官方额度上限或承诺，不应作为关键业务决策的唯一依据。"
+    },
+    "home": {
+      "stats": {
+        "platforms": "13+",
+        "platformsLabel": "接入平台",
+        "uptime": "99.9%",
+        "uptimeLabel": "平均可用率",
+        "monitoring": "24/7",
+        "monitoringLabel": "持续监测",
+        "latency": "<100ms",
+        "latencyLabel": "平均延迟"
+      },
+      "features": {
+        "title": "为什么选择 {siteName}",
+        "subtitle": "统一网关承载你的 AI 应用，稳定可靠、成本透明。",
+        "unifiedApi": {
+          "title": "统一 API 接入",
+          "description": "一个 Key 调用 13+ 主流大模型服务商，原生兼容 Chat Completions、Responses、Messages 等主流协议，一行代码平滑切换。"
+        },
+        "smartRouting": {
+          "title": "智能路由 · 故障自动切换",
+          "description": "多节点智能调度与毫秒级探测，请求自动绕开异常节点，服务永续在线。"
+        },
+        "billing": {
+          "title": "统一计费与用量",
+          "description": "多模型统一计量与账单，按量或按订阅灵活付费，成本清晰可控。"
+        },
+        "benchmarks": {
+          "title": "透明基准评测",
+          "description": "整合 Artificial Analysis / LMArena 权威排行榜，帮你为业务场景选对模型。"
+        }
+      },
+      "docs": {
+        "title": "一行代码，接入海量模型",
+        "description": "将现有 SDK 指向我们的接入点，几分钟内即可调用任意已接入模型。",
+        "checklist": {
+          "protocols": "Chat Completions / Responses / Messages 三协议兼容",
+          "quota": "密钥用量与额度精细化管控",
+          "sdk": "SDK / cURL 开箱即用"
+        },
+        "tabs": {
+          "chat": "Chat Completions",
+          "responses": "Responses",
+          "claude": "Claude Messages"
+        }
+      },
+      "cta": {
+        "title": "准备好开始了吗？",
+        "description": "立即注册 {siteName}，几分钟内接入海量主流大模型服务。",
+        "button": "免费注册"
+      },
+      "footer": {
+        "tagline": "标准化 API 网关，统一接入海量 AI 模型，为你的应用与数字资产提供稳定支撑。"
+      }
+    },
+    "auth": {
+      "brand": {
+        "headline": "一个网关，驾驭海量 AI 模型",
+        "subtitle": "标准化协议一次接入，密钥与额度集中管理，为你的应用提供稳定可靠的 AI 算力支撑。",
+        "checklist": {
+          "unifiedApi": "统一接入 13+ 主流大模型服务商",
+          "smartRouting": "智能路由，故障自动切换",
+          "billing": "用量与费用实时可视化",
+          "security": "企业级密钥安全与权限管控"
+        }
+      }
     }
   },
   "plaza": {

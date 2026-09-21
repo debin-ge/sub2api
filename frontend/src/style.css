@@ -2,6 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+@keyframes gradient-shift {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
 @layer base {
   * {
     @apply border-gray-200 dark:border-dark-700;
@@ -748,9 +758,11 @@
 }
 
 @layer utilities {
-  /* 文字渐变 */
+  /* 文字渐变：流动的靛蓝→青蓝→靛蓝，配合 gradient-shift 动画 */
   .text-gradient {
-    @apply bg-gradient-to-r from-primary-500 to-accent-500 bg-clip-text text-transparent;
+    @apply bg-gradient-to-r from-primary-600 via-accent-400 to-primary-600 bg-clip-text text-transparent;
+    background-size: 200% auto;
+    animation: gradient-shift 6s ease infinite;
   }
 
   /* 玻璃效果 */

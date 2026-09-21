@@ -1,7 +1,7 @@
 <template>
   <div
     data-testid="service-history-legend"
-    class="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-gray-500 dark:text-gray-400"
+    class="mb-5 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400"
   >
     <span class="font-medium text-gray-700 dark:text-gray-200">
       {{ t('radar.health.statusLegend', 'Status key') }}
@@ -10,32 +10,48 @@
       v-for="legend in historyLegend"
       :key="legend.status"
       :data-history-legend-status="legend.status"
-      class="inline-flex items-center gap-1.5"
+      class="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-2.5 py-1 dark:bg-dark-800"
     >
-      <span class="h-2.5 w-2.5 rounded-sm" :class="legend.barClass" aria-hidden="true" />
+      <span class="h-2 w-2 rounded-full" :class="legend.barClass" aria-hidden="true" />
       {{ legend.label }}
     </span>
   </div>
 
-  <div class="grid gap-5 lg:grid-cols-2">
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
     <article
       v-for="item in normalizedServices"
       :key="item.service_key"
       :data-service-key="item.service_key"
       :data-platform="item.service_key"
-      class="min-w-0 rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-dark-800 dark:bg-dark-900 sm:p-6"
+      class="min-w-0 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition hover:shadow-glow dark:border-dark-800 dark:bg-dark-900"
     >
       <div class="flex flex-wrap items-start justify-between gap-3">
-        <div class="min-w-0">
-          <h3 class="truncate text-base font-semibold text-gray-950 dark:text-white">{{ item.name }}</h3>
-          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            {{ historyWindowLabel(item.history_days) }} · {{ historyRange(item.history_30d) }}
-          </p>
+        <div class="flex min-w-0 items-center gap-3">
+          <span
+            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary-500 to-cyan-400 text-sm font-bold text-white"
+            aria-hidden="true"
+          >
+            {{ avatarLetter(item.name) }}
+          </span>
+          <div class="min-w-0">
+            <h3 class="truncate text-base font-semibold text-gray-950 dark:text-white">{{ item.name }}</h3>
+            <p class="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">
+              {{ historyWindowLabel(item.history_days) }} · {{ historyRange(item.history_30d) }}
+            </p>
+          </div>
         </div>
         <span
           class="inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold"
           :class="statusMeta(item.status).classes"
         >
+          <span class="relative flex h-1.5 w-1.5 shrink-0" aria-hidden="true">
+            <span
+              v-if="item.status === 'operational'"
+              class="absolute inline-flex h-full w-full animate-ping rounded-full opacity-75"
+              :class="statusMeta(item.status).dotClass"
+            ></span>
+            <span class="relative inline-flex h-1.5 w-1.5 rounded-full" :class="statusMeta(item.status).dotClass"></span>
+          </span>
           <Icon :name="statusMeta(item.status).icon" size="sm" aria-hidden="true" />
           {{ statusMeta(item.status).label }}
         </span>
@@ -374,20 +390,24 @@ const normalizedServices = computed(() => {
   })
 })
 
-function statusMeta(status: ServiceStatus): { label: string; icon: HistoryIcon; classes: string } {
+function avatarLetter(name: string): string {
+  return name.trim().charAt(0).toUpperCase() || '?'
+}
+
+function statusMeta(status: ServiceStatus): { label: string; icon: HistoryIcon; classes: string; dotClass: string } {
   switch (status) {
     case 'operational':
-      return { label: t('radar.health.status.operational', 'Operational'), icon: 'checkCircle', classes: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' }
+      return { label: t('radar.health.status.operational', 'Operational'), icon: 'checkCircle', classes: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400', dotClass: 'bg-emerald-500' }
     case 'degraded_performance':
-      return { label: t('radar.health.status.degraded', 'Degraded performance'), icon: 'exclamationTriangle', classes: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-950/40 dark:text-yellow-300' }
+      return { label: t('radar.health.status.degraded', 'Degraded performance'), icon: 'exclamationTriangle', classes: 'bg-yellow-50 text-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-400', dotClass: 'bg-yellow-500' }
     case 'partial_outage':
-      return { label: t('radar.health.status.partialOutage', 'Partial outage'), icon: 'exclamationTriangle', classes: 'bg-orange-100 text-orange-800 dark:bg-orange-950/40 dark:text-orange-300' }
+      return { label: t('radar.health.status.partialOutage', 'Partial outage'), icon: 'exclamationTriangle', classes: 'bg-orange-50 text-orange-700 dark:bg-orange-950/40 dark:text-orange-400', dotClass: 'bg-orange-500' }
     case 'major_outage':
-      return { label: t('radar.health.status.majorOutage', 'Major outage'), icon: 'xCircle', classes: 'bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300' }
+      return { label: t('radar.health.status.majorOutage', 'Major outage'), icon: 'xCircle', classes: 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-400', dotClass: 'bg-red-500' }
     case 'under_maintenance':
-      return { label: t('radar.health.status.maintenance', 'Under maintenance'), icon: 'infoCircle', classes: 'bg-sky-100 text-sky-800 dark:bg-sky-950/40 dark:text-sky-300' }
+      return { label: t('radar.health.status.maintenance', 'Under maintenance'), icon: 'infoCircle', classes: 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300', dotClass: 'bg-gray-400 dark:bg-gray-300' }
     default:
-      return { label: t('radar.health.status.unknown', 'Status unknown'), icon: 'questionCircle', classes: 'bg-gray-100 text-gray-700 dark:bg-dark-800 dark:text-gray-300' }
+      return { label: t('radar.health.status.unknown', 'Status unknown'), icon: 'questionCircle', classes: 'bg-gray-100 text-gray-700 dark:bg-dark-800 dark:text-gray-300', dotClass: 'bg-gray-400' }
   }
 }
 

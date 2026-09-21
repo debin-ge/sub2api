@@ -145,7 +145,7 @@ describe('Model Radar locale contract', () => {
     const staticKeys = collectStaticRadarKeys()
     const missing: string[] = []
 
-    expect(staticKeys.has('radar.hero.title')).toBe(true)
+    expect(staticKeys.has('radar.hero.titleLead')).toBe(true)
     expect(staticKeys.has('radar.pageTitle')).toBe(true)
 
     for (const [fullKey, references] of staticKeys) {

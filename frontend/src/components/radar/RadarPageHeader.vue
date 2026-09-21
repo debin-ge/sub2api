@@ -20,15 +20,30 @@
         >
           <Icon :name="isDark ? 'sun' : 'moon'" size="md" aria-hidden="true" />
         </button>
+
         <router-link
-          :to="isAuthenticated ? dashboardPath : '/login'"
-          class="rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200"
+          v-if="isAuthenticated"
+          :to="dashboardPath"
+          class="rounded-lg bg-gradient-to-r from-primary-600 to-cyan-500 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
         >
-          {{ isAuthenticated ? t('radar.header.dashboard', 'Dashboard') : t('radar.header.login', 'Log in') }}
+          {{ t('radar.header.dashboard', 'Dashboard') }}
         </router-link>
+        <template v-else>
+          <router-link
+            to="/login"
+            class="hidden rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition hover:text-gray-900 dark:text-gray-300 dark:hover:text-white sm:inline-flex"
+          >
+            {{ t('radar.header.login', 'Log in') }}
+          </router-link>
+          <router-link
+            to="/register"
+            class="rounded-lg bg-gradient-to-r from-primary-600 to-cyan-500 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+          >
+            {{ t('radar.header.register', 'Sign up free') }}
+          </router-link>
+        </template>
       </div>
     </div>
-
   </header>
 </template>
 
@@ -44,7 +59,7 @@ const appStore = useAppStore()
 const authStore = useAuthStore()
 
 const isDark = ref(document.documentElement.classList.contains('dark'))
-const siteName = computed(() => appStore.cachedPublicSettings?.site_name || appStore.siteName || 'Sub2API')
+const siteName = computed(() => appStore.cachedPublicSettings?.site_name || appStore.siteName || 'ZenTok')
 const siteLogo = computed(() => appStore.cachedPublicSettings?.site_logo || appStore.siteLogo || '')
 const isAuthenticated = computed(() => authStore.isAuthenticated)
 const dashboardPath = computed(() => (authStore.isAdmin ? '/admin/dashboard' : '/dashboard'))
@@ -54,5 +69,4 @@ function toggleTheme(): void {
   document.documentElement.classList.toggle('dark', isDark.value)
   localStorage.setItem('theme', isDark.value ? 'dark' : 'light')
 }
-
 </script>
