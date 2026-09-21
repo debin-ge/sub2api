@@ -17,13 +17,21 @@ export default {
       "sectionNavigation": "Radar sections",
       "health": "Service health",
       "quota": "Quota radar",
-      "degradation": "Benchmark radar"
+      "degradation": "Benchmark radar",
+      "register": "Sign up free"
     },
     "hero": {
-      "eyebrow": "Public data dashboard",
-      "title": "Model Radar",
-      "description": "Track service health, anonymous quota aggregates, and changes in public model benchmarks.",
-      "clientUpdated": "Page data fetched"
+      "eyebrow": "Model Radar · AI Gateway",
+      "titleLead": "One gateway,",
+      "titleHighlight": "endless AI models",
+      "description": "One standardized protocol connects your apps to hundreds of model endpoints, with keys and quotas centrally managed for reliable access to every AI workload.",
+      "clientUpdated": "Page data fetched",
+      "primaryCta": "Get started",
+      "secondaryCta": "View integration docs",
+      "gatewaySuffix": "Gateway",
+      "gatewaySubtitle": "Unified billing · Smart routing",
+      "badgeLatency": "avg latency",
+      "badgeUptime": "uptime"
     },
     "state": {
       "loading": "Loading data",
@@ -184,6 +192,72 @@ export default {
         "generic": "Source unavailable"
       },
       "disclaimer": "Data is aggregated from anonymous on-site statistics and public third-party sources. Model benchmark results depend on evaluation methodology; API-equivalent values are statistical estimates, not official vendor quota limits or commitments, and should not be the sole basis for critical business decisions."
+    },
+    "home": {
+      "stats": {
+        "platforms": "13+",
+        "platformsLabel": "Connected platforms",
+        "uptime": "99.9%",
+        "uptimeLabel": "Average uptime",
+        "monitoring": "24/7",
+        "monitoringLabel": "Continuous monitoring",
+        "latency": "<100ms",
+        "latencyLabel": "Average latency"
+      },
+      "features": {
+        "title": "Why choose {siteName}",
+        "subtitle": "Everything you need to run AI workloads on a reliable, unified gateway.",
+        "unifiedApi": {
+          "title": "Unified API access",
+          "description": "One key calls 13+ leading model providers. Native compatibility with Chat Completions, Responses, and Messages — switch protocols with a one-line change."
+        },
+        "smartRouting": {
+          "title": "Smart routing & failover",
+          "description": "Multi-node scheduling with millisecond-level health probes automatically routes around unhealthy nodes, so your service stays online."
+        },
+        "billing": {
+          "title": "Unified billing & usage",
+          "description": "Unified metering and billing across every model, with pay-as-you-go or subscription pricing and full visibility into cost."
+        },
+        "benchmarks": {
+          "title": "Transparent benchmarks",
+          "description": "Integrated Artificial Analysis and LMArena leaderboards help you pick the right model for every workload."
+        }
+      },
+      "docs": {
+        "title": "One line of code, endless models",
+        "description": "Point your existing SDK at our endpoint and start calling any connected model in minutes.",
+        "checklist": {
+          "protocols": "Compatible with Chat Completions, Responses, and Messages protocols",
+          "quota": "Fine-grained key usage and quota controls",
+          "sdk": "Ready to use with SDKs or cURL out of the box"
+        },
+        "tabs": {
+          "chat": "Chat Completions",
+          "responses": "Responses",
+          "claude": "Claude Messages"
+        }
+      },
+      "cta": {
+        "title": "Ready to get started?",
+        "description": "Sign up for {siteName} and connect to leading AI model providers in minutes.",
+        "button": "Sign up free"
+      },
+      "footer": {
+        "tagline": "A standardized API gateway that unifies access to leading AI models, powering your applications and digital assets."
+      }
+    },
+    "auth": {
+      "brand": {
+        "headline": "One gateway, endless AI models",
+        "subtitle": "One standardized protocol connects your apps to leading AI models, with keys and quotas centrally managed for reliable, always-on access.",
+        "checklist": {
+          "unifiedApi": "Unified access to 13+ leading model providers",
+          "smartRouting": "Smart routing with automatic failover",
+          "billing": "Real-time usage and cost visibility",
+          "security": "Enterprise-grade key security and access control"
+        }
+      }
     }
   },
   "plaza": {

@@ -4,7 +4,7 @@ import adminComplianceAPI, { type AdminComplianceStatus } from '@/api/admin/comp
 import { getLocale } from '@/i18n'
 import { useAppStore } from './app'
 
-const DEFAULT_SITE_NAME = 'Sub2API'
+const DEFAULT_SITE_NAME = 'ZenTok'
 
 function normalizeComplianceSiteName(siteName: string): string {
   return siteName.trim() || DEFAULT_SITE_NAME

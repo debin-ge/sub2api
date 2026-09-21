@@ -22,9 +22,8 @@ describe('HomeView footer', () => {
   })
 
   it('defines the footer notice in both locales', () => {
-    for (const locale of [zh, en]) {
-      expect(locale.home.footer.allRightsReserved).toBe('TikToken is owned by Jerrywell Pte. Ltd.')
-    }
+    expect(zh.home.footer.allRightsReserved).toBe('保留所有权利。')
+    expect(en.home.footer.allRightsReserved).toBe('All rights reserved.')
   })
 
   it('does not render the docs text link in the footer', () => {

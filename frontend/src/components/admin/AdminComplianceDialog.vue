@@ -125,7 +125,7 @@ marked.setOptions({
 const visible = computed(() => authStore.isAuthenticated && authStore.isAdmin && complianceStore.shouldShow)
 const expectedPhrase = computed(() => complianceStore.expectedPhrase)
 const canSubmit = computed(() => typedPhrase.value.trim() === expectedPhrase.value)
-const siteName = computed(() => complianceStore.siteName || appStore.cachedPublicSettings?.site_name || appStore.siteName || 'Sub2API')
+const siteName = computed(() => complianceStore.siteName || appStore.cachedPublicSettings?.site_name || appStore.siteName || 'ZenTok')
 const currentDocument = computed(() =>
   renderAdminComplianceDocumentTemplate(getLocale() === 'zh' ? zhDocument : enDocument, siteName.value)
 )

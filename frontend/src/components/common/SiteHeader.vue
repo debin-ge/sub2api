@@ -101,7 +101,7 @@ const { t } = useI18n()
 const appStore = useAppStore()
 const authStore = useAuthStore()
 
-const siteName = computed(() => appStore.cachedPublicSettings?.site_name || appStore.siteName || 'Sub2API')
+const siteName = computed(() => appStore.cachedPublicSettings?.site_name || appStore.siteName || 'ZenTok')
 const siteLogo = computed(() => sanitizeUrl(
   appStore.cachedPublicSettings?.site_logo || appStore.siteLogo || '',
   { allowRelative: true, allowDataUrl: true },

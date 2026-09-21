@@ -1,7 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, ref } from 'vue'
-import { createRouter, createWebHistory } from 'vue-router'
 import { degradationLatest, lmarena } from './fixtures'
 import type { DegradationLatestDTO, DegradationModelDTO } from '@/types/radar'
 
@@ -33,13 +32,6 @@ vi.mock('vue-chartjs', () => ({
 
 import DegradationRadarTabs from '@/components/radar/DegradationRadarTabs.vue'
 
-const router = createRouter({
-  history: createWebHistory(),
-  routes: [{ path: '/:pathMatch(.*)*', component: defineComponent({ render: () => h('div') }) }],
-})
-
-const radarGlobal = { plugins: [router] }
-
 function model(index: number): DegradationModelDTO {
   return {
     slug: `model-${index}`,
@@ -66,13 +58,8 @@ function latestWithModels(count: number): DegradationLatestDTO {
 }
 
 describe('DegradationRadarTabs', () => {
-  beforeEach(async () => {
-    await router.replace('/radar')
-    document.documentElement.classList.remove('dark')
-  })
-
   it('uses backend Top 6, all three AA indices, original AA names, and complete catalog IDs', async () => {
-    const wrapper = mount(DegradationRadarTabs, { props: { latest: degradationLatest, lmarena }, global: radarGlobal })
+    const wrapper = mount(DegradationRadarTabs, { props: { latest: degradationLatest, lmarena } })
     await flushPromises()
 
     const radar = wrapper.findComponent({ name: 'BenchmarkBarChart' })
@@ -90,52 +77,24 @@ describe('DegradationRadarTabs', () => {
     expect(wrapper.text()).not.toContain('Intelligence Index version')
     expect(wrapper.text()).not.toContain('Artificial Analysis official source')
     expect(wrapper.find('a[href="https://artificialanalysis.ai"]').exists()).toBe(false)
-    expect(router.currentRoute.value.query.models).toBe('model-a,model-2,model-3,model-4,model-5,model-6')
     wrapper.unmount()
   })
 
-  it('initializes from the URL, preserves order, deduplicates, filters unknown slugs, and retains other query params', async () => {
-    await router.replace('/radar?view=full&models=model-7,missing,model-a,model-7&models=model-2')
-    const wrapper = mount(DegradationRadarTabs, { props: { latest: degradationLatest, lmarena }, global: radarGlobal })
+  it('never writes the selected models into the page URL', async () => {
+    const wrapper = mount(DegradationRadarTabs, { props: { latest: degradationLatest, lmarena } })
     await flushPromises()
 
-    const data = wrapper.findComponent({ name: 'BenchmarkBarChart' }).props('data') as {
-      datasets: Array<{ label: string }>
-    }
-    expect(data.datasets.map((item) => item.label)).toEqual(['Model 7', 'Model A'])
-    expect(router.currentRoute.value.query.models).toBe('model-7,model-a')
-    expect(router.currentRoute.value.query.view).toBe('full')
-
-    await router.replace('/radar?view=full&models=model-2,model-3')
-    await flushPromises()
-    const updated = wrapper.findComponent({ name: 'BenchmarkBarChart' }).props('data') as {
-      datasets: Array<{ label: string }>
-    }
-    expect(updated.datasets.map((item) => item.label)).toEqual(['Model 2', 'Model 3'])
-    wrapper.unmount()
-  })
-
-  it('preserves URL selection until asynchronously loaded models are available', async () => {
-    await router.replace('/radar?view=full&models=model-7,model-a')
-    const wrapper = mount(DegradationRadarTabs, { props: { latest: null, lmarena }, global: radarGlobal })
+    const optionsInputs = wrapper.findAll('[data-testid="model-options"] input[type="checkbox"]')
+    await optionsInputs[6].trigger('change')
     await flushPromises()
 
-    expect(router.currentRoute.value.query.models).toBe('model-7,model-a')
-
-    await wrapper.setProps({ latest: degradationLatest })
-    await flushPromises()
-
-    const data = wrapper.findComponent({ name: 'BenchmarkBarChart' }).props('data') as {
-      datasets: Array<{ label: string }>
-    }
-    expect(data.datasets.map((item) => item.label)).toEqual(['Model 7', 'Model A'])
-    expect(router.currentRoute.value.query.view).toBe('full')
+    expect(window.location.search).toBe('')
     wrapper.unmount()
   })
 
   it('searches AA and Model Plaza fields and caps selection at ten models', async () => {
     const latest = latestWithModels(12)
-    const wrapper = mount(DegradationRadarTabs, { props: { latest, lmarena }, global: radarGlobal })
+    const wrapper = mount(DegradationRadarTabs, { props: { latest, lmarena } })
     await flushPromises()
     const search = wrapper.get('[data-testid="model-search"]')
 
@@ -152,10 +111,6 @@ describe('DegradationRadarTabs', () => {
     const data = wrapper.findComponent({ name: 'BenchmarkBarChart' }).props('data') as { datasets: unknown[] }
     expect(data.datasets).toHaveLength(10)
     expect(options[10].attributes('disabled')).toBeDefined()
-    expect(String(router.currentRoute.value.query.models).split(',')).toEqual([
-      'model-1', 'model-2', 'model-3', 'model-4', 'model-5', 'model-6',
-      'model-7', 'model-8', 'model-9', 'model-10',
-    ])
     wrapper.unmount()
   })
 
@@ -170,7 +125,7 @@ describe('DegradationRadarTabs', () => {
       score_max: 90,
       score_step: 10,
     }
-    const wrapper = mount(DegradationRadarTabs, { props: { latest, lmarena }, global: radarGlobal })
+    const wrapper = mount(DegradationRadarTabs, { props: { latest, lmarena } })
     await flushPromises()
 
     const chart = wrapper.findComponent({ name: 'BenchmarkBarChart' })
@@ -195,9 +150,8 @@ describe('DegradationRadarTabs', () => {
     wrapper.unmount()
   })
 
-  it('falls back to Top 6 when the URL has no valid selection and never permits an empty selection', async () => {
-    await router.replace('/radar?models=unknown')
-    const wrapper = mount(DegradationRadarTabs, { props: { latest: degradationLatest, lmarena }, global: radarGlobal })
+  it('defaults to Top 6 and never permits an empty selection', async () => {
+    const wrapper = mount(DegradationRadarTabs, { props: { latest: degradationLatest, lmarena } })
     await flushPromises()
 
     expect(wrapper.findComponent({ name: 'BenchmarkBarChart' }).props('data')).toEqual(
@@ -208,7 +162,6 @@ describe('DegradationRadarTabs', () => {
     await flushPromises()
     expect(wrapper.findAll('[data-testid="selected-models"] button')).toHaveLength(1)
     expect(wrapper.get('[data-testid="selected-models"] button').attributes('disabled')).toBeDefined()
-    expect(router.currentRoute.value.query.models).toBe('model-a')
     wrapper.unmount()
   })
 
@@ -221,7 +174,7 @@ describe('DegradationRadarTabs', () => {
       observe = observe
       disconnect = disconnect
     })
-    const wrapper = mount(DegradationRadarTabs, { props: { latest: degradationLatest, lmarena }, global: radarGlobal })
+    const wrapper = mount(DegradationRadarTabs, { props: { latest: degradationLatest, lmarena } })
     await flushPromises()
     const before = wrapper.findComponent({ name: 'BenchmarkBarChart' }).props('options') as {
       scales: { y: { grid: { color: string } } }
@@ -248,7 +201,7 @@ describe('DegradationRadarTabs', () => {
         rank: entry.model === 'First' ? 17 : 42,
       })),
     }
-    const wrapper = mount(DegradationRadarTabs, { props: { latest: degradationLatest, lmarena: arenaWithSourceRanks }, global: radarGlobal })
+    const wrapper = mount(DegradationRadarTabs, { props: { latest: degradationLatest, lmarena: arenaWithSourceRanks } })
     await flushPromises()
     await wrapper.get('[data-tab="overview"]').trigger('keydown', { key: 'ArrowRight' })
     await wrapper.vm.$nextTick()
@@ -274,7 +227,6 @@ describe('DegradationRadarTabs', () => {
         lmarenaLoading: true,
         lmarenaError: 'postgres://internal/lmarena-secret',
       },
-      global: radarGlobal,
     })
     await flushPromises()
 
