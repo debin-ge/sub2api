@@ -157,6 +157,46 @@ func TestImageOnlyOverrideIsAllowed(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestImageOnlyOverrideAllowedAgainstAsymmetricCatalogEntry reproduces the
+// production catalog shape for gpt-image-1 / gpt-image-1-mini: the base
+// catalog entry prices input tokens but has no output-token price (output is
+// billed per image token instead). Saving an override that only touches the
+// image dimension must not be rejected for "missing" output_cost_per_token,
+// since that field was never meant to exist for this model.
+func TestImageOnlyOverrideAllowedAgainstAsymmetricCatalogEntry(t *testing.T) {
+	svc := &PricingService{
+		catalogData: map[string]*ModelPriceEntry{
+			"gpt-image-1": {
+				InputCostPerToken:        5e-6,
+				InputPriceExplicit:       true,
+				ImageOutputPriceExplicit: true,
+				OutputCostPerImageToken:  4e-5,
+				PricePresenceKnown:       true,
+			},
+		},
+	}
+	_, err := svc.validateOverrideWrite("*", "gpt-image-1", ModelPriceCurrencyUSD, &ModelPriceOverridePayload{
+		OutputCostPerImageToken: ptrPrice(5e-5),
+	}, true)
+	require.NoError(t, err)
+}
+
+// TestTokenOverrideStillRequiresCompletePair ensures the completeness gate
+// still fires when the payload is actually the one introducing an
+// incomplete token-pricing pair, even for a model that also has image
+// pricing.
+func TestTokenOverrideStillRequiresCompletePair(t *testing.T) {
+	svc := &PricingService{catalogData: map[string]*ModelPriceEntry{}}
+	_, err := svc.validateOverrideWrite("*", "gpt-image-1", ModelPriceCurrencyUSD, &ModelPriceOverridePayload{
+		InputCostPerToken:  ptrPrice(5e-6),
+		OutputCostPerImage: ptrPrice(0.04),
+	}, true)
+	require.Error(t, err)
+	var appErr *infraerrors.ApplicationError
+	require.ErrorAs(t, err, &appErr)
+	require.Equal(t, "INCOMPLETE_PRICING", appErr.Reason)
+}
+
 func TestIncompletePriorityOverrideRejected(t *testing.T) {
 	svc := &PricingService{
 		catalogData: map[string]*ModelPriceEntry{

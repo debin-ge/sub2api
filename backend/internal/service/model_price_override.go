@@ -723,18 +723,47 @@ func (s *PricingService) validateOverrideWrite(platform, model, currency string,
 	raw := mergeRawPriceEntry(overrideBaseRaw(catalog, currency), payload)
 	hasImage := raw.OutputCostPerImage != nil || raw.OutputCostPerImageToken != nil || raw.InputCostPerImageToken != nil
 	hasVideo := raw.VideoPricing != nil
-	if raw.InputCostPerToken == nil && raw.OutputCostPerToken == nil && !hasImage && !hasVideo {
+	hasToken := raw.InputCostPerToken != nil || raw.OutputCostPerToken != nil
+	if !hasToken && !hasImage && !hasVideo {
 		return nil, infraerrors.BadRequest("EMPTY_PRICING", "at least one token, image, or video price is required")
 	}
-	if raw.InputCostPerToken == nil && raw.OutputCostPerToken == nil && (hasImage || hasVideo) {
-		return warnings, nil
-	}
-	if rawModelTokenPricingIncomplete(model, raw) {
+	// Only demand a complete token-pricing dimension when this write is itself
+	// touching token pricing. A catalog entry can already carry a partial or
+	// asymmetric token price alongside image/video pricing by design (e.g.
+	// gpt-image-1 prices input tokens but has no output-token price, billing
+	// its output per image instead). That inherited shape is valid on its own;
+	// saving an unrelated image or video field must not re-flag it as an
+	// incomplete token override.
+	if payloadDeclaresTokenPricing(payload) && rawModelTokenPricingIncomplete(model, raw) {
 		missing := incompleteDimension(raw)
 		return nil, infraerrors.BadRequest("INCOMPLETE_PRICING", fmt.Sprintf("pricing dimension is incomplete: %s", missing)).
 			WithMetadata(map[string]string{"missing_dimension": missing})
 	}
 	return warnings, nil
+}
+
+// payloadDeclaresTokenPricing reports whether the override payload itself
+// (as opposed to values inherited from the base catalog entry) sets any
+// token-pricing-related field, including the cache/priority/long-context
+// dimensions that only make sense in terms of token pricing.
+func payloadDeclaresTokenPricing(payload *ModelPriceOverridePayload) bool {
+	if payload == nil {
+		return false
+	}
+	return payload.InputCostPerToken != nil ||
+		payload.OutputCostPerToken != nil ||
+		payload.CacheCreationInputTokenCost != nil ||
+		payload.CacheCreationInputTokenCostAbove1hr != nil ||
+		payload.CacheReadInputTokenCost != nil ||
+		payload.InputCostPerTokenPriority != nil ||
+		payload.OutputCostPerTokenPriority != nil ||
+		payload.CacheCreationInputTokenCostPriority != nil ||
+		payload.CacheReadInputTokenCostPriority != nil ||
+		payload.LongContextInputTokenThreshold != nil ||
+		payload.LongContextInputCostMultiplier != nil ||
+		payload.LongContextOutputCostMultiplier != nil ||
+		payload.SupportsServiceTier != nil ||
+		payload.SupportsPromptCaching != nil
 }
 
 func (s *PricingService) UpsertOverride(ctx context.Context, input ModelPriceUpsertInput) (*ModelPriceUpsertResult, error) {
