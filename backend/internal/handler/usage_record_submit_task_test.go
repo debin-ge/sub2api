@@ -225,12 +225,6 @@ func TestSpecializedGatewayUsageRecordTasks_BypassPool(t *testing.T) {
 			},
 		},
 		{
-			name: "glm",
-			factory: func(pool *service.UsageRecordWorkerPool) submitFunc {
-				return (&GLMGatewayHandler{usageRecordWorkerPool: pool}).submitUsageRecordTask
-			},
-		},
-		{
 			name: "kimi",
 			factory: func(pool *service.UsageRecordWorkerPool) submitFunc {
 				return (&KimiGatewayHandler{usageRecordWorkerPool: pool}).submitUsageRecordTask

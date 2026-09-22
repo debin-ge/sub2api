@@ -289,7 +289,8 @@ func TestGroupHandlerCreateAcceptsMiniMax(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 }
 
-func TestGroupHandlerCreateAcceptsGLM(t *testing.T) {
+// glm 是 zhipu 的历史平台 ID，新建分组禁止使用（binding oneof 已不再包含 glm）。
+func TestGroupHandlerCreateRejectsGLM(t *testing.T) {
 	router, _ := setupAdminRouter()
 
 	body, err := json.Marshal(map[string]any{
@@ -304,7 +305,7 @@ func TestGroupHandlerCreateAcceptsGLM(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(rec, req)
 
-	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
 }
 
 func TestGroupHandlerCreateAcceptsKimi(t *testing.T) {
@@ -377,7 +378,9 @@ func TestGroupHandlerUpdateAcceptsGLM(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 }
 
-func TestAccountHandlerCreateAcceptsGLMAPIKey(t *testing.T) {
+// glm 是 zhipu 的历史平台 ID，新建账号禁止使用；编辑历史 glm 账号仍须可用
+// （见 TestAccountHandlerUpdateRejectsGLMInvalidType 等 update 测试）。
+func TestAccountHandlerCreateRejectsGLM(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	adminSvc := newStubAdminService()
@@ -397,10 +400,8 @@ func TestAccountHandlerCreateAcceptsGLMAPIKey(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(rec, req)
 
-	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-	require.Len(t, adminSvc.createdAccounts, 1)
-	require.Equal(t, "glm", adminSvc.createdAccounts[0].Platform)
-	require.Equal(t, "apikey", adminSvc.createdAccounts[0].Type)
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	require.Empty(t, adminSvc.createdAccounts)
 }
 
 func TestAccountHandlerCreateAcceptsKimiAPIKey(t *testing.T) {
@@ -556,32 +557,9 @@ func TestAccountHandlerCreateRejectsKimiWithoutAPIKey(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "api_key")
 }
 
-func TestAccountHandlerCreateRejectsGLMWithoutAPIKey(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-	adminSvc := newStubAdminService()
-	accountHandler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	router.POST("/api/v1/admin/accounts", accountHandler.Create)
-
-	body, err := json.Marshal(map[string]any{
-		"name":        "glm-coding-plan",
-		"platform":    "glm",
-		"type":        "apikey",
-		"credentials": map[string]any{"api_key": " "},
-	})
-	require.NoError(t, err)
-
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	router.ServeHTTP(rec, req)
-
-	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
-	require.Empty(t, adminSvc.createdAccounts)
-	require.Contains(t, rec.Body.String(), "api_key")
-}
-
-func TestAccountHandlerBatchCreateValidatesGLMAccounts(t *testing.T) {
+// glm 是 zhipu 的历史平台 ID，批量创建同样禁止使用：无论凭据是否完整，
+// 三条 glm 记录都应在 platform 校验阶段被拒绝。
+func TestAccountHandlerBatchCreateRejectsGLMAccounts(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	adminSvc := newStubAdminService()
@@ -618,9 +596,7 @@ func TestAccountHandlerBatchCreateValidatesGLMAccounts(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-	require.Len(t, adminSvc.createdAccounts, 1)
-	require.Equal(t, service.PlatformGLM, adminSvc.createdAccounts[0].Platform)
-	require.Equal(t, service.AccountTypeAPIKey, adminSvc.createdAccounts[0].Type)
+	require.Empty(t, adminSvc.createdAccounts)
 
 	var resp struct {
 		Code int `json:"code"`
@@ -631,8 +607,8 @@ func TestAccountHandlerBatchCreateValidatesGLMAccounts(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	require.Equal(t, 0, resp.Code)
-	require.Equal(t, 1, resp.Data.Success)
-	require.Equal(t, 2, resp.Data.Failed)
+	require.Equal(t, 0, resp.Data.Success)
+	require.Equal(t, 3, resp.Data.Failed)
 }
 
 func TestAccountHandlerUpdateRejectsGLMInvalidType(t *testing.T) {

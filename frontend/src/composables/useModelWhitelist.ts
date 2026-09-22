@@ -625,7 +625,6 @@ export function getModelsByPlatform(platform: string): string[] {
     case 'qwen': return qwenModels
     case 'deepseek': return deepseekGatewayModels
     case 'windsurf': return windsurfGatewayModels
-    case 'opencode': return opencodeGatewayModels
     case 'mistral': return mistralModels
     case 'meta': return metaModels
     case 'xai':
@@ -667,7 +666,7 @@ export function getPresetMappingsByPlatform(platform: string) {
   if (platform === 'kimi') return kimiPresetMappings
   if (platform === 'deepseek') return deepseekPresetMappings
   if (platform === 'windsurf') return windsurfPresetMappings
-  if (platform === 'opencode' || platform === 'opencode_go') return opencodePresetMappings
+  if (platform === 'opencode_go') return opencodePresetMappings
   if (platform === 'antigravity') return antigravityPresetMappings
   if (platform === 'bedrock') return bedrockPresetMappings
   return anthropicPresetMappings

@@ -66,7 +66,7 @@ import { useI18n } from 'vue-i18n'
 import type { Provider } from '@/api/admin/channelMonitor'
 import Select from '@/components/common/Select.vue'
 import Icon from '@/components/icons/Icon.vue'
-import { PROVIDERS } from '@/constants/channelMonitor'
+import { CREATABLE_PROVIDERS } from '@/constants/channelMonitor'
 
 defineProps<{
   loading: boolean
@@ -87,7 +87,7 @@ const { t } = useI18n()
 
 const providerFilterOptions = computed(() => [
   { value: '', label: t('admin.channelMonitor.allProviders') },
-  ...PROVIDERS.map((provider) => ({
+  ...CREATABLE_PROVIDERS.map((provider) => ({
     value: provider,
     label: t(`monitorCommon.providers.${provider}`),
   })),

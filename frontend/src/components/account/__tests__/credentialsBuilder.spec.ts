@@ -171,6 +171,12 @@ describe('isHeaderOverrideCapable', () => {
     }
   })
 
+  // glm 是 zhipu 的历史平台 ID，资格判定需与 zhipu 保持一致（与后端 IsHeaderOverrideEligible 对齐）。
+  it('glm (legacy zhipu alias) only supports apikey accounts', () => {
+    expect(isHeaderOverrideCapable('glm', 'apikey')).toBe(true)
+    expect(isHeaderOverrideCapable('glm', 'oauth')).toBe(false)
+  })
+
   it('grok supports both apikey and oauth accounts', () => {
     expect(isHeaderOverrideCapable('grok', 'apikey')).toBe(true)
     expect(isHeaderOverrideCapable('grok', 'oauth')).toBe(true)

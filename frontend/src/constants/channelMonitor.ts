@@ -54,6 +54,14 @@ export const PROVIDERS: readonly Provider[] = [
   PROVIDER_OPENCODE_GO,
 ]
 
+/**
+ * glm 是 zhipu 的历史 provider ID：新建监控、列表筛选等一切"可交互选择"场景一律用
+ * 此过滤后的清单，仅编辑一个既有的 glm 监控时才需要完整的 PROVIDERS 清单。
+ */
+export const CREATABLE_PROVIDERS: readonly Provider[] = PROVIDERS.filter(
+  (provider) => provider !== PROVIDER_GLM
+)
+
 /** 仅支持配额模式（无探活 adapter）的 provider。 */
 export const QUOTA_ONLY_PROVIDERS: readonly Provider[] = [PROVIDER_ANTIGRAVITY]
 

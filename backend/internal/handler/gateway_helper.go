@@ -473,3 +473,18 @@ func nextBackoff(current time.Duration) time.Duration {
 	}
 	return jittered
 }
+
+// onceRelease 包装一个释放函数，确保其最多被执行一次。
+func onceRelease(release func()) func() {
+	if release == nil {
+		return func() {}
+	}
+	released := false
+	return func() {
+		if released {
+			return
+		}
+		released = true
+		release()
+	}
+}

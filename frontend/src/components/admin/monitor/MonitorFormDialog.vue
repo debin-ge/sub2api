@@ -270,6 +270,7 @@ import {
   PROVIDER_ZHIPU,
   PROVIDER_DEEPSEEK,
   PROVIDER_MINIMAX,
+  PROVIDER_GLM,
   PROVIDER_OPENCODE_GO,
   API_MODE_CHAT_COMPLETIONS,
   API_MODE_RESPONSES,
@@ -468,8 +469,9 @@ interface ProviderOption {
   label: string
 }
 
+// glm 是 zhipu 的历史平台 ID：新建监控禁止选择，编辑已有监控（含历史 glm 监控）时保留完整清单。
 const providerOptions = computed<ProviderOption[]>(() => [
-  ...PROVIDERS.map((provider) => ({
+  ...PROVIDERS.filter((provider) => editing.value || provider !== PROVIDER_GLM).map((provider) => ({
     value: provider,
     label: t(`monitorCommon.providers.${provider}`),
   })),
