@@ -290,6 +290,73 @@ func TestLMArenaFetcherCapsTheAggregatePaginatedResponse(t *testing.T) {
 	requireRadarFetchErrorCode(t, meta, DataSourceErrorCodeInvalidResponse)
 }
 
+func TestLMArenaFetcherGivesEachPageAnIndependentFreshTimeout(t *testing.T) {
+	const total = 101
+	var deadlines []time.Time
+	var requestedAt []time.Time
+	client := radarDoerFunc(func(req *http.Request) (*http.Response, error) {
+		requestedAt = append(requestedAt, time.Now())
+		deadline, ok := req.Context().Deadline()
+		require.True(t, ok, "each page request must carry its own timeout")
+		deadlines = append(deadlines, deadline)
+		offset, err := strconv.Atoi(req.URL.Query().Get("offset"))
+		require.NoError(t, err)
+		if offset == 0 {
+			// A slow first page must not eat into the second page's own budget.
+			time.Sleep(50 * time.Millisecond)
+		}
+		body := newRadarTrackingBody(hfLMArenaPage(t, offset, total, hfLMArenaPageOptions{}))
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       body,
+			Header: http.Header{
+				"Content-Type": []string{"application/json"},
+				"X-Revision":   []string{strings.Repeat("a", 40)},
+			},
+		}, nil
+	})
+	cfg := validRadarFetcherTestConfig()
+	cfg.Radar.LMArenaURL = "https://datasets-server.huggingface.co/filter"
+
+	fetcher, err := NewLMArenaFetcher(cfg, client)
+	require.NoError(t, err)
+
+	_, _, err = fetcher.Fetch(context.Background())
+	require.NoError(t, err)
+
+	require.Len(t, deadlines, 2)
+	require.Len(t, requestedAt, 2)
+	// Under the old bug, every page shared one deadline computed once, up
+	// front, from the outer job context, so a later page's deadline could
+	// never move past the first page's. The fix recomputes a fresh
+	// pageTimeout-out deadline immediately before each page's own request, so
+	// it must land measurably later once real time elapses between requests.
+	require.True(t, deadlines[1].After(deadlines[0]),
+		"page 2 must get a fresh deadline computed after page 1 completes, not one shared from a single upfront deadline")
+	gap := requestedAt[1].Sub(requestedAt[0])
+	require.InDelta(t, gap.Seconds(), deadlines[1].Sub(deadlines[0]).Seconds(), 1.0,
+		"page 2's deadline must move forward by roughly the elapsed wall time since page 1 started, proving it is freshly derived rather than inherited")
+}
+
+func TestLMArenaFetcherFetchBudgetCoversEveryPossiblePage(t *testing.T) {
+	cfg := validRadarFetcherTestConfig()
+	cfg.Radar.ExternalRequestTimeoutSeconds = 7
+	fetcher, err := NewLMArenaFetcher(cfg, radarDoerFunc(func(*http.Request) (*http.Response, error) {
+		t.Fatal("FetchBudget must not issue any request")
+		return nil, nil
+	}))
+	require.NoError(t, err)
+
+	budgeted, ok := fetcher.(RadarFetcherBudget)
+	require.True(t, ok, "lmarenaFetcher must implement RadarFetcherBudget so the runner sizes its lane around every possible page, not one request")
+
+	pageTimeout := radarRunnerProductionFetchBudget(cfg.Radar)
+	want := time.Duration(lmarenaHFMaxPages)*pageTimeout + radarRunnerFetchValidationMargin
+	require.Equal(t, want, budgeted.FetchBudget())
+	require.Greater(t, budgeted.FetchBudget(), pageTimeout,
+		"the declared budget must exceed a single page's own timeout, since Fetch can loop across many pages")
+}
+
 func TestDecodeAndMapLMArenaCurrentSchema(t *testing.T) {
 	snapshot, err := DecodeLMArena([]byte(validLMArenaPayload))
 	require.NoError(t, err)

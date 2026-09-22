@@ -32,6 +32,20 @@ func (s *radarLMArenaFetcherStub) Fetch(context.Context) ([]byte, SourceFetchMet
 	return append([]byte(nil), s.payload...), s.meta, s.err
 }
 
+var _ RadarFetcher = (*radarLMArenaFetcherStub)(nil)
+
+// radarLMArenaBudgetedFetcherStub additionally opts into RadarFetcherBudget,
+// the same optional capability lmarenaFetcher implements for its multi-page
+// Fetch, so tests can prove catalogMatchedLMArenaFetcher forwards it.
+type radarLMArenaBudgetedFetcherStub struct {
+	radarLMArenaFetcherStub
+	budget time.Duration
+}
+
+func (s *radarLMArenaBudgetedFetcherStub) FetchBudget() time.Duration { return s.budget }
+
+var _ RadarFetcherBudget = (*radarLMArenaBudgetedFetcherStub)(nil)
+
 func TestCatalogMatchedLMArenaFetcherPublishesOnlyBackendIntersection(t *testing.T) {
 	now := time.Date(2026, 7, 16, 0, 0, 0, 0, time.UTC)
 	inner := &radarLMArenaFetcherStub{
@@ -96,4 +110,25 @@ func TestNewCatalogMatchedLMArenaFetcherRejectsMissingDependencies(t *testing.T)
 	require.Error(t, err)
 	_, err = newCatalogMatchedLMArenaFetcher(&radarLMArenaFetcherStub{}, nil)
 	require.Error(t, err)
+}
+
+func TestCatalogMatchedLMArenaFetcherForwardsInnerFetchBudget(t *testing.T) {
+	inner := &radarLMArenaBudgetedFetcherStub{budget: 45 * time.Minute}
+	fetcher, err := newCatalogMatchedLMArenaFetcher(inner, &radarLMArenaCatalogStub{})
+	require.NoError(t, err)
+
+	budgeted, ok := fetcher.(RadarFetcherBudget)
+	require.True(t, ok, "the wrapper must expose RadarFetcherBudget whenever its inner fetcher does, "+
+		"or the runner's type assertion silently falls back to the shared single-request budget")
+	require.Equal(t, 45*time.Minute, budgeted.FetchBudget())
+}
+
+func TestCatalogMatchedLMArenaFetcherFetchBudgetIsZeroWhenInnerDoesNotDeclareOne(t *testing.T) {
+	fetcher, err := newCatalogMatchedLMArenaFetcher(&radarLMArenaFetcherStub{}, &radarLMArenaCatalogStub{})
+	require.NoError(t, err)
+
+	budgeted, ok := fetcher.(RadarFetcherBudget)
+	require.True(t, ok)
+	require.Zero(t, budgeted.FetchBudget(),
+		"without an opinion from the inner fetcher, the wrapper must return zero so the runner keeps the shared default rather than shrinking it")
 }

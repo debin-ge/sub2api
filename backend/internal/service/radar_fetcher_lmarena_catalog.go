@@ -55,6 +55,18 @@ func (f *catalogMatchedLMArenaFetcher) Interval() time.Duration {
 	return f.inner.Interval()
 }
 
+// FetchBudget forwards the inner fetcher's own declared budget, if any, so the
+// runner still sizes this source's job deadline and lock TTL around the
+// wrapped fetcher's real worst-case wall-clock cost (e.g. lmarenaFetcher's
+// multi-page pagination) instead of silently falling back to the shared
+// single-request default because the capability got lost behind this wrapper.
+func (f *catalogMatchedLMArenaFetcher) FetchBudget() time.Duration {
+	if budgeted, ok := f.inner.(RadarFetcherBudget); ok {
+		return budgeted.FetchBudget()
+	}
+	return 0
+}
+
 func (f *catalogMatchedLMArenaFetcher) Fetch(ctx context.Context) ([]byte, SourceFetchMeta, error) {
 	payload, meta, err := f.inner.Fetch(ctx)
 	if err != nil {
@@ -175,3 +187,4 @@ func encodeMatchedLMArena(dto LMArenaDTO) ([]byte, error) {
 }
 
 var _ RadarFetcher = (*catalogMatchedLMArenaFetcher)(nil)
+var _ RadarFetcherBudget = (*catalogMatchedLMArenaFetcher)(nil)
