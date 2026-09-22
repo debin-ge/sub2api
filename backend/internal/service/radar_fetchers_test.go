@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -207,6 +208,37 @@ func TestNewRadarFetchersEndpointsHeadersAndIntervalsWithoutLiveNetwork(t *testi
 	require.Contains(t, requests, kimiHistoryURL)
 	require.Contains(t, requests, miniMaxChinaLLMHistoryURL)
 	require.Contains(t, requests, deepSeekStatusDataURL)
+}
+
+func TestNewRadarFetchersLMArenaFetcherForwardsItsOwnFetchBudgetThroughTheCatalogWrapper(t *testing.T) {
+	client := radarDoerFunc(func(*http.Request) (*http.Response, error) {
+		t.Fatal("constructor must not access the network")
+		return nil, nil
+	})
+	cfg := validRadarFetcherTestConfig()
+
+	fetchers, err := newRadarFetchers(cfg, client, radarFetcherTestCatalog())
+	require.NoError(t, err)
+
+	var lmarena RadarFetcher
+	for _, fetcher := range fetchers {
+		if fetcher.Source() == RadarSourceLMArena {
+			lmarena = fetcher
+		}
+	}
+	require.NotNil(t, lmarena, "lmarena fetcher must be present")
+
+	budgeted, ok := lmarena.(RadarFetcherBudget)
+	require.True(t, ok, "the fetcher newRadarFetchers registers for lmarena must still satisfy "+
+		"RadarFetcherBudget after catalog wrapping, or NewRadarRunner's type assertion silently "+
+		"fails and lmarena falls back to the shared single-request budget in production")
+
+	pageTimeout := radarRunnerProductionFetchBudget(cfg.Radar)
+	want := time.Duration(lmarenaHFMaxPages)*pageTimeout + radarRunnerFetchValidationMargin
+	require.Equal(t, want, budgeted.FetchBudget())
+	require.Greater(t, budgeted.FetchBudget(), pageTimeout,
+		"the production-wired lmarena fetcher must declare a budget larger than a single page, "+
+			"proving the capability survived the newCatalogMatchedLMArenaFetcher wrapper")
 }
 
 func radarStatuspageSourceForHost(t *testing.T, host string) RadarSourceKey {

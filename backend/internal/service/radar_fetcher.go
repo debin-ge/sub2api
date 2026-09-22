@@ -35,6 +35,16 @@ type RadarFetcher interface {
 	Fetch(ctx context.Context) (payload []byte, meta SourceFetchMeta, err error)
 }
 
+// RadarFetcherBudget is an optional capability for a fetcher whose Fetch
+// issues multiple sequential requests, each already bounded by its own
+// per-request timeout, rather than a single request. The runner type-asserts
+// for it to size that source's lock TTL and outer job deadline around the
+// fetcher's own worst-case wall-clock budget instead of the shared
+// single-request budget every other source uses.
+type RadarFetcherBudget interface {
+	FetchBudget() time.Duration
+}
+
 // RadarSleepFunc waits for a retry backoff. Production uses
 // radarSleepWithContext; tests may inject an immediate recorder.
 type RadarSleepFunc func(ctx context.Context, duration time.Duration) error

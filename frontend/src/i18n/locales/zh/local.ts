@@ -241,7 +241,12 @@ export default {
       "cta": {
         "title": "准备好开始了吗？",
         "description": "立即注册 {siteName}，几分钟内接入海量主流大模型服务。",
-        "button": "免费注册"
+        "button": "免费注册",
+        "loggedIn": {
+          "title": "欢迎回来",
+          "description": "前往控制台，继续管理你的密钥与用量。",
+          "button": "进入控制台"
+        }
       },
       "footer": {
         "tagline": "标准化 API 网关，统一接入海量 AI 模型，为你的应用与数字资产提供稳定支撑。"

@@ -113,7 +113,6 @@ type RadarRunner struct {
 	runtimeGate     RadarRuntimeSettingReader
 
 	owner                string
-	fetchBudget          time.Duration
 	persistenceTimeout   time.Duration
 	cleanupTimeout       time.Duration
 	shutdownTimeout      time.Duration
@@ -123,6 +122,7 @@ type RadarRunner struct {
 	quotaLockTTL         time.Duration
 	skipQuotaScheduler   bool
 	lockTTLs             map[RadarSourceKey]time.Duration
+	fetchBudgets         map[RadarSourceKey]time.Duration
 	intervals            map[RadarSourceKey]time.Duration
 	sources              []RadarSourceKey
 	clock                radarRunnerClock
@@ -255,14 +255,6 @@ func newRadarRunner(
 	if options.manualRefreshTimeout < 0 {
 		return nil, errors.New("radar runner manual refresh timeout must be positive")
 	}
-	criticalBudget, ok := radarRunnerCriticalBudget(
-		options.fetchBudget,
-		options.persistenceTimeout,
-		options.cleanupTimeout,
-	)
-	if !ok {
-		return nil, errors.New("radar runner critical budget is invalid")
-	}
 
 	owner := options.owner
 	if owner == "" {
@@ -277,9 +269,14 @@ func newRadarRunner(
 
 	seen := make(map[RadarSourceKey]struct{}, len(fetchers))
 	lockTTLs := make(map[RadarSourceKey]time.Duration, len(fetchers))
+	fetchBudgets := make(map[RadarSourceKey]time.Duration, len(fetchers))
 	intervals := make(map[RadarSourceKey]time.Duration, len(fetchers))
 	sources := make([]RadarSourceKey, len(fetchers))
 	fetcherCopy := make([]RadarFetcher, len(fetchers))
+	// maxFetchBudget feeds the manual-refresh budget below: sources run
+	// concurrently under one shared deadline, so that deadline must fit the
+	// single slowest source's lane, not the sum of every source's lane.
+	maxFetchBudget := options.fetchBudget
 	for i, fetcher := range fetchers {
 		if isNilRadarFetcher(fetcher) {
 			return nil, errors.New("radar runner contains nil fetcher")
@@ -293,12 +290,35 @@ func newRadarRunner(
 		}
 		seen[source] = struct{}{}
 
+		// A fetcher that issues multiple sequential requests (each already
+		// bounded by its own timeout) can declare a larger worst-case budget
+		// than the shared single-request default; it is never allowed to
+		// declare a smaller one.
+		sourceBudget := options.fetchBudget
+		if budgeted, ok := fetcher.(RadarFetcherBudget); ok {
+			if custom := budgeted.FetchBudget(); custom > sourceBudget {
+				sourceBudget = custom
+			}
+		}
+		if sourceBudget > maxFetchBudget {
+			maxFetchBudget = sourceBudget
+		}
+		sourceCriticalBudget, ok := radarRunnerCriticalBudget(
+			sourceBudget,
+			options.persistenceTimeout,
+			options.cleanupTimeout,
+		)
+		if !ok {
+			return nil, errors.New("radar runner critical budget is invalid")
+		}
+
 		interval := fetcher.Interval()
-		lockTTL, ok := radarRunnerLockTTL(criticalBudget, interval)
+		lockTTL, ok := radarRunnerLockTTL(sourceCriticalBudget, interval)
 		if !ok {
 			return nil, errors.New("radar runner source interval cannot safely contain critical budget and lock TTL")
 		}
 		lockTTLs[source] = lockTTL
+		fetchBudgets[source] = sourceBudget
 		intervals[source] = interval
 		sources[i] = source
 		fetcherCopy[i] = fetcher
@@ -311,7 +331,7 @@ func newRadarRunner(
 		var valid bool
 		options.manualRefreshTimeout, valid = radarRunnerManualRefreshBudget(
 			len(fetchers),
-			options.fetchBudget,
+			maxFetchBudget,
 			options.persistenceTimeout,
 			options.cleanupTimeout,
 			options.quotaTimeout,
@@ -334,7 +354,6 @@ func newRadarRunner(
 		quotaAggregator:      quotaAggregator,
 		runtimeGate:          options.runtimeGate,
 		owner:                owner,
-		fetchBudget:          options.fetchBudget,
 		persistenceTimeout:   options.persistenceTimeout,
 		cleanupTimeout:       options.cleanupTimeout,
 		shutdownTimeout:      options.shutdownTimeout,
@@ -344,6 +363,7 @@ func newRadarRunner(
 		quotaLockTTL:         quotaLockTTL,
 		skipQuotaScheduler:   options.skipQuotaScheduler,
 		lockTTLs:             lockTTLs,
+		fetchBudgets:         fetchBudgets,
 		intervals:            intervals,
 		sources:              sources,
 		clock:                options.clock,
@@ -1125,8 +1145,9 @@ func (r *RadarRunner) fetchOnceWithCadenceAndRuntimeGate(
 		return
 	}
 	task := string(source)
+	fetchBudget := r.fetchBudgets[source]
 
-	lockCtx, cancelLock := context.WithTimeout(ctx, r.fetchBudget)
+	lockCtx, cancelLock := context.WithTimeout(ctx, fetchBudget)
 	acquired, err := r.repo.TryLock(lockCtx, task, r.owner, r.lockTTLs[source])
 	cancelLock()
 	if err != nil {
@@ -1138,7 +1159,7 @@ func (r *RadarRunner) fetchOnceWithCadenceAndRuntimeGate(
 	}
 	defer r.releaseLock(source)
 
-	jobCtx, cancelJob := context.WithTimeout(ctx, r.fetchBudget)
+	jobCtx, cancelJob := context.WithTimeout(ctx, fetchBudget)
 	defer cancelJob()
 	attemptStartedAt := r.clock.Now().UTC()
 	metricsStartedAt := time.Now()

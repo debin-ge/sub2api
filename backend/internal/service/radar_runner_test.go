@@ -42,6 +42,17 @@ func (f *radarRunnerTestFetcher) Fetch(ctx context.Context) ([]byte, SourceFetch
 	}, nil
 }
 
+// radarRunnerBudgetedTestFetcher lets a test fetcher opt into RadarFetcherBudget,
+// the same optional capability lmarenaFetcher implements for its multi-page Fetch.
+type radarRunnerBudgetedTestFetcher struct {
+	radarRunnerTestFetcher
+	budget time.Duration
+}
+
+func (f *radarRunnerBudgetedTestFetcher) FetchBudget() time.Duration { return f.budget }
+
+var _ RadarFetcherBudget = (*radarRunnerBudgetedTestFetcher)(nil)
+
 type radarRunnerLockCall struct {
 	task  string
 	owner string
@@ -1430,6 +1441,69 @@ func TestNewRadarRunnerProductionBudgetMustFitStrictlyInsideInterval(t *testing.
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	require.NoError(t, runner.Stop(ctx))
+}
+
+func TestNewRadarRunnerSizesABudgetedFetcherAroundItsOwnFetchBudget(t *testing.T) {
+	cfg := validRadarFetcherTestConfig()
+	repo := newRadarRunnerTestRepository()
+	plain := &radarRunnerTestFetcher{source: RadarSourceAA, interval: 100 * time.Millisecond}
+	larger := &radarRunnerBudgetedTestFetcher{
+		radarRunnerTestFetcher: radarRunnerTestFetcher{source: RadarSourceLMArena, interval: 200 * time.Millisecond},
+		budget:                 50 * time.Millisecond,
+	}
+	// A fetcher may only widen its lane, never shrink it below the shared
+	// single-request default, so a smaller declared budget must be clamped up.
+	smaller := &radarRunnerBudgetedTestFetcher{
+		radarRunnerTestFetcher: radarRunnerTestFetcher{source: RadarSourceStatusClaude, interval: 100 * time.Millisecond},
+		budget:                 time.Millisecond,
+	}
+	runner := newRadarRunnerForTest(t, cfg, repo, radarRunnerOptions{
+		fetchBudget: 5 * time.Millisecond,
+	}, plain, larger, smaller)
+
+	require.Equal(t, 5*time.Millisecond, runner.fetchBudgets[plain.source], "a plain fetcher keeps the shared single-request budget")
+	require.Equal(t, 50*time.Millisecond, runner.fetchBudgets[larger.source], "a budgeted fetcher's own, larger FetchBudget wins over the shared default")
+	require.Equal(t, 5*time.Millisecond, runner.fetchBudgets[smaller.source], "a budgeted fetcher may not shrink its lane below the shared default")
+
+	plainCritical, ok := radarRunnerCriticalBudget(5*time.Millisecond, runner.persistenceTimeout, runner.cleanupTimeout)
+	require.True(t, ok)
+	wantPlainTTL, ok := radarRunnerLockTTL(plainCritical, plain.interval)
+	require.True(t, ok)
+	require.Equal(t, wantPlainTTL, runner.lockTTLs[plain.source])
+
+	largerCritical, ok := radarRunnerCriticalBudget(50*time.Millisecond, runner.persistenceTimeout, runner.cleanupTimeout)
+	require.True(t, ok)
+	wantLargerTTL, ok := radarRunnerLockTTL(largerCritical, larger.interval)
+	require.True(t, ok)
+	require.Equal(t, wantLargerTTL, runner.lockTTLs[larger.source])
+
+	require.Greater(t, runner.lockTTLs[larger.source], runner.lockTTLs[plain.source],
+		"a source with a larger declared fetch budget must get a proportionally larger lock TTL")
+}
+
+func TestNewRadarRunnerManualRefreshTimeoutUsesTheLargestSourceFetchBudget(t *testing.T) {
+	cfg := validRadarFetcherTestConfig()
+	repo := newRadarRunnerTestRepository()
+	plain := &radarRunnerTestFetcher{source: RadarSourceAA, interval: time.Hour}
+	budgeted := &radarRunnerBudgetedTestFetcher{
+		radarRunnerTestFetcher: radarRunnerTestFetcher{source: RadarSourceLMArena, interval: time.Hour},
+		budget:                 2 * time.Minute,
+	}
+	runner := newRadarRunnerForTest(t, cfg, repo, radarRunnerOptions{
+		fetchBudget: 5 * time.Millisecond,
+	}, plain, budgeted)
+
+	// Sources are dispatched concurrently under one shared manual-refresh
+	// deadline (see TriggerManualRefresh), so that deadline must be sized
+	// around the single slowest lane's own budget, not the shared default.
+	want, ok := radarRunnerManualRefreshBudget(2, 2*time.Minute, runner.persistenceTimeout, runner.cleanupTimeout, runner.quotaTimeout)
+	require.True(t, ok)
+	require.Equal(t, want, runner.manualRefreshTimeout)
+
+	tooSmall, ok := radarRunnerManualRefreshBudget(2, 5*time.Millisecond, runner.persistenceTimeout, runner.cleanupTimeout, runner.quotaTimeout)
+	require.True(t, ok)
+	require.Greater(t, runner.manualRefreshTimeout, tooSmall,
+		"manual refresh timeout must not stay sized around the shared default once a source declares a larger budget")
 }
 
 func TestRadarRunnerSameSourceNeverOverlapsWhenExecutionExceedsInterval(t *testing.T) {

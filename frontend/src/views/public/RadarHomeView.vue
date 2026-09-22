@@ -161,16 +161,20 @@
             <div class="pointer-events-none absolute -left-16 -top-16 h-56 w-56 rounded-full bg-white/10 blur-3xl"></div>
             <div class="pointer-events-none absolute -bottom-16 -right-16 h-56 w-56 rounded-full bg-white/10 blur-3xl"></div>
             <h2 id="radar-cta-heading" class="relative text-2xl font-bold text-white sm:text-3xl">
-              {{ t('radar.home.cta.title', 'Ready to get started?') }}
+              {{ isAuthenticated ? t('radar.home.cta.loggedIn.title', 'Welcome back') : t('radar.home.cta.title', 'Ready to get started?') }}
             </h2>
             <p class="relative mx-auto mt-3 max-w-xl text-sm text-white/85 sm:text-base">
-              {{ t('radar.home.cta.description', { siteName }) }}
+              {{
+                isAuthenticated
+                  ? t('radar.home.cta.loggedIn.description', 'Head to your dashboard to manage your keys and usage.')
+                  : t('radar.home.cta.description', { siteName })
+              }}
             </p>
             <router-link
-              to="/register"
+              :to="isAuthenticated ? dashboardPath : '/register'"
               class="relative mt-8 inline-flex items-center justify-center rounded-xl bg-white px-6 py-3 text-sm font-semibold text-primary-700 shadow-lg transition hover:bg-gray-50"
             >
-              {{ t('radar.home.cta.button', 'Sign up free') }}
+              {{ isAuthenticated ? t('radar.home.cta.loggedIn.button', 'Go to dashboard') : t('radar.home.cta.button', 'Sign up free') }}
             </router-link>
           </div>
         </section>
@@ -179,15 +183,17 @@
 
     <footer class="border-t border-gray-200/50 dark:border-dark-800/50">
       <div class="mx-auto max-w-7xl px-4 py-12 text-center sm:px-6 lg:px-8">
-        <div class="flex items-center justify-center gap-2">
-          <div class="flex h-8 w-8 items-center justify-center overflow-hidden rounded-lg">
-            <img :src="siteLogo || '/logo.svg'" alt="" class="h-full w-full object-contain" />
+        <div class="flex flex-wrap items-center justify-center gap-x-3 gap-y-2">
+          <div class="flex shrink-0 items-center gap-2">
+            <div class="flex h-8 w-8 items-center justify-center overflow-hidden rounded-lg">
+              <img :src="siteLogo || '/logo.svg'" alt="" class="h-full w-full object-contain" />
+            </div>
+            <span class="text-base font-bold text-gray-950 dark:text-white">{{ siteName }}</span>
           </div>
-          <span class="text-base font-bold text-gray-950 dark:text-white">{{ siteName }}</span>
+          <p class="max-w-md text-sm leading-6 text-gray-500 dark:text-gray-400">
+            {{ t('radar.home.footer.tagline', 'A standardized API gateway that unifies access to leading AI models, powering your applications and digital assets.') }}
+          </p>
         </div>
-        <p class="mx-auto mt-3 max-w-xs text-sm leading-6 text-gray-500 dark:text-gray-400">
-          {{ t('radar.home.footer.tagline', 'A standardized API gateway that unifies access to leading AI models, powering your applications and digital assets.') }}
-        </p>
       </div>
 
       <div class="border-t border-gray-200/50 px-6 py-8 dark:border-dark-800/50">
@@ -211,7 +217,7 @@ import RadarHomeDocsPreview from '@/components/radar/RadarHomeDocsPreview.vue'
 import RadarPageHeader from '@/components/radar/RadarPageHeader.vue'
 import RadarSectionState from '@/components/radar/RadarSectionState.vue'
 import ServiceHealthGrid from '@/components/radar/ServiceHealthGrid.vue'
-import { useAppStore } from '@/stores'
+import { useAppStore, useAuthStore } from '@/stores'
 import userChannelsAPI, { type UserAvailableChannel } from '@/api/channels'
 import { usePublicRadar } from '@/composables/usePublicRadar'
 import { radarCatalogPlatforms } from '@/utils/radarCatalog'
@@ -219,7 +225,10 @@ import { sanitizeUrl } from '@/utils/url'
 
 const { t } = useI18n()
 const appStore = useAppStore()
+const authStore = useAuthStore()
 const radar = usePublicRadar()
+const isAuthenticated = computed(() => authStore.isAuthenticated)
+const dashboardPath = computed(() => (authStore.isAdmin ? '/admin/dashboard' : '/dashboard'))
 const catalogChannels = shallowRef<UserAvailableChannel[]>([])
 const catalogLoading = ref(true)
 const catalogError = ref<'load_failed' | null>(null)

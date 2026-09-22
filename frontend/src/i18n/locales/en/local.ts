@@ -241,7 +241,12 @@ export default {
       "cta": {
         "title": "Ready to get started?",
         "description": "Sign up for {siteName} and connect to leading AI model providers in minutes.",
-        "button": "Sign up free"
+        "button": "Sign up free",
+        "loggedIn": {
+          "title": "Welcome back",
+          "description": "Head to your dashboard to manage your keys and usage.",
+          "button": "Go to dashboard"
+        }
       },
       "footer": {
         "tagline": "A standardized API gateway that unifies access to leading AI models, powering your applications and digital assets."

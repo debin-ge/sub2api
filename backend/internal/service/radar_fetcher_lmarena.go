@@ -31,6 +31,11 @@ const (
 	lmarenaHFSplit              = "latest"
 	lmarenaHFFilter             = `"category" = 'overall'`
 	lmarenaHFOrderBy            = `"rank" ASC`
+	// lmarenaHFMaxPages bounds the pagination loop below: any page reporting a
+	// NumRowsTotal beyond lmarenaHFMaxModels is rejected by
+	// decodeAndValidateLMArenaHFPage before another iteration can start, so
+	// this is a hard ceiling on how many pages Fetch can ever request.
+	lmarenaHFMaxPages = (lmarenaHFMaxModels + lmarenaHFPageSize - 1) / lmarenaHFPageSize
 )
 
 var errInvalidLMArenaResponse = errors.New("invalid LMArena response")
@@ -140,6 +145,11 @@ type lmarenaFetcher struct {
 	endpoint         string
 	maxResponseBytes int64
 	now              func() time.Time
+	// pageTimeout bounds each page's own request+retry attempt independently,
+	// so a slow or retried page cannot eat into the budget the remaining pages
+	// need. It is the same worst-case single-request budget the runner sizes a
+	// non-paginated source's whole Fetch around.
+	pageTimeout time.Duration
 }
 
 type lmarenaHeaderCapturingDoer struct {
@@ -177,12 +187,21 @@ func NewLMArenaFetcher(cfg *config.Config, client RadarHTTPDoer) (RadarFetcher, 
 		endpoint:         strings.TrimSpace(cfg.Radar.LMArenaURL),
 		maxResponseBytes: cfg.Radar.ExternalResponseMaxBytes,
 		now:              time.Now,
+		pageTimeout:      radarRunnerProductionFetchBudget(cfg.Radar),
 	}, nil
 }
 
 func (f *lmarenaFetcher) Source() RadarSourceKey { return RadarSourceLMArena }
 
 func (f *lmarenaFetcher) Interval() time.Duration { return f.interval }
+
+// FetchBudget returns the worst-case wall-clock duration this multi-page
+// fetch can take: every page it could ever request (lmarenaHFMaxPages),
+// each independently bounded by pageTimeout, plus the same validation margin
+// a single-request source's budget carries for post-fetch canonicalization.
+func (f *lmarenaFetcher) FetchBudget() time.Duration {
+	return time.Duration(lmarenaHFMaxPages)*f.pageTimeout + radarRunnerFetchValidationMargin
+}
 
 func (f *lmarenaFetcher) Fetch(ctx context.Context) ([]byte, SourceFetchMeta, error) {
 	if ctx == nil {
@@ -219,7 +238,12 @@ func (f *lmarenaFetcher) Fetch(ctx context.Context) ([]byte, SourceFetchMeta, er
 			return radarFetchFailure(resultMeta, DataSourceErrorCodeInvalidResponse, nil)
 		}
 
-		payload, pageMeta, err := pageFetcher.Fetch(ctx)
+		// Each page gets its own fresh timeout instead of sharing one deadline
+		// across the whole multi-page fetch, so a slow earlier page cannot
+		// starve a later one of the time it needs.
+		pageCtx, cancelPage := context.WithTimeout(ctx, f.pageTimeout)
+		payload, pageMeta, err := pageFetcher.Fetch(pageCtx)
+		cancelPage()
 		resultMeta = pageMeta
 		if err != nil {
 			return nil, pageMeta, err
@@ -445,6 +469,7 @@ func isLMArenaHFJSONContentType(value string) bool {
 }
 
 var _ RadarFetcher = (*lmarenaFetcher)(nil)
+var _ RadarFetcherBudget = (*lmarenaFetcher)(nil)
 
 // DecodeLMArena validates the current meta/models schema and returns a stable
 // rank sort. Duplicate ranks, rank gaps, and model-count drift are usable but
