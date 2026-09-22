@@ -37,6 +37,12 @@ const { useAppStoreMock } = vi.hoisted(() => ({
     siteName: 'Sub2API',
   })),
 }))
+const { useAuthStoreMock } = vi.hoisted(() => ({
+  useAuthStoreMock: vi.fn(() => ({
+    isAuthenticated: false,
+    isAdmin: false,
+  })),
+}))
 
 vi.mock('@/composables/usePublicRadar', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/composables/usePublicRadar')>()
@@ -53,6 +59,7 @@ vi.mock('@/api/channels', () => ({
 vi.mock('@/stores', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/stores')>(),
   useAppStore: useAppStoreMock,
+  useAuthStore: useAuthStoreMock,
 }))
 
 vi.mock('vue-i18n', async (importOriginal) => {
@@ -191,6 +198,7 @@ describe('RadarHomeView', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     vi.clearAllMocks()
+    useAuthStoreMock.mockReturnValue({ isAuthenticated: false, isAdmin: false })
     localStorage.clear()
     Object.defineProperty(document, 'hidden', { configurable: true, value: false })
     localeMock.value = 'en'
@@ -300,6 +308,25 @@ describe('RadarHomeView', () => {
     expect(wrapper.get('[data-testid="radar-footer"]').text()).toBe(
       `© ${new Date().getFullYear()} TikToken. All rights reserved.`,
     )
+  })
+
+  it('shows the signed-out CTA copy and register link when unauthenticated', () => {
+    const wrapper = mountView(makeRadar())
+
+    expect(wrapper.text()).toContain('Ready to get started?')
+    expect(wrapper.text()).not.toContain('Welcome back')
+    const link = wrapper.get('#pricing router-link')
+    expect(link.attributes('to')).toBe('/register')
+  })
+
+  it('shows the signed-in CTA copy and dashboard link when authenticated', () => {
+    useAuthStoreMock.mockReturnValue({ isAuthenticated: true, isAdmin: false })
+    const wrapper = mountView(makeRadar())
+
+    expect(wrapper.text()).toContain('Welcome back')
+    expect(wrapper.text()).not.toContain('Ready to get started?')
+    const link = wrapper.get('#pricing router-link')
+    expect(link.attributes('to')).toBe('/dashboard')
   })
 
   it('renders complete content and successful empty payloads without zero-value flashes', async () => {

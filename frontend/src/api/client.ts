@@ -247,10 +247,12 @@ apiClient.interceptors.response.use(
         localStorage.removeItem('token_expires_at')
         if ((hasToken || sentAuth) && !isAuthEndpoint) {
           sessionStorage.setItem('auth_expired', '1')
-        }
-        // Only redirect if not already on login page
-        if (!window.location.pathname.includes('/login')) {
-          window.location.href = '/login'
+          // Only redirect if not already on login page. A 401 from a request that never
+          // carried auth (e.g. an anonymous public-page fetch gated by a setting) must not
+          // force-navigate the whole SPA to /login — let the caller handle it locally.
+          if (!window.location.pathname.includes('/login')) {
+            window.location.href = '/login'
+          }
         }
       }
 
