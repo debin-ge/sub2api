@@ -32,16 +32,17 @@ var deepSeekOfficialLocation = func() *time.Location {
 	return loc
 }()
 
-// usesDeepSeekOfficialTimePricing 判断 platform/model 是否属于官方峰谷价 SKU。
-// 必须命中官方分时 SKU 名单：deepseek 平台的能力表是 AllowUnknownModels，任意
-// 模型 ID 都能透传，仅凭平台放行会把第三方中转的非官方 SKU 也打五折。
-// platform 为空时按未知处理（旧路径不传平台），只以模型名判定。
+// usesDeepSeekOfficialTimePricing 判断 platform/model 是否叠加官方峰谷倍率。
+// 粒度是平台，不是模型名单：只要账号/覆盖条目显式挂在 deepseek 平台下，该平台
+// 下任意模型（含未来新模型名、自定义 endpoint 别名，如火山方舟 ep-xxx）都视为
+// 官方峰谷价 SKU。platform 为空时是旧调用路径（未传平台），仍退回按模型名单
+// 判定，避免把未知平台下的非官方模型名误判命中。
 func usesDeepSeekOfficialTimePricing(platform, model string) bool {
-	if !isDeepSeekOfficialTimePricedModel(model) {
-		return false
-	}
 	trimmed := strings.TrimSpace(platform)
-	return trimmed == "" || strings.EqualFold(trimmed, PlatformDeepSeek)
+	if trimmed != "" {
+		return strings.EqualFold(trimmed, PlatformDeepSeek)
+	}
+	return isDeepSeekOfficialTimePricedModel(model)
 }
 
 func isDeepSeekOfficialTimePricedModel(model string) bool {

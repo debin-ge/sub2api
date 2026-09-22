@@ -41,9 +41,10 @@ func TestDeepSeekOfficialTimeMultiplierPeakBase(t *testing.T) {
 	require.Equal(t, 1.0, deepSeekOfficialTimeMultiplier("", "claude-sonnet-4", beijingTime(10, 0), false))
 	require.Equal(t, 1.0, deepSeekOfficialTimeMultiplier(PlatformDeepSeek, "deepseek-v4-flash", beijingTime(2, 0), false))
 	require.Equal(t, 0.5, deepSeekOfficialTimeMultiplier("", "deepseek-v4-pro", beijingTime(13, 0), false))
-	// deepseek 平台的能力表是 AllowUnknownModels：只认平台会把第三方中转的
-	// 非官方 SKU 也打五折。必须命中官方分时 SKU 名单。
-	require.Equal(t, 1.0, deepSeekOfficialTimeMultiplier(PlatformDeepSeek, "custom-sku", beijingTime(20, 0), false))
+	// 粒度是平台：显式挂在 deepseek 平台下的任意模型名都适用官方峰谷倍率，
+	// 不再要求命中特定模型名单（20:00 是空闲时段，基准价是高峰价，空闲打五折）。
+	require.Equal(t, 0.5, deepSeekOfficialTimeMultiplier(PlatformDeepSeek, "custom-sku", beijingTime(20, 0), false))
+	// platform 为空是旧调用路径（未传平台），仍退回按模型名单判定。
 	require.Equal(t, 1.0, deepSeekOfficialTimeMultiplier("", "deepseek-chat", beijingTime(13, 0), false))
 	// 官方 SKU 跑在别的平台上（第三方中转）同样不打折。
 	require.Equal(t, 1.0, deepSeekOfficialTimeMultiplier(PlatformOpenAI, "deepseek-v4-pro", beijingTime(13, 0), false))
@@ -54,8 +55,9 @@ func TestDeepSeekOfficialTimeMultiplierOffPeakBase(t *testing.T) {
 	require.Equal(t, 2.0, deepSeekOfficialTimeMultiplier(PlatformDeepSeek, "deepseek-v4-flash", beijingTime(2, 0), true))
 	require.Equal(t, 1.0, deepSeekOfficialTimeMultiplier(PlatformDeepSeek, "deepseek-v4-flash", beijingTime(13, 0), true))
 	require.Equal(t, 2.0, deepSeekOfficialTimeMultiplier("", "deepseek-v4-pro", beijingTime(7, 0), true))
-	// 基准档位不改变 SKU / 平台判定。
-	require.Equal(t, 1.0, deepSeekOfficialTimeMultiplier(PlatformDeepSeek, "custom-sku", beijingTime(10, 0), true))
+	// 基准档位不改变 SKU / 平台判定：deepseek 平台下的任意模型名同样按官方峰谷
+	// 倍率结算，高峰时段基准空闲价需要 ×2。
+	require.Equal(t, 2.0, deepSeekOfficialTimeMultiplier(PlatformDeepSeek, "custom-sku", beijingTime(2, 0), true))
 	require.Equal(t, 1.0, deepSeekOfficialTimeMultiplier(PlatformOpenAI, "deepseek-v4-pro", beijingTime(10, 0), true))
 }
 
@@ -118,6 +120,23 @@ func TestDeepSeekOfficialPriceTimeSchedule(t *testing.T) {
 	require.NotNil(t, peakBase)
 	require.Equal(t, 1.0, peakBase.PeakMultiplier)
 	require.Equal(t, 0.5, peakBase.OffPeakMultiplier)
+}
+
+// 回归用例：生产环境「模型成本目录」页面里，deepseek 平台下改名后的新 SKU
+// （deepseek-v4.1-flash）与自定义 endpoint 别名（火山方舟风格的 ep-xxx）此前
+// 因为不命中窄模型名单而漏掉了官方峰谷价展示/结算，现在按平台放行应全部命中。
+func TestUsesDeepSeekOfficialTimePricing_PlatformGranularityCoversAnyModelName(t *testing.T) {
+	require.True(t, usesDeepSeekOfficialTimePricing(PlatformDeepSeek, "deepseek-v4.1-flash"))
+	require.True(t, usesDeepSeekOfficialTimePricing(PlatformDeepSeek, "ep-20260903090201-xppmk"))
+	require.True(t, usesDeepSeekOfficialTimePricing(PlatformDeepSeek, "ep-20260903090909-9k8ll"))
+
+	schedule := deepSeekOfficialPriceTimeSchedule(PlatformDeepSeek, "ep-20260903090201-xppmk", true)
+	require.NotNil(t, schedule)
+	require.Equal(t, 2.0, schedule.PeakMultiplier)
+	require.Equal(t, 1.0, schedule.OffPeakMultiplier)
+
+	// 第三方中转平台（platform != deepseek）依旧不套用官方峰谷价。
+	require.False(t, usesDeepSeekOfficialTimePricing(PlatformOpenAI, "ep-20260903090201-xppmk"))
 }
 
 func TestCalculateCostUnified_DeepSeekOffPeakIsHalfOfPeak(t *testing.T) {
