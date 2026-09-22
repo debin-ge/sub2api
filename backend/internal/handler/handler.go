@@ -68,7 +68,6 @@ type Handlers struct {
 	// construct Handlers directly. Production routes use CompatibleGateway.
 	OpenAIGateway    *OpenAIGatewayHandler
 	MiniMaxGateway   *MiniMaxGatewayHandler
-	GLMGateway       *GLMGatewayHandler
 	KimiGateway      *KimiGatewayHandler
 	DeepSeekGateway  *DeepSeekGatewayHandler
 	WindsurfGateway  *WindsurfGatewayHandler

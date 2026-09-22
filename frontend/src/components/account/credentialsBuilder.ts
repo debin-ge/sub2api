@@ -44,6 +44,7 @@ export function isHeaderOverrideCapable(platform: string, type: string): boolean
     platform === 'openai' ||
     platform === 'kimi' ||
     platform === 'zhipu' ||
+    platform === 'glm' ||
     platform === 'deepseek' ||
     platform === 'minimax' ||
     platform === 'bytedance' ||

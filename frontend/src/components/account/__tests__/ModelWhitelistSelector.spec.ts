@@ -100,7 +100,7 @@ describe('ModelWhitelistSelector', () => {
     const wrapper = mount(ModelWhitelistSelector, {
       props: {
         modelValue: [],
-        platform: 'opencode',
+        platform: 'opencode_go',
         loadRelatedModels
       },
       global: {

@@ -525,7 +525,7 @@
           }}</label>
           <Select
             v-model="createForm.platform"
-            :options="platformOptions"
+            :options="createPlatformOptions"
             data-tour="group-form-platform"
             @change="createForm.copy_accounts_from_group_ids = []"
           />
@@ -4404,7 +4404,8 @@ import type {
   VideoDisclosurePolicy,
 } from "@/types";
 import {
-  CONCRETE_PLATFORM_OPTIONS,
+  CREATABLE_GROUP_PLATFORM_OPTIONS,
+  CREATABLE_PLATFORM_OPTIONS,
   GROUP_PLATFORM_OPTIONS,
 } from "@/constants/platforms";
 import type { Column } from "@/components/common/types";
@@ -4757,13 +4758,18 @@ const platformOptions = computed(() =>
   ),
 );
 
+// glm 是 zhipu 的历史平台 ID：新建分组禁止选择，但编辑框（已 disabled）仍需完整清单以正确显示历史分组。
+const createPlatformOptions = computed(() =>
+  platformOptions.value.filter((option) => option.value !== "glm"),
+);
+
 const platformFilterOptions = computed(() => [
   { value: "", label: t("admin.groups.allPlatforms") },
-  ...GROUP_PLATFORM_OPTIONS,
+  ...CREATABLE_GROUP_PLATFORM_OPTIONS,
 ]);
 
 const compositeRoutePlatformOptions = computed(() => [
-  ...CONCRETE_PLATFORM_OPTIONS,
+  ...CREATABLE_PLATFORM_OPTIONS,
 ]);
 
 const compositeRouteEndpointOptions = computed(() => [

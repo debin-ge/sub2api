@@ -427,7 +427,6 @@ func TestHandleOpenAICompatibleGroupAccessSelectionErrorWritesStableCode(t *test
 func TestForkGatewaysClassifyEverySelectionFailureExit(t *testing.T) {
 	for filename, expected := range map[string]int{
 		"windsurf_gateway_handler.go": 3,
-		"glm_gateway_handler.go":      3,
 		"deepseek_gateway_handler.go": 3,
 		"kimi_gateway_handler.go":     3,
 		"minimax_gateway_handler.go":  3,

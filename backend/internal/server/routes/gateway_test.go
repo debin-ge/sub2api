@@ -99,7 +99,6 @@ func defaultGatewayRoutesTestHandlers(platform string) *handler.Handlers {
 		OpenAIGateway:   &handler.OpenAIGatewayHandler{},
 		AsyncImage:      handler.NewAsyncImageHandler(nil, nil),
 		MiniMaxGateway:  &handler.MiniMaxGatewayHandler{},
-		GLMGateway:      &handler.GLMGatewayHandler{},
 		KimiGateway:     &handler.KimiGatewayHandler{},
 		DeepSeekGateway: &handler.DeepSeekGatewayHandler{},
 		WindsurfGateway: &handler.WindsurfGatewayHandler{},

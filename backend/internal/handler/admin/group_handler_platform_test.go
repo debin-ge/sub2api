@@ -27,7 +27,7 @@ func bindGroupPlatformJSON(t *testing.T, target any, body string) error {
 func TestGroupPlatformBinding_AllowedPlatforms(t *testing.T) {
 	allowed := []string{
 		"anthropic", "openai", "gemini", "antigravity", "grok",
-		"kimi", "zhipu", "deepseek", "glm", "minimax", "windsurf", "opencode_go", "composite",
+		"kimi", "zhipu", "deepseek", "minimax", "windsurf", "opencode_go", "composite",
 	}
 	for _, platform := range allowed {
 		t.Run("create_"+platform, func(t *testing.T) {
@@ -45,6 +45,18 @@ func TestGroupPlatformBinding_AllowedPlatforms(t *testing.T) {
 			require.Equal(t, platform, req.Platform)
 		})
 	}
+}
+
+// glm 是 zhipu 的历史平台 ID：新建分组禁止使用，但编辑历史分组必须继续可用。
+func TestGroupPlatformBinding_GLMCreateBlockedUpdateAllowed(t *testing.T) {
+	var createReq CreateGroupRequest
+	require.Error(t, bindGroupPlatformJSON(t, &createReq, `{"name":"g","platform":"glm"}`),
+		"platform \"glm\" 应被 CreateGroupRequest 拒绝（新建分组禁止使用历史平台 ID）")
+
+	var updateReq UpdateGroupRequest
+	require.NoError(t, bindGroupPlatformJSON(t, &updateReq, `{"platform":"glm"}`),
+		"platform \"glm\" 应仍能通过 UpdateGroupRequest 校验（保留历史分组编辑能力）")
+	require.Equal(t, "glm", updateReq.Platform)
 }
 
 func TestGroupPlatformBinding_RejectsInvalidPlatforms(t *testing.T) {
@@ -82,4 +94,11 @@ func TestCompositeRouteTargetPlatform_AllowsCNProviders(t *testing.T) {
 func TestCompositeRouteTargetPlatform_RejectsComposite(t *testing.T) {
 	var req CompositeRouteRequest
 	require.Error(t, bindGroupPlatformJSON(t, &req, `{"public_model":"m","target_platform":"composite"}`))
+}
+
+// composite 路由的目标平台白名单不含 glm：DB 的 CHECK 约束已在创建/更新两侧
+// 都排除该历史平台 ID，绑定层需与之保持一致。
+func TestCompositeRouteTargetPlatform_RejectsGLM(t *testing.T) {
+	var req CompositeRouteRequest
+	require.Error(t, bindGroupPlatformJSON(t, &req, `{"public_model":"m","target_platform":"glm"}`))
 }

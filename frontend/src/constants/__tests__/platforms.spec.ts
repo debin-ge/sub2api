@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { CONCRETE_PLATFORM_OPTIONS, GROUP_PLATFORM_OPTIONS } from '@/constants/platforms'
+import {
+  CONCRETE_PLATFORM_OPTIONS,
+  CREATABLE_GROUP_PLATFORM_OPTIONS,
+  CREATABLE_PLATFORM_OPTIONS,
+  GROUP_PLATFORM_OPTIONS
+} from '@/constants/platforms'
 
 const concretePlatforms = [
   'anthropic',
@@ -27,5 +32,20 @@ describe('platform option catalogs', () => {
       ...concretePlatforms,
       'composite'
     ])
+  })
+
+  it('excludes the legacy glm alias from creatable/filterable pickers', () => {
+    expect(CREATABLE_PLATFORM_OPTIONS.map((option) => option.value)).toEqual(
+      concretePlatforms.filter((value) => value !== 'glm')
+    )
+    expect(CREATABLE_PLATFORM_OPTIONS.map((option) => option.value)).not.toContain('glm')
+  })
+
+  it('adds composite to the creatable/filterable catalog too', () => {
+    expect(CREATABLE_GROUP_PLATFORM_OPTIONS.map((option) => option.value)).toEqual([
+      ...concretePlatforms.filter((value) => value !== 'glm'),
+      'composite'
+    ])
+    expect(CREATABLE_GROUP_PLATFORM_OPTIONS.map((option) => option.value)).not.toContain('glm')
   })
 })

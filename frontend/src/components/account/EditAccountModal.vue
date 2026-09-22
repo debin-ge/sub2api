@@ -105,45 +105,6 @@
             </div>
           </div>
         </template>
-        <template v-else-if="account.platform === 'glm'">
-          <div>
-            <label class="input-label">GLM API Key</label>
-            <input
-              v-model="editApiKey"
-              data-testid="glm-api-key"
-              type="password"
-              class="input font-mono"
-              autocomplete="new-password"
-              data-1p-ignore
-              data-lpignore="true"
-              data-bwignore="true"
-              placeholder="sk-..."
-            />
-            <p class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
-          </div>
-          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label class="input-label">Anthropic base URL</label>
-              <input
-                v-model="editGLMAnthropicBaseUrl"
-                data-testid="glm-anthropic-base-url"
-                type="text"
-                class="input font-mono"
-                :placeholder="GLM_ANTHROPIC_BASE_URL"
-              />
-            </div>
-            <div>
-              <label class="input-label">OpenAI base URL</label>
-              <input
-                v-model="editGLMOpenAIBaseUrl"
-                data-testid="glm-openai-base-url"
-                type="text"
-                class="input font-mono"
-                :placeholder="GLM_OPENAI_BASE_URL"
-              />
-            </div>
-          </div>
-        </template>
         <template v-else-if="account.platform === 'windsurf'">
           <div>
             <label class="input-label">Windsurf API Key</label>
@@ -352,8 +313,10 @@
           v-model:rows="editOpenCodeGoProtocolRules"
           :plan="editOpenCodeAccountMode"
         />
-        <!-- Zhipu 团队版 Coding Plan：组织/项目 ID（可选，填写后用量查询走团队版端点） -->
-        <div v-if="account.platform === 'zhipu' && editAccountMode === 'coding'">
+        <!-- Zhipu 团队版 Coding Plan：组织/项目 ID（可选，填写后用量查询走团队版端点）。
+             glm 是 zhipu 的历史平台 ID，后端 GetCodingPlanProvider() 已按 CanonicalCNPlatform
+             统一识别，故此处与提交侧（见 handleSubmit）一并放开给 glm。 -->
+        <div v-if="(account.platform === 'zhipu' || account.platform === 'glm') && editAccountMode === 'coding'">
           <div class="flex items-center">
             <label class="input-label">{{ t('admin.accounts.cnProviders.zhipuTeam.title') }}</label>
             <HelpTooltip trigger="click" width-class="w-80">
@@ -3455,8 +3418,6 @@ import { getAccountExpiryTimestamp } from '@/components/account/accountExpiry'
 import {
   MINIMAX_ANTHROPIC_BASE_URL,
   MINIMAX_OPENAI_BASE_URL,
-  GLM_ANTHROPIC_BASE_URL,
-  GLM_OPENAI_BASE_URL,
   WINDSURF_BASE_URL,
   OPENCODE_BASE_URL,
   PROVIDER_PASSTHROUGH_PLATFORMS,
@@ -3569,8 +3530,6 @@ const editApiKey = ref('')
 const internalRelayEnabled = ref(false)
 const editMiniMaxAnthropicBaseUrl = ref(MINIMAX_ANTHROPIC_BASE_URL)
 const editMiniMaxOpenAIBaseUrl = ref(MINIMAX_OPENAI_BASE_URL)
-const editGLMAnthropicBaseUrl = ref(GLM_ANTHROPIC_BASE_URL)
-const editGLMOpenAIBaseUrl = ref(GLM_OPENAI_BASE_URL)
 const editWindsurfBaseUrl = ref(WINDSURF_BASE_URL)
 
 // ByteDance 上游线格式；缺省 native，与后端 byteDanceProtocolMode 的回落一致。
@@ -3589,11 +3548,9 @@ const editSyncCredentials = computed(() => {
     case 'minimax':
       baseUrl = editMiniMaxOpenAIBaseUrl.value
       break
-    case 'glm':
-      baseUrl = editGLMOpenAIBaseUrl.value
-      break
     case 'kimi':
     case 'zhipu':
+    case 'glm':
     case 'deepseek':
     case 'anthropic':
     case 'openai':
@@ -4368,15 +4325,16 @@ const defaultBaseUrl = computed(() => {
   if (props.account?.platform === 'openai') return 'https://api.openai.com'
   if (props.account?.platform === 'gemini') return 'https://generativelanguage.googleapis.com'
   if (props.account?.platform === 'minimax') return MINIMAX_ANTHROPIC_BASE_URL
-  if (props.account?.platform === 'glm') return GLM_ANTHROPIC_BASE_URL
   if (props.account?.platform === 'windsurf') return WINDSURF_BASE_URL
   if (props.account?.platform === 'grok') return 'https://api.x.ai/v1'
   if (props.account?.platform === 'bytedance') return ''
   // CN 供应商：按当前模式/协议回落到官方预设（清空输入框提交时使用），
   // 不能落到 anthropic 默认值（会被当 CC base 拼出错误端点）。
+  // glm 是 zhipu 的历史平台 ID，defaultCNBaseUrl 已有对应 case，直接并入。
   if (
     props.account?.platform === 'kimi' ||
     props.account?.platform === 'zhipu' ||
+    props.account?.platform === 'glm' ||
     props.account?.platform === 'deepseek' ||
     props.account?.platform === 'opencode_go'
   ) {
@@ -4511,8 +4469,6 @@ const syncFormFromAccount = (newAccount: Account | null) => {
       : ''
   editMiniMaxAnthropicBaseUrl.value = MINIMAX_ANTHROPIC_BASE_URL
   editMiniMaxOpenAIBaseUrl.value = MINIMAX_OPENAI_BASE_URL
-  editGLMAnthropicBaseUrl.value = GLM_ANTHROPIC_BASE_URL
-  editGLMOpenAIBaseUrl.value = GLM_OPENAI_BASE_URL
   editWindsurfBaseUrl.value = WINDSURF_BASE_URL
 
   // Load mixed scheduling setting (only for antigravity accounts)
@@ -4780,14 +4736,16 @@ const syncFormFromAccount = (newAccount: Account | null) => {
       const adaptiveDefaults = defaultCNAdaptiveBaseUrls(adaptivePresetPlatform.value, currentOpenCodeOrCNMode())
       const storedBaseUrls = (credentials.api_base_urls as Record<string, unknown> | undefined) || {}
       const legacyBaseUrl = typeof credentials.base_url === 'string' ? credentials.base_url.trim() : ''
+      // glm 是历史平台 ID：旧版专属表单只写过 base_url_anthropic/openai 这组拆分键，
+      // 与 minimax 走同一路回填，编辑框才能正确显示遗留账号的自定义地址。
       const storedChatBaseUrl = typeof storedBaseUrls.chat_completions === 'string'
         ? storedBaseUrls.chat_completions.trim()
-        : newAccount.platform === 'minimax' && typeof credentials.base_url_openai === 'string'
+        : (newAccount.platform === 'minimax' || newAccount.platform === 'glm') && typeof credentials.base_url_openai === 'string'
           ? credentials.base_url_openai.trim()
           : ''
       const storedAnthropicBaseUrl = typeof storedBaseUrls.anthropic === 'string'
         ? storedBaseUrls.anthropic.trim()
-        : newAccount.platform === 'minimax' && typeof credentials.base_url_anthropic === 'string'
+        : (newAccount.platform === 'minimax' || newAccount.platform === 'glm') && typeof credentials.base_url_anthropic === 'string'
           ? credentials.base_url_anthropic.trim()
           : ''
       const storedResponsesBaseUrl = typeof storedBaseUrls.responses === 'string'
@@ -4812,8 +4770,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
         nextAdaptiveBaseUrls[legacyProtocol] = legacyBaseUrl
       }
       editAdaptiveBaseUrls.value = nextAdaptiveBaseUrls
-      // 智谱团队版 Coding Plan：回填组织/项目 ID
-      if (newAccount.platform === 'zhipu') {
+      // 智谱团队版 Coding Plan：回填组织/项目 ID（glm 是 zhipu 的历史平台 ID，一并回填）
+      if (newAccount.platform === 'zhipu' || newAccount.platform === 'glm') {
         editZhipuOrganization.value = typeof credentials.zhipu_organization === 'string' ? credentials.zhipu_organization : ''
         editZhipuProject.value = typeof credentials.zhipu_project === 'string' ? credentials.zhipu_project : ''
       }
@@ -4834,16 +4792,15 @@ const syncFormFromAccount = (newAccount: Account | null) => {
             ? 'https://api.x.ai/v1'
             : newAccount.platform === 'kimi' ||
                 newAccount.platform === 'zhipu' ||
+                newAccount.platform === 'glm' ||
                 newAccount.platform === 'deepseek' ||
                 newAccount.platform === 'opencode_go'
               ? defaultCNBaseUrl(newAccount.platform, currentOpenCodeOrCNMode(), editApiProtocol.value)
               : newAccount.platform === 'minimax'
                 ? MINIMAX_ANTHROPIC_BASE_URL
-                : newAccount.platform === 'glm'
-                  ? GLM_ANTHROPIC_BASE_URL
-                  : newAccount.platform === 'windsurf'
-                    ? WINDSURF_BASE_URL
-                    : 'https://api.anthropic.com'
+                : newAccount.platform === 'windsurf'
+                  ? WINDSURF_BASE_URL
+                  : 'https://api.anthropic.com'
     editBaseUrl.value = (credentials.base_url as string) || platformDefaultUrl
     if (newAccount.platform === 'minimax') {
       editMiniMaxAnthropicBaseUrl.value =
@@ -4856,10 +4813,13 @@ const syncFormFromAccount = (newAccount: Account | null) => {
           : editMiniMaxOpenAIBaseUrl.value
       )
     } else if (newAccount.platform === 'glm') {
-      editGLMAnthropicBaseUrl.value =
-        (credentials.base_url_anthropic as string) || GLM_ANTHROPIC_BASE_URL
-      editGLMOpenAIBaseUrl.value =
-        (credentials.base_url_openai as string) || GLM_OPENAI_BASE_URL
+      // glm 遗留账号可能只写过 base_url_anthropic/openai（旧专属表单），
+      // 通用表单读取顺序与 minimax 一致：按当前协议回退到对应拆分键。
+      editBaseUrl.value = (credentials.base_url as string) || (
+        editApiProtocol.value === 'anthropic'
+          ? (credentials.base_url_anthropic as string) || platformDefaultUrl
+          : (credentials.base_url_openai as string) || platformDefaultUrl
+      )
     } else if (newAccount.platform === 'windsurf') {
       editWindsurfBaseUrl.value = (credentials.base_url as string) || WINDSURF_BASE_URL
     } else if (newAccount.platform === 'bytedance') {
@@ -4938,11 +4898,10 @@ const syncFormFromAccount = (newAccount: Account | null) => {
           ? 'https://generativelanguage.googleapis.com'
           : newAccount.platform === 'minimax'
             ? MINIMAX_ANTHROPIC_BASE_URL
-            : newAccount.platform === 'glm'
-              ? GLM_ANTHROPIC_BASE_URL
-              : newAccount.platform === 'kimi' ||
-                  newAccount.platform === 'zhipu' ||
-                  newAccount.platform === 'deepseek'
+            : newAccount.platform === 'kimi' ||
+                newAccount.platform === 'zhipu' ||
+                newAccount.platform === 'glm' ||
+                newAccount.platform === 'deepseek'
                 ? defaultCNBaseUrl(newAccount.platform, editAccountMode.value, editApiProtocol.value)
                 : newAccount.platform === 'windsurf'
                     ? WINDSURF_BASE_URL
@@ -5638,21 +5597,6 @@ const handleSubmit = async () => {
         newCredentials.base_url_openai =
           editMiniMaxOpenAIBaseUrl.value.trim() || MINIMAX_OPENAI_BASE_URL
         delete newCredentials.base_url
-      } else if (props.account.platform === 'glm') {
-        delete newCredentials.auth_scheme
-        delete newCredentials.base_url
-        newCredentials.base_url_anthropic =
-          editGLMAnthropicBaseUrl.value.trim() || GLM_ANTHROPIC_BASE_URL
-        newCredentials.base_url_openai =
-          editGLMOpenAIBaseUrl.value.trim() || GLM_OPENAI_BASE_URL
-        delete newCredentials.compact_model_mapping
-        delete newCredentials.pool_mode
-        delete newCredentials.pool_mode_retry_count
-        delete newCredentials.custom_error_codes_enabled
-        delete newCredentials.custom_error_codes
-        delete newCredentials.intercept_warmup_requests
-        delete newCredentials.temp_unschedulable_enabled
-        delete newCredentials.temp_unschedulable_rules
       } else if (props.account.platform === 'windsurf') {
         delete newCredentials.auth_scheme
         delete newCredentials.base_url_anthropic
@@ -5681,6 +5625,11 @@ const handleSubmit = async () => {
         delete newCredentials.temp_unschedulable_rules
       } else {
         newCredentials.base_url = editBaseUrl.value.trim() || defaultBaseUrl.value
+        // glm 遗留账号可能残留旧专属表单写入的 base_url_anthropic/base_url_openai；
+        // 后端 resolveCNProviderBaseURL 优先读这组拆分键，不清理会导致刚保存的
+        // base_url 被旧值影子覆盖（其余落到这个分支的平台从未写过这两个键，删除是空操作）。
+        delete newCredentials.base_url_anthropic
+        delete newCredentials.base_url_openai
       }
 
       // ByteDance 线格式；转发模式没有官方地址，缺 base_url 的账号后端判不可调度，
@@ -5722,8 +5671,9 @@ const handleSubmit = async () => {
         if (props.account.platform === 'opencode_go') {
           applyOpenCodeGoProtocolRules(newCredentials, editOpenCodeGoProtocolRules.value, 'edit')
         }
-        // 智谱团队版 Coding Plan：组织/项目 ID 写入凭据（非空才写，清空即移除回落个人版路径）
-        if (props.account.platform === 'zhipu') {
+        // 智谱团队版 Coding Plan：组织/项目 ID 写入凭据（非空才写，清空即移除回落个人版路径）。
+        // glm 是 zhipu 的历史平台 ID，后端按 CanonicalCNPlatform 统一识别，一并放开。
+        if (props.account.platform === 'zhipu' || props.account.platform === 'glm') {
           const org = editZhipuOrganization.value.trim()
           const project = editZhipuProject.value.trim()
           if (org) {

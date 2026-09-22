@@ -175,20 +175,6 @@
             <Icon name="key" size="sm" />
             Windsurf
           </button>
-          <button
-            type="button"
-            data-testid="create-platform-opencode"
-            @click="form.platform = 'opencode_go'"
-            :class="[
-              'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium transition-all',
-              form.platform === 'opencode_go'
-                ? 'bg-white text-slate-700 shadow-sm dark:bg-dark-600 dark:text-slate-300'
-                : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
-            ]"
-          >
-            <Icon name="key" size="sm" />
-            OpenCode
-          </button>
         </div>
         <!-- Multi-protocol API-key providers: Kimi / Zhipu GLM / DeepSeek / OpenCode -->
         <div class="mt-2 flex flex-wrap rounded-lg bg-gray-100 p-1 dark:bg-dark-700">
@@ -250,6 +236,7 @@
           </button>
           <button
             type="button"
+            data-testid="create-platform-opencode"
             @click="selectOpenCodeGoPlatform()"
             :class="[
               'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium transition-all',
@@ -1436,42 +1423,6 @@
                 type="text"
                 class="input font-mono"
                 :placeholder="MINIMAX_OPENAI_BASE_URL"
-              />
-            </div>
-          </div>
-        </template>
-        <template v-else-if="form.platform === 'glm'">
-          <div>
-            <label class="input-label">GLM API Key</label>
-            <input
-              v-model="apiKeyValue"
-              data-testid="glm-api-key"
-              type="password"
-              required
-              class="input font-mono"
-              placeholder="sk-..."
-            />
-            <p class="input-hint">{{ apiKeyHint }}</p>
-          </div>
-          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label class="input-label">Anthropic base URL</label>
-              <input
-                v-model="glmAnthropicBaseUrl"
-                data-testid="glm-anthropic-base-url"
-                type="text"
-                class="input font-mono"
-                :placeholder="GLM_ANTHROPIC_BASE_URL"
-              />
-            </div>
-            <div>
-              <label class="input-label">OpenAI base URL</label>
-              <input
-                v-model="glmOpenAIBaseUrl"
-                data-testid="glm-openai-base-url"
-                type="text"
-                class="input font-mono"
-                :placeholder="GLM_OPENAI_BASE_URL"
               />
             </div>
           </div>
@@ -4288,8 +4239,6 @@ import { getAccountExpiryTimestamp } from '@/components/account/accountExpiry'
 import {
   MINIMAX_ANTHROPIC_BASE_URL,
   MINIMAX_OPENAI_BASE_URL,
-  GLM_ANTHROPIC_BASE_URL,
-  GLM_OPENAI_BASE_URL,
   WINDSURF_BASE_URL,
   PROVIDER_PASSTHROUGH_PLATFORMS,
   FIXED_ENDPOINT_GATEWAY_PLATFORMS,
@@ -4352,7 +4301,6 @@ const baseUrlHint = computed(() => {
 const apiKeyHint = computed(() => {
   if (form.platform === 'openai') return t('admin.accounts.openai.apiKeyHint')
   if (form.platform === 'gemini') return t('admin.accounts.gemini.apiKeyHint')
-  if (form.platform === 'glm') return t('admin.accounts.glm.apiKeyHint')
   if (form.platform === 'kimi') return t('admin.accounts.kimi.apiKeyHint')
   if (form.platform === 'zhipu') return t('admin.accounts.apiKeyHint')
   if (form.platform === 'deepseek') return t('admin.accounts.deepseek.apiKeyHint')
@@ -4495,8 +4443,6 @@ const apiKeyValue = ref('')
 const internalRelayEnabled = ref(false)
 const minimaxAnthropicBaseUrl = ref(MINIMAX_ANTHROPIC_BASE_URL)
 const minimaxOpenAIBaseUrl = ref(MINIMAX_OPENAI_BASE_URL)
-const glmAnthropicBaseUrl = ref(GLM_ANTHROPIC_BASE_URL)
-const glmOpenAIBaseUrl = ref(GLM_OPENAI_BASE_URL)
 const windsurfBaseUrl = ref(WINDSURF_BASE_URL)
 const upstreamBillingAutoProbeEnabled = ref(true)
 
@@ -4689,9 +4635,6 @@ const syncPreviewCredentials = computed(() => {
   switch (form.platform) {
     case 'minimax':
       baseUrl = minimaxOpenAIBaseUrl.value
-      break
-    case 'glm':
-      baseUrl = glmOpenAIBaseUrl.value
       break
     case 'kimi':
     case 'zhipu':
@@ -5223,10 +5166,6 @@ watch(
       form.type = 'apikey'
       return
     }
-    if (form.platform === 'glm') {
-      form.type = 'apikey'
-      return
-    }
     if (form.platform === 'kimi' || form.platform === 'zhipu' || form.platform === 'deepseek') {
       form.type = 'apikey'
       return
@@ -5285,13 +5224,11 @@ watch(
             ? 'https://generativelanguage.googleapis.com'
             : newPlatform === 'grok'
               ? 'https://api.x.ai/v1'
-              : newPlatform === 'glm'
-                  ? GLM_ANTHROPIC_BASE_URL
-                  : newPlatform === 'windsurf'
-                    ? WINDSURF_BASE_URL
-                    : newPlatform === 'bytedance'
-                      ? ''
-                      : 'https://api.anthropic.com'
+              : newPlatform === 'windsurf'
+                ? WINDSURF_BASE_URL
+                : newPlatform === 'bytedance'
+                  ? ''
+                  : 'https://api.anthropic.com'
     }
     const minimaxDefaults = defaultCNAdaptiveBaseUrls('minimax', accountMode.value)
     minimaxAnthropicBaseUrl.value = newPlatform === 'minimax'
@@ -5300,8 +5237,6 @@ watch(
     minimaxOpenAIBaseUrl.value = newPlatform === 'minimax'
       ? minimaxDefaults.chat_completions
       : MINIMAX_OPENAI_BASE_URL
-    glmAnthropicBaseUrl.value = GLM_ANTHROPIC_BASE_URL
-    glmOpenAIBaseUrl.value = GLM_OPENAI_BASE_URL
     windsurfBaseUrl.value = WINDSURF_BASE_URL
     // Clear model-related settings
     allowedModels.value = []
@@ -5323,9 +5258,6 @@ watch(
       antigravityModelRestrictionMode.value = 'mapping'
     }
     if (newPlatform === 'minimax') {
-      accountCategory.value = 'apikey'
-    }
-    if (newPlatform === 'glm') {
       accountCategory.value = 'apikey'
     }
     if (newPlatform === 'kimi') {
@@ -5460,7 +5392,7 @@ watch(
   [modelRestrictionMode, () => form.platform],
   ([newMode]) => {
     if (newMode === 'whitelist') {
-      if (form.platform === 'minimax' || form.platform === 'glm') {
+      if (form.platform === 'minimax') {
         allowedModels.value = []
         return
       }
@@ -5817,8 +5749,6 @@ const resetForm = () => {
   internalRelayEnabled.value = false
   minimaxAnthropicBaseUrl.value = MINIMAX_ANTHROPIC_BASE_URL
   minimaxOpenAIBaseUrl.value = MINIMAX_OPENAI_BASE_URL
-  glmAnthropicBaseUrl.value = GLM_ANTHROPIC_BASE_URL
-  glmOpenAIBaseUrl.value = GLM_OPENAI_BASE_URL
   windsurfBaseUrl.value = WINDSURF_BASE_URL
   upstreamRequestIdHeader.value = ''
   upstreamBillingAutoProbeEnabled.value = true
@@ -6362,17 +6292,11 @@ const handleSubmit = async () => {
         base_url_anthropic: minimaxAnthropicBaseUrl.value.trim() || MINIMAX_ANTHROPIC_BASE_URL,
         base_url_openai: minimaxOpenAIBaseUrl.value.trim() || MINIMAX_OPENAI_BASE_URL
       }
-    : form.platform === 'glm'
+    : form.platform === 'windsurf'
       ? {
           api_key: apiKeyValue.value.trim(),
-          base_url_anthropic: glmAnthropicBaseUrl.value.trim() || GLM_ANTHROPIC_BASE_URL,
-          base_url_openai: glmOpenAIBaseUrl.value.trim() || GLM_OPENAI_BASE_URL
+          base_url: windsurfBaseUrl.value.trim() || WINDSURF_BASE_URL
         }
-        : form.platform === 'windsurf'
-          ? {
-              api_key: apiKeyValue.value.trim(),
-              base_url: windsurfBaseUrl.value.trim() || WINDSURF_BASE_URL
-            }
     : {
         base_url: apiKeyBaseUrl.value.trim() || defaultBaseUrl,
         api_key: apiKeyValue.value.trim()

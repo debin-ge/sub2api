@@ -101,7 +101,9 @@ describe('channel monitor Grok provider', () => {
 
     expect(PROVIDERS).toContain(PROVIDER_GROK)
     const providerButtons = wrapper.findAll('[data-testid^="monitor-provider-"]')
-    expect(providerButtons).toHaveLength(PROVIDERS.length)
+    // glm is a legacy platform ID excluded from new-monitor creation (this dialog is
+    // mounted with monitor: null, i.e. create mode), so the grid has one fewer button.
+    expect(providerButtons).toHaveLength(PROVIDERS.length - 1)
     expect(providerButtons[0].element.parentElement?.className).toContain('grid-cols-2')
     expect(providerButtons[0].element.parentElement?.className).toContain('sm:grid-cols-4')
 

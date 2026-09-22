@@ -1487,6 +1487,9 @@ func (h *AccountHandler) Update(c *gin.Context) {
 }
 
 func validateCreateAccountRequest(req CreateAccountRequest) error {
+	if req.Platform == service.PlatformGLM {
+		return fmt.Errorf("platform glm is deprecated, use zhipu instead")
+	}
 	if !requiresAPIKeyAccount(req.Platform) {
 		return nil
 	}
