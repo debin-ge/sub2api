@@ -76,6 +76,20 @@ func (_c *ModelPriceOverrideCreate) SetNillableCurrency(v *modelpriceoverride.Cu
 	return _c
 }
 
+// SetBillingMode sets the "billing_mode" field.
+func (_c *ModelPriceOverrideCreate) SetBillingMode(v modelpriceoverride.BillingMode) *ModelPriceOverrideCreate {
+	_c.mutation.SetBillingMode(v)
+	return _c
+}
+
+// SetNillableBillingMode sets the "billing_mode" field if the given value is not nil.
+func (_c *ModelPriceOverrideCreate) SetNillableBillingMode(v *modelpriceoverride.BillingMode) *ModelPriceOverrideCreate {
+	if v != nil {
+		_c.SetBillingMode(*v)
+	}
+	return _c
+}
+
 // SetPayload sets the "payload" field.
 func (_c *ModelPriceOverrideCreate) SetPayload(v map[string]interface{}) *ModelPriceOverrideCreate {
 	_c.mutation.SetPayload(v)
@@ -171,6 +185,10 @@ func (_c *ModelPriceOverrideCreate) defaults() {
 		v := modelpriceoverride.DefaultCurrency
 		_c.mutation.SetCurrency(v)
 	}
+	if _, ok := _c.mutation.BillingMode(); !ok {
+		v := modelpriceoverride.DefaultBillingMode
+		_c.mutation.SetBillingMode(v)
+	}
 	if _, ok := _c.mutation.Enabled(); !ok {
 		v := modelpriceoverride.DefaultEnabled
 		_c.mutation.SetEnabled(v)
@@ -207,6 +225,14 @@ func (_c *ModelPriceOverrideCreate) check() error {
 	if v, ok := _c.mutation.Currency(); ok {
 		if err := modelpriceoverride.CurrencyValidator(v); err != nil {
 			return &ValidationError{Name: "currency", err: fmt.Errorf(`ent: validator failed for field "ModelPriceOverride.currency": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.BillingMode(); !ok {
+		return &ValidationError{Name: "billing_mode", err: errors.New(`ent: missing required field "ModelPriceOverride.billing_mode"`)}
+	}
+	if v, ok := _c.mutation.BillingMode(); ok {
+		if err := modelpriceoverride.BillingModeValidator(v); err != nil {
+			return &ValidationError{Name: "billing_mode", err: fmt.Errorf(`ent: validator failed for field "ModelPriceOverride.billing_mode": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.Enabled(); !ok {
@@ -258,6 +284,10 @@ func (_c *ModelPriceOverrideCreate) createSpec() (*ModelPriceOverride, *sqlgraph
 	if value, ok := _c.mutation.Currency(); ok {
 		_spec.SetField(modelpriceoverride.FieldCurrency, field.TypeEnum, value)
 		_node.Currency = value
+	}
+	if value, ok := _c.mutation.BillingMode(); ok {
+		_spec.SetField(modelpriceoverride.FieldBillingMode, field.TypeEnum, value)
+		_node.BillingMode = value
 	}
 	if value, ok := _c.mutation.Payload(); ok {
 		_spec.SetField(modelpriceoverride.FieldPayload, field.TypeJSON, value)
@@ -372,6 +402,18 @@ func (u *ModelPriceOverrideUpsert) SetCurrency(v modelpriceoverride.Currency) *M
 // UpdateCurrency sets the "currency" field to the value that was provided on create.
 func (u *ModelPriceOverrideUpsert) UpdateCurrency() *ModelPriceOverrideUpsert {
 	u.SetExcluded(modelpriceoverride.FieldCurrency)
+	return u
+}
+
+// SetBillingMode sets the "billing_mode" field.
+func (u *ModelPriceOverrideUpsert) SetBillingMode(v modelpriceoverride.BillingMode) *ModelPriceOverrideUpsert {
+	u.Set(modelpriceoverride.FieldBillingMode, v)
+	return u
+}
+
+// UpdateBillingMode sets the "billing_mode" field to the value that was provided on create.
+func (u *ModelPriceOverrideUpsert) UpdateBillingMode() *ModelPriceOverrideUpsert {
+	u.SetExcluded(modelpriceoverride.FieldBillingMode)
 	return u
 }
 
@@ -545,6 +587,20 @@ func (u *ModelPriceOverrideUpsertOne) SetCurrency(v modelpriceoverride.Currency)
 func (u *ModelPriceOverrideUpsertOne) UpdateCurrency() *ModelPriceOverrideUpsertOne {
 	return u.Update(func(s *ModelPriceOverrideUpsert) {
 		s.UpdateCurrency()
+	})
+}
+
+// SetBillingMode sets the "billing_mode" field.
+func (u *ModelPriceOverrideUpsertOne) SetBillingMode(v modelpriceoverride.BillingMode) *ModelPriceOverrideUpsertOne {
+	return u.Update(func(s *ModelPriceOverrideUpsert) {
+		s.SetBillingMode(v)
+	})
+}
+
+// UpdateBillingMode sets the "billing_mode" field to the value that was provided on create.
+func (u *ModelPriceOverrideUpsertOne) UpdateBillingMode() *ModelPriceOverrideUpsertOne {
+	return u.Update(func(s *ModelPriceOverrideUpsert) {
+		s.UpdateBillingMode()
 	})
 }
 
@@ -896,6 +952,20 @@ func (u *ModelPriceOverrideUpsertBulk) SetCurrency(v modelpriceoverride.Currency
 func (u *ModelPriceOverrideUpsertBulk) UpdateCurrency() *ModelPriceOverrideUpsertBulk {
 	return u.Update(func(s *ModelPriceOverrideUpsert) {
 		s.UpdateCurrency()
+	})
+}
+
+// SetBillingMode sets the "billing_mode" field.
+func (u *ModelPriceOverrideUpsertBulk) SetBillingMode(v modelpriceoverride.BillingMode) *ModelPriceOverrideUpsertBulk {
+	return u.Update(func(s *ModelPriceOverrideUpsert) {
+		s.SetBillingMode(v)
+	})
+}
+
+// UpdateBillingMode sets the "billing_mode" field to the value that was provided on create.
+func (u *ModelPriceOverrideUpsertBulk) UpdateBillingMode() *ModelPriceOverrideUpsertBulk {
+	return u.Update(func(s *ModelPriceOverrideUpsert) {
+		s.UpdateBillingMode()
 	})
 }
 

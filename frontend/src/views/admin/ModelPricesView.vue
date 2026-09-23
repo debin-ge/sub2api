@@ -56,7 +56,9 @@
               <span class="font-medium text-gray-900 dark:text-white">{{ row.model }}</span>
               <div class="flex flex-wrap gap-1">
                 <span v-if="row.token_pricing_absent && !row.has_image_pricing && !row.has_video_pricing" class="badge-warn">{{ t('admin.modelPrices.missing') }}</span>
-                <span v-if="row.has_image_pricing && row.token_pricing_absent && !row.has_video_pricing" class="badge-info">{{ t('admin.modelPrices.imageOnly') }}</span>
+                <span v-if="row.billing_mode === 'image'" class="badge-info">{{ t('admin.modelPrices.billingMode.label') }}: {{ t('admin.modelPrices.tabs.image') }}</span>
+                <span v-else-if="row.billing_mode === 'video'" class="badge-video">{{ t('admin.modelPrices.billingMode.label') }}: {{ t('admin.modelPrices.tabs.video') }}</span>
+                <span v-else-if="row.has_image_pricing && row.token_pricing_absent && !row.has_video_pricing" class="badge-info">{{ t('admin.modelPrices.imageOnly') }}</span>
                 <span v-if="row.has_video_pricing" class="badge-video">{{ t('admin.modelPrices.video.badge', { count: row.video_rule_count || 0 }) }}</span>
                 <span v-if="row.video_pricing_error" class="badge-danger">{{ t('admin.modelPrices.video.invalid') }}</span>
                 <span v-if="row.sync_invalidated" class="badge-danger">{{ t('admin.modelPrices.syncInvalidated') }}</span>
@@ -151,12 +153,22 @@
           <input v-model="form.enabled" type="checkbox" class="rounded border-gray-300" />
           {{ t('admin.modelPrices.enabled') }}
         </label>
-        <div class="flex border-b border-gray-200 dark:border-dark-600" role="tablist">
-          <button v-for="tab in editorTabs" :key="tab.value" type="button" class="editor-tab" :class="editorTab === tab.value ? 'editor-tab-active' : ''" @click="editorTab = tab.value">
-            {{ tab.label }}
-          </button>
+        <div>
+          <span class="mb-1 block text-sm text-gray-600 dark:text-gray-300">{{ t('admin.modelPrices.billingMode.label') }}</span>
+          <div class="flex border-b border-gray-200 dark:border-dark-600" role="tablist">
+            <button v-for="tab in editorTabs" :key="tab.value" type="button" class="editor-tab" :class="billingMode === tab.value ? 'editor-tab-active' : ''" @click="billingMode = tab.value">
+              {{ tab.label }}
+            </button>
+          </div>
+          <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">{{ t(`admin.modelPrices.billingMode.hint.${billingMode}`) }}</p>
+          <p
+            v-if="discardedFieldCount > 0"
+            class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200"
+          >
+            {{ t('admin.modelPrices.billingMode.discardNotice', { count: discardedFieldCount }) }}
+          </p>
         </div>
-        <div v-if="editorTab !== 'video'" class="space-y-3">
+        <div v-if="billingMode !== 'video'" class="space-y-3">
           <div v-for="field in activePriceFields" :key="field" class="grid items-end gap-2 sm:grid-cols-[1fr,1fr,1fr,auto]">
             <div class="text-xs text-gray-500 dark:text-gray-400">
               <div class="font-medium text-gray-800 dark:text-gray-200">{{ fieldLabel(field) }}</div>
@@ -238,6 +250,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import VideoPricingEditor from '@/components/admin/model-price/VideoPricingEditor.vue'
 import { prepareVideoPricingForSave } from '@/components/admin/model-price/videoPricingForm'
 import {
+  FIELDS_BY_BILLING_MODE,
   PRICE_FIELDS,
   deleteModelPrice,
   getModelPriceEntry,
@@ -249,6 +262,7 @@ import {
   syncModelPrices,
   tokenToMTok,
   upsertModelPrice,
+  type ModelPriceBillingMode,
   type ModelPriceDetail,
   type ModelPriceCurrency,
   type ModelPriceListItem,
@@ -274,7 +288,8 @@ const showMagnitude = ref(false)
 const creating = ref(false)
 const detail = ref<ModelPriceDetail | null>(null)
 const pendingDelete = ref<ModelPriceListItem | null>(null)
-const editorTab = ref<'token' | 'image' | 'video'>('token')
+// 计费方式是权威字段：只提交当前方式的价格，其余方式的继承价由后端屏蔽。
+const billingMode = ref<ModelPriceBillingMode>('token')
 const videoPricingErrors = ref<string[]>([])
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -290,9 +305,13 @@ const form = reactive({
   videoPricing: null as VideoPricingConfig | null,
 })
 
-const IMAGE_PRICE_FIELDS = ['output_cost_per_image', 'output_cost_per_image_token', 'input_cost_per_image_token'] as const satisfies readonly PriceField[]
-const imagePriceFieldSet = new Set<PriceField>(IMAGE_PRICE_FIELDS)
-const activePriceFields = computed(() => PRICE_FIELDS.filter((field) => editorTab.value === 'image' ? imagePriceFieldSet.has(field) : !imagePriceFieldSet.has(field)))
+const activePriceFields = computed(() => FIELDS_BY_BILLING_MODE[billingMode.value])
+// 其他计费方式下仍留在表单里的值：切换方式不清空，但保存时会被丢弃。
+const discardedFieldCount = computed(() => {
+  const active = new Set<PriceField>(activePriceFields.value)
+  const fields = PRICE_FIELDS.filter((field) => !active.has(field) && form.fields[field].trim() !== '').length
+  return fields + (billingMode.value !== 'video' && form.videoPricing !== null ? 1 : 0)
+})
 const editorTabs = computed(() => [
   { value: 'token' as const, label: t('admin.modelPrices.tabs.token') },
   { value: 'image' as const, label: t('admin.modelPrices.tabs.image') },
@@ -469,6 +488,7 @@ function resetForm() {
   form.note = ''
   form.videoPricing = null
   videoPricingErrors.value = []
+  billingMode.value = 'token'
   for (const field of PRICE_FIELDS) {
     form.fields[field] = ''
   }
@@ -480,6 +500,7 @@ function fillFormFromDetail(entry: ModelPriceDetail) {
   form.currency = entry.override_currency ?? entry.currency ?? 'USD'
   form.enabled = entry.enabled
   form.note = entry.note || ''
+  billingMode.value = entry.billing_mode ?? 'token'
   form.videoPricing = entry.override?.video_pricing ? JSON.parse(JSON.stringify(entry.override.video_pricing)) : null
   videoPricingErrors.value = []
   for (const field of PRICE_FIELDS) {
@@ -496,7 +517,6 @@ function openCreate() {
   creating.value = true
   detail.value = null
   resetForm()
-  editorTab.value = 'token'
   showEditor.value = true
 }
 
@@ -506,7 +526,6 @@ async function openEdit(row: ModelPriceListItem) {
     const entry = await getModelPriceEntry(row.platform, row.model)
     detail.value = entry
     fillFormFromDetail(entry)
-    editorTab.value = row.has_video_pricing && row.token_pricing_absent && !row.has_image_pricing ? 'video' : 'token'
     showEditor.value = true
   } catch (error) {
     appStore.showError(extractI18nErrorMessage(error, t, 'admin.modelPrices.errors', t('common.error')))
@@ -515,14 +534,14 @@ async function openEdit(row: ModelPriceListItem) {
 
 function buildPayload(): ModelPricePayload {
   const payload: ModelPricePayload = {}
-  for (const field of PRICE_FIELDS) {
+  for (const field of activePriceFields.value) {
     const raw = form.fields[field].trim()
     if (raw === '') continue
     const value = isImageField(field) ? Number(raw) : mTokToToken(raw)
     if (value == null || Number.isNaN(value)) continue
     payload[field] = value
   }
-  if (form.videoPricing !== null) payload.video_pricing = prepareVideoPricingForSave(form.videoPricing)
+  if (billingMode.value === 'video' && form.videoPricing !== null) payload.video_pricing = prepareVideoPricingForSave(form.videoPricing)
   return payload
 }
 
@@ -531,8 +550,7 @@ function hasMagnitudeRisk(payload: ModelPricePayload): boolean {
 }
 
 async function saveOverride(confirmed: boolean) {
-  if (videoPricingErrors.value.length) {
-    editorTab.value = 'video'
+  if (billingMode.value === 'video' && videoPricingErrors.value.length) {
     appStore.showError(videoPricingErrors.value[0])
     return
   }
@@ -544,14 +562,18 @@ async function saveOverride(confirmed: boolean) {
   showMagnitude.value = false
   saving.value = true
   try {
-    await upsertModelPrice({
+    const result = await upsertModelPrice({
       platform: form.platform,
       model: form.model,
       currency: form.currency,
+      billing_mode: billingMode.value,
       payload,
       enabled: form.enabled,
       note: form.note || undefined,
     })
+    if (result?.warnings?.some((warning) => warning.code === 'BILLING_MODE_SUPPRESSES_TOKEN')) {
+      appStore.showWarning(t('admin.modelPrices.billingMode.suppressesTokenWarning'), 8000)
+    }
     showEditor.value = false
     await reload()
   } catch (error) {

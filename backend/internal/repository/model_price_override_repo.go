@@ -46,6 +46,7 @@ func (r *modelPriceOverrideRepository) Upsert(ctx context.Context, row *service.
 		SetPlatform(row.Platform).
 		SetModelName(row.ModelName).
 		SetCurrency(modelpriceoverride.Currency(row.Currency)).
+		SetBillingMode(modelpriceoverride.BillingMode(billingModeOrToken(row.BillingMode))).
 		SetPayload(payload).
 		SetEnabled(row.Enabled).
 		SetNillableNote(row.Note).
@@ -96,15 +97,23 @@ func modelPriceOverrideFromEnt(row *ent.ModelPriceOverride) (*service.ModelPrice
 		return nil, err
 	}
 	return &service.ModelPriceOverride{
-		ID:        row.ID,
-		Platform:  row.Platform,
-		ModelName: row.ModelName,
-		Currency:  string(row.Currency),
-		Payload:   payload,
-		Enabled:   row.Enabled,
-		Note:      row.Note,
-		UpdatedBy: row.UpdatedBy,
-		CreatedAt: row.CreatedAt,
-		UpdatedAt: row.UpdatedAt,
+		ID:          row.ID,
+		Platform:    row.Platform,
+		ModelName:   row.ModelName,
+		Currency:    string(row.Currency),
+		BillingMode: service.BillingMode(row.BillingMode),
+		Payload:     payload,
+		Enabled:     row.Enabled,
+		Note:        row.Note,
+		UpdatedBy:   row.UpdatedBy,
+		CreatedAt:   row.CreatedAt,
+		UpdatedAt:   row.UpdatedAt,
 	}, nil
+}
+
+func billingModeOrToken(mode service.BillingMode) service.BillingMode {
+	if mode == "" {
+		return service.BillingModeToken
+	}
+	return mode
 }

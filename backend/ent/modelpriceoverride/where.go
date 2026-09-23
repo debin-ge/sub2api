@@ -319,6 +319,26 @@ func CurrencyNotIn(vs ...Currency) predicate.ModelPriceOverride {
 	return predicate.ModelPriceOverride(sql.FieldNotIn(FieldCurrency, vs...))
 }
 
+// BillingModeEQ applies the EQ predicate on the "billing_mode" field.
+func BillingModeEQ(v BillingMode) predicate.ModelPriceOverride {
+	return predicate.ModelPriceOverride(sql.FieldEQ(FieldBillingMode, v))
+}
+
+// BillingModeNEQ applies the NEQ predicate on the "billing_mode" field.
+func BillingModeNEQ(v BillingMode) predicate.ModelPriceOverride {
+	return predicate.ModelPriceOverride(sql.FieldNEQ(FieldBillingMode, v))
+}
+
+// BillingModeIn applies the In predicate on the "billing_mode" field.
+func BillingModeIn(vs ...BillingMode) predicate.ModelPriceOverride {
+	return predicate.ModelPriceOverride(sql.FieldIn(FieldBillingMode, vs...))
+}
+
+// BillingModeNotIn applies the NotIn predicate on the "billing_mode" field.
+func BillingModeNotIn(vs ...BillingMode) predicate.ModelPriceOverride {
+	return predicate.ModelPriceOverride(sql.FieldNotIn(FieldBillingMode, vs...))
+}
+
 // PayloadIsNil applies the IsNil predicate on the "payload" field.
 func PayloadIsNil() predicate.ModelPriceOverride {
 	return predicate.ModelPriceOverride(sql.FieldIsNull(FieldPayload))

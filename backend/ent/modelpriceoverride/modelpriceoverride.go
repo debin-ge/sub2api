@@ -24,6 +24,8 @@ const (
 	FieldModelName = "model_name"
 	// FieldCurrency holds the string denoting the currency field in the database.
 	FieldCurrency = "currency"
+	// FieldBillingMode holds the string denoting the billing_mode field in the database.
+	FieldBillingMode = "billing_mode"
 	// FieldPayload holds the string denoting the payload field in the database.
 	FieldPayload = "payload"
 	// FieldEnabled holds the string denoting the enabled field in the database.
@@ -44,6 +46,7 @@ var Columns = []string{
 	FieldPlatform,
 	FieldModelName,
 	FieldCurrency,
+	FieldBillingMode,
 	FieldPayload,
 	FieldEnabled,
 	FieldNote,
@@ -101,6 +104,33 @@ func CurrencyValidator(c Currency) error {
 	}
 }
 
+// BillingMode defines the type for the "billing_mode" enum field.
+type BillingMode string
+
+// BillingModeToken is the default value of the BillingMode enum.
+const DefaultBillingMode = BillingModeToken
+
+// BillingMode values.
+const (
+	BillingModeToken BillingMode = "token"
+	BillingModeImage BillingMode = "image"
+	BillingModeVideo BillingMode = "video"
+)
+
+func (bm BillingMode) String() string {
+	return string(bm)
+}
+
+// BillingModeValidator is a validator for the "billing_mode" field enum values. It is called by the builders before save.
+func BillingModeValidator(bm BillingMode) error {
+	switch bm {
+	case BillingModeToken, BillingModeImage, BillingModeVideo:
+		return nil
+	default:
+		return fmt.Errorf("modelpriceoverride: invalid enum value for billing_mode field: %q", bm)
+	}
+}
+
 // OrderOption defines the ordering options for the ModelPriceOverride queries.
 type OrderOption func(*sql.Selector)
 
@@ -132,6 +162,11 @@ func ByModelName(opts ...sql.OrderTermOption) OrderOption {
 // ByCurrency orders the results by the currency field.
 func ByCurrency(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCurrency, opts...).ToFunc()
+}
+
+// ByBillingMode orders the results by the billing_mode field.
+func ByBillingMode(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBillingMode, opts...).ToFunc()
 }
 
 // ByEnabled orders the results by the enabled field.

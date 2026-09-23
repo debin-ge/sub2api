@@ -48,12 +48,14 @@ func ProvideModelPriceHandler(
 }
 
 type upsertModelPriceRequest struct {
-	Platform string          `json:"platform"`
-	Model    string          `json:"model"`
-	Currency string          `json:"currency"`
-	Payload  json.RawMessage `json:"payload"`
-	Enabled  *bool           `json:"enabled"`
-	Note     *string         `json:"note"`
+	Platform string `json:"platform"`
+	Model    string `json:"model"`
+	Currency string `json:"currency"`
+	// BillingMode 与 payload 平级：token / image / video；缺省时更新保留原值、新建为 token。
+	BillingMode string          `json:"billing_mode"`
+	Payload     json.RawMessage `json:"payload"`
+	Enabled     *bool           `json:"enabled"`
+	Note        *string         `json:"note"`
 }
 
 type previewVideoPriceRequest struct {
@@ -122,13 +124,14 @@ func (h *ModelPriceHandler) Upsert(c *gin.Context) {
 		updatedBy = &id
 	}
 	result, err := h.pricingService.UpsertOverride(c.Request.Context(), service.ModelPriceUpsertInput{
-		Platform:  req.Platform,
-		Model:     req.Model,
-		Currency:  req.Currency,
-		Payload:   payload,
-		Enabled:   req.Enabled,
-		Note:      req.Note,
-		UpdatedBy: updatedBy,
+		Platform:    req.Platform,
+		Model:       req.Model,
+		Currency:    req.Currency,
+		BillingMode: req.BillingMode,
+		Payload:     payload,
+		Enabled:     req.Enabled,
+		Note:        req.Note,
+		UpdatedBy:   updatedBy,
 	})
 	if err != nil {
 		response.ErrorFrom(c, err)

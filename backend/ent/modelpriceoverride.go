@@ -28,6 +28,8 @@ type ModelPriceOverride struct {
 	ModelName string `json:"model_name,omitempty"`
 	// Currency holds the value of the "currency" field.
 	Currency modelpriceoverride.Currency `json:"currency,omitempty"`
+	// BillingMode holds the value of the "billing_mode" field.
+	BillingMode modelpriceoverride.BillingMode `json:"billing_mode,omitempty"`
 	// Payload holds the value of the "payload" field.
 	Payload map[string]interface{} `json:"payload,omitempty"`
 	// Enabled holds the value of the "enabled" field.
@@ -50,7 +52,7 @@ func (*ModelPriceOverride) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case modelpriceoverride.FieldID, modelpriceoverride.FieldUpdatedBy:
 			values[i] = new(sql.NullInt64)
-		case modelpriceoverride.FieldPlatform, modelpriceoverride.FieldModelName, modelpriceoverride.FieldCurrency, modelpriceoverride.FieldNote:
+		case modelpriceoverride.FieldPlatform, modelpriceoverride.FieldModelName, modelpriceoverride.FieldCurrency, modelpriceoverride.FieldBillingMode, modelpriceoverride.FieldNote:
 			values[i] = new(sql.NullString)
 		case modelpriceoverride.FieldCreatedAt, modelpriceoverride.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -104,6 +106,12 @@ func (_m *ModelPriceOverride) assignValues(columns []string, values []any) error
 				return fmt.Errorf("unexpected type %T for field currency", values[i])
 			} else if value.Valid {
 				_m.Currency = modelpriceoverride.Currency(value.String)
+			}
+		case modelpriceoverride.FieldBillingMode:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field billing_mode", values[i])
+			} else if value.Valid {
+				_m.BillingMode = modelpriceoverride.BillingMode(value.String)
 			}
 		case modelpriceoverride.FieldPayload:
 			if value, ok := values[i].(*[]byte); !ok {
@@ -183,6 +191,9 @@ func (_m *ModelPriceOverride) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("currency=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Currency))
+	builder.WriteString(", ")
+	builder.WriteString("billing_mode=")
+	builder.WriteString(fmt.Sprintf("%v", _m.BillingMode))
 	builder.WriteString(", ")
 	builder.WriteString("payload=")
 	builder.WriteString(fmt.Sprintf("%v", _m.Payload))

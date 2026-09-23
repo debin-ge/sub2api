@@ -1752,6 +1752,12 @@ func (s *BillingService) getModelPricingForPlatforms(platforms []string, model s
 		// 图片计费路径（getDefaultImagePrice / getImageUnitPrice）直接读
 		// PricingService，不受影响。
 		if catalogEntry != nil && catalogEntry.TokenPricingAbsent {
+			// video 档覆盖是运营者显式声明"该模型只按视频计费"，token 价被刻意抹掉。
+			// 此时不能再回落到按模型名关键词匹配的硬编码价（claude/sonnet 等），
+			// 否则对话请求会按兜底价被计费，而不是按保存时的提示被拒绝。
+			if catalogEntry.BillingMode == BillingModeVideo {
+				return nil, fmt.Errorf("%w for model: %s (billing_mode=video)", ErrModelPricingUnavailable, model)
+			}
 			catalogEntry = nil
 		}
 		if catalogEntry != nil {

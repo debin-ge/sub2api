@@ -151,7 +151,7 @@ func TestOverrideExplicitZeroIsPreserved(t *testing.T) {
 
 func TestImageOnlyOverrideIsAllowed(t *testing.T) {
 	svc := &PricingService{catalogData: map[string]*ModelPriceEntry{}}
-	_, err := svc.validateOverrideWrite("*", "gpt-image-1", ModelPriceCurrencyUSD, &ModelPriceOverridePayload{
+	_, err := svc.validateOverrideWrite("*", "gpt-image-1", ModelPriceCurrencyUSD, BillingModeToken, &ModelPriceOverridePayload{
 		OutputCostPerImage: ptrPrice(0.04),
 	}, true)
 	require.NoError(t, err)
@@ -175,7 +175,8 @@ func TestImageOnlyOverrideAllowedAgainstAsymmetricCatalogEntry(t *testing.T) {
 			},
 		},
 	}
-	_, err := svc.validateOverrideWrite("*", "gpt-image-1", ModelPriceCurrencyUSD, &ModelPriceOverridePayload{
+
+	_, err := svc.validateOverrideWrite("*", "gpt-image-1", ModelPriceCurrencyUSD, BillingModeToken, &ModelPriceOverridePayload{
 		OutputCostPerImageToken: ptrPrice(5e-5),
 	}, true)
 	require.NoError(t, err)
@@ -187,7 +188,7 @@ func TestImageOnlyOverrideAllowedAgainstAsymmetricCatalogEntry(t *testing.T) {
 // pricing.
 func TestTokenOverrideStillRequiresCompletePair(t *testing.T) {
 	svc := &PricingService{catalogData: map[string]*ModelPriceEntry{}}
-	_, err := svc.validateOverrideWrite("*", "gpt-image-1", ModelPriceCurrencyUSD, &ModelPriceOverridePayload{
+	_, err := svc.validateOverrideWrite("*", "gpt-image-1", ModelPriceCurrencyUSD, BillingModeToken, &ModelPriceOverridePayload{
 		InputCostPerToken:  ptrPrice(5e-6),
 		OutputCostPerImage: ptrPrice(0.04),
 	}, true)
@@ -203,7 +204,7 @@ func TestIncompletePriorityOverrideRejected(t *testing.T) {
 			"claude-sonnet-4": pricedEntry(1e-6, 2e-6),
 		},
 	}
-	_, err := svc.validateOverrideWrite("*", "claude-sonnet-4", ModelPriceCurrencyUSD, &ModelPriceOverridePayload{
+	_, err := svc.validateOverrideWrite("*", "claude-sonnet-4", ModelPriceCurrencyUSD, BillingModeToken, &ModelPriceOverridePayload{
 		InputCostPerTokenPriority: ptrPrice(3e-6),
 	}, true)
 	require.Error(t, err)

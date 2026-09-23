@@ -2,6 +2,7 @@ import { defineComponent } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { PRICE_FIELDS } from '@/api/admin/modelPrices'
 import ModelPricesView from '@/views/admin/ModelPricesView.vue'
 
 const {
@@ -12,6 +13,7 @@ const {
   upsertModelPrice,
   previewVideoPrice,
   showError,
+  showWarning,
 } = vi.hoisted(() => ({
   listModelPrices: vi.fn(),
   listModelPricePlatforms: vi.fn(),
@@ -20,6 +22,7 @@ const {
   upsertModelPrice: vi.fn(),
   previewVideoPrice: vi.fn(),
   showError: vi.fn(),
+  showWarning: vi.fn(),
 }))
 
 vi.mock('@/api/admin/modelPrices', async () => {
@@ -38,7 +41,7 @@ vi.mock('@/api/admin/modelPrices', async () => {
 })
 
 vi.mock('@/stores/app', () => ({
-  useAppStore: () => ({ showSuccess: vi.fn(), showError }),
+  useAppStore: () => ({ showSuccess: vi.fn(), showError, showWarning }),
 }))
 
 vi.mock('vue-i18n', async () => {
@@ -112,6 +115,7 @@ describe('ModelPricesView', () => {
     upsertModelPrice.mockReset()
     previewVideoPrice.mockReset()
     showError.mockReset()
+    showWarning.mockReset()
     listModelPricePlatforms.mockResolvedValue(['*', 'anthropic', 'deepseek'])
     getModelPriceSyncStatus.mockResolvedValue({ catalog_model_count: 2, override_count: 1 })
     listModelPrices.mockResolvedValue({
@@ -214,7 +218,7 @@ describe('ModelPricesView', () => {
     getModelPriceEntry.mockResolvedValue({
       platform: 'openai', model: 'doubao-seedance-2.0-mini-480p', currency: 'USD',
       catalog: {}, override: { video_pricing: videoPricing }, effective: { video_pricing: videoPricing },
-      enabled: true, token_pricing_absent: true, has_image_pricing: false, has_video_pricing: true,
+      billing_mode: 'video', enabled: true, token_pricing_absent: true, has_image_pricing: false, has_video_pricing: true,
       video_pricing_valid: true, video_rule_count: 1, video_billing_units: ['video_token'], video_resolutions: ['480p'],
       sync_invalidated: false, redundant: false, override_platform: 'openai',
     })
@@ -292,7 +296,7 @@ describe('ModelPricesView', () => {
     })
     getModelPriceEntry.mockResolvedValue({
       platform: 'openai', model: 'doubao-seedance-2.0-pro-1080p', currency: 'USD', catalog: {},
-      override: { video_pricing: videoPricing }, effective: { video_pricing: videoPricing }, enabled: true,
+      override: { video_pricing: videoPricing }, effective: { video_pricing: videoPricing }, billing_mode: 'video', enabled: true,
       token_pricing_absent: true, has_image_pricing: false, has_video_pricing: true,
       video_pricing_valid: true, video_rule_count: 1, video_billing_units: ['video_token'], video_resolutions: [],
       sync_invalidated: false, redundant: false, override_platform: 'openai',
@@ -493,7 +497,86 @@ describe('ModelPricesView', () => {
       platform: 'anthropic',
       model: 'claude-sonnet-4',
       currency: 'USD',
+      billing_mode: 'token',
       payload: {},
     }))
+  })
+
+  it('submits only the fields of the selected billing mode', async () => {
+    upsertModelPrice.mockResolvedValue({
+      override: {},
+      warnings: [{ code: 'BILLING_MODE_SUPPRESSES_TOKEN', field: 'billing_mode' }],
+    })
+    getModelPriceEntry.mockResolvedValue({
+      platform: 'anthropic',
+      model: 'gemini-2.5-flash-image',
+      currency: 'USD',
+      catalog: { input_cost_per_token: 3e-7, output_cost_per_token: 2.5e-6, output_cost_per_image_token: 3e-5 },
+      override: { input_cost_per_token: 3e-7 },
+      effective: { input_cost_per_token: 3e-7, output_cost_per_token: 2.5e-6, output_cost_per_image_token: 3e-5 },
+      billing_mode: 'token',
+      enabled: true,
+      token_pricing_absent: false,
+      has_image_pricing: true,
+      sync_invalidated: false,
+      redundant: false,
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.find('button.action-btn').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('admin.modelPrices.billingMode.discardNotice')
+
+    const imageTab = wrapper.findAll('button').find((button) => button.text() === 'admin.modelPrices.tabs.image')
+    await imageTab!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('admin.modelPrices.billingMode.hint.image')
+    // image 档接受 token 与图片价，编辑器里的值都不会被丢弃
+    expect(wrapper.text()).not.toContain('admin.modelPrices.billingMode.discardNotice')
+
+    // input[0] 是模型名，价格输入框按 PRICE_FIELDS 顺序排在其后
+    const priceInput = (field: (typeof PRICE_FIELDS)[number]) =>
+      wrapper.findAll('[data-test="editor"] input.input')[1 + PRICE_FIELDS.indexOf(field)]
+    await priceInput('output_cost_per_image').setValue('0.04')
+    const saveButton = wrapper.findAll('button').find((button) => button.text() === 'admin.modelPrices.save')
+    await saveButton!.trigger('click')
+    await flushPromises()
+
+    // 图片按 token 计费是正常配置：已有的 token 覆盖随 image 档一起提交
+    expect(upsertModelPrice).toHaveBeenCalledWith(expect.objectContaining({
+      billing_mode: 'image',
+      payload: { input_cost_per_token: 3e-7, output_cost_per_image: 0.04 },
+    }))
+    expect(showWarning).toHaveBeenCalledWith('admin.modelPrices.billingMode.suppressesTokenWarning', 8000)
+  })
+
+  it('warns about discarded values when switching to the video billing mode', async () => {
+    getModelPriceEntry.mockResolvedValue({
+      platform: 'anthropic',
+      model: 'doubao-seedance-1-0-lite-t2v-250428',
+      currency: 'USD',
+      catalog: { input_cost_per_token: 3e-7, output_cost_per_token: 2.5e-6 },
+      override: null,
+      effective: { input_cost_per_token: 3e-7, output_cost_per_token: 2.5e-6 },
+      billing_mode: 'token',
+      enabled: true,
+      token_pricing_absent: false,
+      has_image_pricing: false,
+      sync_invalidated: false,
+      redundant: false,
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.find('button.action-btn').trigger('click')
+    await flushPromises()
+
+    await wrapper.findAll('[data-test="editor"] input.input')[1].setValue('0.5')
+    const videoTab = wrapper.findAll('button').find((button) => button.text() === 'admin.modelPrices.tabs.video')
+    await videoTab!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('admin.modelPrices.billingMode.hint.video')
+    expect(wrapper.text()).toContain('admin.modelPrices.billingMode.discardNotice')
   })
 })

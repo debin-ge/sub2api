@@ -194,9 +194,9 @@ func TestModelPriceOverrideSupportsVideoOnlyReplacementInheritanceAndShadow(t *t
 	catalog := &ModelPriceEntry{VideoPricing: catalogProfile, PricePresenceKnown: true, TokenPricingAbsent: true}
 	svc := &PricingService{catalogData: map[string]*ModelPriceEntry{"doubao-seedance-1-0-lite-t2v-250428": catalog}}
 
-	_, err := svc.validateOverrideWrite("*", "video-only", ModelPriceCurrencyUSD, &ModelPriceOverridePayload{VideoPricing: seedanceVideoPricing()}, true)
+	_, err := svc.validateOverrideWrite("*", "video-only", ModelPriceCurrencyUSD, BillingModeToken, &ModelPriceOverridePayload{VideoPricing: seedanceVideoPricing()}, true)
 	require.NoError(t, err)
-	_, err = svc.validateOverrideWrite("*", "mixed-currency-video", ModelPriceCurrencyCNY, &ModelPriceOverridePayload{VideoPricing: seedanceVideoPricing()}, true)
+	_, err = svc.validateOverrideWrite("*", "mixed-currency-video", ModelPriceCurrencyCNY, BillingModeToken, &ModelPriceOverridePayload{VideoPricing: seedanceVideoPricing()}, true)
 	require.NoError(t, err, "nested video prices remain USD without changing the record currency used by other fields")
 
 	svc.overrideRows = []ModelPriceOverride{{

@@ -95,20 +95,24 @@ type ModelPriceOverridePayload struct {
 	SupportsServiceTier    *bool   `json:"supports_service_tier,omitempty"`
 	SupportsPromptCaching  *bool   `json:"supports_prompt_caching,omitempty"`
 	PricingCatalogProvider *string `json:"litellm_provider,omitempty"`
-	Mode                   *string `json:"mode,omitempty"`
+	// Mode 透传 LiteLLM 目录的 mode（chat / image_generation / ...），与覆盖行的
+	// BillingMode（运营者声明的计费方式）是两回事。
+	Mode *string `json:"mode,omitempty"`
 }
 
 type ModelPriceOverride struct {
-	ID        int64                     `json:"id"`
-	Platform  string                    `json:"platform"`
-	ModelName string                    `json:"model_name"`
-	Currency  string                    `json:"currency"`
-	Payload   ModelPriceOverridePayload `json:"payload"`
-	Enabled   bool                      `json:"enabled"`
-	Note      *string                   `json:"note,omitempty"`
-	UpdatedBy *int64                    `json:"updated_by,omitempty"`
-	CreatedAt time.Time                 `json:"created_at"`
-	UpdatedAt time.Time                 `json:"updated_at"`
+	ID        int64  `json:"id"`
+	Platform  string `json:"platform"`
+	ModelName string `json:"model_name"`
+	Currency  string `json:"currency"`
+	// BillingMode 独立成列存储、不进 payload，见 migrations/275。
+	BillingMode BillingMode               `json:"billing_mode"`
+	Payload     ModelPriceOverridePayload `json:"payload"`
+	Enabled     bool                      `json:"enabled"`
+	Note        *string                   `json:"note,omitempty"`
+	UpdatedBy   *int64                    `json:"updated_by,omitempty"`
+	CreatedAt   time.Time                 `json:"created_at"`
+	UpdatedAt   time.Time                 `json:"updated_at"`
 }
 
 type ModelPriceOverrideStore interface {
@@ -162,6 +166,7 @@ type ModelPriceListItem struct {
 	Currency           string                  `json:"currency"`
 	CatalogCurrency    string                  `json:"catalog_currency,omitempty"`
 	OverrideCurrency   string                  `json:"override_currency,omitempty"`
+	BillingMode        BillingMode             `json:"billing_mode"`
 	TokenPricingAbsent bool                    `json:"token_pricing_absent"`
 	HasImagePricing    bool                    `json:"has_image_pricing"`
 	HasVideoPricing    bool                    `json:"has_video_pricing"`
@@ -195,6 +200,7 @@ type ModelPriceDetail struct {
 	OverrideCurrency   string                     `json:"override_currency,omitempty"`
 	Catalog            map[string]any             `json:"catalog"`
 	Override           *ModelPriceOverridePayload `json:"override,omitempty"`
+	BillingMode        BillingMode                `json:"billing_mode"`
 	Effective          map[string]any             `json:"effective"`
 	Enabled            bool                       `json:"enabled"`
 	TokenPricingAbsent bool                       `json:"token_pricing_absent"`
@@ -215,18 +221,23 @@ type ModelPriceDetail struct {
 }
 
 type ModelPriceUpsertInput struct {
-	Platform  string
-	Model     string
-	Currency  string
-	Payload   ModelPriceOverridePayload
-	Enabled   *bool
-	Note      *string
-	UpdatedBy *int64
+	Platform    string
+	Model       string
+	Currency    string
+	// BillingMode 为空时：更新保留该行已存的计费方式，新建默认 token。
+	// 旧前端缓存或外部脚本不带该字段时，不能把 image/video 行静默改回 token。
+	BillingMode string
+	Payload     ModelPriceOverridePayload
+	Enabled     *bool
+	Note        *string
+	UpdatedBy   *int64
 }
 
 type ModelPriceWarning struct {
 	Code  string `json:"code"`
 	Field string `json:"field,omitempty"`
+	// Model 仅在一次保存涉及多个模型时填写（如渠道定价），用于定位是哪个模型触发的警告。
+	Model string `json:"model,omitempty"`
 }
 
 type ModelPriceUpsertResult struct {
@@ -461,13 +472,14 @@ func mergeRawPriceEntry(base *RawModelPriceEntry, patch *ModelPriceOverridePaylo
 	return out
 }
 
-func overrideBaseRaw(entry *ModelPriceEntry, currency string) *RawModelPriceEntry {
+func overrideBaseRaw(entry *ModelPriceEntry, currency string, mode BillingMode) *RawModelPriceEntry {
 	currency = modelPriceCurrencyOrUSD(currency)
 	if entry == nil || modelPriceEntryCurrency(entry) != currency {
 		return &RawModelPriceEntry{Currency: currency}
 	}
 	raw := rawOf(entry)
 	raw.Currency = currency
+	suppressInheritedDimensions(raw, mode)
 	return raw
 }
 
@@ -476,10 +488,14 @@ func buildOverrideModelPriceEntry(model string, base *ModelPriceEntry, row *Mode
 		return base
 	}
 	currency := modelPriceCurrencyOrUSD(row.Currency)
-	raw := mergeRawPriceEntry(overrideBaseRaw(base, currency), &row.Payload)
+	raw := mergeRawPriceEntry(overrideBaseRaw(base, currency, modelPriceOverrideBillingModeOrToken(row.BillingMode)), &row.Payload)
 	raw.Currency = currency
 	entry := buildModelPriceEntry(model, raw)
-	entry.OperatorOverride = true
+	// OperatorOverride 表示 token 价由运营者定死，不再套 DeepSeek 官方峰谷翻倍。只有
+	// payload 真的改了 token 价才算：空 payload（全部继承）或只改图片/视频价的行，
+	// token 价仍是目录里的官方空闲价，必须照常按北京时间高峰翻倍，否则高峰少收一半。
+	entry.OperatorOverride = payloadOverridesTokenPrices(&row.Payload) || (base != nil && base.OperatorOverride)
+	entry.BillingMode = modelPriceOverrideBillingModeOrToken(row.BillingMode)
 	entry.VideoPricingOperatorOverride = row.Payload.VideoPricing != nil || (base != nil && base.VideoPricingOperatorOverride)
 	return entry
 }
@@ -682,7 +698,7 @@ func incompleteDimension(raw *RawModelPriceEntry) string {
 	return "pricing"
 }
 
-func (s *PricingService) validateOverrideWrite(platform, model, currency string, payload *ModelPriceOverridePayload, enabled bool) ([]ModelPriceWarning, error) {
+func (s *PricingService) validateOverrideWrite(platform, model, currency string, mode BillingMode, payload *ModelPriceOverridePayload, enabled bool) ([]ModelPriceWarning, error) {
 	platform = normalizeOverridePlatform(platform)
 	model = normalizePricingModelKey(model)
 	if !validOverridePlatform(platform) {
@@ -698,6 +714,10 @@ func (s *PricingService) validateOverrideWrite(platform, model, currency string,
 	if err := validatePayloadNumbers(payload); err != nil {
 		return nil, err
 	}
+	mode = modelPriceOverrideBillingModeOrToken(mode)
+	if err := validatePayloadFieldsInBillingMode(payload, mode); err != nil {
+		return nil, err
+	}
 	var warnings []ModelPriceWarning
 	for field, value := range pricePointers(payload) {
 		if value != nil && *value > 1 {
@@ -707,11 +727,14 @@ func (s *PricingService) validateOverrideWrite(platform, model, currency string,
 	if !enabled {
 		return warnings, nil
 	}
-	// An entirely empty override is an explicit "inherit everything" record.
-	// This is useful when the admin form is saved without filling any price
-	// fields; non-empty partial payloads still go through the normal completeness
-	// validation below.
-	if len(payloadToMap(payload)) == 0 {
+	// An entirely empty token-mode override is an explicit "inherit everything"
+	// record. This is useful when the admin form is saved without filling any
+	// price fields; non-empty partial payloads still go through the normal
+	// completeness validation below. An image-mode override also builds on the
+	// catalog (an image model priced by plain tokens just inherits them), and a
+	// video-mode override suppresses the other dimensions, so both must still
+	// find a price of their own mode in the catalog.
+	if len(payloadToMap(payload)) == 0 && mode == BillingModeToken {
 		return warnings, nil
 	}
 	var catalog *ModelPriceEntry
@@ -720,12 +743,24 @@ func (s *PricingService) validateOverrideWrite(platform, model, currency string,
 		catalog = s.catalogEntryLocked(model)
 		s.mu.RUnlock()
 	}
-	raw := mergeRawPriceEntry(overrideBaseRaw(catalog, currency), payload)
-	hasImage := raw.OutputCostPerImage != nil || raw.OutputCostPerImageToken != nil || raw.InputCostPerImageToken != nil
-	hasVideo := raw.VideoPricing != nil
-	hasToken := raw.InputCostPerToken != nil || raw.OutputCostPerToken != nil
-	if !hasToken && !hasImage && !hasVideo {
-		return nil, infraerrors.BadRequest("EMPTY_PRICING", "at least one token, image, or video price is required")
+	raw := mergeRawPriceEntry(overrideBaseRaw(catalog, currency, mode), payload)
+	if mode == BillingModeToken {
+		if !rawHasBillingModePricing(raw, BillingModeToken) && !rawHasBillingModePricing(raw, BillingModeImage) &&
+			!rawHasBillingModePricing(raw, BillingModeVideo) {
+			return nil, infraerrors.BadRequest("EMPTY_PRICING", "at least one token, image, or video price is required")
+		}
+	} else {
+		if !rawHasBillingModePricing(raw, mode) {
+			return nil, infraerrors.BadRequest("EMPTY_PRICING", fmt.Sprintf("billing mode %s requires at least one %s price", mode, mode)).
+				WithMetadata(map[string]string{"billing_mode": string(mode)})
+		}
+		// video 档抑制从目录继承的 token / 图片价，目录里带 token 价的模型切到 video 后，
+		// 走 token 计费的请求会因缺价被拒绝。允许保存，但要明确告知运营者。
+		if mode == BillingModeVideo && catalog != nil && modelPriceEntryCurrency(catalog) == currency &&
+			rawHasBillingModePricing(rawOf(catalog), BillingModeToken) {
+			warnings = append(warnings, ModelPriceWarning{Code: "BILLING_MODE_SUPPRESSES_TOKEN", Field: "billing_mode"})
+		}
+		return warnings, nil
 	}
 	// Only demand a complete token-pricing dimension when this write is itself
 	// touching token pricing. A catalog entry can already carry a partial or
@@ -742,11 +777,8 @@ func (s *PricingService) validateOverrideWrite(platform, model, currency string,
 	return warnings, nil
 }
 
-// payloadDeclaresTokenPricing reports whether the override payload itself
-// (as opposed to values inherited from the base catalog entry) sets any
-// token-pricing-related field, including the cache/priority/long-context
-// dimensions that only make sense in terms of token pricing.
-func payloadDeclaresTokenPricing(payload *ModelPriceOverridePayload) bool {
+// payloadOverridesTokenPrices 判断 payload 是否写了 token 价格本身（不含 supports_* 标记）。
+func payloadOverridesTokenPrices(payload *ModelPriceOverridePayload) bool {
 	if payload == nil {
 		return false
 	}
@@ -761,7 +793,18 @@ func payloadDeclaresTokenPricing(payload *ModelPriceOverridePayload) bool {
 		payload.CacheReadInputTokenCostPriority != nil ||
 		payload.LongContextInputTokenThreshold != nil ||
 		payload.LongContextInputCostMultiplier != nil ||
-		payload.LongContextOutputCostMultiplier != nil ||
+		payload.LongContextOutputCostMultiplier != nil
+}
+
+// payloadDeclaresTokenPricing reports whether the override payload itself
+// (as opposed to values inherited from the base catalog entry) sets any
+// token-pricing-related field, including the cache/priority/long-context
+// dimensions and supports_* flags that only make sense for token pricing.
+func payloadDeclaresTokenPricing(payload *ModelPriceOverridePayload) bool {
+	if payload == nil {
+		return false
+	}
+	return payloadOverridesTokenPrices(payload) ||
 		payload.SupportsServiceTier != nil ||
 		payload.SupportsPromptCaching != nil
 }
@@ -780,13 +823,20 @@ func (s *PricingService) UpsertOverride(ctx context.Context, input ModelPriceUps
 	if input.Enabled != nil {
 		enabled = *input.Enabled
 	}
-	warnings, err := s.validateOverrideWrite(platform, model, currency, &input.Payload, enabled)
+	mode, err := NormalizeModelPriceOverrideBillingMode(input.BillingMode)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(input.BillingMode) == "" {
+		mode = s.storedOverrideBillingMode(platform, model)
+	}
+	warnings, err := s.validateOverrideWrite(platform, model, currency, mode, &input.Payload, enabled)
 	if err != nil {
 		return nil, err
 	}
 	now := time.Now()
 	row, err := s.overrideStore.Upsert(ctx, &ModelPriceOverride{
-		Platform: platform, ModelName: model, Currency: currency, Payload: input.Payload, Enabled: enabled,
+		Platform: platform, ModelName: model, Currency: currency, BillingMode: mode, Payload: input.Payload, Enabled: enabled,
 		Note: input.Note, UpdatedBy: input.UpdatedBy, CreatedAt: now, UpdatedAt: now,
 	})
 	if err != nil {
@@ -1045,7 +1095,7 @@ func (s *PricingService) buildListItemLocked(
 		overridden = overriddenFields(&row.Payload)
 		if !catalogUsable || modelPriceEntryCurrency(catalog) != modelPriceCurrencyOrUSD(row.Currency) {
 			source = ModelPriceSourceOverride
-		} else if len(overridden) > 0 {
+		} else if len(overridden) > 0 || modelPriceOverrideBillingModeOrToken(row.BillingMode) != BillingModeToken {
 			source = ModelPriceSourceMerged
 		}
 	} else if !catalogUsable && official != nil {
@@ -1069,7 +1119,8 @@ func (s *PricingService) buildListItemLocked(
 		TokenPricingAbsent: effective == nil || effective.TokenPricingAbsent,
 		HasImagePricing:    hasImagePricing(effective),
 		SyncInvalidated:    s.isInvalidatedLocked(displayPlatform, model),
-		Redundant:          row != nil && isRedundantPayload(catalog, modelPriceCurrencyOrUSD(row.Currency), &row.Payload),
+		Redundant:          row != nil && isRedundantPayload(catalog, modelPriceCurrencyOrUSD(row.Currency), row.BillingMode, &row.Payload),
+		BillingMode:        BillingModeToken,
 		Effective:          modelPriceEntryToMap(effective),
 		OverriddenFields:   overridden,
 		Enabled:            row == nil || row.Enabled,
@@ -1084,6 +1135,7 @@ func (s *PricingService) buildListItemLocked(
 	applyVideoPricingSummaryToList(&item, effective)
 	if row != nil {
 		item.OverrideCurrency = modelPriceCurrencyOrUSD(row.Currency)
+		item.BillingMode = modelPriceOverrideBillingModeOrToken(row.BillingMode)
 		item.OverridePlatform = row.Platform
 		item.Note = row.Note
 		item.UpdatedBy = row.UpdatedBy
@@ -1159,7 +1211,7 @@ func ResolvePlazaDisplayPrice(s *PricingService, platform, model string, officia
 		source := ModelPriceSourceCatalog
 		if row != nil {
 			if catalogHasUsablePrice(catalog) && modelPriceEntryCurrency(catalog) == modelPriceCurrencyOrUSD(row.Currency) {
-				if len(overriddenFields(&row.Payload)) > 0 {
+				if len(overriddenFields(&row.Payload)) > 0 || modelPriceOverrideBillingModeOrToken(row.BillingMode) != BillingModeToken {
 					source = ModelPriceSourceMerged
 				}
 			} else {
@@ -1228,6 +1280,7 @@ func (s *PricingService) GetPriceDetailWithOfficial(platform, model string, offi
 			Catalog:            catalogMap,
 			Effective:          map[string]any{},
 			Enabled:            true,
+			BillingMode:        BillingModeToken,
 			TokenPricingAbsent: true,
 			TimeSchedule:       deepSeekOfficialPriceTimeSchedule(platform, model, baseIsOffPeak),
 		}, nil
@@ -1250,6 +1303,7 @@ func (s *PricingService) GetPriceDetailWithOfficial(platform, model string, offi
 		Catalog:            catalogMap,
 		Effective:          modelPriceEntryToMap(effective),
 		Enabled:            true,
+		BillingMode:        BillingModeToken,
 		TokenPricingAbsent: effective == nil || effective.TokenPricingAbsent,
 		HasImagePricing:    hasImagePricing(effective),
 		SyncInvalidated:    s.isInvalidatedLocked(platform, model),
@@ -1260,15 +1314,26 @@ func (s *PricingService) GetPriceDetailWithOfficial(platform, model string, offi
 		payload := cloneModelPriceOverridePayload(row.Payload)
 		detail.Override = &payload
 		detail.OverrideCurrency = modelPriceCurrencyOrUSD(row.Currency)
+		detail.BillingMode = modelPriceOverrideBillingModeOrToken(row.BillingMode)
 		detail.OverridePlatform = row.Platform
 		detail.Enabled = row.Enabled
 		detail.Note = row.Note
 		detail.UpdatedBy = row.UpdatedBy
 		updated := row.UpdatedAt
 		detail.UpdatedAt = &updated
-		detail.Redundant = isRedundantPayload(catalog, detail.OverrideCurrency, &row.Payload)
+		detail.Redundant = isRedundantPayload(catalog, detail.OverrideCurrency, row.BillingMode, &row.Payload)
 	}
 	return detail, nil
+}
+
+// storedOverrideBillingMode 返回已存覆盖行的计费方式；行不存在时为 token。
+func (s *PricingService) storedOverrideBillingMode(platform, model string) BillingMode {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if row := findOverrideLocked(s.overrideRows, platform, model); row != nil {
+		return modelPriceOverrideBillingModeOrToken(row.BillingMode)
+	}
+	return BillingModeToken
 }
 
 func findOverrideLocked(rows []ModelPriceOverride, platform, model string) *ModelPriceOverride {
@@ -1321,7 +1386,7 @@ func hasImagePricing(entry *ModelPriceEntry) bool {
 }
 
 func hasVideoPricing(entry *ModelPriceEntry) bool {
-	return entry != nil && entry.VideoPricing != nil && entry.VideoPricing.Enabled && ValidateVideoPricingConfig(entry.VideoPricing) == nil
+	return catalogVideoPricingActive(entry) && ValidateVideoPricingConfig(entry.VideoPricing) == nil
 }
 
 func videoPricingSummary(entry *ModelPriceEntry) (has, valid bool, ruleCount int, units, resolutions []string, errorMessage string) {
@@ -1331,7 +1396,7 @@ func videoPricingSummary(entry *ModelPriceEntry) (has, valid bool, ruleCount int
 	config := entry.VideoPricing
 	err := ValidateVideoPricingConfig(config)
 	valid = err == nil
-	has = valid && config.Enabled
+	has = valid && catalogVideoPricingActive(entry)
 	ruleCount = len(config.Rules)
 	unitSet := make(map[string]struct{})
 	for _, rule := range config.Rules {
@@ -1419,8 +1484,12 @@ func modelPriceEntryToMap(entry *ModelPriceEntry) map[string]any {
 	return out
 }
 
-func isRedundantPayload(catalog *ModelPriceEntry, currency string, payload *ModelPriceOverridePayload) bool {
+func isRedundantPayload(catalog *ModelPriceEntry, currency string, mode BillingMode, payload *ModelPriceOverridePayload) bool {
 	if catalog == nil || payload == nil {
+		return false
+	}
+	// image / video 档会抑制目录里其他档的价格，即使 payload 与目录一致也不是冗余。
+	if modelPriceOverrideBillingModeOrToken(mode) != BillingModeToken {
 		return false
 	}
 	if modelPriceEntryCurrency(catalog) != modelPriceCurrencyOrUSD(currency) {

@@ -30951,6 +30951,7 @@ type ModelPriceOverrideMutation struct {
 	platform      *string
 	model_name    *string
 	currency      *modelpriceoverride.Currency
+	billing_mode  *modelpriceoverride.BillingMode
 	payload       *map[string]interface{}
 	enabled       *bool
 	note          *string
@@ -31240,6 +31241,42 @@ func (m *ModelPriceOverrideMutation) ResetCurrency() {
 	m.currency = nil
 }
 
+// SetBillingMode sets the "billing_mode" field.
+func (m *ModelPriceOverrideMutation) SetBillingMode(mm modelpriceoverride.BillingMode) {
+	m.billing_mode = &mm
+}
+
+// BillingMode returns the value of the "billing_mode" field in the mutation.
+func (m *ModelPriceOverrideMutation) BillingMode() (r modelpriceoverride.BillingMode, exists bool) {
+	v := m.billing_mode
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBillingMode returns the old "billing_mode" field's value of the ModelPriceOverride entity.
+// If the ModelPriceOverride object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ModelPriceOverrideMutation) OldBillingMode(ctx context.Context) (v modelpriceoverride.BillingMode, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBillingMode is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBillingMode requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBillingMode: %w", err)
+	}
+	return oldValue.BillingMode, nil
+}
+
+// ResetBillingMode resets all changes to the "billing_mode" field.
+func (m *ModelPriceOverrideMutation) ResetBillingMode() {
+	m.billing_mode = nil
+}
+
 // SetPayload sets the "payload" field.
 func (m *ModelPriceOverrideMutation) SetPayload(value map[string]interface{}) {
 	m.payload = &value
@@ -31478,7 +31515,7 @@ func (m *ModelPriceOverrideMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *ModelPriceOverrideMutation) Fields() []string {
-	fields := make([]string, 0, 9)
+	fields := make([]string, 0, 10)
 	if m.created_at != nil {
 		fields = append(fields, modelpriceoverride.FieldCreatedAt)
 	}
@@ -31493,6 +31530,9 @@ func (m *ModelPriceOverrideMutation) Fields() []string {
 	}
 	if m.currency != nil {
 		fields = append(fields, modelpriceoverride.FieldCurrency)
+	}
+	if m.billing_mode != nil {
+		fields = append(fields, modelpriceoverride.FieldBillingMode)
 	}
 	if m.payload != nil {
 		fields = append(fields, modelpriceoverride.FieldPayload)
@@ -31524,6 +31564,8 @@ func (m *ModelPriceOverrideMutation) Field(name string) (ent.Value, bool) {
 		return m.ModelName()
 	case modelpriceoverride.FieldCurrency:
 		return m.Currency()
+	case modelpriceoverride.FieldBillingMode:
+		return m.BillingMode()
 	case modelpriceoverride.FieldPayload:
 		return m.Payload()
 	case modelpriceoverride.FieldEnabled:
@@ -31551,6 +31593,8 @@ func (m *ModelPriceOverrideMutation) OldField(ctx context.Context, name string) 
 		return m.OldModelName(ctx)
 	case modelpriceoverride.FieldCurrency:
 		return m.OldCurrency(ctx)
+	case modelpriceoverride.FieldBillingMode:
+		return m.OldBillingMode(ctx)
 	case modelpriceoverride.FieldPayload:
 		return m.OldPayload(ctx)
 	case modelpriceoverride.FieldEnabled:
@@ -31602,6 +31646,13 @@ func (m *ModelPriceOverrideMutation) SetField(name string, value ent.Value) erro
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetCurrency(v)
+		return nil
+	case modelpriceoverride.FieldBillingMode:
+		v, ok := value.(modelpriceoverride.BillingMode)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBillingMode(v)
 		return nil
 	case modelpriceoverride.FieldPayload:
 		v, ok := value.(map[string]interface{})
@@ -31730,6 +31781,9 @@ func (m *ModelPriceOverrideMutation) ResetField(name string) error {
 		return nil
 	case modelpriceoverride.FieldCurrency:
 		m.ResetCurrency()
+		return nil
+	case modelpriceoverride.FieldBillingMode:
+		m.ResetBillingMode()
 		return nil
 	case modelpriceoverride.FieldPayload:
 		m.ResetPayload()

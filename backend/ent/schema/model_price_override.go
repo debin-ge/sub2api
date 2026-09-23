@@ -35,6 +35,8 @@ func (ModelPriceOverride) Fields() []ent.Field {
 		field.String("platform").MaxLen(50).NotEmpty(),
 		field.String("model_name").MaxLen(200).NotEmpty(),
 		field.Enum("currency").Values("USD", "CNY").Default("USD"),
+		// billing_mode 是运营者声明的计费方式；与 payload 里透传的 LiteLLM mode 无关。
+		field.Enum("billing_mode").Values("token", "image", "video").Default("token"),
 		field.JSON("payload", map[string]any{}).
 			Optional().
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),

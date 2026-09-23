@@ -1123,6 +1123,7 @@ var (
 		{Name: "platform", Type: field.TypeString, Size: 50},
 		{Name: "model_name", Type: field.TypeString, Size: 200},
 		{Name: "currency", Type: field.TypeEnum, Enums: []string{"USD", "CNY"}, Default: "USD"},
+		{Name: "billing_mode", Type: field.TypeEnum, Enums: []string{"token", "image", "video"}, Default: "token"},
 		{Name: "payload", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "enabled", Type: field.TypeBool, Default: true},
 		{Name: "note", Type: field.TypeString, Nullable: true, Size: 2147483647},
