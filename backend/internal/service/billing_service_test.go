@@ -2478,3 +2478,74 @@ func TestComputeTokenBreakdown_NonExplicitZeroImagePrice_FallsBackToOutput(t *te
 	// textOutputTokens = 200 - 50 = 150
 	require.InDelta(t, 150*15e-6, bd.OutputCost, 1e-12)
 }
+
+// W1.2 回归：渠道定价只覆盖文本 input/output 时，目录里的图片 token 价必须保留。
+//
+// 曾经的行为是 applyChannelImagePrices 无条件清零目录图片价，于是
+// computeTokenBreakdown 退化到文本 output 价结算图片输出 token。对目录里同时
+// 带文本价和图片价的双模模型（gemini-2.5-flash-image 等 17 个 image_generation
+// 模型），出图即按文本价结算，实测差 12×。
+func TestGetModelPricingWithChannel_PreservesCatalogImagePrice(t *testing.T) {
+	const catalogJSON = `{
+		"gemini-2.5-flash-image": {
+			"litellm_provider": "gemini",
+			"mode": "image_generation",
+			"input_cost_per_token": 3e-07,
+			"output_cost_per_token": 2.5e-06,
+			"output_cost_per_image": 0.039,
+			"output_cost_per_image_token": 3e-05
+		}
+	}`
+	svc := NewBillingService(&config.Config{}, newStubPricingServiceFromJSON(t, catalogJSON))
+
+	// 1290 image output tokens ≈ 一张 1024×1024 gemini 图
+	const imageTokens = 1290
+	tokens := UsageTokens{OutputTokens: imageTokens, ImageOutputTokens: imageTokens}
+
+	base, err := svc.GetModelPricing("gemini-2.5-flash-image")
+	require.NoError(t, err)
+	require.True(t, base.ImageOutputPriceExplicit, "目录里的图片价应按显式价解析")
+	bdBase := svc.computeTokenBreakdown(base, tokens, 1, "", false)
+	require.InDelta(t, imageTokens*3e-05, bdBase.ImageOutputCost, 1e-12)
+
+	// 渠道只配文本 input/output，image_output_price 留空
+	chPricing := &ChannelModelPricing{
+		InputPrice:  testPtrFloat64(3e-07),
+		OutputPrice: testPtrFloat64(2.5e-06),
+	}
+	pricing, err := svc.GetModelPricingWithChannel("gemini-2.5-flash-image", chPricing)
+	require.NoError(t, err)
+	require.Equal(t, 3e-05, pricing.ImageOutputPricePerToken,
+		"渠道未配 image_output_price 时应保留目录图片价，而不是清零")
+	require.True(t, pricing.ImageOutputPriceExplicit)
+
+	bd := svc.computeTokenBreakdown(pricing, tokens, 1, "", false)
+	require.InDelta(t, imageTokens*3e-05, bd.ImageOutputCost, 1e-12,
+		"图片输出必须按目录图片 token 价结算，不能回退到文本 output 价")
+}
+
+// 反过来：渠道显式配置 image_output_price 时仍以渠道为准，含显式 0（图片免费）。
+func TestGetModelPricingWithChannel_ExplicitChannelImagePriceWins(t *testing.T) {
+	const catalogJSON = `{
+		"gemini-2.5-flash-image": {
+			"input_cost_per_token": 3e-07,
+			"output_cost_per_token": 2.5e-06,
+			"output_cost_per_image_token": 3e-05
+		}
+	}`
+	svc := NewBillingService(&config.Config{}, newStubPricingServiceFromJSON(t, catalogJSON))
+
+	chPricing := &ChannelModelPricing{
+		OutputPrice:      testPtrFloat64(2.5e-06),
+		ImageOutputPrice: testPtrFloat64(0), // 渠道声明图片输出免费
+	}
+	pricing, err := svc.GetModelPricingWithChannel("gemini-2.5-flash-image", chPricing)
+	require.NoError(t, err)
+	require.True(t, pricing.ImageOutputPriceExplicit)
+	require.Equal(t, 0.0, pricing.ImageOutputPricePerToken)
+
+	bd := svc.computeTokenBreakdown(pricing, UsageTokens{
+		OutputTokens: 10, ImageOutputTokens: 10,
+	}, 1, "", false)
+	require.Equal(t, 0.0, bd.ImageOutputCost, "渠道显式 0 表示图片输出免费，不得回退")
+}

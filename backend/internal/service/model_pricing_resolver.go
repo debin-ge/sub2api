@@ -194,27 +194,10 @@ func (r *ModelPricingResolver) ResolveStrictImageToken(
 	if channelPricing != nil {
 		resolved.Source = PricingSourceChannel
 		resolved.channelPricing = channelPricing
-		preserveImageOutput := basePricing != nil && channelPricing.OutputPrice == nil && channelPricing.ImageOutputPrice == nil
-		preserveImageInput := basePricing != nil && channelPricing.InputPrice == nil && channelPricing.ImageInputPrice == nil
-		var imageOutputPrice float64
-		var imageOutputExplicit bool
-		var imageInputPrice float64
-		var imageInputExplicit bool
-		if basePricing != nil {
-			imageOutputPrice = basePricing.ImageOutputPricePerToken
-			imageOutputExplicit = basePricing.ImageOutputPriceExplicit
-			imageInputPrice = basePricing.ImageInputPricePerToken
-			imageInputExplicit = basePricing.ImageInputPriceExplicit
-		}
+		// 图片价不再需要快照式保护：applyChannelImagePrices 自身就区分
+		// "渠道未配置"（保留目录价）和"渠道显式配置"（覆盖），比原先
+		// 仅覆盖 output/image_output 都为 nil 的窄条件更完整。
 		r.applyTokenOverrides(channelPricing, resolved)
-		if preserveImageOutput && resolved.BasePricing != nil {
-			resolved.BasePricing.ImageOutputPricePerToken = imageOutputPrice
-			resolved.BasePricing.ImageOutputPriceExplicit = imageOutputExplicit
-		}
-		if preserveImageInput && resolved.BasePricing != nil {
-			resolved.BasePricing.ImageInputPricePerToken = imageInputPrice
-			resolved.BasePricing.ImageInputPriceExplicit = imageInputExplicit
-		}
 	}
 	if !openAIImageTokenPricingComplete(resolved.BasePricing, requireImageInput) {
 		return nil, fmt.Errorf("%w for image token model: %s: required image dimensions are incomplete", ErrModelPricingUnavailable, input.Model)
@@ -394,14 +377,24 @@ func (r *ModelPricingResolver) applyTokenOverrides(chPricing *ChannelModelPricin
 }
 
 // applyChannelImagePrices 应用渠道图片 token 价格。
-// ImageOutputPrice=nil 表示未配置，必须回退到当前文本 output 价；只有显式
-// 配置为 0 才表示图片输出免费。先清掉基础目录中的图片价，避免渠道已覆盖
-// 文本 output 后仍意外沿用全局图片价。
+// ImageOutputPrice=nil 表示渠道未配置：此时保留目录里已有的图片 token 价
+// （若有），否则保持"未配置"让计费回退文本 output 价。只有渠道显式配置
+// （含显式 0）才覆盖目录值。绝不能无条件清零目录图片价——那会让图片输出
+// 静默按文本价结算，而两者通常差一个数量级。
 func applyChannelImagePrices(chPricing *ChannelModelPricing, pricing *ModelPricing) {
-	if chPricing != nil && chPricing.ImageOutputPrice != nil {
+	switch {
+	case chPricing != nil && chPricing.ImageOutputPrice != nil:
+		// 渠道显式配置（含显式 0）：以渠道为准
 		pricing.ImageOutputPricePerToken = *chPricing.ImageOutputPrice
 		pricing.ImageOutputPriceExplicit = true
-	} else {
+	case pricing.ImageOutputPriceExplicit:
+		// 渠道没配图片价，但目录里有真实的图片 token 价：原样保留。
+		// 这里曾经是"一律清零"，导致 computeTokenBreakdown 退化到文本 output
+		// 价——而文本价通常比图片 token 价低一个数量级（gemini-2.5-flash-image
+		// 差 12×，gemini-3-pro-image-preview 差 10×），出图即漏计。
+		// 运营者要覆盖应显式填 image_output_price；显式填 0 仍表示图片输出免费。
+	case pricing.PricePresenceKnown:
+		// 目录条目存在但确实没配图片价：保持"未配置"，让计费回退文本价。
 		pricing.ImageOutputPricePerToken = 0
 		pricing.ImageOutputPriceExplicit = false
 	}
@@ -409,15 +402,16 @@ func applyChannelImagePrices(chPricing *ChannelModelPricing, pricing *ModelPrici
 }
 
 // applyChannelImageInputPrice 应用渠道图片输入价：显式配置则用配置值；
-// 未配置时归零，使 computeTokenBreakdown 回退到文本输入价（向后兼容，
-// 避免 commit 引入的 LiteLLM 图片输入价泄漏进渠道自定义定价）。
-// 与 image_output 不同，此处不设 Explicit 标志——图片输入未配置应回退文本价，
-// 而非硬置 0。
+// 未配置但目录有真实图片输入价时保留目录价（与图片输出同一理由——
+// 归零会静默退化到文本输入价）；目录确实没配才归零回退文本价。
 func applyChannelImageInputPrice(chPricing *ChannelModelPricing, pricing *ModelPricing) {
-	if chPricing != nil && chPricing.ImageInputPrice != nil {
+	switch {
+	case chPricing != nil && chPricing.ImageInputPrice != nil:
 		pricing.ImageInputPricePerToken = *chPricing.ImageInputPrice
 		pricing.ImageInputPriceExplicit = true
-	} else {
+	case pricing.ImageInputPriceExplicit:
+		// 保留目录图片输入价
+	case pricing.PricePresenceKnown:
 		pricing.ImageInputPricePerToken = 0
 		pricing.ImageInputPriceExplicit = false
 	}

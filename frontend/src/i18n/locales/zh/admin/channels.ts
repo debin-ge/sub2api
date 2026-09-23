@@ -59,6 +59,7 @@ export default {
       loadError: '加载渠道列表失败',
       createSuccess: '渠道创建成功',
       updateSuccess: '渠道更新成功',
+      imagePriceInheritsCatalog: '以下模型未填写图片输出价，图片输出将沿用目录图片 token 价，不跟随文本价折扣：{models}',
       deleteSuccess: '渠道删除成功',
       createError: '创建渠道失败',
       updateError: '更新渠道失败',

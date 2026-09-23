@@ -134,6 +134,8 @@ type channelResponse struct {
 	AccountStatsPricingRules   []accountStatsPricingRuleResponse `json:"account_stats_pricing_rules"`
 	CreatedAt                  string                            `json:"created_at"`
 	UpdatedAt                  string                            `json:"updated_at"`
+	// Warnings 只在创建/更新响应里出现：不阻断保存的配置提示（如图片价沿用目录价）。
+	Warnings []service.ModelPriceWarning `json:"warnings,omitempty"`
 }
 
 type channelModelPricingResponse struct {
@@ -531,7 +533,9 @@ func (h *ChannelHandler) Create(c *gin.Context) {
 		return
 	}
 
-	response.Success(c, channelToResponse(channel))
+	resp := channelToResponse(channel)
+	resp.Warnings = h.channelService.CatalogImagePriceWarnings(channel.ModelPricing)
+	response.Success(c, resp)
 }
 
 // Update handles updating a channel
@@ -596,7 +600,9 @@ func (h *ChannelHandler) Update(c *gin.Context) {
 		return
 	}
 
-	response.Success(c, channelToResponse(channel))
+	resp := channelToResponse(channel)
+	resp.Warnings = h.channelService.CatalogImagePriceWarnings(channel.ModelPricing)
+	response.Success(c, resp)
 }
 
 // Delete handles deleting a channel
