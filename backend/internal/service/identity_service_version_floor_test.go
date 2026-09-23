@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"os"
+	"os/exec"
 	"testing"
 	"time"
 
@@ -12,7 +14,7 @@ import (
 
 // floorClaudeCLIUserAgentVersion 单元测试：版本下限抬升的各种形态。
 func TestFloorClaudeCLIUserAgentVersion(t *testing.T) {
-	floorUA := "claude-cli/" + claude.CLICurrentVersion
+	floorUA := "claude-cli/" + claude.CLIVersion()
 	cases := []struct {
 		name        string
 		ua          string
@@ -21,6 +23,7 @@ func TestFloorClaudeCLIUserAgentVersion(t *testing.T) {
 	}{
 		// 线上故障形态：历史版本低于 CLICurrentVersion，就地抬到下限。
 		{"old_version_upgraded", "claude-cli/2.1.220 (external, cli)", floorUA + " (external, cli)", true},
+		{"opus55_rejected_version_upgraded", "claude-cli/2.1.260 (external, cli)", floorUA + " (external, cli)", true},
 		// 只替换版本号段，括号内的真实客户端形态原样保留。
 		{"old_version_with_desktop_3p_suffix",
 			"claude-cli/2.1.100 (external, claude-desktop-3p, agent-sdk/0.3.100)",
@@ -46,14 +49,14 @@ func TestFloorClaudeCLIUserAgentVersion(t *testing.T) {
 	}
 }
 
-// GetOrCreateFingerprint 集成行为，直接对应线上故障：缓存指纹停留在历史版本
-// 2.1.220（生产 Redis 中账号 147 的实际值），客户端送来更旧的 2.1.75。
+// GetOrCreateFingerprint 集成行为：缓存指纹停留在被 Opus 5.5 拒绝的
+// 2.1.260，客户端送来更旧的 2.1.75。
 // 修复前：isNewerVersion 不触发、UA 形态合法不触发自愈，旧指纹被原样返回并
-// 近乎永不过期——上游按指纹 UA 做客户端版本闸门（Fable 5.1 要求 >= 2.1.251），
+// 近乎永不过期——上游按指纹 UA 做客户端版本闸门（Opus 5.5 要求 >= 2.1.280），
 // 仅升 CLICurrentVersion 对存量账号完全无效。
 func TestGetOrCreateFingerprintFloorsStaleCachedUserAgent(t *testing.T) {
 	cache := &stubIdentityCache{fingerprint: &Fingerprint{
-		UserAgent:               "claude-cli/2.1.220 (external, cli)",
+		UserAgent:               "claude-cli/2.1.260 (external, cli)",
 		ClientID:                "cid-1",
 		StainlessPackageVersion: "0.91.1",
 		UpdatedAt:               time.Now().Unix(),
@@ -66,9 +69,10 @@ func TestGetOrCreateFingerprintFloorsStaleCachedUserAgent(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-	require.Equal(t, "claude-cli/"+claude.CLICurrentVersion+" (external, cli)", fp.UserAgent)
+	require.Equal(t, "claude-cli/"+claude.CLIVersion()+" (external, cli)", fp.UserAgent)
 	require.Equal(t, 1, cache.setCalls, "下限抬升必须持久化写回缓存")
-	require.Equal(t, "claude-cli/"+claude.CLICurrentVersion+" (external, cli)", cache.lastSet.UserAgent)
+	require.Equal(t, "claude-cli/"+claude.CLIVersion()+" (external, cli)", cache.lastSet.UserAgent)
+	require.Equal(t, "cid-1", fp.ClientID)
 	// X-Stainless-* 维持既有 merge 语义：客户端未携带时保留缓存中的真实值，不被下限逻辑覆盖。
 	require.Equal(t, "0.91.1", fp.StainlessPackageVersion)
 }
@@ -126,7 +130,7 @@ func TestGetOrCreateFingerprintFloorWinsOverStaleClientUpgrade(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-	require.Equal(t, "claude-cli/"+claude.CLICurrentVersion+" (external, cli)", fp.UserAgent)
+	require.Equal(t, "claude-cli/"+claude.CLIVersion()+" (external, cli)", fp.UserAgent)
 	require.Equal(t, 1, cache.setCalls)
 }
 
@@ -141,6 +145,16 @@ func TestCreateFingerprintFromHeadersFloorsOldClientUserAgent(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-	require.Equal(t, "claude-cli/"+claude.CLICurrentVersion+" (external, claude-desktop-3p)", fp.UserAgent)
+	require.Equal(t, "claude-cli/"+claude.CLIVersion()+" (external, claude-desktop-3p)", fp.UserAgent)
 	require.Equal(t, 1, cache.setCalls)
+}
+
+func TestFingerprintVersionFloorHonorsOverride(t *testing.T) {
+	// CLIVersion is resolved at startup, so exercise the override in a fresh process.
+	t.Setenv(claude.CLIVersionEnv, "2.1.281")
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	cmd := exec.Command(executable, "-test.count=1", "-test.run=^(TestFloorClaudeCLIUserAgentVersion|TestGetOrCreateFingerprintFloorsStaleCachedUserAgent|TestGetOrCreateFingerprintDoesNotTouchCacheAboveFloor|TestCreateFingerprintFromHeadersFloorsOldClientUserAgent|TestBuildOAuthRequest_BillingMatchesWireUserAgent)$")
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, "%s", output)
 }

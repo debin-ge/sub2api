@@ -81,8 +81,8 @@ const DefaultCacheControlTTL = "5m"
 // 必须与 DefaultHeaders["User-Agent"] 中的版本号严格一致；不一致会被 Anthropic 判第三方。
 //
 // 上游会按这个版本号对新模型做客户端版本闸门：版本过旧时整个请求直接返回
-// claude_code_version_too_old。claude-fable-5-1 要求 >= 2.1.251。
-const CLICurrentVersion = "2.1.260"
+// claude_code_version_too_old。Opus 5.5 的上游错误要求 >= 2.1.280。
+const CLICurrentVersion = "2.1.280"
 
 // FullClaudeCodeMimicryBetas 返回最"像"真实 Claude Code CLI 的完整 beta 列表，
 // 用于 OAuth 账号伪装成 Claude Code 时使用。

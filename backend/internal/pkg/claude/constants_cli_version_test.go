@@ -15,7 +15,7 @@ import (
 //	"Claude Code <ver> does not support this model; version 2.1.251 or newer is required."
 const fable51MinCLIVersion = "2.1.251"
 
-// TestCLICurrentVersionMatchesDefaultUserAgent 锁定"常量与 UA 同源"这条约束。
+// TestCLICurrentVersionMatchesDefaultUserAgent 锁定"运行时版本与 UA 同源"这条约束。
 // 两者不一致会被 Anthropic 判为第三方客户端，且只改一处是历史上的常见疏漏，
 // 所以这里从 UA 里反解版本号来比对，而不是并列两个字面量。
 func TestCLICurrentVersionMatchesDefaultUserAgent(t *testing.T) {
@@ -30,8 +30,8 @@ func TestCLICurrentVersionMatchesDefaultUserAgent(t *testing.T) {
 	if idx := strings.IndexByte(rest, ' '); idx >= 0 {
 		version = rest[:idx]
 	}
-	require.Equal(t, CLICurrentVersion, version,
-		"DefaultHeaders User-Agent version must match CLICurrentVersion")
+	require.Equal(t, CLIVersion(), version,
+		"DefaultHeaders User-Agent version must match CLIVersion()")
 }
 
 // TestCLICurrentVersionSatisfiesFable51Gate 锁定伪装版本不低于 claude-fable-5-1
@@ -43,6 +43,16 @@ func TestCLICurrentVersionSatisfiesFable51Gate(t *testing.T) {
 	require.GreaterOrEqual(t, compareSemver(t, CLICurrentVersion, fable51MinCLIVersion), 0,
 		"CLICurrentVersion %s is below the claude-fable-5-1 gate %s",
 		CLICurrentVersion, fable51MinCLIVersion)
+}
+
+func TestCLICurrentVersionSatisfiesOpus55Gate(t *testing.T) {
+	t.Parallel()
+
+	// Minimum reported by the upstream claude_code_version_too_old response.
+	const minimumVersion = "2.1.280"
+	require.GreaterOrEqual(t, compareSemver(t, CLICurrentVersion, minimumVersion), 0,
+		"CLICurrentVersion %s is below the Opus 5.5 gate %s",
+		CLICurrentVersion, minimumVersion)
 }
 
 // compareSemver 比较两个三段 semver，返回 -1 / 0 / 1。

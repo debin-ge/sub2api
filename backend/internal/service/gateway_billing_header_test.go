@@ -95,11 +95,13 @@ func TestBuildOAuthRequest_BillingMatchesWireUserAgent(t *testing.T) {
 			mimic     bool
 			identity  bool
 			disableFP bool
+			staleFP   bool
 		}{
 			{name: "mimic_overrides_cached_version", mimic: true, identity: true},
 			{name: "mimic_without_identity", mimic: true},
 			{name: "mimic_with_fingerprint_disabled", mimic: true, identity: true, disableFP: true},
 			{name: "passthrough_uses_cached_version", identity: true},
+			{name: "passthrough_upgrades_stale_cached_version", identity: true, staleFP: true},
 		} {
 			t.Run(endpoint+"/"+tc.name, func(t *testing.T) {
 				resetGatewayForwardingSettingsCacheForTest(t)
@@ -114,6 +116,9 @@ func TestBuildOAuthRequest_BillingMatchesWireUserAgent(t *testing.T) {
 				cfg := &config.Config{}
 				svc := &GatewayService{cfg: cfg}
 				cachedUA := "claude-cli/2.9.0 (external, cli)"
+				if tc.staleFP {
+					cachedUA = "claude-cli/2.1.260 (external, cli)"
+				}
 				if tc.identity {
 					svc.identityService = NewIdentityService(&stubIdentityCache{fingerprint: &Fingerprint{
 						UserAgent: cachedUA, ClientID: "test-client", UpdatedAt: time.Now().Unix(),
@@ -137,7 +142,7 @@ func TestBuildOAuthRequest_BillingMatchesWireUserAgent(t *testing.T) {
 				require.NoError(t, err)
 				defer func() { require.NoError(t, req.Body.Close()) }()
 				wantUA := cachedUA
-				if tc.mimic {
+				if tc.mimic || tc.staleFP {
 					wantUA = claude.DefaultHeaders["User-Agent"]
 				}
 				require.Equal(t, wantUA, getHeaderRaw(req.Header, "User-Agent"))
