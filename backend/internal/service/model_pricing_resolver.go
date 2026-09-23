@@ -592,3 +592,12 @@ func (r *ModelPricingResolver) GetRequestTierPriceByContext(resolved *ResolvedPr
 	price, _ := r.LookupRequestTierPriceByContext(resolved, totalContextTokens)
 	return price
 }
+
+// strictCatalogImageUnitPrice 返回目录（含手动覆盖）里显式配置的每张图片价，
+// 不做跨模型推断，也不回退到硬编码默认价。
+func (r *ModelPricingResolver) strictCatalogImageUnitPrice(platforms []string, model string) (float64, bool) {
+	if r == nil || r.billingService == nil {
+		return 0, false
+	}
+	return r.billingService.strictCatalogMediaBasePriceForPlatforms(platforms, model)
+}

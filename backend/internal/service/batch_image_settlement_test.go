@@ -32,32 +32,50 @@ func TestBatchImageModelPricingResolver_RequiresStrictModelPrice(t *testing.T) {
 	pricingService := &PricingService{
 		pricingData: map[string]*ModelPriceEntry{
 			"gpt-image-2": {
-				InputCostPerToken:       0.000001,
-				OutputCostPerToken:      0.000002,
-				OutputCostPerImageToken: 0.25,
+				InputCostPerToken:          0.000001,
+				OutputCostPerToken:         0.000002,
+				OutputCostPerImageToken:    0.00003,
+				ImageOutputPriceExplicit:   true,
+				OutputCostPerImage:         0.25,
+				OutputCostPerImageExplicit: true,
 			},
 			"gpt-image-free": {
-				InputCostPerToken:        0.000001,
-				OutputCostPerToken:       0.000002,
-				OutputCostPerImageToken:  0,
-				ImageOutputPriceExplicit: true,
+				InputCostPerToken:          0.000001,
+				OutputCostPerToken:         0.000002,
+				OutputCostPerImage:         0,
+				OutputCostPerImageExplicit: true,
 			},
 			"gpt-image-zero-unconfigured": {
-				InputCostPerToken:       0.000001,
-				OutputCostPerToken:      0.000002,
-				OutputCostPerImageToken: 0,
+				InputCostPerToken:  0.000001,
+				OutputCostPerToken: 0.000002,
+				OutputCostPerImage: 0,
+			},
+			// 只有每 token 图片价、没有每张价：不能把每 token 价当成每张价。
+			"gpt-image-token-only": {
+				InputCostPerToken:        0.000001,
+				OutputCostPerToken:       0.000002,
+				OutputCostPerImageToken:  0.00003,
+				ImageOutputPriceExplicit: true,
 			},
 			"gpt-image-nan": {
-				InputCostPerToken:        0.000001,
-				OutputCostPerToken:       0.000002,
-				OutputCostPerImageToken:  math.NaN(),
-				ImageOutputPriceExplicit: true,
+				InputCostPerToken:          0.000001,
+				OutputCostPerToken:         0.000002,
+				OutputCostPerImage:         math.NaN(),
+				OutputCostPerImageExplicit: true,
 			},
 			"gpt-image-infinity": {
-				InputCostPerToken:        0.000001,
-				OutputCostPerToken:       0.000002,
-				OutputCostPerImageToken:  math.Inf(1),
-				ImageOutputPriceExplicit: true,
+				InputCostPerToken:          0.000001,
+				OutputCostPerToken:         0.000002,
+				OutputCostPerImage:         math.Inf(1),
+				OutputCostPerImageExplicit: true,
+			},
+			// billing_mode=image 的覆盖只配每张价、没有 token 价：按张计价仍然成立。
+			"gpt-image-per-image-only": {
+				OutputCostPerImage:         0.04,
+				OutputCostPerImageExplicit: true,
+				PricePresenceKnown:         true,
+				TokenPricingAbsent:         true,
+				BillingMode:                BillingModeImage,
 			},
 		},
 	}
@@ -80,8 +98,16 @@ func TestBatchImageModelPricingResolver_RequiresStrictModelPrice(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, freeUnitPrice)
 
+	perImageOnly, err := resolver.BatchImageUnitPrice(
+		context.Background(),
+		&BatchImageJob{Model: "gpt-image-per-image-only"},
+	)
+	require.NoError(t, err)
+	require.InDelta(t, 0.04, perImageOnly, 1e-12)
+
 	for _, model := range []string{
 		"gpt-image-zero-unconfigured",
+		"gpt-image-token-only",
 		"gpt-image-nan",
 		"gpt-image-infinity",
 		"gpt-image-future-unpriced",
