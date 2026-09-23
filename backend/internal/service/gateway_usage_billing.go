@@ -1602,6 +1602,20 @@ func (s *GatewayService) resolveChannelPricingForPlatforms(
 	return nil
 }
 
+// usageTokensFromClaudeUsage 把上游用量完整映射为计费 token，token 路径与图片路径共用，
+// 避免某条路径漏掉缓存维度。
+func usageTokensFromClaudeUsage(usage ClaudeUsage) UsageTokens {
+	return UsageTokens{
+		InputTokens:           usage.InputTokens,
+		OutputTokens:          usage.OutputTokens,
+		CacheCreationTokens:   usage.CacheCreationInputTokens,
+		CacheReadTokens:       usage.CacheReadInputTokens,
+		CacheCreation5mTokens: usage.CacheCreation5mTokens,
+		CacheCreation1hTokens: usage.CacheCreation1hTokens,
+		ImageOutputTokens:     usage.ImageOutputTokens,
+	}
+}
+
 // calculateImageCost 计算图片生成费用：渠道级别定价优先，否则走按次计费。
 func (s *GatewayService) calculateImageCost(
 	ctx context.Context,
@@ -1635,11 +1649,9 @@ func (s *GatewayService) calculateImageCost(
 		)
 	}
 	if resolved != nil && resolved.Source == PricingSourceChannel {
-		tokens := UsageTokens{
-			InputTokens:       result.Usage.InputTokens,
-			OutputTokens:      result.Usage.OutputTokens,
-			ImageOutputTokens: result.Usage.ImageOutputTokens,
-		}
+		// 必须带上缓存 token：Gemini 的 InputTokens 已扣除 cachedContentTokenCount，
+		// 漏掉 CacheReadTokens 会让按上下文分档（LookupRequestTierPriceByContext）少算。
+		tokens := usageTokensFromClaudeUsage(result.Usage)
 		gid := apiKey.Group.ID
 		cost, err := s.billingService.CalculateCostUnified(CostInput{
 			Ctx:            ctx,
@@ -1682,15 +1694,7 @@ func (s *GatewayService) calculateTokenCost(
 	pricingAt time.Time,
 	opts *recordUsageOpts,
 ) (*CostBreakdown, error) {
-	tokens := UsageTokens{
-		InputTokens:           result.Usage.InputTokens,
-		OutputTokens:          result.Usage.OutputTokens,
-		CacheCreationTokens:   result.Usage.CacheCreationInputTokens,
-		CacheReadTokens:       result.Usage.CacheReadInputTokens,
-		CacheCreation5mTokens: result.Usage.CacheCreation5mTokens,
-		CacheCreation1hTokens: result.Usage.CacheCreation1hTokens,
-		ImageOutputTokens:     result.Usage.ImageOutputTokens,
-	}
+	tokens := usageTokensFromClaudeUsage(result.Usage)
 
 	if s == nil || s.billingService == nil {
 		return nil, fmt.Errorf("%w: gateway billing service unavailable", ErrModelPricingUnavailable)
