@@ -563,6 +563,8 @@ func (s *OpenAIGatewayService) ResolveGrokMediaVideoRequestAccount(
 // SelectGrokMediaVideoRequestAccount only admits the already authenticated
 // task owner. Generic sticky fallback can query another account and overwrite
 // the ownership key; video lookups must neither escape nor refresh that key.
+// Lookups never generate, so the owner is returned without taking an account
+// slot (Acquired=false, no ReleaseFunc, no WaitPlan).
 func (s *OpenAIGatewayService) SelectGrokMediaVideoRequestAccount(
 	ctx context.Context, groupID *int64, sessionHash string, accountID int64, requestedModel string,
 ) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
@@ -581,7 +583,8 @@ func (s *OpenAIGatewayService) SelectMediaVideoRequestAccount(
 	selection, _, err := scheduler.selectBySessionHash(ctx, OpenAIAccountScheduleRequest{
 		GroupID: groupID, Platform: platform, SessionHash: sessionHash,
 		StickyAccountID: accountID, PreserveStickyBinding: true, DisableStickyEscape: true,
-		RequestedModel: requestedModel, RequiredTransport: OpenAIUpstreamTransportHTTPSSE,
+		SkipSlotAcquire: true,
+		RequestedModel:  requestedModel, RequiredTransport: OpenAIUpstreamTransportHTTPSSE,
 		RequirePrivacySet: s.openAIGroupRequiresPrivacySet(ctx, groupID),
 	})
 	if err != nil {

@@ -51,18 +51,14 @@ func TestSelectGrokMediaVideoRequestAccountPreservesOwner(t *testing.T) {
 			for range 20 {
 				selection, decision, err := svc.SelectGrokMediaVideoRequestAccount(ctx, &groupID, sessionHash, ownerID, "")
 				switch state {
-				case "available":
-					require.NoError(t, err)
-					require.Equal(t, int64(1), selection.Account.ID)
-					require.True(t, selection.Acquired)
-					require.True(t, decision.StickySessionHit)
-					selection.ReleaseFunc()
-				case "full":
+				case "available", "full":
+					// 查询不占槽：槽满也直接返回归属账号，不给 WaitPlan。
 					require.NoError(t, err)
 					require.Equal(t, int64(1), selection.Account.ID)
 					require.False(t, selection.Acquired)
 					require.Nil(t, selection.ReleaseFunc)
-					require.Equal(t, int64(1), selection.WaitPlan.AccountID)
+					require.Nil(t, selection.WaitPlan)
+					require.True(t, decision.StickySessionHit)
 				default:
 					require.ErrorIs(t, err, ErrNoAvailableAccounts)
 					require.Nil(t, selection)
@@ -71,13 +67,9 @@ func TestSelectGrokMediaVideoRequestAccountPreservesOwner(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, int64(1), bound)
 			}
-			require.NotContains(t, acquired, int64(2))
+			require.Empty(t, acquired)
+			require.Empty(t, released)
 			require.Empty(t, cache.deletedSessions)
-			if state == "available" {
-				require.Len(t, released, 20)
-			} else {
-				require.Empty(t, released)
-			}
 		})
 	}
 }

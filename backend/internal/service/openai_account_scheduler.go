@@ -79,7 +79,11 @@ type OpenAIAccountScheduleRequest struct {
 	PreserveStickyBinding   bool
 	// DisableStickyEscape keeps task-owner lookups on their account even when
 	// generic sticky health or concurrency heuristics would prefer another.
-	DisableStickyEscape     bool
+	DisableStickyEscape bool
+	// SkipSlotAcquire returns the eligible sticky account without taking an
+	// account slot. Only for lookups that never generate (e.g. video status),
+	// whose callers must not wait for or release a slot either.
+	SkipSlotAcquire         bool
 	RequirePrivacySet       bool
 	PreviousResponseID      string
 	PreviousResponseCanMove bool
@@ -570,6 +574,9 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 			"ttft", ttft,
 		)
 		return nil, true, nil
+	}
+	if req.SkipSlotAcquire {
+		return &AccountSelectionResult{Account: account}, false, nil
 	}
 	result, acquireErr := s.service.tryAcquireAccountSlot(ctx, accountID, account.Concurrency)
 	if acquireErr != nil && req.DisableStickyEscape {

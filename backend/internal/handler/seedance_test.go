@@ -46,12 +46,20 @@ func TestSeedanceHandlerLifecycleAndOwnership(t *testing.T) {
 	require.Positive(t, owner)
 	require.Len(t, bindings.pending, 1)
 	slots.assertReleased(t)
+	require.Equal(t, 1, slots.acquired)
+	require.Equal(t, 1, slots.userAcquired)
+	// status/delete 只按任务 ID 查询或取消，即使槽位已满也不占槽、不排队。
+	slots.full, slots.queueFull = true, true
 	for _, method := range []string{http.MethodGet, http.MethodDelete} {
 		c, w = newContext(method)
 		h.SeedanceTasks(c)
 		require.Equal(t, 200, w.Code, w.Body.String())
 		slots.assertReleased(t)
 	}
+	require.Equal(t, 1, slots.acquired, "seedance lookups must not take account slots")
+	require.Equal(t, 1, slots.userAcquired, "seedance lookups must not take user slots")
+	require.Zero(t, slots.waiting)
+	slots.full, slots.queueFull = false, false
 	for _, other := range []string{"user", "key", "group", "task", "provider"} {
 		c, w = newContext(http.MethodGet)
 		key, _ := middleware.GetAPIKeyFromContext(c)

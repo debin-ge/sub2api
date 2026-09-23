@@ -161,12 +161,16 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
 
-	userReleaseFunc, acquired := h.acquireResponsesUserSlot(c, subject.UserID, subject.Concurrency, false, &streamStarted, reqLog)
-	if !acquired {
-		return
-	}
-	if userReleaseFunc != nil {
-		defer userReleaseFunc()
+	// 视频查询（status/content、Seedance status/delete）只按任务 ID 读取或取消
+	// 已计费的任务，不产生生成负载：不占用户槽，也不在下方占账号槽。
+	if !endpoint.IsVideoLookupRequest() {
+		userReleaseFunc, acquired := h.acquireResponsesUserSlot(c, subject.UserID, subject.Concurrency, false, &streamStarted, reqLog)
+		if !acquired {
+			return
+		}
+		if userReleaseFunc != nil {
+			defer userReleaseFunc()
+		}
 	}
 
 	if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
@@ -355,24 +359,23 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		admissionSessionHash := sessionHash
-		if boundLookupAccountID > 0 {
-			// Waiting must not replace the video ownership TTL with text sticky TTL.
-			admissionSessionHash = ""
-		}
-		var slotResult openAISlotAcquireResult
-		accountReleaseFunc, slotResult = h.acquireResponsesAccountSlot(c, apiKey.GroupID, admissionSessionHash, selection, false, &streamStarted, reqLog)
-		if slotResult == openAISlotAcquireProfitVetoed {
-			// 媒体路径已显式豁免利润门（suppress 标记），此分支仅防御性兜底，
-			// 同样受否决上限约束。
-			if !recordOpenAIProfitVeto(failedAccountIDs, account.ID, &profitVetoCount) {
-				h.handleOpenAIProfitVetoExhausted(c, streamStarted, reqLog, profitVetoCount)
+		// 视频查询由 SelectMediaVideoRequestAccount 返回不占槽的归属账号，直接转发；
+		// 走 acquireResponsesAccountSlot 会因 Acquired=false 进入等待并重新占槽。
+		if !endpoint.IsVideoLookupRequest() {
+			var slotResult openAISlotAcquireResult
+			accountReleaseFunc, slotResult = h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, false, &streamStarted, reqLog)
+			if slotResult == openAISlotAcquireProfitVetoed {
+				// 媒体路径已显式豁免利润门（suppress 标记），此分支仅防御性兜底，
+				// 同样受否决上限约束。
+				if !recordOpenAIProfitVeto(failedAccountIDs, account.ID, &profitVetoCount) {
+					h.handleOpenAIProfitVetoExhausted(c, streamStarted, reqLog, profitVetoCount)
+					return
+				}
+				continue
+			}
+			if slotResult != openAISlotAcquireOK {
 				return
 			}
-			continue
-		}
-		if slotResult != openAISlotAcquireOK {
-			return
 		}
 
 		service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())

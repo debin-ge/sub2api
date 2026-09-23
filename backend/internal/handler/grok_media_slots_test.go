@@ -265,23 +265,17 @@ func grokMediaSlotContext(ctx context.Context, generation bool) (*gin.Context, *
 	return c, w
 }
 
-func TestGrokMediaLookupSlotLifecycle(t *testing.T) {
-	for _, scenario := range []string{"normal", "mismatch acquired", "mismatch wait", "full", "queue full", "cancel while waiting", "wait then acquired", "upstream error", "cancel", "panic"} {
+// Video lookups (status/content) only read an already billed task, so they
+// must neither take nor wait for user/account slots, even when both are full.
+func TestGrokMediaLookupSkipsSlots(t *testing.T) {
+	for _, scenario := range []string{"normal", "content", "slots full", "mismatch", "upstream error", "cancel", "panic"} {
 		t.Run(scenario, func(t *testing.T) {
-			h, slots, bindings, upstream := newGrokMediaSlotHandler(t, false, strings.HasPrefix(scenario, "mismatch"))
+			h, slots, bindings, upstream := newGrokMediaSlotHandler(t, false, scenario == "mismatch")
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			if scenario == "full" || scenario == "mismatch wait" || scenario == "queue full" || scenario == "cancel while waiting" {
+			if scenario == "slots full" {
 				slots.full = true
-			}
-			if scenario == "queue full" {
 				slots.queueFull = true
-			}
-			if scenario == "cancel while waiting" {
-				slots.onWait = cancel
-			}
-			if scenario == "wait then acquired" {
-				slots.denied = 1
 			}
 			original := upstream.call
 			upstream.call = func(req *http.Request, id int64) (*http.Response, error) {
@@ -299,39 +293,46 @@ func TestGrokMediaLookupSlotLifecycle(t *testing.T) {
 			}
 			for range 20 {
 				c, w := grokMediaSlotContext(ctx, false)
-				h.GrokVideoStatus(c)
+				if scenario == "content" {
+					h.GrokVideoContent(c)
+				} else {
+					h.GrokVideoStatus(c)
+				}
 				slots.assertReleased(t)
-				if strings.HasPrefix(scenario, "mismatch") {
-					require.Equal(t, 404, w.Code)
-				}
-				if scenario == "normal" || scenario == "wait then acquired" {
-					require.Equal(t, 200, w.Code)
-				}
-				if scenario == "full" || scenario == "queue full" {
-					require.Equal(t, http.StatusTooManyRequests, w.Code)
+				switch scenario {
+				case "mismatch":
+					require.Equal(t, http.StatusNotFound, w.Code)
+				case "normal", "content", "slots full":
+					require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 				}
 			}
+			require.Zero(t, slots.acquired, "lookups must not take account slots")
+			require.Zero(t, slots.userAcquired, "lookups must not take user slots")
+			require.Zero(t, slots.waiting)
 			require.Zero(t, bindings.writes, "lookups must preserve owner and TTL")
-			if scenario == "mismatch acquired" {
-				require.Equal(t, 20, slots.released)
-			}
-			if slots.full {
-				require.Zero(t, slots.released)
-				require.Zero(t, upstream.calls)
-			}
-			if scenario == "full" || strings.HasPrefix(scenario, "mismatch") {
-				require.Zero(t, upstream.calls)
-			}
 			switch scenario {
-			case "normal", "wait then acquired", "upstream error", "panic":
-				require.Equal(t, 20, upstream.calls)
-				require.Equal(t, 20, slots.released)
+			case "mismatch":
+				require.Zero(t, upstream.calls)
 			case "cancel":
 				require.Equal(t, 1, upstream.calls)
-				require.Equal(t, 1, slots.released)
+			case "content":
+				// content 先查状态拿下载地址，再下载：每次两跳上游。
+				require.Equal(t, 40, upstream.calls)
+			default:
+				require.Equal(t, 20, upstream.calls)
 			}
 		})
 	}
+}
+
+func TestGrokMediaGenerationStillTakesSlots(t *testing.T) {
+	h, slots, _, _ := newGrokMediaSlotHandler(t, false, false)
+	c, w := grokMediaSlotContext(context.Background(), true)
+	h.GrokVideoGeneration(c)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	slots.assertReleased(t)
+	require.Equal(t, 1, slots.acquired)
+	require.Equal(t, 1, slots.userAcquired)
 }
 
 func TestGrokMediaEligibilityReleasesBeforeSwitch(t *testing.T) {

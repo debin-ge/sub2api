@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
@@ -271,28 +272,28 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 	if preferredMappedModel != "" {
 		currentRoutingModel = preferredMappedModel
 	}
-	selection, _, selectedRoutingModel, err := h.gatewayService.SelectAccountWithSchedulerForResolvedCapability(
+	requestPlatform := openAICompatibleRequestPlatform(c.Request.Context(), apiKey)
+	// count_tokens 只做选号+转发：用不占并发槽的 token-count 选号器，
+	// 否则调度器占下的账号槽无人释放，只能等 TTL 过期（账号并发虚高）。
+	account, selectedRoutingModel, err := service.SelectWithChannelMappingRoutingFallback(
 		c.Request.Context(),
-		apiKey.GroupID,
-		"",
-		sessionHash,
+		nil, // 单次选号，没有失败重试循环，不需要映射回退 latch
 		reqModel,
 		currentRoutingModel,
 		channelMapping,
-		nil, // 单次选号，没有失败重试循环，不需要映射回退 latch
-		nil, // 无需排除账号
-		service.OpenAIUpstreamTransportAny,
-		service.OpenAIEndpointCapabilityChatCompletions,
-		false,
-		false,
-		// OpenAI responses/input_tokens 是产品明确的非计费端点；None 是端点级
-		// 白名单，不是因为模型未知或查不到价格而自动免费。
-		service.BillingKindNone,
-		openAICompatibleRequestPlatform(c.Request.Context(), apiKey),
+		func(attemptCtx context.Context, attemptModel string) (*service.Account, error) {
+			return h.gatewayService.SelectAccountForTokenCount(
+				attemptCtx,
+				apiKey.GroupID,
+				sessionHash,
+				attemptModel,
+				service.OpenAIEndpointCapabilityChatCompletions,
+				requestPlatform,
+			)
+		},
 	)
 	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
 	if err != nil {
-		requestPlatform := openAICompatibleRequestPlatform(c.Request.Context(), apiKey)
 		reqLog.Warn("openai_count_tokens.account_select_failed", zap.Error(openAICompatibleSelectionErrorForLog(err, requestPlatform)))
 		cls := classifyOpenAICompatibleNoAccountErrorFromGin(c, h.gatewayService, apiKey, err, selectedRoutingModel, reqModel)
 		if !cls.ModelNotFound {
@@ -301,15 +302,14 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 		h.anthropicErrorResponse(c, cls.Status, cls.ErrType, cls.Message)
 		return
 	}
-	if selection == nil || selection.Account == nil {
-		cls := classifyOpenAICompatibleNoAccountErrorFromGin(c, h.gatewayService, apiKey, err, selectedRoutingModel, reqModel)
+	if account == nil {
+		cls := classifyOpenAICompatibleNoAccountErrorFromGin(c, h.gatewayService, apiKey, service.ErrNoAvailableAccounts, selectedRoutingModel, reqModel)
 		if !cls.ModelNotFound {
 			markOpsRoutingCapacityLimited(c)
 		}
 		h.anthropicErrorResponse(c, cls.Status, cls.ErrType, cls.Message)
 		return
 	}
-	account := selection.Account
 
 	setOpsSelectedAccount(c, account.ID, account.Platform)
 	forwardBody := mappedBodyForMessages(channelMapping.Mapped, channelMapping.MappedModel)

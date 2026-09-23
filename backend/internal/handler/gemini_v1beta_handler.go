@@ -323,6 +323,9 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 	}
 
 	stream := action == "streamGenerateContent"
+	// countTokens 只选号+转发、不计费：不占用户/账号并发槽，也不进利润门，
+	// 与 Anthropic /v1/messages/count_tokens 口径一致。
+	isCountTokens := action == "countTokens"
 	reqLog = reqLog.With(zap.String("model", modelName), zap.String("action", action), zap.Bool("stream", stream))
 
 	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
@@ -342,7 +345,10 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 	setOpsRequestContext(c, modelName, stream)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(stream, false)))
 	pricingCtx, pricingAt := service.WithGatewayTokenRequestPricing(c.Request.Context())
-	c.Request = c.Request.WithContext(pricingCtx)
+	if !isCountTokens {
+		// 该标记只用于装利润门；countTokens 仍复用 pricingAt 记录 0 用量。
+		c.Request = c.Request.WithContext(pricingCtx)
+	}
 
 	if decision := h.checkSecurityAudit(c, reqLog, apiKey, authSubject, service.ContentModerationProtocolGemini, modelName, body); decision != nil && !decision.AllowNextStage {
 		googleSecurityAuditError(c, decision)
@@ -375,16 +381,18 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 	if h.errorPassthroughService != nil {
 		service.BindErrorPassthroughService(c, h.errorPassthroughService)
 	}
-	userReleaseFunc, err := geminiConcurrency.AcquireUserSlotWithWait(c, authSubject.UserID, authSubject.Concurrency, stream, &streamStarted)
-	if err != nil {
-		reqLog.Warn("gemini.user_slot_acquire_failed", zap.Error(err))
-		googleError(c, http.StatusTooManyRequests, err.Error())
-		return
-	}
-	// 确保请求取消时也会释放槽位，避免长连接被动中断造成泄漏
-	userReleaseFunc = wrapReleaseOnDone(c.Request.Context(), userReleaseFunc)
-	if userReleaseFunc != nil {
-		defer userReleaseFunc()
+	if !isCountTokens {
+		userReleaseFunc, err := geminiConcurrency.AcquireUserSlotWithWait(c, authSubject.UserID, authSubject.Concurrency, stream, &streamStarted)
+		if err != nil {
+			reqLog.Warn("gemini.user_slot_acquire_failed", zap.Error(err))
+			googleError(c, http.StatusTooManyRequests, err.Error())
+			return
+		}
+		// 确保请求取消时也会释放槽位，避免长连接被动中断造成泄漏
+		userReleaseFunc = wrapReleaseOnDone(c.Request.Context(), userReleaseFunc)
+		if userReleaseFunc != nil {
+			defer userReleaseFunc()
+		}
 	}
 
 	// 2) billing eligibility check (after wait)
@@ -512,7 +520,12 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 	}
 
 	for {
-		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionKey, modelName, fs.FailedAccountIDs, "", int64(0)) // Gemini 不使用会话限制
+		var selection *service.AccountSelectionResult
+		if isCountTokens {
+			selection, err = h.selectGeminiCountTokensAccount(c.Request.Context(), apiKey.GroupID, sessionKey, modelName, fs.FailedAccountIDs)
+		} else {
+			selection, err = h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionKey, modelName, fs.FailedAccountIDs, "", int64(0)) // Gemini 不使用会话限制
+		}
 		if err != nil {
 			if accessErr, ok := classifyGroupAccessSelectionError(err); ok {
 				googleError(c, accessErr.Status, accessErr.Reason+": "+accessErr.Message)
@@ -575,9 +588,9 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 			sessionBoundAccountID = account.ID
 		}
 
-		// 4) account concurrency slot
+		// 4) account concurrency slot（countTokens 不占槽，跳过等待与利润准入）
 		accountReleaseFunc := selection.ReleaseFunc
-		if !selection.Acquired {
+		if !selection.Acquired && !isCountTokens {
 			if selection.WaitPlan == nil {
 				markOpsRoutingCapacityLimited(c)
 				googleError(c, http.StatusServiceUnavailable, "No available Gemini accounts")
@@ -622,29 +635,31 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 				accountWaitCounted = false
 			}
 		}
-		// 终检与准入后绑定使用选号结果携带的门（见 responses 同名注释）。
-		admissionCtx := service.ContextWithSelectionProfitGate(c.Request.Context(), selection)
-		latest, vetoed, reason := h.gatewayService.GatewayProfitControlVetoLatest(admissionCtx, account)
-		if vetoed {
-			if accountReleaseFunc != nil {
-				accountReleaseFunc()
+		if !isCountTokens {
+			// 终检与准入后绑定使用选号结果携带的门（见 responses 同名注释）。
+			admissionCtx := service.ContextWithSelectionProfitGate(c.Request.Context(), selection)
+			latest, vetoed, reason := h.gatewayService.GatewayProfitControlVetoLatest(admissionCtx, account)
+			if vetoed {
+				if accountReleaseFunc != nil {
+					accountReleaseFunc()
+				}
+				reqLog.Debug("gemini.account_slot_profit_vetoed", zap.Int64("account_id", account.ID), zap.String("reason", reason))
+				if fs.RecordProfitVeto(account.ID) == FailoverExhausted {
+					reqLog.Warn("gemini.profit_veto_attempts_exhausted", zap.Int("profit_veto_count", fs.ProfitVetoCount()))
+					markOpsRoutingCapacityLimited(c)
+					googleError(c, http.StatusServiceUnavailable, profitVetoExhaustedMessage)
+					return
+				}
+				continue
 			}
-			reqLog.Debug("gemini.account_slot_profit_vetoed", zap.Int64("account_id", account.ID), zap.String("reason", reason))
-			if fs.RecordProfitVeto(account.ID) == FailoverExhausted {
-				reqLog.Warn("gemini.profit_veto_attempts_exhausted", zap.Int("profit_veto_count", fs.ProfitVetoCount()))
-				markOpsRoutingCapacityLimited(c)
-				googleError(c, http.StatusServiceUnavailable, profitVetoExhaustedMessage)
-				return
-			}
-			continue
-		}
-		account = latest
-		selection.Account = latest
-		// 等待路径保持既有 eager 绑定（无门时 helper 直接绑定）；调度器已抢槽
-		// 的直达路径无门时由选号内部绑定，这里只在门下补准入后绑定。
-		if selection.ProfitGateActive() || !selection.Acquired {
-			if err := h.gatewayService.BindStickySessionAfterProfitAdmission(admissionCtx, apiKey.GroupID, sessionKey, account.ID); err != nil {
-				reqLog.Warn("gemini.bind_sticky_session_after_profit_admission_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+			account = latest
+			selection.Account = latest
+			// 等待路径保持既有 eager 绑定（无门时 helper 直接绑定）；调度器已抢槽
+			// 的直达路径无门时由选号内部绑定，这里只在门下补准入后绑定。
+			if selection.ProfitGateActive() || !selection.Acquired {
+				if err := h.gatewayService.BindStickySessionAfterProfitAdmission(admissionCtx, apiKey.GroupID, sessionKey, account.ID); err != nil {
+					reqLog.Warn("gemini.bind_sticky_session_after_profit_admission_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+				}
 			}
 		}
 		// 账号槽位/等待计数需要在超时或断开时安全回收
@@ -758,6 +773,20 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		)
 		return
 	}
+}
+
+// selectGeminiCountTokensAccount 为 :countTokens 选号但不占并发槽：token 计数
+// 不产生生成负载，占槽会挤占真实请求容量。返回 Acquired=false 且无 WaitPlan，
+// 调用方据此跳过等待与释放。
+func (h *GatewayHandler) selectGeminiCountTokensAccount(ctx context.Context, groupID *int64, sessionKey, modelName string, excludedIDs map[int64]struct{}) (*service.AccountSelectionResult, error) {
+	account, err := h.gatewayService.SelectAccountForModelForNonBillingEndpointWithExclusions(ctx, groupID, sessionKey, modelName, excludedIDs)
+	if err != nil {
+		return nil, err
+	}
+	if account == nil {
+		return nil, service.ErrNoAvailableAccounts
+	}
+	return &service.AccountSelectionResult{Account: account}, nil
 }
 
 func parseGeminiModelAction(rest string) (model string, action string, err error) {
