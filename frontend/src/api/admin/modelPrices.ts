@@ -295,6 +295,16 @@ export function isImageField(field: string): boolean {
   return field === 'output_cost_per_image'
 }
 
+/** 阈值（token 数）与倍率是无单位数值，不能按每百万 token 价格缩放。 */
+export function isRawNumberField(field: string): boolean {
+  return field === 'long_context_input_token_threshold' || field.endsWith('_multiplier')
+}
+
+/** 表单值与存储值一致、不做 MTok 换算的字段。 */
+export function isUnscaledField(field: string): boolean {
+  return isImageField(field) || isRawNumberField(field)
+}
+
 export async function listModelPrices(params: ModelPriceListParams): Promise<ModelPriceListResponse> {
   const { data } = await apiClient.get('/admin/model-prices', { params })
   return data

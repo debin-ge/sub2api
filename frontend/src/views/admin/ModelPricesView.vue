@@ -177,12 +177,12 @@
             <input
               v-model="form.fields[field]"
               class="input"
-              :placeholder="isImageField(field) ? t('admin.modelPrices.perImage', { currency: form.currency }) : t('admin.modelPrices.perMTok', { currency: form.currency })"
+              :placeholder="fieldPlaceholder(field)"
             />
             <div class="text-xs text-gray-500 dark:text-gray-400">
               {{ t('admin.modelPrices.effectiveValue') }}:
               {{ formatFieldPrice(detail?.effective?.[field], field, detail?.currency) }}
-              <span v-if="detail?.time_schedule && !isImageField(field)" class="ml-1">
+              <span v-if="detail?.time_schedule && !isUnscaledField(field)" class="ml-1">
                 / {{ t('admin.modelPrices.peakPrice') }}
                 {{ scheduledPrice(detail?.effective?.[field], detail.time_schedule, 'peak', detail.currency) }}
                 / {{ t('admin.modelPrices.offPeakPrice') }}
@@ -194,8 +194,14 @@
             </button>
           </div>
         </div>
+        <p
+          v-if="billingMode === 'token' && legacyTokenExtras.video"
+          class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200"
+        >
+          {{ t('admin.modelPrices.billingMode.legacyVideoNotice') }}
+        </p>
         <VideoPricingEditor
-          v-else
+          v-if="billingMode === 'video' || (billingMode === 'token' && legacyTokenExtras.video)"
           v-model="form.videoPricing"
           :inherited-value="inheritedVideoPricing"
           @validation-change="videoPricingErrors = $event"
@@ -256,6 +262,8 @@ import {
   getModelPriceEntry,
   getModelPriceSyncStatus,
   isImageField,
+  isRawNumberField,
+  isUnscaledField,
   listModelPricePlatforms,
   listModelPrices,
   mTokToToken,
@@ -305,12 +313,26 @@ const form = reactive({
   videoPricing: null as VideoPricingConfig | null,
 })
 
-const activePriceFields = computed(() => FIELDS_BY_BILLING_MODE[billingMode.value])
+// 迁移 275 把存量覆盖行一律标成 token，而旧行可能带着图片价或 video_pricing。
+// 后端 token 档接受全部字段且继续让它们生效，所以编辑这类行时必须把它们
+// 原样带回去；否则只是改个备注再保存，就会悄悄删掉已生效的图片/视频价。
+const legacyTokenExtras = reactive({
+  fields: new Set<PriceField>(),
+  video: false,
+})
+const activePriceFields = computed(() => {
+  const base = FIELDS_BY_BILLING_MODE[billingMode.value]
+  if (billingMode.value !== 'token' || legacyTokenExtras.fields.size === 0) return base
+  return PRICE_FIELDS.filter((field) => base.includes(field) || legacyTokenExtras.fields.has(field))
+})
+const videoPricingSubmitted = computed(() =>
+  billingMode.value === 'video' || (billingMode.value === 'token' && legacyTokenExtras.video),
+)
 // 其他计费方式下仍留在表单里的值：切换方式不清空，但保存时会被丢弃。
 const discardedFieldCount = computed(() => {
   const active = new Set<PriceField>(activePriceFields.value)
   const fields = PRICE_FIELDS.filter((field) => !active.has(field) && form.fields[field].trim() !== '').length
-  return fields + (billingMode.value !== 'video' && form.videoPricing !== null ? 1 : 0)
+  return fields + (!videoPricingSubmitted.value && form.videoPricing !== null ? 1 : 0)
 })
 const editorTabs = computed(() => [
   { value: 'token' as const, label: t('admin.modelPrices.tabs.token') },
@@ -390,7 +412,7 @@ function formatPrice(value: unknown, image: boolean, currency: ModelPriceCurrenc
 }
 
 function formatFieldPrice(value: unknown, field: PriceField, currency?: string): string {
-  if (field === 'long_context_input_token_threshold' || field.endsWith('_multiplier')) {
+  if (isRawNumberField(field)) {
     if (value == null || value === '') return t('admin.modelPrices.inherit')
     return String(value)
   }
@@ -489,6 +511,8 @@ function resetForm() {
   form.videoPricing = null
   videoPricingErrors.value = []
   billingMode.value = 'token'
+  legacyTokenExtras.fields = new Set()
+  legacyTokenExtras.video = false
   for (const field of PRICE_FIELDS) {
     form.fields[field] = ''
   }
@@ -509,8 +533,15 @@ function fillFormFromDetail(entry: ModelPriceDetail) {
       form.fields[field] = ''
       continue
     }
-    form.fields[field] = isImageField(field) ? String(raw) : String(tokenToMTok(Number(raw)))
+    form.fields[field] = isUnscaledField(field) ? String(raw) : String(tokenToMTok(Number(raw)))
   }
+  const tokenFields = FIELDS_BY_BILLING_MODE.token
+  legacyTokenExtras.fields = new Set(
+    billingMode.value === 'token'
+      ? PRICE_FIELDS.filter((field) => !tokenFields.includes(field) && form.fields[field] !== '')
+      : [],
+  )
+  legacyTokenExtras.video = billingMode.value === 'token' && form.videoPricing !== null
 }
 
 function openCreate() {
@@ -532,26 +563,49 @@ async function openEdit(row: ModelPriceListItem) {
   }
 }
 
+function fieldPlaceholder(field: PriceField): string {
+  if (isRawNumberField(field)) return ''
+  return isImageField(field)
+    ? t('admin.modelPrices.perImage', { currency: form.currency })
+    : t('admin.modelPrices.perMTok', { currency: form.currency })
+}
+
+// 输错的数字不能静默跳过：跳过等于"继承目录价"，运营者以为改了价，实际没生效。
+function invalidPriceField(): PriceField | null {
+  for (const field of activePriceFields.value) {
+    const raw = form.fields[field].trim()
+    if (raw === '') continue
+    const value = Number(raw)
+    if (!Number.isFinite(value) || value < 0) return field
+  }
+  return null
+}
+
 function buildPayload(): ModelPricePayload {
   const payload: ModelPricePayload = {}
   for (const field of activePriceFields.value) {
     const raw = form.fields[field].trim()
     if (raw === '') continue
-    const value = isImageField(field) ? Number(raw) : mTokToToken(raw)
+    const value = isUnscaledField(field) ? Number(raw) : mTokToToken(raw)
     if (value == null || Number.isNaN(value)) continue
     payload[field] = value
   }
-  if (billingMode.value === 'video' && form.videoPricing !== null) payload.video_pricing = prepareVideoPricingForSave(form.videoPricing)
+  if (videoPricingSubmitted.value && form.videoPricing !== null) payload.video_pricing = prepareVideoPricingForSave(form.videoPricing)
   return payload
 }
 
 function hasMagnitudeRisk(payload: ModelPricePayload): boolean {
-  return PRICE_FIELDS.some((field) => !isImageField(field) && payload[field] != null && Number(payload[field]) > 1)
+  return PRICE_FIELDS.some((field) => !isUnscaledField(field) && payload[field] != null && Number(payload[field]) > 1)
 }
 
 async function saveOverride(confirmed: boolean) {
-  if (billingMode.value === 'video' && videoPricingErrors.value.length) {
+  if (videoPricingSubmitted.value && videoPricingErrors.value.length) {
     appStore.showError(videoPricingErrors.value[0])
+    return
+  }
+  const invalidField = invalidPriceField()
+  if (invalidField) {
+    appStore.showError(t('admin.modelPrices.invalidNumber', { field: fieldLabel(invalidField) }))
     return
   }
   const payload = buildPayload()

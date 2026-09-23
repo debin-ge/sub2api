@@ -579,4 +579,115 @@ describe('ModelPricesView', () => {
     expect(wrapper.text()).toContain('admin.modelPrices.billingMode.hint.video')
     expect(wrapper.text()).toContain('admin.modelPrices.billingMode.discardNotice')
   })
+
+  it('keeps legacy image and video pricing when resaving a token-mode row', async () => {
+    upsertModelPrice.mockResolvedValue({ override: {}, warnings: [] })
+    const videoPricing = { enabled: true, rules: [{ key: 'default', billing_unit: 'second', unit_price_usd: 0.1 }] }
+    getModelPriceEntry.mockResolvedValue({
+      platform: 'anthropic',
+      model: 'legacy-media-model',
+      currency: 'USD',
+      catalog: { input_cost_per_token: 3e-7, output_cost_per_token: 2.5e-6 },
+      override: { input_cost_per_token: 3e-7, output_cost_per_image: 0.04, video_pricing: videoPricing },
+      effective: { input_cost_per_token: 3e-7, output_cost_per_token: 2.5e-6, output_cost_per_image: 0.04 },
+      billing_mode: 'token',
+      enabled: true,
+      token_pricing_absent: false,
+      has_image_pricing: true,
+      sync_invalidated: false,
+      redundant: false,
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.find('button.action-btn').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('admin.modelPrices.billingMode.discardNotice')
+    expect(wrapper.text()).toContain('admin.modelPrices.billingMode.legacyVideoNotice')
+
+    const saveButton = wrapper.findAll('button').find((button) => button.text() === 'admin.modelPrices.save')
+    await saveButton!.trigger('click')
+    await flushPromises()
+
+    expect(upsertModelPrice).toHaveBeenCalledTimes(1)
+    const request = upsertModelPrice.mock.calls[0][0]
+    expect(request.billing_mode).toBe('token')
+    expect(request.payload.input_cost_per_token).toBeCloseTo(3e-7, 15)
+    expect(request.payload.output_cost_per_image).toBe(0.04)
+    expect(request.payload.video_pricing).toBeTruthy()
+  })
+
+  it('does not scale long-context threshold and multipliers as per-MTok prices', async () => {
+    upsertModelPrice.mockResolvedValue({ override: {}, warnings: [] })
+    getModelPriceEntry.mockResolvedValue({
+      platform: 'anthropic',
+      model: 'claude-long',
+      currency: 'USD',
+      catalog: { input_cost_per_token: 3e-6, output_cost_per_token: 1.5e-5 },
+      override: {
+        input_cost_per_token: 3e-6,
+        long_context_input_token_threshold: 200000,
+        long_context_input_cost_multiplier: 2,
+        long_context_output_cost_multiplier: 1.5,
+      },
+      effective: { input_cost_per_token: 3e-6, output_cost_per_token: 1.5e-5 },
+      billing_mode: 'token',
+      enabled: true,
+      token_pricing_absent: false,
+      has_image_pricing: false,
+      sync_invalidated: false,
+      redundant: false,
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.find('button.action-btn').trigger('click')
+    await flushPromises()
+
+    const priceInput = (field: (typeof PRICE_FIELDS)[number]) =>
+      wrapper.findAll('[data-test="editor"] input.input')[1 + PRICE_FIELDS.indexOf(field)]
+    expect((priceInput('long_context_input_token_threshold').element as HTMLInputElement).value).toBe('200000')
+    expect((priceInput('long_context_input_cost_multiplier').element as HTMLInputElement).value).toBe('2')
+
+    const saveButton = wrapper.findAll('button').find((button) => button.text() === 'admin.modelPrices.save')
+    await saveButton!.trigger('click')
+    await flushPromises()
+
+    // 倍率 > 1 不应触发"价格量级"确认，也不应被除以 1e6
+    const request = upsertModelPrice.mock.calls[0][0]
+    expect(request.payload).toMatchObject({
+      long_context_input_token_threshold: 200000,
+      long_context_input_cost_multiplier: 2,
+      long_context_output_cost_multiplier: 1.5,
+    })
+  })
+
+  it('rejects an invalid price instead of silently inheriting the catalog value', async () => {
+    getModelPriceEntry.mockResolvedValue({
+      platform: 'anthropic',
+      model: 'claude-typo',
+      currency: 'USD',
+      catalog: { input_cost_per_token: 3e-6, output_cost_per_token: 1.5e-5 },
+      override: null,
+      effective: { input_cost_per_token: 3e-6, output_cost_per_token: 1.5e-5 },
+      billing_mode: 'token',
+      enabled: true,
+      token_pricing_absent: false,
+      has_image_pricing: false,
+      sync_invalidated: false,
+      redundant: false,
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.find('button.action-btn').trigger('click')
+    await flushPromises()
+    await wrapper.findAll('[data-test="editor"] input.input')[1].setValue('3,5')
+    const saveButton = wrapper.findAll('button').find((button) => button.text() === 'admin.modelPrices.save')
+    await saveButton!.trigger('click')
+    await flushPromises()
+
+    expect(upsertModelPrice).not.toHaveBeenCalled()
+    expect(showError).toHaveBeenCalledWith('admin.modelPrices.invalidNumber')
+  })
 })

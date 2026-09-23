@@ -194,6 +194,7 @@ export default {
       output_cost_per_image_token: 'Image output token price',
       input_cost_per_image_token: 'Image input token price'
     },
+    invalidNumber: '{field} must be a valid non-negative number',
     errors: {
       INCOMPLETE_PRICING: 'Pricing dimension is incomplete: {missing_dimension}',
       EMPTY_PRICING: 'Enter at least one token, image, or video price',
@@ -213,7 +214,8 @@ export default {
         video: 'Bill by video, using the video pricing below. Inherited token and image prices are dropped.'
       },
       discardNotice: '{count} value(s) entered under other billing modes will not be saved.',
-      suppressesTokenWarning: 'Saved. This model has catalog token prices that are now suppressed; chat requests to it will be rejected.'
+      suppressesTokenWarning: 'Saved. This model has catalog token prices that are now suppressed; chat requests to it will be rejected.',
+      legacyVideoNotice: 'This override predates billing modes. Its existing video pricing still applies under the token mode and is kept on save.'
     }
   }
 }
