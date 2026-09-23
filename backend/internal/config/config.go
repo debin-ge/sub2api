@@ -1036,6 +1036,10 @@ type BillingConfig struct {
 	// UserPlatformQuotaSentinelTTLSeconds sentinel(无 limit 占位)entry 的 TTL,
 	// 显著短于 quota cache 默认 86400s 以控 Redis 内存;默认 3600=1h。
 	UserPlatformQuotaSentinelTTLSeconds int `mapstructure:"user_platform_quota_sentinel_ttl_seconds"`
+	// StrictImageDimension 开启后，image token 用量缺少对应图片价时拒绝请求，
+	// 与 cache_write / cache_read 的处理对称；关闭时沿用"回退到文本价 + 打点"。
+	// 默认关闭以保护存量渠道配置，建议先观察 image_*_price_fallback_to_text 日志再开启。
+	StrictImageDimension bool `mapstructure:"strict_image_dimension"`
 }
 
 type CircuitBreakerConfig struct {
@@ -2457,6 +2461,7 @@ func setDefaults() {
 	viper.SetDefault("billing.minimum_balance_reserve", 0.000001)
 	viper.SetDefault("billing.user_platform_quota_cache_ttl_seconds", 86400)
 	viper.SetDefault("billing.user_platform_quota_sentinel_ttl_seconds", 3600)
+	viper.SetDefault("billing.strict_image_dimension", false)
 
 	// Turnstile
 	viper.SetDefault("turnstile.required", false)

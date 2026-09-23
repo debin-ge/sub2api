@@ -250,18 +250,20 @@ func channelImageTokenPricingConfigured(pricing *ChannelModelPricing) bool {
 	return inputConfigured && outputConfigured
 }
 
-func openAIImageTokenPricingComplete(pricing *ModelPricing, requireImageInput bool) bool {
+// openAIImageTokenPricingComplete 判断图片 token 计费所需维度是否齐全。
+// strictImage=false 时沿用旧口径：文本价可顶替图片价；strictImage=true
+// （billing.strict_image_dimension）时图片维度必须有自己的价格。
+func openAIImageTokenPricingComplete(pricing *ModelPricing, requireImageInput, strictImage bool) bool {
 	if pricing == nil {
 		return false
 	}
 	inputConfigured := pricing.InputPriceExplicit || pricing.InputPricePerToken > 0
-	imageOutputConfigured := pricing.ImageOutputPriceExplicit ||
-		pricing.ImageOutputPricePerToken > 0 ||
-		pricing.OutputPriceExplicit ||
-		pricing.OutputPricePerToken > 0
-	imageInputConfigured := pricing.ImageInputPriceExplicit ||
-		pricing.ImageInputPricePerToken > 0 ||
-		inputConfigured
+	imageOutputConfigured := imageOutputPriceConfigured(pricing)
+	imageInputConfigured := imageInputPriceConfigured(pricing)
+	if !strictImage {
+		imageOutputConfigured = imageOutputConfigured || pricing.OutputPriceExplicit || pricing.OutputPricePerToken > 0
+		imageInputConfigured = imageInputConfigured || inputConfigured
+	}
 	return inputConfigured && imageOutputConfigured && (!requireImageInput || imageInputConfigured)
 }
 

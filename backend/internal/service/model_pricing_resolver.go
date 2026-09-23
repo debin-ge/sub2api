@@ -199,7 +199,7 @@ func (r *ModelPricingResolver) ResolveStrictImageToken(
 		// 仅覆盖 output/image_output 都为 nil 的窄条件更完整。
 		r.applyTokenOverrides(channelPricing, resolved)
 	}
-	if !openAIImageTokenPricingComplete(resolved.BasePricing, requireImageInput) {
+	if !openAIImageTokenPricingComplete(resolved.BasePricing, requireImageInput, r.billingService.strictImageDimension()) {
 		return nil, fmt.Errorf("%w for image token model: %s: required image dimensions are incomplete", ErrModelPricingUnavailable, input.Model)
 	}
 	if err := validateFiniteModelPricing(input.Model, resolved.BasePricing); err != nil {
