@@ -1043,17 +1043,13 @@ type videoTerminalBillingDecision struct {
 	errorMessage string
 }
 
-// videoFrozenQuoteBilling settles a completed task at the quote frozen when the
-// hold was taken. It is the fallback whenever provider evidence cannot produce a
-// trustworthy usage-based amount; the hold is released instead when the frozen
-// quote itself is unusable, so an unpriceable task is never charged.
+// videoFrozenQuoteBilling settles a completed task at the amount held when the
+// task was accepted. It is the fallback whenever provider evidence cannot produce
+// a trustworthy usage-based amount, for every billing unit: a delivered video is
+// charged the pre-deducted hold rather than nothing. The hold is released instead
+// when the frozen quote itself is unusable, so an unpriceable task is never charged.
 func videoFrozenQuoteBilling(task *VideoTask, kind, code, message string) videoTerminalBillingDecision {
 	decision := videoTerminalBillingDecision{errorKind: kind, errorCode: code, errorMessage: message}
-	if task == nil || task.BillingUnit == nil || *task.BillingUnit != VideoBillingUnitRequest {
-		zero := 0.0
-		decision.state, decision.actualUnits, decision.actualCost = VideoBillingReleasePending, &zero, &zero
-		return decision
-	}
 	if task == nil || task.EstimatedUnits == nil || task.HoldAmount == nil ||
 		!finiteNonNegative(*task.EstimatedUnits) || !finiteNonNegative(*task.HoldAmount) {
 		zero := 0.0
