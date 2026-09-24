@@ -221,9 +221,9 @@ type ModelPriceDetail struct {
 }
 
 type ModelPriceUpsertInput struct {
-	Platform    string
-	Model       string
-	Currency    string
+	Platform string
+	Model    string
+	Currency string
 	// BillingMode 为空时：更新保留该行已存的计费方式，新建默认 token。
 	// 旧前端缓存或外部脚本不带该字段时，不能把 image/video 行静默改回 token。
 	BillingMode string
