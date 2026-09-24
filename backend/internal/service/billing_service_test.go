@@ -2478,3 +2478,135 @@ func TestComputeTokenBreakdown_NonExplicitZeroImagePrice_FallsBackToOutput(t *te
 	// textOutputTokens = 200 - 50 = 150
 	require.InDelta(t, 150*15e-6, bd.OutputCost, 1e-12)
 }
+
+// W1.2 回归：渠道定价只覆盖文本 input/output 时，目录里的图片 token 价必须保留。
+//
+// 曾经的行为是 applyChannelImagePrices 无条件清零目录图片价，于是
+// computeTokenBreakdown 退化到文本 output 价结算图片输出 token。对目录里同时
+// 带文本价和图片价的双模模型（gemini-2.5-flash-image 等 17 个 image_generation
+// 模型），出图即按文本价结算，实测差 12×。
+func TestGetModelPricingWithChannel_PreservesCatalogImagePrice(t *testing.T) {
+	const catalogJSON = `{
+		"gemini-2.5-flash-image": {
+			"litellm_provider": "gemini",
+			"mode": "image_generation",
+			"input_cost_per_token": 3e-07,
+			"output_cost_per_token": 2.5e-06,
+			"output_cost_per_image": 0.039,
+			"output_cost_per_image_token": 3e-05
+		}
+	}`
+	svc := NewBillingService(&config.Config{}, newStubPricingServiceFromJSON(t, catalogJSON))
+
+	// 1290 image output tokens ≈ 一张 1024×1024 gemini 图
+	const imageTokens = 1290
+	tokens := UsageTokens{OutputTokens: imageTokens, ImageOutputTokens: imageTokens}
+
+	base, err := svc.GetModelPricing("gemini-2.5-flash-image")
+	require.NoError(t, err)
+	require.True(t, base.ImageOutputPriceExplicit, "目录里的图片价应按显式价解析")
+	bdBase := svc.computeTokenBreakdown(base, tokens, 1, "", false)
+	require.InDelta(t, imageTokens*3e-05, bdBase.ImageOutputCost, 1e-12)
+
+	// 渠道只配文本 input/output，image_output_price 留空
+	chPricing := &ChannelModelPricing{
+		InputPrice:  testPtrFloat64(3e-07),
+		OutputPrice: testPtrFloat64(2.5e-06),
+	}
+	pricing, err := svc.GetModelPricingWithChannel("gemini-2.5-flash-image", chPricing)
+	require.NoError(t, err)
+	require.Equal(t, 3e-05, pricing.ImageOutputPricePerToken,
+		"渠道未配 image_output_price 时应保留目录图片价，而不是清零")
+	require.True(t, pricing.ImageOutputPriceExplicit)
+
+	bd := svc.computeTokenBreakdown(pricing, tokens, 1, "", false)
+	require.InDelta(t, imageTokens*3e-05, bd.ImageOutputCost, 1e-12,
+		"图片输出必须按目录图片 token 价结算，不能回退到文本 output 价")
+}
+
+// 反过来：渠道显式配置 image_output_price 时仍以渠道为准，含显式 0（图片免费）。
+func TestGetModelPricingWithChannel_ExplicitChannelImagePriceWins(t *testing.T) {
+	const catalogJSON = `{
+		"gemini-2.5-flash-image": {
+			"input_cost_per_token": 3e-07,
+			"output_cost_per_token": 2.5e-06,
+			"output_cost_per_image_token": 3e-05
+		}
+	}`
+	svc := NewBillingService(&config.Config{}, newStubPricingServiceFromJSON(t, catalogJSON))
+
+	chPricing := &ChannelModelPricing{
+		OutputPrice:      testPtrFloat64(2.5e-06),
+		ImageOutputPrice: testPtrFloat64(0), // 渠道声明图片输出免费
+	}
+	pricing, err := svc.GetModelPricingWithChannel("gemini-2.5-flash-image", chPricing)
+	require.NoError(t, err)
+	require.True(t, pricing.ImageOutputPriceExplicit)
+	require.Equal(t, 0.0, pricing.ImageOutputPricePerToken)
+
+	bd := svc.computeTokenBreakdown(pricing, UsageTokens{
+		OutputTokens: 10, ImageOutputTokens: 10,
+	}, 1, "", false)
+	require.Equal(t, 0.0, bd.ImageOutputCost, "渠道显式 0 表示图片输出免费，不得回退")
+}
+
+// billing.strict_image_dimension：开启后图片维度缺价与 cache 维度一样拒绝，关闭时回退文本价。
+func TestComputeTokenBreakdownValidated_StrictImageDimension(t *testing.T) {
+	pricing := &ModelPricing{
+		PricePresenceKnown:  true,
+		InputPricePerToken:  3e-07,
+		InputPriceExplicit:  true,
+		OutputPricePerToken: 2.5e-06,
+		OutputPriceExplicit: true,
+	}
+	outputTokens := UsageTokens{OutputTokens: 1290, ImageOutputTokens: 1290}
+	inputTokens := UsageTokens{InputTokens: 100, ImageInputTokens: 100}
+
+	lenient := NewBillingService(&config.Config{}, nil)
+	bd, err := lenient.computeTokenBreakdownValidated("img-model", pricing, outputTokens, 1, "", false)
+	require.NoError(t, err)
+	require.InDelta(t, 1290*2.5e-06, bd.ImageOutputCost, 1e-12, "开关关闭时仍回退到文本价")
+
+	strict := NewBillingService(&config.Config{Billing: config.BillingConfig{StrictImageDimension: true}}, nil)
+	_, err = strict.computeTokenBreakdownValidated("img-model", pricing, outputTokens, 1, "", false)
+	require.ErrorIs(t, err, ErrModelPricingUnavailable)
+	require.Contains(t, err.Error(), "image_output")
+	_, err = strict.computeTokenBreakdownValidated("img-model", pricing, inputTokens, 1, "", false)
+	require.ErrorIs(t, err, ErrModelPricingUnavailable)
+	require.Contains(t, err.Error(), "image_input")
+
+	// 显式配置的图片价（含显式 0）满足严格模式
+	priced := *pricing
+	priced.ImageOutputPriceExplicit = true
+	priced.ImageInputPriceExplicit = true
+	_, err = strict.computeTokenBreakdownValidated("img-model", &priced, outputTokens, 1, "", false)
+	require.NoError(t, err)
+	_, err = strict.computeTokenBreakdownValidated("img-model", &priced, inputTokens, 1, "", false)
+	require.NoError(t, err)
+
+	// legacy 内存条目（PricePresenceKnown=false）不受严格模式影响
+	legacy := *pricing
+	legacy.PricePresenceKnown = false
+	_, err = strict.computeTokenBreakdownValidated("img-model", &legacy, outputTokens, 1, "", false)
+	require.NoError(t, err)
+}
+
+func TestOpenAIImageTokenPricingComplete_StrictImageDimension(t *testing.T) {
+	textOnly := &ModelPricing{
+		InputPricePerToken: 5e-06, InputPriceExplicit: true,
+		OutputPricePerToken: 4e-05, OutputPriceExplicit: true,
+	}
+	require.True(t, openAIImageTokenPricingComplete(textOnly, true, false), "宽松模式允许文本价顶替图片价")
+	require.False(t, openAIImageTokenPricingComplete(textOnly, false, true), "严格模式要求图片 output 价")
+
+	withImageOutput := *textOnly
+	withImageOutput.ImageOutputPricePerToken = 4e-05
+	withImageOutput.ImageOutputPriceExplicit = true
+	require.True(t, openAIImageTokenPricingComplete(&withImageOutput, false, true))
+	require.False(t, openAIImageTokenPricingComplete(&withImageOutput, true, true), "严格模式下需要图片输入时要求图片 input 价")
+
+	withImageInput := withImageOutput
+	withImageInput.ImageInputPricePerToken = 1e-05
+	withImageInput.ImageInputPriceExplicit = true
+	require.True(t, openAIImageTokenPricingComplete(&withImageInput, true, true))
+}

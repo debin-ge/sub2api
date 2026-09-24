@@ -75,7 +75,7 @@ func (r *VideoPricingResolver) Resolve(ctx context.Context, request VideoPricing
 			return r.resolveChannelStylePricing(channelPricing, technicalProfile, attrs, VideoPricingSourceChannel, request.Platform, billingModel)
 		}
 	}
-	if globalEntry == nil || globalEntry.VideoPricing == nil || !globalEntry.VideoPricing.Enabled {
+	if !catalogVideoPricingActive(globalEntry) {
 		return nil, ErrVideoPricingMissing
 	}
 	quote, err := ResolveVideoPricingConfig(globalEntry.VideoPricing, attrs)

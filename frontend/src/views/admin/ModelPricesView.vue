@@ -56,7 +56,9 @@
               <span class="font-medium text-gray-900 dark:text-white">{{ row.model }}</span>
               <div class="flex flex-wrap gap-1">
                 <span v-if="row.token_pricing_absent && !row.has_image_pricing && !row.has_video_pricing" class="badge-warn">{{ t('admin.modelPrices.missing') }}</span>
-                <span v-if="row.has_image_pricing && row.token_pricing_absent && !row.has_video_pricing" class="badge-info">{{ t('admin.modelPrices.imageOnly') }}</span>
+                <span v-if="row.billing_mode === 'image'" class="badge-info">{{ t('admin.modelPrices.billingMode.label') }}: {{ t('admin.modelPrices.tabs.image') }}</span>
+                <span v-else-if="row.billing_mode === 'video'" class="badge-video">{{ t('admin.modelPrices.billingMode.label') }}: {{ t('admin.modelPrices.tabs.video') }}</span>
+                <span v-else-if="row.has_image_pricing && row.token_pricing_absent && !row.has_video_pricing" class="badge-info">{{ t('admin.modelPrices.imageOnly') }}</span>
                 <span v-if="row.has_video_pricing" class="badge-video">{{ t('admin.modelPrices.video.badge', { count: row.video_rule_count || 0 }) }}</span>
                 <span v-if="row.video_pricing_error" class="badge-danger">{{ t('admin.modelPrices.video.invalid') }}</span>
                 <span v-if="row.sync_invalidated" class="badge-danger">{{ t('admin.modelPrices.syncInvalidated') }}</span>
@@ -151,12 +153,22 @@
           <input v-model="form.enabled" type="checkbox" class="rounded border-gray-300" />
           {{ t('admin.modelPrices.enabled') }}
         </label>
-        <div class="flex border-b border-gray-200 dark:border-dark-600" role="tablist">
-          <button v-for="tab in editorTabs" :key="tab.value" type="button" class="editor-tab" :class="editorTab === tab.value ? 'editor-tab-active' : ''" @click="editorTab = tab.value">
-            {{ tab.label }}
-          </button>
+        <div>
+          <span class="mb-1 block text-sm text-gray-600 dark:text-gray-300">{{ t('admin.modelPrices.billingMode.label') }}</span>
+          <div class="flex border-b border-gray-200 dark:border-dark-600" role="tablist">
+            <button v-for="tab in editorTabs" :key="tab.value" type="button" class="editor-tab" :class="billingMode === tab.value ? 'editor-tab-active' : ''" @click="billingMode = tab.value">
+              {{ tab.label }}
+            </button>
+          </div>
+          <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">{{ t(`admin.modelPrices.billingMode.hint.${billingMode}`) }}</p>
+          <p
+            v-if="discardedFieldCount > 0"
+            class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200"
+          >
+            {{ t('admin.modelPrices.billingMode.discardNotice', { count: discardedFieldCount }) }}
+          </p>
         </div>
-        <div v-if="editorTab !== 'video'" class="space-y-3">
+        <div v-if="billingMode !== 'video'" class="space-y-3">
           <div v-for="field in activePriceFields" :key="field" class="grid items-end gap-2 sm:grid-cols-[1fr,1fr,1fr,auto]">
             <div class="text-xs text-gray-500 dark:text-gray-400">
               <div class="font-medium text-gray-800 dark:text-gray-200">{{ fieldLabel(field) }}</div>
@@ -165,12 +177,12 @@
             <input
               v-model="form.fields[field]"
               class="input"
-              :placeholder="isImageField(field) ? t('admin.modelPrices.perImage', { currency: form.currency }) : t('admin.modelPrices.perMTok', { currency: form.currency })"
+              :placeholder="fieldPlaceholder(field)"
             />
             <div class="text-xs text-gray-500 dark:text-gray-400">
               {{ t('admin.modelPrices.effectiveValue') }}:
               {{ formatFieldPrice(detail?.effective?.[field], field, detail?.currency) }}
-              <span v-if="detail?.time_schedule && !isImageField(field)" class="ml-1">
+              <span v-if="detail?.time_schedule && !isUnscaledField(field)" class="ml-1">
                 / {{ t('admin.modelPrices.peakPrice') }}
                 {{ scheduledPrice(detail?.effective?.[field], detail.time_schedule, 'peak', detail.currency) }}
                 / {{ t('admin.modelPrices.offPeakPrice') }}
@@ -182,8 +194,14 @@
             </button>
           </div>
         </div>
+        <p
+          v-if="billingMode === 'token' && legacyTokenExtras.video"
+          class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200"
+        >
+          {{ t('admin.modelPrices.billingMode.legacyVideoNotice') }}
+        </p>
         <VideoPricingEditor
-          v-else
+          v-if="billingMode === 'video' || (billingMode === 'token' && legacyTokenExtras.video)"
           v-model="form.videoPricing"
           :inherited-value="inheritedVideoPricing"
           @validation-change="videoPricingErrors = $event"
@@ -238,17 +256,21 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import VideoPricingEditor from '@/components/admin/model-price/VideoPricingEditor.vue'
 import { prepareVideoPricingForSave } from '@/components/admin/model-price/videoPricingForm'
 import {
+  FIELDS_BY_BILLING_MODE,
   PRICE_FIELDS,
   deleteModelPrice,
   getModelPriceEntry,
   getModelPriceSyncStatus,
   isImageField,
+  isRawNumberField,
+  isUnscaledField,
   listModelPricePlatforms,
   listModelPrices,
   mTokToToken,
   syncModelPrices,
   tokenToMTok,
   upsertModelPrice,
+  type ModelPriceBillingMode,
   type ModelPriceDetail,
   type ModelPriceCurrency,
   type ModelPriceListItem,
@@ -274,7 +296,8 @@ const showMagnitude = ref(false)
 const creating = ref(false)
 const detail = ref<ModelPriceDetail | null>(null)
 const pendingDelete = ref<ModelPriceListItem | null>(null)
-const editorTab = ref<'token' | 'image' | 'video'>('token')
+// 计费方式是权威字段：只提交当前方式的价格，其余方式的继承价由后端屏蔽。
+const billingMode = ref<ModelPriceBillingMode>('token')
 const videoPricingErrors = ref<string[]>([])
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -290,9 +313,27 @@ const form = reactive({
   videoPricing: null as VideoPricingConfig | null,
 })
 
-const IMAGE_PRICE_FIELDS = ['output_cost_per_image', 'output_cost_per_image_token', 'input_cost_per_image_token'] as const satisfies readonly PriceField[]
-const imagePriceFieldSet = new Set<PriceField>(IMAGE_PRICE_FIELDS)
-const activePriceFields = computed(() => PRICE_FIELDS.filter((field) => editorTab.value === 'image' ? imagePriceFieldSet.has(field) : !imagePriceFieldSet.has(field)))
+// 迁移 275 把存量覆盖行一律标成 token，而旧行可能带着图片价或 video_pricing。
+// 后端 token 档接受全部字段且继续让它们生效，所以编辑这类行时必须把它们
+// 原样带回去；否则只是改个备注再保存，就会悄悄删掉已生效的图片/视频价。
+const legacyTokenExtras = reactive({
+  fields: new Set<PriceField>(),
+  video: false,
+})
+const activePriceFields = computed(() => {
+  const base = FIELDS_BY_BILLING_MODE[billingMode.value]
+  if (billingMode.value !== 'token' || legacyTokenExtras.fields.size === 0) return base
+  return PRICE_FIELDS.filter((field) => base.includes(field) || legacyTokenExtras.fields.has(field))
+})
+const videoPricingSubmitted = computed(() =>
+  billingMode.value === 'video' || (billingMode.value === 'token' && legacyTokenExtras.video),
+)
+// 其他计费方式下仍留在表单里的值：切换方式不清空，但保存时会被丢弃。
+const discardedFieldCount = computed(() => {
+  const active = new Set<PriceField>(activePriceFields.value)
+  const fields = PRICE_FIELDS.filter((field) => !active.has(field) && form.fields[field].trim() !== '').length
+  return fields + (!videoPricingSubmitted.value && form.videoPricing !== null ? 1 : 0)
+})
 const editorTabs = computed(() => [
   { value: 'token' as const, label: t('admin.modelPrices.tabs.token') },
   { value: 'image' as const, label: t('admin.modelPrices.tabs.image') },
@@ -371,7 +412,7 @@ function formatPrice(value: unknown, image: boolean, currency: ModelPriceCurrenc
 }
 
 function formatFieldPrice(value: unknown, field: PriceField, currency?: string): string {
-  if (field === 'long_context_input_token_threshold' || field.endsWith('_multiplier')) {
+  if (isRawNumberField(field)) {
     if (value == null || value === '') return t('admin.modelPrices.inherit')
     return String(value)
   }
@@ -469,6 +510,9 @@ function resetForm() {
   form.note = ''
   form.videoPricing = null
   videoPricingErrors.value = []
+  billingMode.value = 'token'
+  legacyTokenExtras.fields = new Set()
+  legacyTokenExtras.video = false
   for (const field of PRICE_FIELDS) {
     form.fields[field] = ''
   }
@@ -480,6 +524,7 @@ function fillFormFromDetail(entry: ModelPriceDetail) {
   form.currency = entry.override_currency ?? entry.currency ?? 'USD'
   form.enabled = entry.enabled
   form.note = entry.note || ''
+  billingMode.value = entry.billing_mode ?? 'token'
   form.videoPricing = entry.override?.video_pricing ? JSON.parse(JSON.stringify(entry.override.video_pricing)) : null
   videoPricingErrors.value = []
   for (const field of PRICE_FIELDS) {
@@ -488,15 +533,21 @@ function fillFormFromDetail(entry: ModelPriceDetail) {
       form.fields[field] = ''
       continue
     }
-    form.fields[field] = isImageField(field) ? String(raw) : String(tokenToMTok(Number(raw)))
+    form.fields[field] = isUnscaledField(field) ? String(raw) : String(tokenToMTok(Number(raw)))
   }
+  const tokenFields = FIELDS_BY_BILLING_MODE.token
+  legacyTokenExtras.fields = new Set(
+    billingMode.value === 'token'
+      ? PRICE_FIELDS.filter((field) => !tokenFields.includes(field) && form.fields[field] !== '')
+      : [],
+  )
+  legacyTokenExtras.video = billingMode.value === 'token' && form.videoPricing !== null
 }
 
 function openCreate() {
   creating.value = true
   detail.value = null
   resetForm()
-  editorTab.value = 'token'
   showEditor.value = true
 }
 
@@ -506,34 +557,55 @@ async function openEdit(row: ModelPriceListItem) {
     const entry = await getModelPriceEntry(row.platform, row.model)
     detail.value = entry
     fillFormFromDetail(entry)
-    editorTab.value = row.has_video_pricing && row.token_pricing_absent && !row.has_image_pricing ? 'video' : 'token'
     showEditor.value = true
   } catch (error) {
     appStore.showError(extractI18nErrorMessage(error, t, 'admin.modelPrices.errors', t('common.error')))
   }
 }
 
-function buildPayload(): ModelPricePayload {
-  const payload: ModelPricePayload = {}
-  for (const field of PRICE_FIELDS) {
+function fieldPlaceholder(field: PriceField): string {
+  if (isRawNumberField(field)) return ''
+  return isImageField(field)
+    ? t('admin.modelPrices.perImage', { currency: form.currency })
+    : t('admin.modelPrices.perMTok', { currency: form.currency })
+}
+
+// 输错的数字不能静默跳过：跳过等于"继承目录价"，运营者以为改了价，实际没生效。
+function invalidPriceField(): PriceField | null {
+  for (const field of activePriceFields.value) {
     const raw = form.fields[field].trim()
     if (raw === '') continue
-    const value = isImageField(field) ? Number(raw) : mTokToToken(raw)
+    const value = Number(raw)
+    if (!Number.isFinite(value) || value < 0) return field
+  }
+  return null
+}
+
+function buildPayload(): ModelPricePayload {
+  const payload: ModelPricePayload = {}
+  for (const field of activePriceFields.value) {
+    const raw = form.fields[field].trim()
+    if (raw === '') continue
+    const value = isUnscaledField(field) ? Number(raw) : mTokToToken(raw)
     if (value == null || Number.isNaN(value)) continue
     payload[field] = value
   }
-  if (form.videoPricing !== null) payload.video_pricing = prepareVideoPricingForSave(form.videoPricing)
+  if (videoPricingSubmitted.value && form.videoPricing !== null) payload.video_pricing = prepareVideoPricingForSave(form.videoPricing)
   return payload
 }
 
 function hasMagnitudeRisk(payload: ModelPricePayload): boolean {
-  return PRICE_FIELDS.some((field) => !isImageField(field) && payload[field] != null && Number(payload[field]) > 1)
+  return PRICE_FIELDS.some((field) => !isUnscaledField(field) && payload[field] != null && Number(payload[field]) > 1)
 }
 
 async function saveOverride(confirmed: boolean) {
-  if (videoPricingErrors.value.length) {
-    editorTab.value = 'video'
+  if (videoPricingSubmitted.value && videoPricingErrors.value.length) {
     appStore.showError(videoPricingErrors.value[0])
+    return
+  }
+  const invalidField = invalidPriceField()
+  if (invalidField) {
+    appStore.showError(t('admin.modelPrices.invalidNumber', { field: fieldLabel(invalidField) }))
     return
   }
   const payload = buildPayload()
@@ -544,14 +616,18 @@ async function saveOverride(confirmed: boolean) {
   showMagnitude.value = false
   saving.value = true
   try {
-    await upsertModelPrice({
+    const result = await upsertModelPrice({
       platform: form.platform,
       model: form.model,
       currency: form.currency,
+      billing_mode: billingMode.value,
       payload,
       enabled: form.enabled,
       note: form.note || undefined,
     })
+    if (result?.warnings?.some((warning) => warning.code === 'BILLING_MODE_SUPPRESSES_TOKEN')) {
+      appStore.showWarning(t('admin.modelPrices.billingMode.suppressesTokenWarning'), 8000)
+    }
     showEditor.value = false
     await reload()
   } catch (error) {

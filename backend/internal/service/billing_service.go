@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"math"
 	"sort"
 	"strings"
@@ -367,7 +368,10 @@ func validateFiniteModelPricing(model string, pricing *ModelPricing) error {
 // actual upstream usage. A float64 zero is ambiguous for legacy in-memory
 // entries, so this stricter check is limited to parsed catalog entries where
 // PricePresenceKnown can distinguish omission from an explicit free price.
-func validateUsedModelPricingDimensions(model string, pricing *ModelPricing, tokens UsageTokens) error {
+//
+// strictImage 对应 billing.strict_image_dimension：开启时图片维度与 cache 维度
+// 一样 fail-closed；关闭时只打点，计费仍回退到文本价。
+func validateUsedModelPricingDimensions(model string, pricing *ModelPricing, tokens UsageTokens, strictImage bool) error {
 	if pricing == nil || !pricing.PricePresenceKnown {
 		return nil
 	}
@@ -394,7 +398,51 @@ func validateUsedModelPricingDimensions(model string, pricing *ModelPricing, tok
 			model,
 		)
 	}
+
+	// 图片维度默认不 fail-closed：缺价时 computeTokenBreakdown 会回退到文本价
+	// （见 bd.ImageOutputCost / bd.InputCost 的回退分支）。文本价通常比图片
+	// token 价低一个数量级，所以这种回退多半是配置遗漏而非有意免费，默认先打点
+	// 观测真实发生率，strictImage 开启后收敛为拒绝。
+	if tokens.ImageOutputTokens > 0 && !imageOutputPriceConfigured(pricing) {
+		if strictImage {
+			return fmt.Errorf(
+				"%w: image_output usage has no configured price for model %s",
+				ErrModelPricingUnavailable,
+				model,
+			)
+		}
+		slog.Warn("image_output_price_fallback_to_text",
+			"model", model,
+			"image_output_tokens", tokens.ImageOutputTokens,
+			"text_output_price", pricing.OutputPricePerToken)
+	}
+	if tokens.ImageInputTokens > 0 && !imageInputPriceConfigured(pricing) {
+		if strictImage {
+			return fmt.Errorf(
+				"%w: image_input usage has no configured price for model %s",
+				ErrModelPricingUnavailable,
+				model,
+			)
+		}
+		slog.Warn("image_input_price_fallback_to_text",
+			"model", model,
+			"image_input_tokens", tokens.ImageInputTokens,
+			"text_input_price", pricing.InputPricePerToken)
+	}
 	return nil
+}
+
+// imageOutputPriceConfigured / imageInputPriceConfigured 判定图片维度是否真的
+// 配了价。与文本维度不同，这里刻意不把文本价算作"已配置"——文本价顶替图片价
+// 正是要观测的那种回退。
+func imageOutputPriceConfigured(pricing *ModelPricing) bool {
+	return pricing != nil &&
+		(pricing.ImageOutputPriceExplicit || pricing.ImageOutputPricePerToken > 0)
+}
+
+func imageInputPriceConfigured(pricing *ModelPricing) bool {
+	return pricing != nil &&
+		(pricing.ImageInputPriceExplicit || pricing.ImageInputPricePerToken > 0)
 }
 
 // ---- DeepSeek 官方低谷价（$/token）----
@@ -462,6 +510,11 @@ type BillingService struct {
 }
 
 // NewBillingService 创建计费服务实例
+// strictImageDimension 读取 billing.strict_image_dimension，nil 配置视为关闭。
+func (s *BillingService) strictImageDimension() bool {
+	return s != nil && s.cfg != nil && s.cfg.Billing.StrictImageDimension
+}
+
 func NewBillingService(cfg *config.Config, pricingService *PricingService) *BillingService {
 	s := &BillingService{
 		cfg:            cfg,
@@ -1699,6 +1752,12 @@ func (s *BillingService) getModelPricingForPlatforms(platforms []string, model s
 		// 图片计费路径（getDefaultImagePrice / getImageUnitPrice）直接读
 		// PricingService，不受影响。
 		if catalogEntry != nil && catalogEntry.TokenPricingAbsent {
+			// video 档覆盖是运营者显式声明"该模型只按视频计费"，token 价被刻意抹掉。
+			// 此时不能再回落到按模型名关键词匹配的硬编码价（claude/sonnet 等），
+			// 否则对话请求会按兜底价被计费，而不是按保存时的提示被拒绝。
+			if catalogEntry.BillingMode == BillingModeVideo {
+				return nil, fmt.Errorf("%w for model: %s (billing_mode=video)", ErrModelPricingUnavailable, model)
+			}
 			catalogEntry = nil
 		}
 		if catalogEntry != nil {
@@ -2007,7 +2066,7 @@ func (s *BillingService) computeTokenBreakdownValidated(
 	if err := validateFiniteModelPricing(model, pricing); err != nil {
 		return nil, err
 	}
-	if err := validateUsedModelPricingDimensions(model, pricing, tokens); err != nil {
+	if err := validateUsedModelPricingDimensions(model, pricing, tokens, s.strictImageDimension()); err != nil {
 		return nil, err
 	}
 	return s.computeTokenBreakdown(pricing, tokens, rateMultiplier, serviceTier, applyLongCtx), nil

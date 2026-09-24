@@ -86,6 +86,14 @@ export interface Channel {
   account_stats_pricing_rules: AccountStatsPricingRule[]
   created_at: string
   updated_at: string
+  /** 仅创建/更新响应携带：不阻断保存的配置提示 */
+  warnings?: ChannelSaveWarning[]
+}
+
+export interface ChannelSaveWarning {
+  code: string
+  field?: string
+  model?: string
 }
 
 export interface CreateChannelRequest {

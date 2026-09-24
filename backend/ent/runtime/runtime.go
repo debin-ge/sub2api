@@ -1398,7 +1398,7 @@ func init() {
 		}
 	}()
 	// modelpriceoverrideDescEnabled is the schema descriptor for enabled field.
-	modelpriceoverrideDescEnabled := modelpriceoverrideFields[4].Descriptor()
+	modelpriceoverrideDescEnabled := modelpriceoverrideFields[5].Descriptor()
 	// modelpriceoverride.DefaultEnabled holds the default value on creation for the enabled field.
 	modelpriceoverride.DefaultEnabled = modelpriceoverrideDescEnabled.Default.(bool)
 	paymentauditlogFields := schema.PaymentAuditLog{}.Fields()

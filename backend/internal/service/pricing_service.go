@@ -184,6 +184,10 @@ type ModelPriceEntry struct {
 	LongContextThresholdInclusive      bool `json:"-"`
 	OperatorOverride                   bool `json:"-"`
 	VideoPricingOperatorOverride       bool `json:"-"`
+	// BillingMode 是手动覆盖行声明的计费方式（空值即 token，目录条目恒为空）。
+	// image 档不改动 VideoPricing 本身——渠道/分组视频定价仍要用它的 estimator 与
+	// resolution 归一化——只由 catalogVideoPricingActive 屏蔽目录视频价兜底。
+	BillingMode BillingMode `json:"-"`
 
 	// TokenPricingAbsent 表示源数据缺少一组完整、自洽的 token 价格：
 	// input/output 必须同时存在；声明 cache、priority 或 long-context 时，

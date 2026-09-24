@@ -1473,6 +1473,15 @@ function closeDialog() {
   resetForm()
 }
 
+// 后端对「覆盖了文本价但没填图片价」的模型给出提示：图片输出仍按目录图片价计费。
+function showSaveWarnings(saved: Channel) {
+  const models = (saved.warnings ?? [])
+    .filter((w) => w.code === 'IMAGE_PRICE_INHERITS_CATALOG' && w.model)
+    .map((w) => w.model as string)
+  if (models.length === 0) return
+  appStore.showWarning(t('admin.channels.imagePriceInheritsCatalog', { models: models.join(', ') }), 8000)
+}
+
 async function handleSubmit() {
   if (submitting.value) return
   if (!form.name.trim()) {
@@ -1605,8 +1614,9 @@ async function handleSubmit() {
         apply_pricing_to_account_stats: form.apply_pricing_to_account_stats,
         account_stats_pricing_rules: accountStatsRulesToAPI()
       }
-      await adminAPI.channels.update(editingChannel.value.id, req)
+      const saved = await adminAPI.channels.update(editingChannel.value.id, req)
       appStore.showSuccess(t('admin.channels.updateSuccess', 'Channel updated'))
+      showSaveWarnings(saved)
     } else {
       const req: CreateChannelRequest = {
         name: form.name.trim(),
@@ -1620,8 +1630,9 @@ async function handleSubmit() {
         apply_pricing_to_account_stats: form.apply_pricing_to_account_stats,
         account_stats_pricing_rules: accountStatsRulesToAPI()
       }
-      await adminAPI.channels.create(req)
+      const saved = await adminAPI.channels.create(req)
       appStore.showSuccess(t('admin.channels.createSuccess', 'Channel created'))
+      showSaveWarnings(saved)
     }
     closeDialog()
     loadChannels()

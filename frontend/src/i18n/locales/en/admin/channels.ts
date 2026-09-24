@@ -59,6 +59,8 @@ export default {
       loadError: 'Failed to load channels',
       createSuccess: 'Channel created',
       updateSuccess: 'Channel updated',
+      imagePriceInheritsCatalog:
+        'Image output price is empty, so these models keep the catalog image token price and do not follow your text discount: {models}',
       deleteSuccess: 'Channel deleted',
       createError: 'Failed to create channel',
       updateError: 'Failed to update channel',

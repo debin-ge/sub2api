@@ -194,6 +194,7 @@ export default {
       output_cost_per_image_token: '图片输出 token 价',
       input_cost_per_image_token: '图片输入 token 价'
     },
+    invalidNumber: '{field} 不是有效的非负数字',
     errors: {
       INCOMPLETE_PRICING: '价格维度不完整：{missing_dimension}',
       EMPTY_PRICING: '至少填写一项 token、图片或视频价',
@@ -201,7 +202,20 @@ export default {
       INVALID_VIDEO_PRICING: '视频价格配置不合法：{detail}',
       INVALID_MODEL: '模型名无效',
       INVALID_PLATFORM: '平台无效',
-      NOT_FOUND: '未找到该模型价格'
+      NOT_FOUND: '未找到该模型价格',
+      FIELD_NOT_IN_BILLING_MODE: '{field} 不属于计费方式 {billing_mode}',
+      INVALID_BILLING_MODE: '计费方式无效'
+    },
+    billingMode: {
+      label: '计费方式',
+      hint: {
+        token: '按输入/输出 token 计费，目录中的图片、视频价格保持不变。',
+        image: '按图片计费。可填图片价（按张或按图片 token），也可填普通 token 价——出图按 token 计价同样归这一档。目录视频价会被停用。',
+        video: '按视频计费，价格来自下方视频定价。继承的 token 与图片价格会被移除。'
+      },
+      discardNotice: '其他计费方式下填写的 {count} 项不会被保存。',
+      suppressesTokenWarning: '已保存。该模型目录中的 token 价已被屏蔽，对话请求将被拒绝。',
+      legacyVideoNotice: '该覆盖行保存于计费方式上线之前，已有的视频定价在 token 方式下仍然生效，保存时会原样保留。'
     }
   }
 }

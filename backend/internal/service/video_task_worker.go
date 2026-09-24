@@ -444,8 +444,7 @@ func (w *VideoTaskWorker) settle(ctx context.Context, task *VideoTask) (returnEr
 	var usageLog *UsageLog
 	if task.BillingState == VideoBillingCapturePending {
 		if task.ActualCost == nil || *task.ActualCost < 0 || math.IsNaN(*task.ActualCost) || math.IsInf(*task.ActualCost, 0) {
-			return w.rewriteSettlementIntent(ctx, task, task.BillingUnit != nil && *task.BillingUnit == VideoBillingUnitRequest,
-				"usage_missing", "video actual cost is missing")
+			return w.rewriteSettlementIntent(ctx, task, true, "usage_missing", "video actual cost is missing")
 		}
 		action = BalanceSettlementCapture
 		requestID = VideoTaskCaptureRequestID(task.PublicID)

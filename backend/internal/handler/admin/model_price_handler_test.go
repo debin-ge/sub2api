@@ -204,6 +204,44 @@ func TestModelPriceHandlerUpsertAllowsEmptyPayloadForInheritance(t *testing.T) {
 	require.Contains(t, response.Body.String(), `"override"`)
 }
 
+func TestModelPriceHandlerUpsertBillingMode(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	store := &handlerModelPriceOverrideStore{}
+	svc := service.NewPricingService(nil, nil)
+	svc.SetOverrideDependencies(store, nil)
+	handler := NewModelPriceHandler(svc, nil, nil)
+
+	router := gin.New()
+	router.PUT("/entry", handler.Upsert)
+	put := func(body string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodPut, "/entry", strings.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		return response
+	}
+
+	response := put(`{"platform":"openai","model":"my-image","currency":"USD","billing_mode":"image",
+		"payload":{"output_cost_per_image":0.04}}`)
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	require.Equal(t, service.BillingModeImage, store.row.BillingMode)
+
+	// 出图按普通 token 计价是正常配置：image 档接受 token 字段
+	response = put(`{"platform":"openai","model":"my-image","currency":"USD","billing_mode":"image",
+		"payload":{"output_cost_per_image":0.04,"input_cost_per_token":0.000001,"output_cost_per_token":0.000002}}`)
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+
+	// video 档的价格只在 video_pricing 里
+	response = put(`{"platform":"openai","model":"my-video","currency":"USD","billing_mode":"video",
+		"payload":{"input_cost_per_token":0.000001}}`)
+	require.Equal(t, http.StatusBadRequest, response.Code)
+	require.Contains(t, response.Body.String(), "FIELD_NOT_IN_BILLING_MODE")
+
+	response = put(`{"platform":"openai","model":"my-image","currency":"USD","billing_mode":"per_request","payload":{}}`)
+	require.Equal(t, http.StatusBadRequest, response.Code)
+	require.Contains(t, response.Body.String(), "INVALID_BILLING_MODE")
+}
+
 func TestModelPriceHandlerPreviewVideoReturnsRuleMismatches(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	handler := NewModelPriceHandler(nil, nil, nil)

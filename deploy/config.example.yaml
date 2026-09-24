@@ -1338,6 +1338,12 @@ billing:
   # Cache TTL (seconds) for per-user × per-platform quota records
   # 用户 × 平台 quota 缓存 TTL（秒），默认 86400=1天，覆盖典型 daily 窗口
   user_platform_quota_cache_ttl_seconds: 86400
+  # Reject requests whose image token usage has no image price configured,
+  # instead of falling back to the text price (logged as image_*_price_fallback_to_text).
+  # Review those logs before enabling.
+  # 图片 token 用量缺少图片价时拒绝请求，而不是回退到文本价（回退会打 image_*_price_fallback_to_text 日志）。
+  # 建议先观察该日志再开启。
+  strict_image_dimension: false
 
 # =============================================================================
 # Turnstile Configuration

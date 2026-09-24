@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"math"
 	"testing"
 
@@ -67,7 +68,9 @@ func TestCompletedFixedPriceTaskWithoutUsageCapturesTheFrozenQuote(t *testing.T)
 	require.InDelta(t, *task.HoldAmount, *decision.actualCost, 0.000001)
 }
 
-func TestCompletedUsageBasedTaskWithoutUsageReleases(t *testing.T) {
+// A delivered usage-based video whose usage cannot be read is charged the
+// pre-deducted hold, not released at zero.
+func TestCompletedUsageBasedTaskWithoutUsageCapturesTheHold(t *testing.T) {
 	for _, billingUnit := range []string{VideoBillingUnitSecond, VideoBillingUnitVideoToken} {
 		t.Run(billingUnit, func(t *testing.T) {
 			task := baseVideoWorkerTask()
@@ -77,10 +80,41 @@ func TestCompletedUsageBasedTaskWithoutUsageReleases(t *testing.T) {
 
 			decision := videoTerminalBillingFor(task, VideoGenerationCompleted, &ProviderVideoTask{Status: VideoGenerationCompleted})
 
-			require.Equal(t, VideoBillingReleasePending, decision.state)
+			require.Equal(t, VideoBillingCapturePending, decision.state)
+			require.Equal(t, "billing", decision.errorKind)
 			require.Equal(t, "usage_missing", decision.errorCode)
-			require.Zero(t, *decision.actualUnits)
-			require.Zero(t, *decision.actualCost)
+			require.InDelta(t, *task.EstimatedUnits, *decision.actualUnits, 0.000001)
+			require.InDelta(t, *task.HoldAmount, *decision.actualCost, 0.000001)
+		})
+	}
+}
+
+// A capture intent that reaches the worker without an actual cost is rewritten
+// to the pre-deducted hold and captured, whatever the billing unit.
+func TestVideoTaskWorkerCapturesTheHoldWhenActualCostIsMissing(t *testing.T) {
+	for _, billingUnit := range []string{VideoBillingUnitRequest, VideoBillingUnitSecond, VideoBillingUnitVideoToken} {
+		t.Run(billingUnit, func(t *testing.T) {
+			task := baseVideoWorkerTask()
+			task.BillingUnit = videoBillingUnitPointer(billingUnit)
+			task.GenerationState = VideoGenerationCompleted
+			task.BillingState = VideoBillingCapturePending
+			task.EstimatedUnits = floatPointer(8)
+			task.ActualCost = nil
+			task.ActualUnits = nil
+			worker, tasks, settlements, _ := newVideoWorkerForTest(task, nil)
+
+			require.NoError(t, worker.processTask(context.Background(), task))
+
+			require.NotEmpty(t, tasks.transitions)
+			rewrite := tasks.transitions[0]
+			require.Equal(t, "settlement_intent_rewritten", rewrite.EventType)
+			require.Equal(t, VideoBillingCapturePending, rewrite.BillingState)
+			require.Equal(t, "usage_missing", rewrite.ErrorCode)
+			require.NotNil(t, settlements.settlement)
+			require.Equal(t, BalanceSettlementCapture, settlements.settlement.Action)
+			require.InDelta(t, *task.HoldAmount, settlements.settlement.Hold.ActualAmount, 0.000001)
+			require.NotNil(t, settlements.usageLog)
+			require.True(t, settlements.acked)
 		})
 	}
 }

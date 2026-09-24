@@ -1,4 +1,5 @@
 import { apiClient } from '@/api/client'
+import { BILLING_MODE_IMAGE, BILLING_MODE_TOKEN, BILLING_MODE_VIDEO } from '@/constants/channel'
 
 export const PRICE_FIELDS = [
   'input_cost_per_token',
@@ -20,6 +21,35 @@ export const PRICE_FIELDS = [
 
 export type PriceField = (typeof PRICE_FIELDS)[number]
 export type ModelPriceCurrency = 'USD' | 'CNY'
+
+/** 覆盖行声明的计费方式；与 payload 里 LiteLLM 的 mode 无关。 */
+export type ModelPriceBillingMode =
+  | typeof BILLING_MODE_TOKEN
+  | typeof BILLING_MODE_IMAGE
+  | typeof BILLING_MODE_VIDEO
+
+const IMAGE_PRICE_FIELDS = [
+  'output_cost_per_image',
+  'output_cost_per_image_token',
+  'input_cost_per_image_token',
+] as const satisfies readonly PriceField[]
+
+/**
+ * 每个计费方式可填的价格字段，与后端 `validatePayloadFieldsInBillingMode` 对齐。
+ * 图片与视频都可能按 token 计费，所以 image 档同时接受图片字段与 token 字段
+ * （出图按普通 token 计价是正常配置）；video 档的价格全在 video_pricing 里。
+ */
+export const FIELDS_BY_BILLING_MODE: Record<ModelPriceBillingMode, readonly PriceField[]> = {
+  token: PRICE_FIELDS.filter((field) => !(IMAGE_PRICE_FIELDS as readonly PriceField[]).includes(field)),
+  image: PRICE_FIELDS,
+  video: [],
+}
+
+export interface ModelPriceWarning {
+  code: string
+  field?: string
+  model?: string
+}
 
 export type VideoBillingUnit = 'request' | 'second' | 'video_token'
 export type VideoEstimatorType = 'pixel_frame' | 'fixed_tokens_per_second' | 'fixed_max_units'
@@ -153,6 +183,7 @@ export interface ModelPriceListItem {
   currency: ModelPriceCurrency
   catalog_currency?: ModelPriceCurrency
   override_currency?: ModelPriceCurrency
+  billing_mode: ModelPriceBillingMode
   token_pricing_absent: boolean
   has_image_pricing: boolean
   has_video_pricing: boolean
@@ -181,6 +212,7 @@ export interface ModelPriceDetail {
   override_currency?: ModelPriceCurrency
   catalog: Record<string, unknown>
   override?: ModelPricePayload
+  billing_mode: ModelPriceBillingMode
   effective: Record<string, unknown>
   enabled: boolean
   token_pricing_absent: boolean
@@ -227,9 +259,15 @@ export interface UpsertModelPriceRequest {
   platform: string
   model: string
   currency: ModelPriceCurrency
+  billing_mode: ModelPriceBillingMode
   payload: ModelPricePayload
   enabled?: boolean
   note?: string
+}
+
+export interface UpsertModelPriceResponse {
+  override: Record<string, unknown>
+  warnings?: ModelPriceWarning[]
 }
 
 const TOKENS_PER_MTOK = 1_000_000
@@ -255,6 +293,16 @@ export function mTokToToken(value: string | number): number | undefined {
 
 export function isImageField(field: string): boolean {
   return field === 'output_cost_per_image'
+}
+
+/** 阈值（token 数）与倍率是无单位数值，不能按每百万 token 价格缩放。 */
+export function isRawNumberField(field: string): boolean {
+  return field === 'long_context_input_token_threshold' || field.endsWith('_multiplier')
+}
+
+/** 表单值与存储值一致、不做 MTok 换算的字段。 */
+export function isUnscaledField(field: string): boolean {
+  return isImageField(field) || isRawNumberField(field)
 }
 
 export async function listModelPrices(params: ModelPriceListParams): Promise<ModelPriceListResponse> {
@@ -285,7 +333,7 @@ export async function previewVideoPrice(
   return data
 }
 
-export async function upsertModelPrice(input: UpsertModelPriceRequest) {
+export async function upsertModelPrice(input: UpsertModelPriceRequest): Promise<UpsertModelPriceResponse> {
   const { data } = await apiClient.put('/admin/model-prices/entry', input)
   return data
 }
