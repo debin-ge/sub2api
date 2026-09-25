@@ -110,6 +110,34 @@ describe('DocsView', () => {
     expect(wrapper.find('a[href="/docs"]').exists()).toBe(true)
   })
 
+  it('renders the docs hero with quick links and a sign-up CTA for guests', async () => {
+    appState.cachedPublicSettings = { api_base_url: 'https://api.example.com' }
+    const wrapper = await mountDocs('/docs/billing-usage')
+
+    const hero = wrapper.get('[data-testid="docs-hero"]')
+    expect(hero.text()).toContain('OPENAI_BASE_URL=https://api.example.com/v1')
+    expect(hero.find('a[href="/docs/quickstart"]').exists()).toBe(true)
+    expect(hero.find('a[href="/docs/billing-usage"]').exists()).toBe(true)
+    expect(hero.find('a[href="/apps"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="docs-register-cta"] a[href="/register"]').exists()).toBe(true)
+  })
+
+  it('keeps the docs hero on the apps tab and hides the CTA for signed-in users', async () => {
+    authState.user = { role: 'user' }
+    const wrapper = await mountDocs('/docs/quickstart')
+    expect(wrapper.find('[data-testid="docs-register-cta"]').exists()).toBe(false)
+
+    const apps = await mountDocs('/apps')
+    const appsHero = apps.get('[data-testid="docs-hero"]')
+    expect(appsHero.find('[data-testid="apps-hero-env"]').exists()).toBe(true)
+    expect(appsHero.find('a[href="/apps/claude-code"]').exists()).toBe(true)
+    expect(appsHero.find('a[href="/apps/cc-switch"]').exists()).toBe(true)
+    expect(appsHero.find('a[href="/docs/quickstart"]').exists()).toBe(false)
+
+    const appDetail = await mountDocs('/apps/workbuddy')
+    expect(appDetail.find('[data-testid="docs-hero"]').exists()).toBe(true)
+  })
+
   it('renders a document selected by slug', async () => {
     const wrapper = await mountDocs('/docs/quickstart')
 
@@ -346,7 +374,7 @@ describe('DocsView', () => {
 
     // Twelve cards: 11 tools + code samples.
     const cards = grid.findAll('a[href^="/apps/"]')
-    expect(cards.length).toBe(12)
+    expect(cards.length).toBe(13)
 
     // Docs sidebar is hidden while on Apps tab; apps sidebar list is shown.
     expect(wrapper.find('[data-testid="docs-nav-groups"]').exists()).toBe(false)

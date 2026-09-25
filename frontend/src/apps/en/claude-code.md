@@ -49,6 +49,75 @@ claude "Introduce yourself in one sentence."
 
 A reply means success. On the first run, if a login prompt appears, pick "Use API Key" — do not go through OAuth.
 
+## Using Chinese models (model mapping)
+
+If your key belongs to a DeepSeek, Zhipu GLM, Kimi, or MiniMax group, **you must set up model mapping** or Claude Code will not work properly.
+
+**Why mapping is needed**: Claude Code uses different model tiers for different jobs, and every request carries a `claude-*` model name. The main chat defaults to Sonnet / Opus; background jobs such as title generation and context compaction use Haiku; subagents (Task) may use their own model. None of these names exist in a Chinese-model group, so requests fail with "model not found / no available account". A common case is mapping only the main model: chat works, but background jobs fail or hang. Point every tier at a model that actually exists in your group to fix this.
+
+### ① Find the available model IDs
+
+```bash
+curl -s {{BASE_URL}}v1/models -H "Authorization: Bearer paste your sk- key here"
+```
+
+Each `id` in the response is a model name you can use. Case must match exactly: `GLM-5.1` is not `glm-5.1`.
+
+### ② Map models in settings.json
+
+Add these variables to the `env` block of `~/.claude/settings.json` shown above (DeepSeek as the example):
+
+```json download=settings.json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "{{BASE_URL}}",
+    "ANTHROPIC_AUTH_TOKEN": "paste your sk- key here",
+    "ANTHROPIC_MODEL": "deepseek-v4-pro",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "deepseek-v4-pro",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "deepseek-v4-pro",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "deepseek-v4-flash",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "deepseek-v4-pro"
+  }
+}
+```
+
+| Variable | What Claude Code uses it for | Map it to |
+| --- | --- | --- |
+| `ANTHROPIC_MODEL` | Default main model at startup | The strongest coding model in your group |
+| `ANTHROPIC_DEFAULT_OPUS_MODEL` | The Opus tier in `/model`, Plan mode | The strongest model |
+| `ANTHROPIC_DEFAULT_SONNET_MODEL` | The Sonnet tier in `/model` (everyday coding) | Your main model |
+| `ANTHROPIC_DEFAULT_HAIKU_MODEL` | Background jobs such as titles and compaction | A cheap, fast model |
+| `CLAUDE_CODE_SUBAGENT_MODEL` | Subagents (Task) | Your main model |
+
+> Older Claude Code versions set the background model with `ANTHROPIC_SMALL_FAST_MODEL`. If you configured it before upgrading, switch to `ANTHROPIC_DEFAULT_HAIKU_MODEL`; if you are unsure of your version, set both to the same value.
+
+### ③ Suggested mappings by provider
+
+| Provider | Main / Opus / Sonnet / subagent | Haiku (background) |
+| --- | --- | --- |
+| DeepSeek | `deepseek-v4-pro` | `deepseek-v4-flash` |
+| Zhipu GLM | `GLM-5.1` | `GLM-4.5-air` |
+| Kimi | `kimi-for-coding` | `kimi-for-coding` |
+| MiniMax | `MiniMax-M2.7` | `MiniMax-M2.7-highspeed` |
+
+These are examples only; use the models your key actually gets from `/v1/models`. If your group has a single model, set every variable to it.
+
+### ④ Verify the mapping
+
+Open a new terminal, run `claude`, type `/status` to check the current model, then give it a task that reads or writes files. Afterwards, check [Usage](/usage): only Chinese model names should appear, including small calls from background jobs.
+
+**Tips**
+
+- **Plugins need the mapping too**: for VS Code / JetBrains, add the same variables to `claudeCode.environmentVariables`.
+- **Don't switch back and forth in one session**: when switching between Claude and a Chinese model, thinking blocks in the history may be rejected by the other model. Run `/clear` or start a new session when you switch.
+- **Capability differences**: some Chinese models do not accept images and have smaller context windows than Claude. If you get a context-length error, run `/compact` or start a new session.
+- **Quick trial**: set the variables in your terminal; they are lost when the terminal closes:
+
+```bash
+export ANTHROPIC_MODEL="deepseek-v4-pro"
+export ANTHROPIC_DEFAULT_HAIKU_MODEL="deepseek-v4-flash"
+```
+
 ## VS Code / JetBrains plugins
 
 The plugins **do not** read the login config from `~/.claude/settings.json`. Set `claudeCode.environmentVariables` in your **VS Code user settings** (Command Palette → `Preferences: Open User Settings (JSON)`):
@@ -133,6 +202,7 @@ Claude Desktop's 3P config directory (create it if missing):
 - **401** — key incomplete or wrong field name (must be `ANTHROPIC_AUTH_TOKEN`).
 - **Still hits the official endpoint** — JSON not saved or malformed; fully quit `claude` and relaunch.
 - **Model error** — ask an admin to confirm your group has Claude-compatible models enabled.
+- **"Model not found / no available account" on a Chinese-model group** — the mapping is incomplete, most often `ANTHROPIC_DEFAULT_HAIKU_MODEL` is missing; see "Using Chinese models" above. Also check that model names match `/v1/models` exactly, including case.
 
 **Desktop app**
 - **Edited settings.json but nothing changed** — the desktop app doesn't read it; it uses the 3P profile above.

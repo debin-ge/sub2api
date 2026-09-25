@@ -49,6 +49,75 @@ claude "用一句话介绍你自己"
 
 收到回复即成功。首次运行遇到登录引导，选"使用 API Key"，不要走 OAuth。
 
+## 接入国产模型（模型映射）
+
+如果你的密钥属于 DeepSeek、智谱 GLM、Kimi、MiniMax 等国产模型分组，**必须先做模型映射**，否则 Claude Code 无法正常使用。
+
+**为什么要映射**：Claude Code 会按用途调用不同档位的模型，请求里带的都是 `claude-*` 模型名。主对话默认用 Sonnet / Opus；生成标题、压缩上下文等后台任务用 Haiku；子代理（Task）也可能用单独的模型。国产分组里没有这些模型名，所以会报「模型不存在 / 无可用账号」。常见的情况是只配了主模型：对话能用，但后台任务报错或卡住。把每个档位都指向分组里真实存在的模型，就能解决这个问题。
+
+### ① 查出可用的模型 ID
+
+```bash
+curl -s {{BASE_URL}}v1/models -H "Authorization: Bearer 在此粘贴 sk- 开头的密钥"
+```
+
+返回结果中的 `id` 就是要填的模型名。大小写必须完全一致，例如 `GLM-5.1` 不能写成 `glm-5.1`。
+
+### ② 在 settings.json 里映射
+
+在上面 `~/.claude/settings.json` 的 `env` 中补充以下变量（以 DeepSeek 为例）：
+
+```json download=settings.json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "{{BASE_URL}}",
+    "ANTHROPIC_AUTH_TOKEN": "在此粘贴 sk- 开头的密钥",
+    "ANTHROPIC_MODEL": "deepseek-v4-pro",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "deepseek-v4-pro",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "deepseek-v4-pro",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "deepseek-v4-flash",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "deepseek-v4-pro"
+  }
+}
+```
+
+| 变量 | 对应 Claude Code 的用途 | 建议映射到 |
+| --- | --- | --- |
+| `ANTHROPIC_MODEL` | 启动时的默认主模型 | 分组里最强的编码模型 |
+| `ANTHROPIC_DEFAULT_OPUS_MODEL` | `/model` 里的 Opus 档、Plan 模式 | 最强模型 |
+| `ANTHROPIC_DEFAULT_SONNET_MODEL` | `/model` 里的 Sonnet 档（日常编码） | 主力模型 |
+| `ANTHROPIC_DEFAULT_HAIKU_MODEL` | 标题生成、上下文压缩等后台任务 | 便宜、快的模型 |
+| `CLAUDE_CODE_SUBAGENT_MODEL` | 子代理（Task） | 主力模型 |
+
+> 较旧版本的 Claude Code 用 `ANTHROPIC_SMALL_FAST_MODEL` 指定后台模型。如果升级前已经配置过，改为 `ANTHROPIC_DEFAULT_HAIKU_MODEL`；不确定版本时两个都填同一个值也可以。
+
+### ③ 各厂商参考映射
+
+| 厂商 | 主模型 / Opus / Sonnet / 子代理 | Haiku（后台任务） |
+| --- | --- | --- |
+| DeepSeek | `deepseek-v4-pro` | `deepseek-v4-flash` |
+| 智谱 GLM | `GLM-5.1` | `GLM-4.5-air` |
+| Kimi | `kimi-for-coding` | `kimi-for-coding` |
+| MiniMax | `MiniMax-M2.7` | `MiniMax-M2.7-highspeed` |
+
+上表只是示例，请以你的密钥在 `/v1/models` 中实际返回的模型为准。分组只有一个模型时，所有变量都填这一个。
+
+### ④ 验证映射
+
+新开终端，运行 `claude`，输入 `/status` 查看当前模型，再发一个会读写文件的任务。之后到 [使用记录](/usage) 检查：调用记录里应该只出现国产模型名，并且有后台任务的小额调用。
+
+**使用提示**
+
+- **插件同样需要映射**：VS Code / JetBrains 插件把上面这些变量一并写进 `claudeCode.environmentVariables`。
+- **不要在同一会话里来回切换**：Claude 与国产模型之间切换时，历史中的思考块可能不被对方接受。切换时用 `/clear` 或新开会话。
+- **能力差异**：部分国产模型不支持图片输入，上下文窗口也比 Claude 小。如果报上下文超长，手动执行 `/compact` 或新开会话。
+- **临时试用**：可以直接在终端里设置，退出终端后失效：
+
+```bash
+export ANTHROPIC_MODEL="deepseek-v4-pro"
+export ANTHROPIC_DEFAULT_HAIKU_MODEL="deepseek-v4-flash"
+```
+
 ## VS Code / JetBrains 插件
 
 插件**不读** `~/.claude/settings.json` 的登录配置，需在 **VS Code 用户设置** 里填 `claudeCode.environmentVariables`（命令面板 → `Preferences: Open User Settings (JSON)`）：
@@ -133,6 +202,7 @@ Claude Desktop 的 3P 配置目录（不存在就新建）：
 - **401** — 密钥不完整或字段名写错（必须是 `ANTHROPIC_AUTH_TOKEN`）
 - **仍连到官方地址** — JSON 未保存或格式错；`claude` 需完全退出重开
 - **模型报错** — 让管理员确认当前分组开放了 Claude 兼容模型
+- **国产模型分组报「模型不存在 / 无可用账号」** — 映射不完整，最常见的是漏了 `ANTHROPIC_DEFAULT_HAIKU_MODEL`，见上方「接入国产模型」一节；另外检查模型名大小写是否与 `/v1/models` 一致
 
 **桌面 App**
 - **改了 settings.json 却没用** — 桌面 App 不读它，走的是上面的 3P profile

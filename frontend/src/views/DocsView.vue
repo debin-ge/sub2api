@@ -2,7 +2,61 @@
   <div class="min-h-screen bg-gray-50 text-gray-900 dark:bg-dark-950 dark:text-white">
     <SiteHeader current="docs" :progress="readingProgress" />
 
-    <main class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+    <section
+      data-testid="docs-hero"
+      class="relative overflow-hidden bg-dark-950"
+    >
+      <div class="tech-grid absolute inset-0" aria-hidden="true"></div>
+      <div class="absolute left-1/4 top-0 h-80 w-[700px] -translate-y-1/2 rounded-full bg-primary-500/20 blur-[110px]" aria-hidden="true"></div>
+      <div class="absolute right-0 top-10 h-60 w-60 rounded-full bg-accent-400/10 blur-3xl" aria-hidden="true"></div>
+      <div class="relative mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+        <div class="grid items-center gap-8 lg:grid-cols-[1.1fr_1fr]">
+          <div>
+            <p class="inline-flex items-center gap-2 rounded-full border border-primary-400/30 bg-primary-500/10 px-3 py-1 font-mono text-xs text-primary-300">
+              {{ heroText.eyebrow }}
+            </p>
+            <p class="mt-4 text-3xl font-extrabold tracking-tight text-white sm:text-4xl">
+              {{ heroText.title }} <span class="text-gradient">{{ heroText.accent }}</span>
+            </p>
+            <p class="mt-3 max-w-lg text-sm leading-6 text-gray-300">{{ heroText.subtitle }}</p>
+          </div>
+          <div class="hidden overflow-hidden rounded-2xl border border-white/10 bg-dark-900/80 shadow-2xl backdrop-blur sm:block">
+            <div class="flex items-center gap-1.5 border-b border-white/10 px-4 py-2.5" aria-hidden="true">
+              <span class="h-2.5 w-2.5 rounded-full bg-rose-400/80"></span>
+              <span class="h-2.5 w-2.5 rounded-full bg-amber-400/80"></span>
+              <span class="h-2.5 w-2.5 rounded-full bg-emerald-400/80"></span>
+              <span class="ml-3 font-mono text-[11px] text-gray-500">{{ activeTab === 'apps' ? 'connect.env' : 'quickstart.sh' }}</span>
+            </div>
+            <pre
+              v-if="activeTab === 'apps'"
+              data-testid="apps-hero-env"
+              class="overflow-x-auto px-4 py-4 font-mono text-[12.5px] leading-6 text-gray-300"
+            ><span class="text-gray-500"># {{ heroText.anthropicComment }}</span>
+<span class="text-accent-300">ANTHROPIC_BASE_URL</span>={{ siteBaseUrl }}
+<span class="text-gray-500"># {{ heroText.openaiComment }}</span>
+<span class="text-accent-300">OPENAI_BASE_URL</span>={{ siteBaseUrl }}v1
+<span class="text-accent-300">API_KEY</span>=<span class="text-emerald-300">sk-••••••••</span></pre>
+            <pre v-else class="overflow-x-auto px-4 py-4 font-mono text-[12.5px] leading-6 text-gray-300"><span class="text-gray-500">$</span> export <span class="text-accent-300">OPENAI_BASE_URL</span>={{ siteBaseUrl }}v1
+<span class="text-gray-500">$</span> export <span class="text-accent-300">OPENAI_API_KEY</span>=sk-••••••••
+<span class="text-gray-500">$</span> curl $OPENAI_BASE_URL/models \
+    -H <span class="text-emerald-300">"Authorization: Bearer $OPENAI_API_KEY"</span></pre>
+          </div>
+        </div>
+        <nav class="mt-8 grid grid-cols-2 gap-3 lg:grid-cols-4" :aria-label="uiText.quickLinksLabel">
+          <RouterLink
+            v-for="link in heroQuickLinks"
+            :key="link.to"
+            :to="link.to"
+            class="group rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur transition hover:border-primary-400/40 hover:bg-white/10"
+          >
+            <p class="text-sm font-semibold text-white">{{ link.title }}</p>
+            <p class="mt-1 line-clamp-2 text-xs text-gray-400">{{ link.description }}</p>
+          </RouterLink>
+        </nav>
+      </div>
+    </section>
+
+    <main class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
       <button
         type="button"
         class="mb-4 flex w-full items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-3 text-left text-sm font-semibold text-gray-900 shadow-sm transition hover:bg-gray-50 dark:border-dark-700 dark:bg-dark-900 dark:text-white dark:hover:bg-dark-800 lg:hidden"
@@ -13,7 +67,7 @@
         <span class="text-lg leading-none text-gray-500 dark:text-dark-300">{{ mobileNavOpen ? '-' : '+' }}</span>
       </button>
 
-      <div class="grid gap-8 lg:grid-cols-[240px_minmax(0,1fr)_220px]">
+      <div class="grid gap-8 lg:grid-cols-[232px_minmax(0,1fr)_200px] lg:gap-10">
         <aside
           class="doc-nav lg:sticky lg:top-24 lg:block lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto"
           :class="{ hidden: !mobileNavOpen }"
@@ -146,7 +200,7 @@
               class="space-y-6 border-b border-gray-200 pb-6 dark:border-dark-800 lg:border-b-0 lg:pb-0"
             >
               <section v-for="group in groupedDocs" :key="group.category">
-                <h2 class="px-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-dark-400">
+                <h2 class="px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-dark-400">
                   {{ group.category }}
                 </h2>
                 <div class="mt-2 space-y-1">
@@ -154,12 +208,18 @@
                     v-for="doc in group.docs"
                     :key="doc.slug"
                     :to="doc.slug === defaultUserDocSlug ? '/docs' : `/docs/${doc.slug}`"
-                    class="block rounded-md px-2 py-2 text-sm transition"
+                    class="relative block rounded-lg px-3 py-1.5 text-sm transition"
                     :class="doc.slug === activeSlug
-                      ? 'bg-primary-50 font-semibold text-primary-700 dark:bg-primary-500/10 dark:text-primary-300'
-                      : 'text-gray-600 hover:bg-gray-100 hover:text-gray-950 dark:text-dark-300 dark:hover:bg-dark-800 dark:hover:text-white'"
+                      ? 'bg-gradient-to-r from-primary-50 to-transparent font-semibold text-primary-700 dark:from-primary-500/15 dark:text-primary-300'
+                      : 'text-gray-600 hover:bg-white hover:text-gray-950 dark:text-dark-300 dark:hover:bg-dark-900 dark:hover:text-white'"
+                    :aria-current="doc.slug === activeSlug ? 'page' : undefined"
                     @click="mobileNavOpen = false"
                   >
+                    <span
+                      v-if="doc.slug === activeSlug"
+                      class="absolute bottom-1.5 left-0 top-1.5 w-0.5 rounded-full bg-gradient-to-b from-primary-500 to-accent-400"
+                      aria-hidden="true"
+                    ></span>
                     <span class="block truncate">{{ doc.title }}</span>
                   </RouterLink>
                 </div>
@@ -177,10 +237,10 @@
               v-for="app in localeApps"
               :key="app.slug"
               :to="`/apps/${app.slug}`"
-              class="flex items-center gap-2.5 rounded-md px-2 py-2 text-sm transition"
+              class="flex items-center gap-2.5 rounded-lg px-2 py-2 text-sm transition"
               :class="app.slug === currentApp?.slug
-                ? 'bg-primary-50 font-semibold text-primary-700 dark:bg-primary-500/10 dark:text-primary-300'
-                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-950 dark:text-dark-300 dark:hover:bg-dark-800 dark:hover:text-white'"
+                ? 'bg-gradient-to-r from-primary-50 to-transparent font-semibold text-primary-700 dark:from-primary-500/15 dark:text-primary-300'
+                : 'text-gray-600 hover:bg-white hover:text-gray-950 dark:text-dark-300 dark:hover:bg-dark-900 dark:hover:text-white'"
               @click="mobileNavOpen = false"
             >
               <span class="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md bg-gray-100 text-gray-700 dark:bg-dark-800 dark:text-dark-200">
@@ -286,7 +346,7 @@
               <RouterLink
                 v-if="prevItem"
                 :to="prevItem.to"
-                class="group flex flex-col rounded-xl border border-gray-200 bg-white px-5 py-4 transition hover:border-primary-300 hover:shadow-sm dark:border-dark-700 dark:bg-dark-900 dark:hover:border-primary-500/40"
+                class="group flex flex-col rounded-xl border border-gray-200 bg-white px-5 py-4 transition hover:border-primary-300 hover:shadow-glow dark:border-dark-800 dark:bg-dark-900 dark:hover:border-primary-500/40"
               >
                 <span class="flex items-center gap-1 text-xs font-medium text-gray-400 transition group-hover:text-primary-600 dark:text-dark-400 dark:group-hover:text-primary-300">
                   <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
@@ -300,7 +360,7 @@
               <RouterLink
                 v-if="nextItem"
                 :to="nextItem.to"
-                class="group flex flex-col items-end rounded-xl border border-gray-200 bg-white px-5 py-4 text-right transition hover:border-primary-300 hover:shadow-sm dark:border-dark-700 dark:bg-dark-900 dark:hover:border-primary-500/40"
+                class="group flex flex-col items-end rounded-xl border border-gray-200 bg-white px-5 py-4 text-right transition hover:border-primary-300 hover:shadow-glow dark:border-dark-800 dark:bg-dark-900 dark:hover:border-primary-500/40"
               >
                 <span class="flex items-center gap-1 text-xs font-medium text-gray-400 transition group-hover:text-primary-600 dark:text-dark-400 dark:group-hover:text-primary-300">
                   {{ uiText.nextDoc }}
@@ -335,10 +395,10 @@
 
         <aside v-if="displayDoc && !showAppsLanding" class="hidden lg:block">
           <div class="sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto">
-            <h2 class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-dark-400">
+            <h2 class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-dark-400">
               {{ uiText.pageToc }}
             </h2>
-            <nav v-if="tocItems.length" class="mt-3 border-l border-gray-200 dark:border-dark-700">
+            <nav v-if="tocItems.length" class="mt-3 border-l border-gray-200 dark:border-dark-800">
               <button
                 v-for="item in tocItems"
                 :key="item.id"
@@ -347,7 +407,7 @@
                 :class="[
                   item.level <= 2 ? 'pl-3' : item.level === 3 ? 'pl-6' : 'pl-9',
                   activeHeadingId === item.id
-                    ? 'border-primary-500 font-medium text-primary-700 dark:border-primary-400 dark:text-primary-300'
+                    ? 'toc-active font-medium text-primary-700 dark:text-primary-300'
                     : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-950 dark:text-dark-300 dark:hover:border-dark-500 dark:hover:text-white',
                 ]"
                 @click="scrollToHeading(item.id)"
@@ -365,6 +425,20 @@
               <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 15-6-6-6 6" /></svg>
               {{ uiText.backToTop }}
             </button>
+            <div
+              v-if="!isAuthenticated"
+              data-testid="docs-register-cta"
+              class="mt-8 rounded-xl bg-gradient-to-br from-primary-600 to-accent-500 p-4 text-white shadow-glow"
+            >
+              <p class="text-sm font-semibold">{{ uiText.ctaTitle }}</p>
+              <p class="mt-1 text-xs text-white/80">{{ uiText.ctaDescription }}</p>
+              <RouterLink
+                to="/register"
+                class="mt-3 inline-flex rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-primary-700 transition hover:bg-primary-50"
+              >
+                {{ uiText.ctaAction }}
+              </RouterLink>
+            </div>
           </div>
         </aside>
       </div>
@@ -385,12 +459,13 @@ import {
 import {
   appEntriesByLocale,
   findApp,
+  type AppEntry,
 } from '@/apps/registry'
 import i18n from '@/i18n'
 import SiteHeader from '@/components/common/SiteHeader.vue'
 import AppIcon from '@/components/apps/AppIcon.vue'
 import AppCard from '@/components/apps/AppCard.vue'
-import { useAppStore } from '@/stores'
+import { useAppStore, useAuthStore } from '@/stores'
 import { useDocMarkdown, type RenderableDoc } from '@/composables/useDocMarkdown'
 
 interface DocGroup {
@@ -417,6 +492,7 @@ interface PagerLink {
 
 const route = useRoute()
 const appStore = useAppStore()
+const authStore = useAuthStore()
 
 const mobileNavOpen = ref(false)
 const settingsLoading = ref(false)
@@ -447,6 +523,8 @@ const currentApp = computed(() =>
 
 const activeSlug = computed(() => currentDoc.value?.slug ?? routeSlug.value ?? defaultUserDocSlug)
 const showAppsLanding = computed(() => activeTab.value === 'apps' && !routeSlug.value)
+
+const isAuthenticated = computed(() => authStore.isAuthenticated === true)
 
 const siteName = computed(() => appStore.cachedPublicSettings?.site_name || appStore.siteName || 'ZenTok')
 const siteBaseUrl = computed(() => normalizeBaseUrl(appStore.cachedPublicSettings?.api_base_url || appStore.apiBaseUrl || ''))
@@ -493,6 +571,14 @@ const uiText = computed(() => currentLocale.value === 'zh'
       calloutImportant: '重要',
       calloutWarning: '注意',
       calloutCaution: '警告',
+      heroEyebrow: 'Developer Docs',
+      heroTitle: '开发者文档',
+      heroTitleAccent: '5 分钟接入',
+      heroSubtitle: '兼容 OpenAI / Anthropic / Gemini 原生协议，只需替换 Base URL 与 API Key。',
+      quickLinksLabel: '快速入口',
+      ctaTitle: '还没有 API Key？',
+      ctaDescription: '注册即可获取，按量付费。',
+      ctaAction: '免费注册',
     }
   : {
       home: 'Home',
@@ -535,7 +621,69 @@ const uiText = computed(() => currentLocale.value === 'zh'
       calloutImportant: 'Important',
       calloutWarning: 'Warning',
       calloutCaution: 'Caution',
+      heroEyebrow: 'Developer Docs',
+      heroTitle: 'Developer docs',
+      heroTitleAccent: 'up in 5 minutes',
+      heroSubtitle: 'Native OpenAI / Anthropic / Gemini protocols — just swap the Base URL and API Key.',
+      quickLinksLabel: 'Quick links',
+      ctaTitle: 'No API Key yet?',
+      ctaDescription: 'Sign up to get one. Pay as you go.',
+      ctaAction: 'Sign up free',
     })
+
+const HERO_QUICK_LINK_SLUGS = ['quickstart', 'api-reference', 'billing-usage'] as const
+const HERO_APP_SLUGS = ['claude-code', 'codex', 'cursor', 'cc-switch'] as const
+
+// 应用页顶部与文档页共用同一个 hero 版式，文案与快捷入口按标签切换。
+const heroText = computed(() => {
+  if (activeTab.value !== 'apps') {
+    return {
+      eyebrow: uiText.value.heroEyebrow,
+      title: uiText.value.heroTitle,
+      accent: uiText.value.heroTitleAccent,
+      subtitle: uiText.value.heroSubtitle,
+      anthropicComment: '',
+      openaiComment: '',
+    }
+  }
+  const count = localeApps.value.length
+  return currentLocale.value === 'zh'
+    ? {
+        eyebrow: 'App Integrations',
+        title: '应用集成',
+        accent: '3 步接入',
+        subtitle: `已收录 ${count} 款常用工具，每个工具一页：安装 → 配置 → 验证。准备好 Base URL 和 API Key 即可开始。`,
+        anthropicComment: 'Anthropic 协议 · Claude Code 等',
+        openaiComment: 'OpenAI 协议 · Codex / Cursor 等',
+      }
+    : {
+        eyebrow: 'App Integrations',
+        title: 'Connect your tools',
+        accent: 'in 3 steps',
+        subtitle: `${count} popular tools, one page each: install → configure → verify. All you need is the Base URL and an API Key.`,
+        anthropicComment: 'Anthropic protocol · Claude Code, etc.',
+        openaiComment: 'OpenAI protocol · Codex / Cursor, etc.',
+      }
+})
+
+const heroQuickLinks = computed<{ to: string; title: string; description: string }[]>(() => {
+  if (activeTab.value === 'apps') {
+    return HERO_APP_SLUGS
+      .map((slug) => localeApps.value.find((app) => app.slug === slug))
+      .filter((app): app is AppEntry => app != null)
+      .map((app) => ({ to: `/apps/${app.slug}`, title: app.name, description: resolveDocText(app.tagline) }))
+  }
+  const links = HERO_QUICK_LINK_SLUGS
+    .map((slug) => localeDocs.value.find((doc) => doc.slug === slug))
+    .filter((doc): doc is UserDocEntry => doc != null)
+    .map((doc) => ({ to: docPath(doc), title: resolveDocText(doc.title), description: resolveDocText(doc.description) }))
+  links.splice(2, 0, {
+    to: '/apps',
+    title: uiText.value.tabApps,
+    description: currentLocale.value === 'zh' ? '主流客户端 3 步接入' : 'Connect popular clients in 3 steps',
+  })
+  return links
+})
 
 const appsSubtitle = computed(() =>
   currentLocale.value === 'zh'
@@ -800,5 +948,9 @@ onUnmounted(() => {
 .doc-search-input::-webkit-search-decoration {
   -webkit-appearance: none;
   appearance: none;
+}
+
+.toc-active {
+  border-image: linear-gradient(to bottom, #6366f1, #22d3ee) 1;
 }
 </style>

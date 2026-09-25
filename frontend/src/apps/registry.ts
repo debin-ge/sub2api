@@ -9,6 +9,7 @@ import cursorContent from './zh/cursor.md?raw'
 import clineContent from './zh/cline.md?raw'
 import continueContent from './zh/continue.md?raw'
 import traeContent from './zh/trae.md?raw'
+import workbuddyContent from './zh/workbuddy.md?raw'
 import ccSwitchContent from './zh/cc-switch.md?raw'
 import cockpitToolsContent from './zh/cockpit-tools.md?raw'
 import codeContent from './zh/code.md?raw'
@@ -22,6 +23,7 @@ import cursorContentEn from './en/cursor.md?raw'
 import clineContentEn from './en/cline.md?raw'
 import continueContentEn from './en/continue.md?raw'
 import traeContentEn from './en/trae.md?raw'
+import workbuddyContentEn from './en/workbuddy.md?raw'
 import ccSwitchContentEn from './en/cc-switch.md?raw'
 import cockpitToolsContentEn from './en/cockpit-tools.md?raw'
 import codeContentEn from './en/code.md?raw'
@@ -121,6 +123,15 @@ export const appEntriesByLocale: Record<AppLocale, AppEntry[]> = {
       protocols: ['anthropic', 'openai'],
       steps: 3,
       content: traeContent,
+    },
+    {
+      slug: 'workbuddy',
+      name: 'WorkBuddy',
+      tagline: '腾讯 AI 办公智能体，添加 OpenAI 兼容自定义模型',
+      icon: 'app',
+      protocols: ['openai'],
+      steps: 3,
+      content: workbuddyContent,
     },
     {
       slug: 'cc-switch',
@@ -231,6 +242,15 @@ export const appEntriesByLocale: Record<AppLocale, AppEntry[]> = {
       protocols: ['anthropic', 'openai'],
       steps: 3,
       content: traeContentEn,
+    },
+    {
+      slug: 'workbuddy',
+      name: 'WorkBuddy',
+      tagline: "Tencent's AI office agent — add an OpenAI-compatible custom model",
+      icon: 'app',
+      protocols: ['openai'],
+      steps: 3,
+      content: workbuddyContentEn,
     },
     {
       slug: 'cc-switch',
