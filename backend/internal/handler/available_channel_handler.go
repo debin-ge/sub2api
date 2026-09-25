@@ -115,12 +115,18 @@ type userAvailableGroup struct {
 	VIPOnly              bool                               `json:"vip_only"`
 	ImageRateIndependent bool                               `json:"image_rate_independent"`
 	ImageRateMultiplier  float64                            `json:"image_rate_multiplier"`
+	VideoRateIndependent bool                               `json:"video_rate_independent"`
+	VideoRateMultiplier  float64                            `json:"video_rate_multiplier"`
 	CanBind              *bool                              `json:"can_bind,omitempty"`
 	DenyReason           service.GroupAccessDenyReason      `json:"deny_reason,omitempty"`
 	SuggestedAction      service.GroupAccessSuggestedAction `json:"suggested_action,omitempty"`
 	ImagePrice1K         *float64                           `json:"-"`
 	ImagePrice2K         *float64                           `json:"-"`
 	ImagePrice4K         *float64                           `json:"-"`
+	VideoPrice480P       *float64                           `json:"-"`
+	VideoPrice720P       *float64                           `json:"-"`
+	VideoPrice1080P      *float64                           `json:"-"`
+	VideoModelPrices     map[string]map[string]float64      `json:"-"`
 	ModelsListConfig     service.GroupModelsListConfig      `json:"-"`
 }
 
@@ -139,6 +145,16 @@ type userSupportedModelPricing struct {
 	ImageOutputPrice             *float64                 `json:"image_output_price"`
 	PerRequestPrice              *float64                 `json:"per_request_price"`
 	Intervals                    []userPricingIntervalDTO `json:"intervals"`
+	// ImageTierPrices 图片按张档位价（1K/2K/4K，美元/张）；VideoTierPrices 视频按秒档位价
+	// （480p/720p/1080p，美元/秒）。均为未乘倍率的单价，仅模型广场填充，非媒体模型省略。
+	ImageTierPrices []userMediaTierPriceDTO `json:"image_tier_prices,omitempty"`
+	VideoTierPrices []userMediaTierPriceDTO `json:"video_tier_prices,omitempty"`
+}
+
+// userMediaTierPriceDTO 一档媒体单价。
+type userMediaTierPriceDTO struct {
+	Tier  string  `json:"tier"`
+	Price float64 `json:"price"`
 }
 
 // userPricingIntervalDTO 定价区间白名单（去掉内部 ID、SortOrder 等前端不渲染的字段）。
@@ -166,6 +182,10 @@ type userSupportedModel struct {
 	RecentCallCount  int64                           `json:"recent_call_count"`
 	RecentCallWindow int64                           `json:"recent_call_window_seconds"`
 	TimeSchedule     *service.ModelPriceTimeSchedule `json:"time_schedule,omitempty"`
+
+	// channelPricing 保留渠道/全局回退的原始定价，供广场在展示价被目录覆盖后
+	// 仍能按真实结算链路推导图片/视频档位价；不序列化。
+	channelPricing *service.ChannelModelPricing
 }
 
 // userChannelPlatformSection 单渠道内某个平台的子视图：用户可见的分组 + 该平台
@@ -329,6 +349,7 @@ func (h *AvailableChannelHandler) ListPublic(c *gin.Context) {
 		out = buildPublicAvailableChannels(h.channelService, groupCatalogs, channels)
 	}
 	applyPlazaModelPricesToChannels(h.modelPrices, h.billingFallback, out)
+	applyPlazaMediaPricesToChannels(h.modelPrices, out)
 	applyRecentCallCounts(c.Request.Context(), h.modelStats, out)
 	response.Success(c, out)
 }
@@ -440,6 +461,60 @@ func userPricingFromPlazaResolution(resolution *service.PlazaDisplayPriceResolut
 		PerRequestPrice: plazaTokenPrice(entry.OutputCostPerImage, entry.OutputCostPerImageExplicit),
 		Intervals:       []userPricingIntervalDTO{},
 	}
+}
+
+// applyPlazaMediaPricesToChannels 为广场中的图片/视频模型附上按张/按秒档位价。
+// 广场 section 恒为单分组（见 buildPublicGroupSections），档位价按该分组解析。
+func applyPlazaMediaPricesToChannels(pricing *service.PricingService, channels []userAvailableChannel) {
+	for i := range channels {
+		for j := range channels[i].Platforms {
+			section := &channels[i].Platforms[j]
+			if len(section.Groups) != 1 {
+				continue
+			}
+			groupRef := availableGroupRefForImagePricing(section.Groups[0])
+			for k := range section.SupportedModels {
+				model := &section.SupportedModels[k]
+				platform := strings.TrimSpace(model.Platform)
+				if platform == "" {
+					platform = section.Platform
+				}
+				media := service.ResolvePlazaMediaPricing(pricing, platform, model.Name, model.channelPricing, groupRef)
+				if len(media.ImageTiers) == 0 && len(media.VideoTiers) == 0 && media.VideoPerRequest == nil {
+					continue
+				}
+				if model.Pricing == nil {
+					model.Pricing = &userSupportedModelPricing{
+						BillingMode: string(service.BillingModeImage),
+						Currency:    service.ModelPriceCurrencyUSD,
+						Source:      service.ModelPriceSourceChannel,
+						Intervals:   []userPricingIntervalDTO{},
+					}
+				}
+				model.Pricing.ImageTierPrices = toUserMediaTierPrices(media.ImageTiers)
+				model.Pricing.VideoTierPrices = toUserMediaTierPrices(media.VideoTiers)
+				if len(media.VideoTiers) > 0 {
+					model.Pricing.BillingMode = string(service.BillingModeVideo)
+				} else if media.VideoPerRequest != nil {
+					// 视频价目只有按次规则：没有每秒价可展示，按单次价展示。
+					model.Pricing.BillingMode = string(service.BillingModePerRequest)
+					model.Pricing.PerRequestPrice = media.VideoPerRequest
+					model.Pricing.Currency = service.ModelPriceCurrencyUSD // video_pricing 恒为 USD
+				}
+			}
+		}
+	}
+}
+
+func toUserMediaTierPrices(src []service.PlazaMediaTierPrice) []userMediaTierPriceDTO {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make([]userMediaTierPriceDTO, 0, len(src))
+	for _, tier := range src {
+		out = append(out, userMediaTierPriceDTO{Tier: tier.Tier, Price: tier.Price})
+	}
+	return out
 }
 
 func applyRecentCallCounts(
@@ -786,6 +861,7 @@ func applyPricingFallbackToSections(channelService *service.ChannelService, sect
 				)
 			}
 			sections[sectionIndex].SupportedModels[modelIndexes[i]].Pricing = toUserPricing(pricing)
+			sections[sectionIndex].SupportedModels[modelIndexes[i]].channelPricing = model.Pricing
 		}
 	}
 }
@@ -829,12 +905,18 @@ func filterUserVisibleGroups(
 			VIPOnly:              entry.VIPOnly,
 			ImageRateIndependent: g.ImageRateIndependent,
 			ImageRateMultiplier:  g.ImageRateMultiplier,
+			VideoRateIndependent: g.VideoRateIndependent,
+			VideoRateMultiplier:  g.VideoRateMultiplier,
 			CanBind:              &canBind,
 			DenyReason:           entry.DenyReason,
 			SuggestedAction:      entry.SuggestedAction,
 			ImagePrice1K:         g.ImagePrice1K,
 			ImagePrice2K:         g.ImagePrice2K,
 			ImagePrice4K:         g.ImagePrice4K,
+			VideoPrice480P:       g.VideoPrice480P,
+			VideoPrice720P:       g.VideoPrice720P,
+			VideoPrice1080P:      g.VideoPrice1080P,
+			VideoModelPrices:     g.VideoModelPrices,
 			ModelsListConfig:     g.ModelsListConfig,
 		})
 	}
@@ -862,9 +944,15 @@ func filterPublicGroups(groups []service.AvailableGroupRef) []userAvailableGroup
 			VIPOnly:              g.VIPOnly,
 			ImageRateIndependent: g.ImageRateIndependent,
 			ImageRateMultiplier:  g.ImageRateMultiplier,
+			VideoRateIndependent: g.VideoRateIndependent,
+			VideoRateMultiplier:  g.VideoRateMultiplier,
 			ImagePrice1K:         g.ImagePrice1K,
 			ImagePrice2K:         g.ImagePrice2K,
 			ImagePrice4K:         g.ImagePrice4K,
+			VideoPrice480P:       g.VideoPrice480P,
+			VideoPrice720P:       g.VideoPrice720P,
+			VideoPrice1080P:      g.VideoPrice1080P,
+			VideoModelPrices:     g.VideoModelPrices,
 			ModelsListConfig:     g.ModelsListConfig,
 		})
 	}
@@ -886,9 +974,10 @@ func toUserSupportedModelsForPublicGroup(
 			}
 		}
 		out = append(out, userSupportedModel{
-			Name:     model.Name,
-			Platform: model.Platform,
-			Pricing:  toUserPricing(service.AvailableImageDisplayPricing(model.Pricing, groupRef)),
+			Name:           model.Name,
+			Platform:       model.Platform,
+			Pricing:        toUserPricing(service.AvailableImageDisplayPricing(model.Pricing, groupRef)),
+			channelPricing: model.Pricing,
 		})
 	}
 	return out
@@ -896,9 +985,15 @@ func toUserSupportedModelsForPublicGroup(
 
 func availableGroupRefForImagePricing(group userAvailableGroup) service.AvailableGroupRef {
 	return service.AvailableGroupRef{
-		ImagePrice1K: group.ImagePrice1K,
-		ImagePrice2K: group.ImagePrice2K,
-		ImagePrice4K: group.ImagePrice4K,
+		ImagePrice1K:         group.ImagePrice1K,
+		ImagePrice2K:         group.ImagePrice2K,
+		ImagePrice4K:         group.ImagePrice4K,
+		VideoRateIndependent: group.VideoRateIndependent,
+		VideoRateMultiplier:  group.VideoRateMultiplier,
+		VideoPrice480P:       group.VideoPrice480P,
+		VideoPrice720P:       group.VideoPrice720P,
+		VideoPrice1080P:      group.VideoPrice1080P,
+		VideoModelPrices:     group.VideoModelPrices,
 	}
 }
 

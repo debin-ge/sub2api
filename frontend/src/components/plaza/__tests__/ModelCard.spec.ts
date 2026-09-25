@@ -1,7 +1,12 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import ModelCard from '@/components/plaza/ModelCard.vue'
-import type { AggregatedModel } from '@/composables/useModelAggregation'
+import {
+  PLAZA_PRICING_DIMENSIONS,
+  type AggregatedModel,
+  type PlazaMinPricing,
+  type PlazaPricingRateMultipliers
+} from '@/composables/useModelAggregation'
 
 const messages: Record<string, string> = {
   'plaza.card.input': 'Input',
@@ -26,6 +31,20 @@ const messages: Record<string, string> = {
   'plaza.price.unitPerRequest': '/request',
   'plaza.price.standardLabel': 'Standard',
   'plaza.price.vipLabel': 'VIP',
+  'plaza.price.unitPerImage': '/image',
+  'plaza.price.unitPerSecond': '/s',
+  'plaza.kind.text': 'Text',
+  'plaza.kind.image': 'Image',
+  'plaza.kind.video': 'Video',
+  'plaza.card.tokenCaption': 'Token pricing',
+  'plaza.card.imageTokenCaption': 'Token pricing (preferred)',
+  'plaza.card.perImageCaption': 'Per-image pricing',
+  'plaza.card.videoCaption': 'Resolution',
+  'plaza.card.videoExample': 'Example: a {seconds}s {tier} video',
+  'plaza.card.imageTokenFirst': 'Billed by tokens first',
+  'plaza.card.imageInput': 'Image input',
+  'plaza.card.textInput': 'Text input',
+  'plaza.card.details': 'Details',
 }
 
 vi.mock('vue-i18n', async (importOriginal) => {
@@ -45,6 +64,7 @@ const model: AggregatedModel = {
   model: 'claude-opus-4-8',
   displayName: 'claude-opus-4-8',
   platform: 'anthropic',
+  billingKind: 'text',
   standardPricing: {
     minPricing: {
       input: 0.000015,
@@ -100,7 +120,9 @@ describe('ModelCard', () => {
     expect(wrapper.text()).toContain('1 channels')
     expect(wrapper.text()).not.toContain('View details')
     expect(wrapper.text()).not.toContain('plaza.card.viewDetails')
-    expect(wrapper.text()).toContain('Pay per token')
+    expect(wrapper.text()).toContain('Text')
+    expect(wrapper.text()).toContain('Token pricing')
+    expect(wrapper.attributes('data-billing-kind')).toBe('text')
     expect(wrapper.text()).not.toContain('支持渠道')
     expect(wrapper.text()).not.toContain('查看详情')
     expect(wrapper.text()).not.toContain('rose')
@@ -340,4 +362,72 @@ describe('ModelCard', () => {
     expect(wrapper.text()).toContain('$3 / $1.5')
     expect(wrapper.text()).toContain('$9 / $4.5')
   })
+
+  it('renders per-second resolution tiers and a duration example for video models', () => {
+    const videoModel: AggregatedModel = {
+      ...model,
+      model: 'grok-imagine-video',
+      displayName: 'grok-imagine-video',
+      platform: 'grok',
+      billingKind: 'video',
+      standardPricing: {
+        minPricing: { ...emptyPricing(), video480p: 0.05, video720p: 0.1 },
+        minPricingRateMultipliers: rates(1),
+        displayRateMultiplier: 1
+      }
+    }
+
+    const wrapper = mount(ModelCard, { props: { model: videoModel } })
+
+    expect(wrapper.attributes('data-billing-kind')).toBe('video')
+    expect(wrapper.text()).toContain('Video')
+    expect(wrapper.text()).toContain('480p')
+    expect(wrapper.text()).toContain('720p')
+    expect(wrapper.text()).not.toContain('1080p')
+    expect(wrapper.text()).toContain('/s')
+    expect(wrapper.text()).not.toContain('/1M')
+    const example = wrapper.get('[data-testid="plaza-video-example"]')
+    expect(example.text()).toContain('Example: a 6s 720p video')
+    expect(example.text()).toContain('¥0.6')
+  })
+
+  it('renders token pricing first and per-image tiers for image models', () => {
+    const imageModel: AggregatedModel = {
+      ...model,
+      model: 'gpt-image-2',
+      displayName: 'gpt-image-2',
+      platform: 'openai',
+      billingKind: 'image',
+      standardPricing: {
+        minPricing: {
+          ...emptyPricing(),
+          input: 0.000005,
+          imageOutput: 0.00004,
+          image1K: 0.04,
+          image2K: 0.06,
+          image4K: 0.08
+        },
+        minPricingRateMultipliers: rates(1),
+        displayRateMultiplier: 1
+      }
+    }
+
+    const wrapper = mount(ModelCard, { props: { model: imageModel } })
+
+    expect(wrapper.attributes('data-billing-kind')).toBe('image')
+    expect(wrapper.text()).toContain('Billed by tokens first')
+    expect(wrapper.text()).toContain('Token pricing (preferred)')
+    expect(wrapper.text()).toContain('Per-image pricing')
+    expect(wrapper.text()).toContain('Text input')
+    expect(wrapper.text()).toContain('4K')
+    expect(wrapper.text()).toContain('¥0.08')
+  })
 })
+
+function emptyPricing(): PlazaMinPricing {
+  return Object.fromEntries(PLAZA_PRICING_DIMENSIONS.map((key) => [key, null])) as PlazaMinPricing
+}
+
+function rates(value: number): PlazaPricingRateMultipliers {
+  return Object.fromEntries(PLAZA_PRICING_DIMENSIONS.map((key) => [key, value])) as PlazaPricingRateMultipliers
+}

@@ -235,7 +235,14 @@ describe('aggregateByPlatformModel', () => {
       cacheWrite: 0.000004,
       cacheRead: 0.000001,
       imageOutput: 0.02,
-      perRequest: 0.001
+      perRequest: 0.001,
+      imageInput: null,
+      image1K: null,
+      image2K: null,
+      image4K: null,
+      video480p: null,
+      video720p: null,
+      video1080p: null
     })
   })
 
@@ -342,6 +349,120 @@ describe('aggregateByPlatformModel', () => {
     expect(model.standardPricing?.displayRateMultiplier).toBe(1)
   })
 
+  it('classifies video models and applies the independent video multiplier to per-second tiers', () => {
+    const rows: UserAvailableChannel[] = [{
+      name: 'video',
+      description: '',
+      platforms: [{
+        platform: 'grok',
+        groups: [{
+          id: 1,
+          name: 'video-group',
+          platform: 'grok',
+          subscription_type: 'standard',
+          rate_multiplier: 1,
+          video_rate_independent: true,
+          video_rate_multiplier: 0.5,
+          is_exclusive: false
+        }],
+        supported_models: [{
+          name: 'grok-imagine-video',
+          platform: 'grok',
+          pricing: price(null, null, {
+            billing_mode: 'video',
+            video_tier_prices: [
+              { tier: '480p', price: 0.05 },
+              { tier: '720p', price: 0.1 }
+            ]
+          })
+        }]
+      }]
+    }]
+
+    const model = aggregateByPlatformModel(rows)[0].models[0]
+
+    expect(model.billingKind).toBe('video')
+    expect(model.standardPricing?.minPricing.video480p).toBe(0.05)
+    expect(model.standardPricing?.minPricing.video720p).toBe(0.1)
+    expect(model.standardPricing?.minPricing.video1080p).toBeNull()
+    expect(model.standardPricing?.minPricingRateMultipliers.video720p).toBe(0.5)
+  })
+
+  it('keeps video tier prices in USD even when the model token pricing is CNY', () => {
+    const rows: UserAvailableChannel[] = [{
+      name: 'seedance',
+      description: '',
+      platforms: [{
+        platform: 'openai',
+        groups: [{
+          id: 1,
+          name: 'video-group',
+          platform: 'openai',
+          subscription_type: 'standard',
+          rate_multiplier: 1,
+          is_exclusive: false
+        }],
+        supported_models: [{
+          name: 'doubao-seedance-2.0-mini-480p',
+          platform: 'openai',
+          pricing: price(2, null, {
+            billing_mode: 'video',
+            currency: 'CNY',
+            video_tier_prices: [{ tier: '480p', price: 0.00972 }]
+          })
+        }]
+      }]
+    }]
+
+    const summary = aggregateByPlatformModel(rows)[0].models[0].standardPricing
+
+    expect(summary?.minPricing.video480p).toBe(0.00972)
+    expect(summary?.minPricingCurrencies?.video480p).toBe('USD')
+    expect(summary?.minPricingCurrencies?.input).toBe('CNY')
+  })
+
+  it('classifies image models with per-image tiers and token prices', () => {
+    const rows: UserAvailableChannel[] = [{
+      name: 'image',
+      description: '',
+      platforms: [{
+        platform: 'openai',
+        groups: [{
+          id: 1,
+          name: 'image-group',
+          platform: 'openai',
+          subscription_type: 'standard',
+          rate_multiplier: 0.8,
+          image_rate_independent: true,
+          image_rate_multiplier: 2,
+          is_exclusive: false
+        }],
+        supported_models: [{
+          name: 'gpt-image-2',
+          platform: 'openai',
+          pricing: price(0.000005, null, {
+            image_input_price: 0.00001,
+            image_output_price: 0.00004,
+            image_tier_prices: [
+              { tier: '1K', price: 0.04 },
+              { tier: '2K', price: 0.06 },
+              { tier: '4K', price: 0.08 }
+            ]
+          })
+        }]
+      }]
+    }]
+
+    const model = aggregateByPlatformModel(rows)[0].models[0]
+    const summary = model.standardPricing
+
+    expect(model.billingKind).toBe('image')
+    expect(summary?.minPricing.image2K).toBe(0.06)
+    expect(summary?.minPricing.imageInput).toBe(0.00001)
+    expect(summary?.minPricingRateMultipliers.image4K).toBe(2)
+    expect(summary?.minPricingRateMultipliers.imageOutput).toBe(0.8)
+  })
+
   it('collects every public group with channel metadata and model pricing', () => {
     const channelPricing = price(0.000003)
     const rows: UserAvailableChannel[] = [{
@@ -375,7 +496,7 @@ describe('aggregateByPlatformModel', () => {
         groups: [{ id: 1, name: 'g', platform: 'openai', subscription_type: 'standard', rate_multiplier: 1, is_exclusive: false }],
         supported_models: [
           { name: 'expensive', platform: 'openai', pricing: price(0.00001) },
-          { name: 'missing', platform: 'openai', pricing: null },
+          { name: 'missing', platform: 'openai', pricing: price(null, null, { billing_mode: 'per_request', per_request_price: 0.02 }) },
           { name: 'cheap', platform: 'openai', pricing: price(0.000001) }
         ]
       }]
@@ -386,6 +507,37 @@ describe('aggregateByPlatformModel', () => {
 
     expect(ascending[0].models.map((m) => m.model)).toEqual(['cheap', 'expensive', 'missing'])
     expect(descending[0].models.map((m) => m.model)).toEqual(['expensive', 'cheap', 'missing'])
+  })
+
+  it('hides model offers without any price because the gateway rejects them', () => {
+    const rows: UserAvailableChannel[] = [{
+      name: 'ch',
+      description: '',
+      platforms: [{
+        platform: 'openai',
+        groups: [{ id: 1, name: 'priced', platform: 'openai', subscription_type: 'standard', rate_multiplier: 1, is_exclusive: false }],
+        supported_models: [
+          { name: 'priced', platform: 'openai', pricing: price(0.000001) },
+          { name: 'free', platform: 'openai', pricing: price(0, 0) },
+          { name: 'no-pricing', platform: 'openai', pricing: null },
+          { name: 'empty-pricing', platform: 'openai', pricing: price(null, null) },
+          { name: 'partial', platform: 'openai', pricing: price(0.000002) }
+        ]
+      }, {
+        platform: 'openai',
+        groups: [{ id: 2, name: 'unpriced', platform: 'openai', subscription_type: 'standard', rate_multiplier: 1, is_exclusive: false }],
+        supported_models: [
+          { name: 'partial', platform: 'openai', pricing: null }
+        ]
+      }]
+    }]
+
+    const models = aggregateByPlatformModel(rows)[0].models
+    const names = models.map((m) => m.model).sort()
+
+    expect(names).toEqual(['free', 'partial', 'priced'])
+    const partial = models.find((m) => m.model === 'partial')
+    expect(partial?.supportedGroups.map((g) => g.group.name)).toEqual(['priced'])
   })
 
   it('uses interval-only pricing when computing minimum prices and input sorting', () => {
@@ -438,6 +590,13 @@ describe('aggregateByPlatformModel', () => {
       cacheRead: 0.0000005,
       imageOutput: null,
       perRequest: 0.001,
+      imageInput: null,
+      image1K: null,
+      image2K: null,
+      image4K: null,
+      video480p: null,
+      video720p: null,
+      video1080p: null
     })
   })
 

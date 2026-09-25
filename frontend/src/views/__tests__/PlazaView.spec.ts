@@ -252,6 +252,7 @@ describe('PlazaView', () => {
     error.value = ''
     isOpen.value = false
     currentModel.value = null
+    localStorage.clear()
   })
 
   afterEach(() => {
@@ -315,12 +316,46 @@ describe('PlazaView', () => {
   it('renders search and filters above a responsive comparison card grid', async () => {
     const wrapper = await mountPlaza()
 
-    expect(wrapper.find('aside').exists()).toBe(false)
+    const sidebar = wrapper.get('[data-testid="plaza-sidebar"]')
+    expect(sidebar.element.tagName).toBe('ASIDE')
+    expect(sidebar.find('[data-testid="plaza-billing-all"]').exists()).toBe(true)
+    expect(sidebar.find('[data-testid="plaza-billing-text"]').exists()).toBe(true)
+    expect(sidebar.find('[data-testid="plaza-billing-video"]').exists()).toBe(false)
     expect(wrapper.find('input[type="search"]').exists()).toBe(true)
     expect(wrapper.find('select[aria-label="Sort"]').exists()).toBe(true)
-    expect(wrapper.find('select[aria-label="Providers"]').exists()).toBe(true)
-    expect(wrapper.find('.xl\\:grid-cols-3').exists()).toBe(true)
-    expect(wrapper.find('.\\32xl\\:grid-cols-4').exists()).toBe(true)
+    expect(wrapper.find('.md\\:grid-cols-2').exists()).toBe(true)
+    expect(wrapper.find('.\\32xl\\:grid-cols-3').exists()).toBe(true)
+  })
+
+  it('filters models by billing type from the sidebar', async () => {
+    const channel = createPlazaChannel()
+    channel.platforms[0].supported_models.push({
+      name: 'grok-imagine-video',
+      pricing: {
+        billing_mode: 'video',
+        input_price: null,
+        output_price: null,
+        cache_write_price: null,
+        cache_read_price: null,
+        image_output_price: null,
+        per_request_price: null,
+        video_tier_prices: [{ tier: '720p', price: 0.1 }],
+      },
+    })
+    channels.value = [channel]
+
+    const wrapper = await mountPlaza()
+    const sidebar = wrapper.get('[data-testid="plaza-sidebar"]')
+
+    expect(wrapper.text()).toContain('gpt-4o-mini')
+    expect(wrapper.text()).toContain('grok-imagine-video')
+    expect(sidebar.get('[data-testid="plaza-billing-video"]').text()).toContain('1')
+
+    await sidebar.get('[data-testid="plaza-billing-video"]').trigger('click')
+    await nextTick()
+
+    expect(wrapper.text()).toContain('grok-imagine-video')
+    expect(wrapper.text()).not.toContain('gpt-4o-mini')
   })
 
   it('renders the localized loading state', async () => {
@@ -338,18 +373,71 @@ describe('PlazaView', () => {
     const wrapper = await mountPlaza()
 
     expect(wrapper.text()).toContain('model-01')
-    expect(wrapper.text()).toContain('model-20')
-    expect(wrapper.text()).not.toContain('model-21')
+    expect(wrapper.text()).toContain('model-15')
+    expect(wrapper.text()).not.toContain('model-16')
     expect(wrapper.text()).toContain('Showing')
-    expect(wrapper.text()).toContain('1')
-    expect(wrapper.text()).toContain('20')
     expect(wrapper.text()).toContain('25')
 
     await wrapper.get('button[aria-label="Next"]').trigger('click')
     await nextTick()
 
-    expect(wrapper.text()).toContain('model-21')
+    expect(wrapper.text()).toContain('model-16')
     expect(wrapper.text()).toContain('model-25')
     expect(wrapper.text()).not.toContain('model-01')
+  })
+
+  it('switches to a dense list view with a larger page size and remembers the choice', async () => {
+    channels.value = [createManyModelChannel(25)]
+
+    const wrapper = await mountPlaza()
+    expect(wrapper.find('[data-testid="plaza-model-list"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="plaza-view-card"]').attributes('aria-pressed')).toBe('true')
+
+    await wrapper.get('[data-testid="plaza-view-list"]').trigger('click')
+    await nextTick()
+
+    const list = wrapper.get('[data-testid="plaza-model-list"]')
+    expect(wrapper.find('.md\\:grid-cols-2').exists()).toBe(false)
+    expect(list.findAll('tbody tr')).toHaveLength(25)
+    expect(list.text()).toContain('model-25')
+    expect(list.text()).toContain('/1M')
+    expect(list.get('tbody tr').find('[data-testid="plaza-group-tags"]').text()).toContain('anthropic')
+    expect(wrapper.find('button[aria-label="Next"]').exists()).toBe(false)
+    expect(localStorage.getItem('plaza.viewMode')).toBe('list')
+
+    await list.get('tbody tr').trigger('click')
+    expect(open).toHaveBeenCalledTimes(1)
+    expect(open.mock.calls[0][0].model).toBe('model-01')
+
+    wrapper.unmount()
+    const remounted = await mountPlaza()
+    expect(remounted.find('[data-testid="plaza-model-list"]').exists()).toBe(true)
+  })
+
+  it('lists video tier prices per second in list view', async () => {
+    const channel = createPlazaChannel()
+    channel.platforms[0].supported_models.push({
+      name: 'grok-imagine-video',
+      pricing: {
+        billing_mode: 'video',
+        input_price: null,
+        output_price: null,
+        cache_write_price: null,
+        cache_read_price: null,
+        image_output_price: null,
+        per_request_price: null,
+        video_tier_prices: [{ tier: '720p', price: 0.1 }],
+      },
+    })
+    channels.value = [channel]
+    localStorage.setItem('plaza.viewMode', 'list')
+
+    const wrapper = await mountPlaza()
+    const row = wrapper.get('[data-testid="plaza-model-list"] tr[data-billing-kind="video"]')
+
+    expect(row.text()).toContain('grok-imagine-video')
+    expect(row.text()).toContain('720p')
+    expect(row.text()).toContain('¥0.1')
+    expect(row.text()).toContain('plaza.price.unitPerSecond')
   })
 })

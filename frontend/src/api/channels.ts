@@ -27,6 +27,10 @@ export interface UserAvailableGroup {
   image_rate_independent?: boolean
   /** 图片计费模型启用独立倍率时使用的倍率。 */
   image_rate_multiplier?: number
+  /** 视频计费模型是否使用独立倍率，不叠加普通分组倍率。 */
+  video_rate_independent?: boolean
+  /** 视频计费模型启用独立倍率时使用的倍率。 */
+  video_rate_multiplier?: number
   /**
    * Authenticated binding decision. Only a literal true is safe to treat as
    * bindable; the public catalog may omit this field.
@@ -66,6 +70,15 @@ export interface UserSupportedModelPricing {
   image_output_price: number | null
   per_request_price: number | null
   intervals: UserPricingInterval[]
+  /** 图片按张档位价（1K/2K/4K，美元/张，未乘倍率）；只列出真实可结算的档位。 */
+  image_tier_prices?: UserMediaTierPrice[]
+  /** 视频按秒档位价（480p/720p/1080p，美元/秒，未乘倍率）；只列出真实可结算的档位。 */
+  video_tier_prices?: UserMediaTierPrice[]
+}
+
+export interface UserMediaTierPrice {
+  tier: string
+  price: number
 }
 
 /**

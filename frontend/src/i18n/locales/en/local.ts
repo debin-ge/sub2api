@@ -277,17 +277,32 @@ export default {
     "hero": {
       "eyebrow": "Public model catalog",
       "title": "Model Plaza",
-      "subtitle": "Token prices are displayed per 1M tokens unless otherwise noted. Final prices use the platform balance convention in CNY and do not apply exchange rates.",
+      "titleAccent": "Text · Image · Video",
+      "subtitle": "Token prices are displayed per 1M tokens unless otherwise noted. Images are billed per token or per image and videos per second. Final prices use the platform balance convention in CNY and do not apply exchange rates.",
       "rateTag": "Recharge multiplier {rate}x",
       "boostValue": "¥1 recharge gives {multiplier} balance"
     },
     "metrics": {
       "models": "Models",
       "platforms": "Providers",
+      "imageModels": "Image models",
+      "videoModels": "Video models",
       "boost": "Recharge multiplier"
     },
     "card": {
       "input": "Input",
+      "textInput": "Text input",
+      "imageInput": "Image input",
+      "tokenCaption": "Token pricing",
+      "imageTokenCaption": "Token pricing (preferred)",
+      "perImageCaption": "Per-image pricing",
+      "videoCaption": "Resolution",
+      "videoExample": "Example: a {seconds}s {tier} video",
+      "imageTokenFirst": "Billed by tokens first; per image when upstream returns no image usage",
+      "perRequestLabel": "Per call",
+      "billingPerSecond": "Per second",
+      "billingPerImage": "Per image",
+      "details": "Details",
       "output": "Output",
       "cacheWrite": "Cache write",
       "cacheRead": "Cache read",
@@ -307,12 +322,26 @@ export default {
       "notAvailable": "N/A",
       "recentCalls": "{count} calls in 7d"
     },
+    "view": {
+      "label": "View",
+      "card": "Cards",
+      "list": "List"
+    },
+    "list": {
+      "model": "Model",
+      "kind": "Type",
+      "standard": "Standard",
+      "vip": "VIP",
+      "groups": "Available groups",
+      "recentCalls": "7d calls",
+      "peakOffPeak": "Peak / off-peak"
+    },
     "searchBar": {
       "total": "{total} models",
       "filtered": "{visible}/{total} models"
     },
     "infoBanner": {
-      "text": "Each model shows the lowest usable base price for standard public groups and VIP groups separately. Original prices come from the model-price catalog first; final prices apply the group multiplier and are always shown in the platform's CNY balance convention without exchange-rate conversion."
+      "text": "Each model shows the lowest usable base price for standard public groups and VIP groups separately. Original prices come from the model-price catalog first; final prices apply the group multiplier and are always shown in the platform's CNY balance convention without exchange-rate conversion. Image models bill by tokens first and fall back to the 1K/2K/4K per-image tiers when usage is missing; video models bill per second by resolution; groups with independent image/video multipliers use those multipliers."
     },
     "modal": {
       "close": "Close",
@@ -329,7 +358,23 @@ export default {
       "basePricePeakNote": "Prices above use the base multipliers for standard public and VIP groups separately. Token billing also applies the configured peak multiplier during peak windows.",
       "deepSeekTimeNote": "DeepSeek official prices use Beijing time: peak 09:00-12:00 and 14:00-18:00; off-peak is half the peak price.",
       "tierRange": "{min} - {max} tokens",
-      "tierRangeOpenEnded": "{min}+ tokens"
+      "tierRangeOpenEnded": "{min}+ tokens",
+      "availableGroups": "Available groups",
+      "groupRate": "Rate",
+      "bestRate": "Best",
+      "groupsHint": "Final price = base price × group rate; standard and VIP groups are priced separately",
+      "copy": "Copy",
+      "copied": "Copied",
+      "preferred": "Preferred",
+      "imageTokenPricing": "Token billing",
+      "perImagePricing": "Per-image billing",
+      "perImageFallback": "Per-image billing (fallback)",
+      "imageNote": "Token billing applies when upstream returns image token usage; otherwise each image is billed at the 1K/2K/4K tier matching its output size.",
+      "imagePerImageNote": "Each image is billed at the 1K/2K/4K tier matching its output size: cost = per-image price × image count.",
+      "videoPricing": "Per-second billing",
+      "videoNote": "Cost = resolution tier price × duration (seconds) × count. Groups with an independent video multiplier use that multiplier.",
+      "imageRate": "Image ×{rate}",
+      "videoRate": "Video ×{rate}"
     },
     "price": {
       "standardLabel": "Standard",
@@ -337,7 +382,15 @@ export default {
       "standardPricing": "Standard group pricing",
       "vipPricing": "VIP group pricing",
       "unitPerMillion": "/1M",
-      "unitPerRequest": "/request"
+      "unitPerRequest": "/request",
+      "unitPerImage": "/image",
+      "unitPerSecond": "/s"
+    },
+    "kind": {
+      "text": "Text",
+      "image": "Image",
+      "video": "Video",
+      "perRequest": "Per request"
     },
     "platform": {
       "modelCount": "{n} models"
@@ -349,7 +402,11 @@ export default {
       "search": "Search models",
       "searchPlaceholder": "Search model name...",
       "platform": "Providers",
-      "allPlatforms": "All",
+      "allPlatforms": "All providers",
+      "billingType": "Billing type",
+      "allModels": "All models",
+      "showMore": "Show {n} more",
+      "showLess": "Show less",
       "sort": "Sort",
       "sortPopularity": "Trending (7 days)",
       "sortDefault": "Name",

@@ -1446,3 +1446,90 @@ func TestBuildPlatformSections_CompositeWithoutModelsKeepsEmptyCompositeSection(
 	require.Len(t, sections[0].Groups, 1)
 	require.Empty(t, sections[0].SupportedModels)
 }
+
+func TestListPublic_ExposesVideoAndImageTierPrices(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	video720 := 0.3
+	image1K := 0.05
+	channelSvc := service.NewChannelService(
+		&publicChannelRepoStub{channels: []service.Channel{{
+			ID:       1,
+			Name:     "grok-media",
+			Status:   service.StatusActive,
+			GroupIDs: []int64{10},
+		}}},
+		&publicGroupRepoStub{groups: []service.Group{{
+			ID:                   10,
+			Name:                 "grok-public",
+			Platform:             service.PlatformGrok,
+			Status:               service.StatusActive,
+			RateMultiplier:       1,
+			VideoRateIndependent: true,
+			VideoRateMultiplier:  0.8,
+			VideoPrice720P:       &video720,
+			ImagePrice1K:         &image1K,
+		}}},
+		nil,
+		nil, nil)
+
+	h := &AvailableChannelHandler{
+		channelService: channelSvc,
+		settingService: stubAvailableChannelSettingService{},
+		modelCatalog: &stubModelCatalogProvider{byGroup: map[int64][]string{
+			10: {"grok-imagine-video", "grok-imagine-image"},
+		}},
+		modelPrices: service.NewPricingService(nil, nil),
+	}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/channels/public", nil)
+
+	h.ListPublic(c)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var body struct {
+		Data []struct {
+			Platforms []struct {
+				Groups []struct {
+					VideoRateIndependent bool    `json:"video_rate_independent"`
+					VideoRateMultiplier  float64 `json:"video_rate_multiplier"`
+				} `json:"groups"`
+				SupportedModels []struct {
+					Name    string `json:"name"`
+					Pricing *struct {
+						BillingMode     string                  `json:"billing_mode"`
+						ImageTierPrices []userMediaTierPriceDTO `json:"image_tier_prices"`
+						VideoTierPrices []userMediaTierPriceDTO `json:"video_tier_prices"`
+					} `json:"pricing"`
+				} `json:"supported_models"`
+			} `json:"platforms"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	require.Len(t, body.Data, 1)
+	section := body.Data[0].Platforms[0]
+	require.True(t, section.Groups[0].VideoRateIndependent)
+	require.InDelta(t, 0.8, section.Groups[0].VideoRateMultiplier, 1e-12)
+
+	byName := map[string]int{}
+	for i, m := range section.SupportedModels {
+		byName[m.Name] = i
+	}
+	video := section.SupportedModels[byName["grok-imagine-video"]]
+	require.NotNil(t, video.Pricing)
+	require.Equal(t, string(service.BillingModeVideo), video.Pricing.BillingMode)
+	require.Empty(t, video.Pricing.ImageTierPrices)
+	require.Equal(t, []userMediaTierPriceDTO{
+		{Tier: service.VideoBillingResolution480P, Price: 0.05},
+		{Tier: service.VideoBillingResolution720P, Price: 0.3},
+		{Tier: service.VideoBillingResolution1080P, Price: 0.07},
+	}, video.Pricing.VideoTierPrices)
+
+	image := section.SupportedModels[byName["grok-imagine-image"]]
+	require.NotNil(t, image.Pricing)
+	require.Empty(t, image.Pricing.VideoTierPrices)
+	require.Equal(t, []userMediaTierPriceDTO{
+		{Tier: service.ImageBillingSize1K, Price: 0.05},
+		{Tier: service.ImageBillingSize2K, Price: 0.02},
+	}, image.Pricing.ImageTierPrices)
+}

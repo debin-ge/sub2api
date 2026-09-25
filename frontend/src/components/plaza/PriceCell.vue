@@ -61,10 +61,13 @@ import {
   formatMoney,
   scheduledScaledPrice
 } from '@/utils/pricing'
+import { plazaUnitLabel, type PlazaPriceUnit } from './plazaPricingRows'
 
 const props = defineProps<{
   label: string
   scale: number
+  /** 单位标签；缺省按 scale 推断（每百万 token / 每次）。 */
+  unit?: PlazaPriceUnit
   standardAvailable: boolean
   standardValue: number | null
   standardBillingRateMultiplier?: number
@@ -86,8 +89,12 @@ const gridClass = computed(() =>
 )
 const labelClass = computed(() => hasBothPricingTypes.value ? 'col-span-2 sm:col-span-1' : '')
 
+const resolvedUnit = computed<PlazaPriceUnit>(() =>
+  props.unit ?? (props.scale === PER_REQUEST_SCALE ? 'request' : 'million')
+)
+
 const showTimeSchedule = computed(() =>
-  props.scale !== PER_REQUEST_SCALE &&
+  resolvedUnit.value === 'million' &&
   !!props.timeSchedule &&
   typeof props.timeSchedule.peak_multiplier === 'number' &&
   typeof props.timeSchedule.off_peak_multiplier === 'number'
@@ -144,9 +151,5 @@ const originalDisplay = (value: number | null, currency?: string) => formatMoney
 const rechargedDisplay = (value: number | null, billingRateMultiplier?: number) =>
   formatCNYEffective(value, props.scale, billingRateMultiplier)
 
-const unitLabel = computed(() =>
-  props.scale === PER_REQUEST_SCALE
-    ? t('plaza.price.unitPerRequest')
-    : t('plaza.price.unitPerMillion')
-)
+const unitLabel = computed(() => plazaUnitLabel(t, resolvedUnit.value))
 </script>

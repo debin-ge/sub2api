@@ -277,17 +277,32 @@ export default {
     "hero": {
       "eyebrow": "公开模型目录",
       "title": "模型广场",
-      "subtitle": "Token 价格默认按每 100 万 tokens 展示，按次计费会单独标注。最终价格统一按人民币余额口径展示，不进行汇率换算。",
+      "titleAccent": "文本 · 图片 · 视频",
+      "subtitle": "文本按每 100 万 tokens、图片按张或按 token、视频按秒计费，计价单位会在价格旁标注。最终价格统一按人民币余额口径展示，不进行汇率换算。",
       "rateTag": "充值倍率 {rate}x",
       "boostValue": "¥1 充值获得 {multiplier} 余额"
     },
     "metrics": {
       "models": "模型总数",
       "platforms": "供应商",
+      "imageModels": "图片模型",
+      "videoModels": "视频模型",
       "boost": "充值倍率"
     },
     "card": {
       "input": "输入",
+      "textInput": "文本输入",
+      "imageInput": "图像输入",
+      "tokenCaption": "Token 价格",
+      "imageTokenCaption": "Token 价格（优先）",
+      "perImageCaption": "按张价格",
+      "videoCaption": "视频分辨率",
+      "videoExample": "示例：生成 {seconds} 秒 {tier} 视频",
+      "imageTokenFirst": "优先按 token 计费，上游未返回图片用量时按张计费",
+      "perRequestLabel": "每次调用",
+      "billingPerSecond": "按秒计费",
+      "billingPerImage": "按张计费",
+      "details": "详情",
       "output": "输出",
       "cacheWrite": "缓存写入",
       "cacheRead": "缓存读取",
@@ -307,12 +322,26 @@ export default {
       "notAvailable": "暂无",
       "recentCalls": "近 7 日 {count} 次调用"
     },
+    "view": {
+      "label": "视图",
+      "card": "卡片",
+      "list": "列表"
+    },
+    "list": {
+      "model": "模型",
+      "kind": "类型",
+      "standard": "普通价",
+      "vip": "VIP 价",
+      "groups": "可用分组",
+      "recentCalls": "近 7 日调用",
+      "peakOffPeak": "高峰 / 空闲"
+    },
     "searchBar": {
       "total": "共 {total} 个模型",
       "filtered": "{visible}/{total} 个模型"
     },
     "infoBanner": {
-      "text": "同一模型会分别展示普通公开分组和 VIP 分组中的最低可用基础价；两类价格独立计算，不会相互覆盖。原价优先来自模型价格目录，最终价格按分组倍率折算并统一以人民币余额口径展示，不进行汇率换算。"
+      "text": "同一模型会分别展示普通公开分组和 VIP 分组中的最低可用基础价；两类价格独立计算，不会相互覆盖。图片模型优先按 token 计费，缺少用量时按 1K/2K/4K 档位按张计费；视频模型按分辨率档位按秒计费；开启独立图片/视频倍率的分组按对应倍率折算。原价优先来自模型价格目录，最终价格按分组倍率折算并统一以人民币余额口径展示，不进行汇率换算。"
     },
     "modal": {
       "close": "关闭",
@@ -329,7 +358,23 @@ export default {
       "basePricePeakNote": "以上分别按普通公开分组和 VIP 分组的基础倍率计算；高峰窗口内的 Token 计费还会叠加对应高峰倍率。",
       "deepSeekTimeNote": "DeepSeek 官方价按北京时间选档：高峰 09:00-12:00、14:00-18:00，空闲价为高峰价的一半。",
       "tierRange": "{min} - {max} tokens",
-      "tierRangeOpenEnded": "{min}+ tokens"
+      "tierRangeOpenEnded": "{min}+ tokens",
+      "availableGroups": "可用分组",
+      "groupRate": "倍率",
+      "bestRate": "最优",
+      "groupsHint": "最终价 = 原价 × 分组倍率，普通与 VIP 分组分别计价",
+      "copy": "复制",
+      "copied": "已复制",
+      "preferred": "优先",
+      "imageTokenPricing": "按 token 计费",
+      "perImagePricing": "按张计费",
+      "perImageFallback": "按张计费（兜底）",
+      "imageNote": "上游返回图片 token 用量时按 token 计费；未返回时按输出图片尺寸对应的 1K/2K/4K 档位按张计费。",
+      "imagePerImageNote": "按输出图片尺寸对应的 1K/2K/4K 档位按张计费，费用 = 单张价格 × 张数。",
+      "videoPricing": "按秒计费",
+      "videoNote": "费用 = 分辨率档位单价 × 视频时长（秒）× 生成数量；开启独立视频倍率的分组按视频倍率折算。",
+      "imageRate": "图片 ×{rate}",
+      "videoRate": "视频 ×{rate}"
     },
     "price": {
       "standardLabel": "普通",
@@ -337,7 +382,15 @@ export default {
       "standardPricing": "普通分组价格",
       "vipPricing": "VIP 分组价格",
       "unitPerMillion": "/1M",
-      "unitPerRequest": "/次"
+      "unitPerRequest": "/次",
+      "unitPerImage": "/张",
+      "unitPerSecond": "/秒"
+    },
+    "kind": {
+      "text": "文本",
+      "image": "图片",
+      "video": "视频",
+      "perRequest": "按次"
     },
     "platform": {
       "modelCount": "{n} 个模型"
@@ -348,8 +401,12 @@ export default {
       "subtitle": "按供应商和排序方式筛选模型",
       "search": "搜索模型",
       "searchPlaceholder": "搜索模型名称...",
-      "platform": "供应商",
-      "allPlatforms": "全部",
+      "platform": "服务商",
+      "allPlatforms": "全部服务商",
+      "billingType": "计费类型",
+      "allModels": "全部模型",
+      "showMore": "展开其余 {n} 个",
+      "showLess": "收起",
       "sort": "排序",
       "sortPopularity": "近 7 日热度",
       "sortDefault": "按名称",

@@ -29,6 +29,12 @@ type AvailableGroupRef struct {
 	ImagePrice1K         *float64
 	ImagePrice2K         *float64
 	ImagePrice4K         *float64
+	VideoRateIndependent bool
+	VideoRateMultiplier  float64
+	VideoPrice480P       *float64
+	VideoPrice720P       *float64
+	VideoPrice1080P      *float64
+	VideoModelPrices     map[string]map[string]float64
 	ModelsListConfig     GroupModelsListConfig
 }
 
@@ -115,6 +121,12 @@ func (s *ChannelService) listAvailable(ctx context.Context, opts availableListOp
 			ImagePrice1K:         g.ImagePrice1K,
 			ImagePrice2K:         g.ImagePrice2K,
 			ImagePrice4K:         g.ImagePrice4K,
+			VideoRateIndependent: g.VideoRateIndependent,
+			VideoRateMultiplier:  g.VideoRateMultiplier,
+			VideoPrice480P:       g.VideoPrice480P,
+			VideoPrice720P:       g.VideoPrice720P,
+			VideoPrice1080P:      g.VideoPrice1080P,
+			VideoModelPrices:     NormalizeVideoModelPrices(g.VideoModelPrices),
 			ModelsListConfig:     g.ModelsListConfig,
 		}
 		groupByID[g.ID] = ref

@@ -1,57 +1,50 @@
 <template>
-  <section class="border-b border-gray-200 bg-white dark:border-dark-800 dark:bg-dark-950">
-    <div class="mx-auto max-w-[90rem] px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
-      <div class="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
-        <div class="min-w-0 flex-1">
-          <div class="flex items-center gap-3">
-            <span class="h-px w-8 bg-primary-500" aria-hidden="true"></span>
-            <span class="text-xs font-medium tracking-wide text-gray-500 dark:text-gray-400">
-              {{ t('plaza.hero.eyebrow') }}
+  <section class="relative overflow-hidden bg-dark-950">
+    <div class="tech-grid absolute inset-0" aria-hidden="true"></div>
+    <div class="absolute left-1/2 top-0 h-[420px] w-[900px] -translate-x-1/2 -translate-y-1/3 rounded-full bg-primary-500/20 blur-[120px]" aria-hidden="true"></div>
+    <div class="absolute -right-24 top-1/3 h-80 w-80 rounded-full bg-accent-400/10 blur-3xl" aria-hidden="true"></div>
+
+    <div class="relative mx-auto max-w-7xl px-4 pb-10 pt-12 sm:px-6 lg:px-8 lg:pt-16">
+      <div class="flex flex-col gap-10 lg:flex-row lg:items-end lg:justify-between">
+        <div class="max-w-2xl">
+          <p class="mb-5 inline-flex items-center gap-2 rounded-full border border-primary-400/30 bg-primary-500/10 px-3 py-1 font-mono text-xs font-medium text-primary-300">
+            <span class="relative flex h-1.5 w-1.5" aria-hidden="true">
+              <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+              <span class="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
             </span>
-          </div>
-          <div class="mt-4 flex flex-wrap items-center gap-3">
-            <h1 class="text-3xl font-bold tracking-tight text-gray-950 dark:text-white sm:text-4xl">
-              {{ t('plaza.hero.title') }}
-            </h1>
-            <span class="inline-flex items-center rounded border border-amber-300/70 bg-amber-50 px-2 py-1 font-mono text-[11px] font-medium tabular-nums text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
-              {{ t('plaza.hero.rateTag', { rate: rechargeRateLabel }) }}
-            </span>
-          </div>
-          <p class="mt-3 max-w-2xl text-sm leading-relaxed text-gray-500 dark:text-gray-400">
+            {{ t('plaza.hero.eyebrow') }}
+          </p>
+          <h1 class="text-4xl font-extrabold leading-tight tracking-tight text-white sm:text-5xl">
+            {{ t('plaza.hero.title') }}
+            <span class="text-gradient">{{ t('plaza.hero.titleAccent') }}</span>
+          </h1>
+          <p class="mt-4 max-w-xl text-base leading-7 text-gray-300">
             {{ t('plaza.hero.subtitle') }}
           </p>
+          <div class="mt-5 flex flex-wrap items-center gap-2 font-mono text-xs">
+            <span class="inline-flex items-center rounded-lg border border-amber-400/30 bg-amber-500/10 px-3 py-1.5 text-amber-300">
+              {{ t('plaza.hero.rateTag', { rate: rechargeRateLabel }) }}
+            </span>
+            <span
+              v-if="hasBoost"
+              class="inline-flex items-center rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-3 py-1.5 text-emerald-300"
+            >
+              {{ t('plaza.hero.boostValue', { multiplier: rechargeRateLabel }) }}
+            </span>
+          </div>
         </div>
 
-        <div class="grid min-w-0 flex-1 grid-cols-2 overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-dark-800 dark:bg-dark-900 sm:grid-cols-3">
-          <div class="min-w-0 px-5 py-4">
-            <div class="text-xs font-medium text-gray-500 dark:text-gray-400">
-              {{ t('plaza.metrics.models') }}
-            </div>
-            <div class="mt-1.5 font-mono text-2xl font-semibold tabular-nums tracking-tight text-gray-900 dark:text-white">
-              {{ modelCount }}
-            </div>
-          </div>
-          <div class="min-w-0 border-l border-gray-200 px-5 py-4 dark:border-dark-800">
-            <div class="text-xs font-medium text-gray-500 dark:text-gray-400">
-              {{ t('plaza.metrics.platforms') }}
-            </div>
-            <div class="mt-1.5 font-mono text-2xl font-semibold tabular-nums tracking-tight text-gray-900 dark:text-white">
-              {{ platformCount }}
-            </div>
-          </div>
-          <div class="min-w-0 col-span-2 border-t border-gray-200 px-5 py-4 dark:border-dark-800 sm:col-span-1 sm:border-l sm:border-t-0">
-            <div class="flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-gray-400">
-              <span v-if="hasBoost" class="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true"></span>
-              {{ t('plaza.metrics.boost') }}
-            </div>
-            <div
-              :class="[
-                'mt-1.5 break-words font-mono text-2xl font-semibold tabular-nums tracking-tight',
-                hasBoost ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-900 dark:text-white'
-              ]"
-            >
-              {{ valueBoostLabel }}
-            </div>
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:w-[520px]">
+          <div
+            v-for="metric in metrics"
+            :key="metric.key"
+            class="rounded-xl border border-white/10 bg-white/5 px-4 py-3 backdrop-blur"
+          >
+            <p class="font-mono text-2xl font-bold tabular-nums text-white">{{ metric.value }}</p>
+            <p class="mt-0.5 flex items-center gap-1.5 text-xs text-gray-400">
+              <span v-if="metric.dot" :class="['h-1.5 w-1.5 rounded-full', metric.dot]" aria-hidden="true"></span>
+              {{ metric.label }}
+            </p>
           </div>
         </div>
       </div>
@@ -67,16 +60,24 @@ import { normalizePlazaMultiplier } from '@/utils/pricing'
 const props = defineProps<{
   modelCount: number
   platformCount: number
+  imageModelCount: number
+  videoModelCount: number
   multiplier: number
 }>()
 
 const { t } = useI18n()
 
 const hasBoost = computed(() => normalizePlazaMultiplier(props.multiplier) !== 1)
-const valueBoostLabel = computed(() => t('plaza.hero.boostValue', { multiplier: rechargeRateLabel.value }))
 
 const rechargeRateLabel = computed(() => {
   const value = normalizePlazaMultiplier(props.multiplier)
   return Number(value.toFixed(3)).toString()
 })
+
+const metrics = computed(() => [
+  { key: 'models', value: props.modelCount, label: t('plaza.metrics.models'), dot: '' },
+  { key: 'platforms', value: props.platformCount, label: t('plaza.metrics.platforms'), dot: '' },
+  { key: 'image', value: props.imageModelCount, label: t('plaza.metrics.imageModels'), dot: 'bg-fuchsia-400' },
+  { key: 'video', value: props.videoModelCount, label: t('plaza.metrics.videoModels'), dot: 'bg-amber-400' }
+])
 </script>

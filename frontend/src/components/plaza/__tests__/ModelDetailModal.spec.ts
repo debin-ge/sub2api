@@ -6,7 +6,20 @@ import type { VueWrapper } from '@vue/test-utils'
 
 const messages: Record<string, string> = {
   'plaza.modal.close': 'Close',
-  'plaza.modal.fullPricing': 'Full pricing',
+  'plaza.modal.availableGroups': 'Available groups',
+  'plaza.modal.groupRate': 'Rate',
+  'plaza.modal.bestRate': 'Best',
+  'plaza.card.peakPrice': 'Peak',
+  'plaza.modal.copy': 'Copy',
+  'plaza.modal.imageRate': 'Image ×{rate}',
+  'plaza.modal.videoRate': 'Video ×{rate}',
+  'plaza.modal.videoNote': 'Cost = tier price × seconds × count.',
+  'plaza.kind.text': 'Text',
+  'plaza.kind.image': 'Image',
+  'plaza.kind.video': 'Video',
+  'plaza.card.tokenCaption': 'Token pricing',
+  'plaza.card.videoCaption': 'Resolution',
+  'plaza.price.unitPerSecond': '/s',
   'plaza.modal.input': 'Input',
   'plaza.modal.output': 'Output',
   'plaza.modal.cacheWrite': 'Cache write',
@@ -54,6 +67,7 @@ const model: AggregatedModel = {
   model: 'gpt-5.5',
   displayName: 'gpt-5.5',
   platform: 'openai',
+  billingKind: 'text',
   standardPricing: {
     minPricing: {
       input: 0.000003,
@@ -161,8 +175,8 @@ describe('ModelDetailModal', () => {
     await wrapper.vm.$nextTick()
 
     expect(document.body.textContent).toContain('gpt-5.5')
-    expect(document.body.textContent).toContain('Full pricing')
-    expect(document.body.textContent).toContain('Standard group pricing')
+    expect(document.body.textContent).toContain('Text')
+    expect(document.body.textContent).toContain('Token pricing')
     expect(document.body.textContent).toContain('Input')
     expect(document.body.textContent).toContain('Output')
     expect(document.body.textContent).toContain('Cache write')
@@ -173,11 +187,9 @@ describe('ModelDetailModal', () => {
     expect(document.body.textContent).not.toContain('% of reference')
     expect(document.body.textContent).toContain('Peak pricing applies')
     expect(document.body.textContent).toContain('Base prices exclude peak multiplier.')
-    expect(document.body.textContent).toContain('14:00-18:00 ×2 (UTC+08:00)')
     expect(document.body.textContent).toContain('$12')
     expect(document.body.textContent).toContain('$40')
     expect(document.body.textContent).toContain('$0.002')
-    expect(document.body.textContent).toContain('Channels supporting this model')
     expect(document.body.textContent).toContain('Tiered pricing')
     expect(document.body.textContent).toContain('Base')
     expect(document.body.textContent).toContain('0 - 100,000 tokens')
@@ -189,10 +201,19 @@ describe('ModelDetailModal', () => {
     expect(document.body.textContent).toContain('$1.5')
     expect(document.body.textContent).toContain('$0.003')
     expect(document.body.textContent).not.toContain('完整定价')
-    expect(document.body.textContent).not.toContain('支持该模型的渠道')
 
-    const bodyText = document.body.textContent ?? ''
-    expect(bodyText.indexOf('OpenAI direct')).toBeLessThan(bodyText.indexOf('OpenAI backup'))
+    expect(document.body.querySelector('[role="tablist"]')).toBeNull()
+    expect(document.body.textContent).toContain('Available groups')
+    const cards = [...document.body.querySelectorAll<HTMLElement>('[data-testid="plaza-group-cards"] > li')]
+    expect(cards).toHaveLength(2)
+    expect(cards[0].textContent).toContain('public')
+    expect(cards[0].textContent).not.toContain('OpenAI direct')
+    expect(cards[0].textContent).toContain('×1')
+    expect(cards[0].querySelector('[data-testid="plaza-group-best"]')).not.toBeNull()
+    expect(cards[1].textContent).toContain('backup')
+    expect(cards[1].textContent).toContain('×2')
+    expect(cards[1].textContent).toContain('Peak 14:00-18:00 ×2 (UTC+08:00)')
+    expect(cards[1].querySelector('[data-testid="plaza-group-best"]')).toBeNull()
 
     const dialog = document.body.querySelector<HTMLElement>('[role="dialog"]')
     expect(dialog?.getAttribute('aria-labelledby')).toBe('plaza-modal-title')
@@ -250,13 +271,16 @@ describe('ModelDetailModal', () => {
     })
     await wrapper.vm.$nextTick()
 
-    expect(document.body.textContent).toContain('Standard group pricing')
-    expect(document.body.textContent).toContain('VIP group pricing')
-    expect(document.body.textContent).toContain('80% of reference')
-    expect(document.body.textContent).toContain('OpenAI VIP')
+    expect(document.body.textContent).toContain('Standard')
     expect(document.body.textContent).toContain('VIP')
+    expect(document.body.textContent).toContain('80% of reference')
     expect(document.body.textContent).toContain('¥3')
     expect(document.body.textContent).toContain('¥2.4')
+
+    const vipCard = document.body.querySelector<HTMLElement>('[data-testid="plaza-group-cards"] > li[data-vip="true"]')
+    expect(vipCard?.textContent).toContain('vip')
+    expect(vipCard?.textContent).not.toContain('OpenAI VIP')
+    expect(vipCard?.textContent).toContain('×0.8')
   })
 
   it('uses the independent image multiplier for tiered image per-request prices', async () => {
@@ -264,6 +288,7 @@ describe('ModelDetailModal', () => {
       ...model,
       model: 'gpt-image',
       displayName: 'gpt-image',
+      billingKind: 'image',
       standardPricing: {
         minPricing: {
           input: null,
@@ -329,5 +354,80 @@ describe('ModelDetailModal', () => {
     expect(tierSection).toContain('$0.02')
     expect(tierSection).toContain('¥0.02')
     expect(tierSection).not.toContain('<¥0.01')
+  })
+
+  it('shows per-second video tiers and the independent video multiplier on groups', async () => {
+    const videoModel: AggregatedModel = {
+      ...model,
+      model: 'grok-imagine-video',
+      displayName: 'grok-imagine-video',
+      platform: 'grok',
+      billingKind: 'video',
+      standardPricing: {
+        minPricing: {
+          input: null,
+          output: null,
+          cacheWrite: null,
+          cacheRead: null,
+          imageInput: null,
+          imageOutput: null,
+          perRequest: null,
+          image1K: null,
+          image2K: null,
+          image4K: null,
+          video480p: 0.05,
+          video720p: 0.1,
+          video1080p: null
+        },
+        minPricingRateMultipliers: {
+          input: 1,
+          output: 1,
+          cacheWrite: 1,
+          cacheRead: 1,
+          imageInput: 1,
+          imageOutput: 1,
+          perRequest: 0.5,
+          image1K: 1,
+          image2K: 1,
+          image4K: 1,
+          video480p: 0.5,
+          video720p: 0.5,
+          video1080p: 0.5
+        },
+        displayRateMultiplier: 1
+      },
+      supportedGroups: [{
+        channelName: 'Grok video',
+        channelDescription: '',
+        group: {
+          id: 11,
+          name: 'video',
+          platform: 'grok',
+          subscription_type: 'standard',
+          rate_multiplier: 1,
+          video_rate_independent: true,
+          video_rate_multiplier: 0.5,
+          is_exclusive: false
+        },
+        pricing: null
+      }]
+    }
+
+    wrapper = mount(ModelDetailModal, {
+      props: { open: true, model: videoModel },
+      attachTo: document.body
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(document.body.textContent).toContain('Video')
+    expect(document.body.textContent).toContain('720p')
+    expect(document.body.textContent).toContain('/s')
+    expect(document.body.textContent).toContain('¥0.05')
+    expect(document.body.textContent).toContain('Cost = tier price × seconds × count.')
+    expect(document.body.textContent).not.toContain('Peak pricing applies')
+
+    const videoCard = document.body.querySelector<HTMLElement>('[data-testid="plaza-group-cards"] > li')
+    expect(videoCard?.textContent).toContain('video')
+    expect(videoCard?.textContent).toContain('Video ×0.5')
   })
 })

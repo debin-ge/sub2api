@@ -7,29 +7,46 @@ import type {
 
 export type PlazaSort = 'popularity' | 'default' | 'input_asc' | 'input_desc'
 
-export interface PlazaMinPricing {
-  input: number | null
-  output: number | null
-  cacheWrite: number | null
-  cacheRead: number | null
-  imageOutput: number | null
-  perRequest: number | null
-}
+/** 模型的主计费形态，决定卡片样式与计费类型筛选。 */
+export type PlazaBillingKind = 'text' | 'image' | 'video' | 'per_request'
 
-export interface PlazaPricingRateMultipliers {
-  input: number
-  output: number
-  cacheWrite: number
-  cacheRead: number
-  imageOutput: number
-  perRequest: number
-}
+export const PLAZA_PRICING_DIMENSIONS = [
+  'input',
+  'output',
+  'cacheWrite',
+  'cacheRead',
+  'imageInput',
+  'imageOutput',
+  'perRequest',
+  'image1K',
+  'image2K',
+  'image4K',
+  'video480p',
+  'video720p',
+  'video1080p'
+] as const
 
-export type PlazaPricingDimension = keyof PlazaMinPricing
+export type PlazaPricingDimension = (typeof PLAZA_PRICING_DIMENSIONS)[number]
+export type PlazaMinPricing = Record<PlazaPricingDimension, number | null>
+export type PlazaPricingRateMultipliers = Record<PlazaPricingDimension, number>
 export type PlazaPricingCurrency = 'USD' | 'CNY'
 export type PlazaPricingSource = 'override' | 'merged' | 'catalog' | 'official' | 'channel'
 
 type PlazaPricingDimensionMap<T> = Record<PlazaPricingDimension, T>
+
+/** 图片按张档位（后端 tier 值）→ 聚合维度。 */
+export const PLAZA_IMAGE_TIER_DIMENSIONS = {
+  '1K': 'image1K',
+  '2K': 'image2K',
+  '4K': 'image4K'
+} as const satisfies Record<string, PlazaPricingDimension>
+
+/** 视频按秒档位（后端 tier 值）→ 聚合维度。 */
+export const PLAZA_VIDEO_TIER_DIMENSIONS = {
+  '480p': 'video480p',
+  '720p': 'video720p',
+  '1080p': 'video1080p'
+} as const satisfies Record<string, PlazaPricingDimension>
 
 export interface PlazaPricingSummary {
   minPricing: PlazaMinPricing
@@ -50,6 +67,7 @@ export interface AggregatedModel {
   model: string
   displayName: string
   platform: string
+  billingKind: PlazaBillingKind
   standardPricing: PlazaPricingSummary | null
   vipPricing: PlazaPricingSummary | null
   supportedGroups: PlazaSupportedGroup[]
@@ -63,41 +81,16 @@ export interface PlazaPlatformSection {
   models: AggregatedModel[]
 }
 
-const emptyPricing = (): PlazaMinPricing => ({
-  input: null,
-  output: null,
-  cacheWrite: null,
-  cacheRead: null,
-  imageOutput: null,
-  perRequest: null
-})
+function dimensionMap<T>(value: T): PlazaPricingDimensionMap<T> {
+  const out = {} as PlazaPricingDimensionMap<T>
+  for (const key of PLAZA_PRICING_DIMENSIONS) out[key] = value
+  return out
+}
 
-const defaultPricingRateMultipliers = (): PlazaPricingRateMultipliers => ({
-  input: 1,
-  output: 1,
-  cacheWrite: 1,
-  cacheRead: 1,
-  imageOutput: 1,
-  perRequest: 1
-})
-
-const defaultPricingCurrencies = (): PlazaPricingDimensionMap<PlazaPricingCurrency> => ({
-  input: 'USD',
-  output: 'USD',
-  cacheWrite: 'USD',
-  cacheRead: 'USD',
-  imageOutput: 'USD',
-  perRequest: 'USD'
-})
-
-const defaultPricingSources = (): PlazaPricingDimensionMap<PlazaPricingSource> => ({
-  input: 'channel',
-  output: 'channel',
-  cacheWrite: 'channel',
-  cacheRead: 'channel',
-  imageOutput: 'channel',
-  perRequest: 'channel'
-})
+const emptyPricing = (): PlazaMinPricing => dimensionMap<number | null>(null)
+const defaultPricingRateMultipliers = (): PlazaPricingRateMultipliers => dimensionMap(1)
+const defaultPricingCurrencies = () => dimensionMap<PlazaPricingCurrency>('USD')
+const defaultPricingSources = () => dimensionMap<PlazaPricingSource>('channel')
 
 function minNullable(a: number | null, b: number | null): number | null {
   if (a == null) return b
@@ -110,50 +103,107 @@ function groupRateMultiplier(group: UserAvailableGroup): number {
   return typeof rate === 'number' && Number.isFinite(rate) && rate > 0 ? rate : 1
 }
 
-function imageRateMultiplier(group: UserAvailableGroup): number {
-  const rate = group.image_rate_multiplier
-  return typeof rate === 'number' && Number.isFinite(rate) && rate >= 0 ? rate : 1
+function independentRate(value: number | undefined): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 1
+}
+
+/** 图片按张结算使用的倍率：分组开启独立图片倍率时用图片倍率，否则用分组倍率。 */
+export function imageTierRateMultiplier(group: UserAvailableGroup): number {
+  return group.image_rate_independent === true
+    ? independentRate(group.image_rate_multiplier)
+    : groupRateMultiplier(group)
+}
+
+/** 视频按秒结算使用的倍率：分组开启独立视频倍率时用视频倍率，否则用分组倍率。 */
+export function videoTierRateMultiplier(group: UserAvailableGroup): number {
+  return group.video_rate_independent === true
+    ? independentRate(group.video_rate_multiplier)
+    : groupRateMultiplier(group)
 }
 
 function pricingRateMultipliers(
   group: UserAvailableGroup,
   pricing: UserSupportedModelPricing | null
 ): PlazaPricingRateMultipliers {
-  const rate = groupRateMultiplier(group)
-  const rates: PlazaPricingRateMultipliers = {
-    input: rate,
-    output: rate,
-    cacheWrite: rate,
-    cacheRead: rate,
-    imageOutput: rate,
-    perRequest: rate
-  }
-  if (pricing?.billing_mode === 'image' && group.image_rate_independent === true) {
-    rates.perRequest = imageRateMultiplier(group)
-  }
+  const rates = dimensionMap(groupRateMultiplier(group))
+  const imageRate = imageTierRateMultiplier(group)
+  const videoRate = videoTierRateMultiplier(group)
+  if (pricing?.billing_mode === 'image') rates.perRequest = imageRate
+  if (pricing?.billing_mode === 'video') rates.perRequest = videoRate
+  for (const key of Object.values(PLAZA_IMAGE_TIER_DIMENSIONS)) rates[key] = imageRate
+  for (const key of Object.values(PLAZA_VIDEO_TIER_DIMENSIONS)) rates[key] = videoRate
   return rates
 }
 
-function extractMinPricing(pricing: UserSupportedModelPricing | null): PlazaMinPricing {
-  if (!pricing) return emptyPricing()
-  const minPricing = {
-    input: pricing.input_price,
-    output: pricing.output_price,
-    cacheWrite: pricing.cache_write_price,
-    cacheRead: pricing.cache_read_price,
-    imageOutput: pricing.image_output_price,
-    perRequest: pricing.per_request_price
-  }
+function hasMediaTiers(pricing: UserSupportedModelPricing): boolean {
+  return (pricing.image_tier_prices?.length ?? 0) > 0 || (pricing.video_tier_prices?.length ?? 0) > 0
+}
 
+function extractMinPricing(pricing: UserSupportedModelPricing | null): PlazaMinPricing {
+  const minPricing = emptyPricing()
+  if (!pricing) return minPricing
+  minPricing.input = pricing.input_price
+  minPricing.output = pricing.output_price
+  minPricing.cacheWrite = pricing.cache_write_price
+  minPricing.cacheRead = pricing.cache_read_price
+  minPricing.imageInput = pricing.image_input_price ?? null
+  minPricing.imageOutput = pricing.image_output_price
+  minPricing.perRequest = pricing.per_request_price
+
+  // 媒体档位已单独给出时，带档位标签的区间不再压成一个「按次最低价」。
+  const skipTierIntervals = hasMediaTiers(pricing)
   for (const interval of pricing.intervals ?? []) {
     minPricing.input = minNullable(minPricing.input, interval.input_price)
     minPricing.output = minNullable(minPricing.output, interval.output_price)
     minPricing.cacheWrite = minNullable(minPricing.cacheWrite, interval.cache_write_price)
     minPricing.cacheRead = minNullable(minPricing.cacheRead, interval.cache_read_price)
-    minPricing.perRequest = minNullable(minPricing.perRequest, interval.per_request_price)
+    if (!(skipTierIntervals && interval.tier_label)) {
+      minPricing.perRequest = minNullable(minPricing.perRequest, interval.per_request_price)
+    }
+  }
+
+  const tierDimensions: Record<string, PlazaPricingDimension> = {
+    ...PLAZA_IMAGE_TIER_DIMENSIONS,
+    ...PLAZA_VIDEO_TIER_DIMENSIONS
+  }
+  for (const tier of [...(pricing.image_tier_prices ?? []), ...(pricing.video_tier_prices ?? [])]) {
+    const key = tierDimensions[tier.tier]
+    if (key && typeof tier.price === 'number' && Number.isFinite(tier.price)) {
+      minPricing[key] = minNullable(minPricing[key], tier.price)
+    }
   }
 
   return minPricing
+}
+
+function hasAnyPrice(pricing: PlazaMinPricing): boolean {
+  return PLAZA_PRICING_DIMENSIONS.some((key) => pricing[key] != null)
+}
+
+/** 单条定价的计费形态：视频 > 图片 > 按次 > 文本。 */
+export function classifyPricing(pricing: UserSupportedModelPricing | null): PlazaBillingKind {
+  if (!pricing) return 'text'
+  if (pricing.billing_mode === 'video' || (pricing.video_tier_prices?.length ?? 0) > 0) return 'video'
+  if (
+    pricing.billing_mode === 'image' ||
+    (pricing.image_tier_prices?.length ?? 0) > 0 ||
+    pricing.image_output_price != null
+  ) {
+    return 'image'
+  }
+  if (pricing.billing_mode === 'per_request') return 'per_request'
+  return 'text'
+}
+
+const BILLING_KIND_RANK: Record<PlazaBillingKind, number> = {
+  text: 0,
+  per_request: 1,
+  image: 2,
+  video: 3
+}
+
+function strongerBillingKind(a: PlazaBillingKind, b: PlazaBillingKind): PlazaBillingKind {
+  return BILLING_KIND_RANK[b] > BILLING_KIND_RANK[a] ? b : a
 }
 
 function chooseEffectivePrice(
@@ -179,60 +229,38 @@ function mergeEffectivePricing(
   candidateCurrencies: PlazaPricingDimensionMap<PlazaPricingCurrency>,
   candidateSources: PlazaPricingDimensionMap<PlazaPricingSource>
 ): { pricing: PlazaMinPricing; rates: PlazaPricingRateMultipliers; currencies: PlazaPricingDimensionMap<PlazaPricingCurrency>; sources: PlazaPricingDimensionMap<PlazaPricingSource> } {
-  const input = chooseEffectivePrice(currentPricing.input, currentRates.input, candidatePricing.input, candidateRates.input)
-  const output = chooseEffectivePrice(currentPricing.output, currentRates.output, candidatePricing.output, candidateRates.output)
-  const cacheWrite = chooseEffectivePrice(currentPricing.cacheWrite, currentRates.cacheWrite, candidatePricing.cacheWrite, candidateRates.cacheWrite)
-  const cacheRead = chooseEffectivePrice(currentPricing.cacheRead, currentRates.cacheRead, candidatePricing.cacheRead, candidateRates.cacheRead)
-  const imageOutput = chooseEffectivePrice(currentPricing.imageOutput, currentRates.imageOutput, candidatePricing.imageOutput, candidateRates.imageOutput)
-  const perRequest = chooseEffectivePrice(currentPricing.perRequest, currentRates.perRequest, candidatePricing.perRequest, candidateRates.perRequest)
-
-  return {
-    pricing: {
-      input: input.price,
-      output: output.price,
-      cacheWrite: cacheWrite.price,
-      cacheRead: cacheRead.price,
-      imageOutput: imageOutput.price,
-      perRequest: perRequest.price
-    },
-    rates: {
-      input: input.rate,
-      output: output.rate,
-      cacheWrite: cacheWrite.rate,
-      cacheRead: cacheRead.rate,
-      imageOutput: imageOutput.rate,
-      perRequest: perRequest.rate
-    },
-    currencies: {
-      input: input.selected ? candidateCurrencies.input : currentCurrencies.input,
-      output: output.selected ? candidateCurrencies.output : currentCurrencies.output,
-      cacheWrite: cacheWrite.selected ? candidateCurrencies.cacheWrite : currentCurrencies.cacheWrite,
-      cacheRead: cacheRead.selected ? candidateCurrencies.cacheRead : currentCurrencies.cacheRead,
-      imageOutput: imageOutput.selected ? candidateCurrencies.imageOutput : currentCurrencies.imageOutput,
-      perRequest: perRequest.selected ? candidateCurrencies.perRequest : currentCurrencies.perRequest
-    },
-    sources: {
-      input: input.selected ? candidateSources.input : currentSources.input,
-      output: output.selected ? candidateSources.output : currentSources.output,
-      cacheWrite: cacheWrite.selected ? candidateSources.cacheWrite : currentSources.cacheWrite,
-      cacheRead: cacheRead.selected ? candidateSources.cacheRead : currentSources.cacheRead,
-      imageOutput: imageOutput.selected ? candidateSources.imageOutput : currentSources.imageOutput,
-      perRequest: perRequest.selected ? candidateSources.perRequest : currentSources.perRequest
-    }
+  const pricing = emptyPricing()
+  const rates = defaultPricingRateMultipliers()
+  const currencies = defaultPricingCurrencies()
+  const sources = defaultPricingSources()
+  for (const key of PLAZA_PRICING_DIMENSIONS) {
+    const chosen = chooseEffectivePrice(currentPricing[key], currentRates[key], candidatePricing[key], candidateRates[key])
+    pricing[key] = chosen.price
+    rates[key] = chosen.rate
+    currencies[key] = chosen.selected ? candidateCurrencies[key] : currentCurrencies[key]
+    sources[key] = chosen.selected ? candidateSources[key] : currentSources[key]
   }
+  return { pricing, rates, currencies, sources }
 }
 
 function representativePricingRate(
   pricing: PlazaMinPricing,
   rates: PlazaPricingRateMultipliers
 ): number {
-  const preferredKeys: Array<keyof PlazaMinPricing> = [
+  const preferredKeys: PlazaPricingDimension[] = [
     'input',
     'perRequest',
     'output',
     'cacheRead',
     'cacheWrite',
-    'imageOutput'
+    'imageInput',
+    'imageOutput',
+    'image1K',
+    'image2K',
+    'image4K',
+    'video480p',
+    'video720p',
+    'video1080p'
   ]
   for (const key of preferredKeys) {
     if (pricing[key] != null) return rates[key]
@@ -316,6 +344,10 @@ export function aggregateByPlatformModel(
         const recentCalls = model.recent_call_count ?? 0
         const recentCallWindowSeconds = model.recent_call_window_seconds ?? 0
         const candidatePricing = extractMinPricing(model.pricing)
+        // 该分组下查不到任何价格的模型，网关准入守卫会在转发前拒绝（文本 503
+        // billing_configuration_error、视频 400 VIDEO_PRICING_MISSING），展示出来只会
+        // 让用户看到一张调不通的空价卡片。显式配置的 0 价不是 null，仍会展示。
+        if (!hasAnyPrice(candidatePricing)) continue
         let existing = byModel.get(model.name)
 
         if (!existing) {
@@ -323,6 +355,7 @@ export function aggregateByPlatformModel(
             model: model.name,
             displayName: model.name,
             platform,
+            billingKind: classifyPricing(model.pricing),
             standardPricing: null,
             vipPricing: null,
             supportedGroups: [],
@@ -332,6 +365,7 @@ export function aggregateByPlatformModel(
           }
           byModel.set(model.name, existing)
         }
+        existing.billingKind = strongerBillingKind(existing.billingKind, classifyPricing(model.pricing))
         if (model.time_schedule) {
           existing.timeSchedule = model.time_schedule
         }
@@ -353,6 +387,10 @@ export function aggregateByPlatformModel(
           for (const key of Object.keys(candidateCurrencies) as PlazaPricingDimension[]) {
             candidateCurrencies[key] = currency
             candidateSources[key] = source
+          }
+          // 视频档位价来自 video_pricing（后端强制 USD），不跟随模型 token 价的币种。
+          for (const key of Object.values(PLAZA_VIDEO_TIER_DIMENSIONS)) {
+            candidateCurrencies[key] = 'USD'
           }
           existing[pricingKey] = mergePricingSummary(
             existing[pricingKey],
