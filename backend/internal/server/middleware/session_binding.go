@@ -13,12 +13,20 @@ import (
 // SessionBindingContext 全局中间件：将请求的客户端 IP 与 User-Agent 注入
 // request context，供 token 签发路径（登录 / 刷新 / OAuth 回调）读取并写入会话绑定，
 // 同时作为审计日志、会话绑定校验的统一客户端 IP 来源。
-// IP 取值与 API Key IP 限制共用转发 IP 开关：开启时旧版原始转发头逻辑
-// 接管解析，关闭时使用 Gin 的 server.trusted_proxies 可信代理链。
+// IP 取值与 API Key IP 限制共用转发 IP 开关：开启时兼容模式的转发头逻辑
+// 接管解析（仅采纳可信直连对端发来的转发头），关闭时使用 Gin 的
+// server.trusted_proxies 可信代理链。
+//
+// 可信代理策略来自 server.trusted_proxies（进程生命周期内不变），在中间件
+// 构造时编译一次；开关与自定义头列表可在运行时修改，因此按请求快照。
 func SessionBindingContext(cfg *config.Config) gin.HandlerFunc {
+	var trustedProxies *ip.TrustedProxyPolicy
+	if cfg != nil {
+		trustedProxies = ip.NewTrustedProxyPolicy(cfg.Server.TrustedProxies, cfg.Server.TrustedProxiesConfigured)
+	}
 	return func(c *gin.Context) {
 		forwardedIPSettings := cfg.ForwardedClientIPSettings()
-		ip.SetForwardedIPSettings(c, forwardedIPSettings.TrustForwardedIP, forwardedIPSettings.Headers)
+		ip.SetForwardedIPSettingsWithPolicy(c, forwardedIPSettings.TrustForwardedIP, forwardedIPSettings.Headers, trustedProxies)
 		userAgent := normalizePersistentText(c.Request.UserAgent(), maxPersistentUserAgentBytes)
 		c.Request.Header.Set("User-Agent", userAgent)
 		binding := &service.SessionBinding{

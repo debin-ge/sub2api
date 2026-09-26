@@ -103,8 +103,9 @@ func (s *OpenAIGatewayService) ForwardResponsesInputTokens(
 			writeOpenAIResponsesInputTokensFallback(c, account, prepared, resp.StatusCode, "upstream_unsupported")
 			return nil
 		}
+		// 只读计数路径：上游 429/5xx 只观测不处置，避免零成本请求把共享账号打停（SEC-009）。
 		if s.rateLimitService != nil {
-			s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
+			s.rateLimitService.HandleUpstreamErrorSoft(ctx, account, resp.StatusCode, resp.Header, respBody)
 		}
 		upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(respBody)))
 		setOpsUpstreamError(c, resp.StatusCode, upstreamMsg, "")
@@ -345,8 +346,9 @@ func (s *OpenAIGatewayService) ForwardCountTokensAsAnthropic(
 			return nil
 		}
 
+		// 只读计数路径：上游 429/5xx 只观测不处置，避免零成本请求把共享账号打停（SEC-009）。
 		if s.rateLimitService != nil {
-			s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
+			s.rateLimitService.HandleUpstreamErrorSoft(ctx, account, resp.StatusCode, resp.Header, respBody)
 		}
 
 		if isOpenAIInputTokensUnsupported(resp.StatusCode, respBody) {

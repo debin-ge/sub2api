@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -25,6 +26,16 @@ const (
 type BatchImagePricingResolver interface {
 	BatchImageUnitPrice(ctx context.Context, job *BatchImageJob) (float64, error)
 }
+
+// BatchImagePricingSnapshotWriter 是 BatchImageRepository 的可选扩展：把旧版（提交时
+// 未写定价快照）job 在结算阶段首次成功解析出的单价落库为快照，使后续结算重试不再
+// 随管理员改价漂移。仓储未实现时，服务退回进程内记忆（见 legacyUnitPrices）。
+type BatchImagePricingSnapshotWriter interface {
+	UpdateBatchImageJobPricingSnapshot(ctx context.Context, batchID string, billableUnitPrice float64, snapshotVersion int) error
+}
+
+// batchImagePricingSnapshotVersion 是结算阶段补写快照时使用的版本号。
+const batchImagePricingSnapshotVersion = 1
 
 type BatchImageModelPricingResolver struct {
 	Resolver *ModelPricingResolver
@@ -72,6 +83,11 @@ type BatchImageSettlementService struct {
 	Pricing      BatchImagePricingResolver
 	AuthCache    APIKeyAuthCacheInvalidator
 	Config       *config.Config
+
+	// legacyUnitPrices 记住本进程内已为旧版 job 解析过的结算单价（batchID -> float64）。
+	// 无快照的 job 若每次重试都重新解析单价，管理员改价会让 actual 超过 hold，
+	// 重试耗尽后冻结金额被整体释放；因此首次解析结果在此固定，直到 job 终态。
+	legacyUnitPrices sync.Map
 }
 
 type BatchImageSettlementResult struct {
@@ -225,6 +241,7 @@ func (s *BatchImageSettlementService) Settle(ctx context.Context, batchID string
 	}); err != nil {
 		return nil, err
 	}
+	s.forgetLegacyUnitPrice(job.BatchID)
 
 	return result, nil
 }
@@ -293,6 +310,7 @@ func (s *BatchImageSettlementService) failExhaustedSettlement(ctx context.Contex
 	}); err != nil {
 		return err
 	}
+	s.forgetLegacyUnitPrice(job.BatchID)
 	return ErrBatchImageSettlementBillingFailed
 }
 
@@ -345,17 +363,62 @@ func (s *BatchImageSettlementService) invalidateAuthCache(ctx context.Context, u
 }
 
 func (s *BatchImageSettlementService) settlementUnitPrice(ctx context.Context, job *BatchImageJob) (float64, error) {
-	if job != nil && job.PricingSnapshotVersion >= 1 {
+	if job == nil {
+		return 0, ErrBatchImageSettlementPricingMissing
+	}
+	if job.PricingSnapshotVersion >= 1 {
 		if !isFiniteNonNegativePrice(job.BillableUnitPrice) {
 			return 0, ErrBatchImageSettlementPricingMissing
 		}
 		return job.BillableUnitPrice, nil
 	}
+	// 旧版 job：首次解析后的单价即为该 job 的结算快照，后续重试不再重新解析。
+	if cached, ok := s.legacyUnitPrices.Load(job.BatchID); ok {
+		if price, ok := cached.(float64); ok && isFiniteNonNegativePrice(price) {
+			return price, nil
+		}
+	}
 	unitPrice, err := s.Pricing.BatchImageUnitPrice(ctx, job)
 	if err != nil {
 		return 0, err
 	}
+	if !isFiniteNonNegativePrice(unitPrice) {
+		return 0, ErrBatchImageSettlementPricingMissing
+	}
+	s.rememberLegacyUnitPrice(ctx, job, unitPrice)
 	return unitPrice, nil
+}
+
+// rememberLegacyUnitPrice 固定旧版 job 的结算单价：先记入进程内记忆，再尽力落库为
+// 定价快照（仓储支持时）。落库成功后同步更新内存中的 job 字段，使本次结算后续
+// 步骤与数据库视图一致；落库失败仅告警，进程内记忆仍保证本进程的重试价格稳定。
+func (s *BatchImageSettlementService) rememberLegacyUnitPrice(ctx context.Context, job *BatchImageJob, unitPrice float64) {
+	if s == nil || job == nil || strings.TrimSpace(job.BatchID) == "" {
+		return
+	}
+	s.legacyUnitPrices.Store(job.BatchID, unitPrice)
+	writer, ok := s.Repo.(BatchImagePricingSnapshotWriter)
+	if !ok {
+		return
+	}
+	if err := writer.UpdateBatchImageJobPricingSnapshot(ctx, job.BatchID, unitPrice, batchImagePricingSnapshotVersion); err != nil {
+		logger.L().Warn("batch_image.settlement_pricing_snapshot_persist_failed",
+			zap.String("batch_id", job.BatchID),
+			zap.Float64("billable_unit_price", unitPrice),
+			zap.Error(err),
+		)
+		return
+	}
+	job.BillableUnitPrice = unitPrice
+	job.PricingSnapshotVersion = batchImagePricingSnapshotVersion
+}
+
+// forgetLegacyUnitPrice 在 job 进入终态后释放进程内记忆。
+func (s *BatchImageSettlementService) forgetLegacyUnitPrice(batchID string) {
+	if s == nil || batchID == "" {
+		return
+	}
+	s.legacyUnitPrices.Delete(batchID)
 }
 
 func (s *BatchImageSettlementService) outputRetentionAfterTerminal() time.Duration {

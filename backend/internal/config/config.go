@@ -857,6 +857,10 @@ type SecurityConfig struct {
 	TrustForwardedIPForAPIKeyACL  bool                                       `mapstructure:"trust_forwarded_ip_for_api_key_acl"`
 	ForwardedClientIPHeaders      []string                                   `mapstructure:"forwarded_client_ip_headers" json:"forwarded_client_ip_headers" yaml:"forwarded_client_ip_headers"`
 	forwardedClientIPSettingsLive *atomic.Pointer[ForwardedClientIPSettings] `mapstructure:"-" json:"-" yaml:"-"`
+	// MaxAPIKeysPerUser 限制单个用户可持有的 API Key 总数（含已禁用），0 表示不限制。
+	MaxAPIKeysPerUser int `mapstructure:"max_api_keys_per_user"`
+	// MaxAPIKeyIPRules 限制单个 API Key 的 IP 白名单/黑名单条目数上限，0 表示不限制。
+	MaxAPIKeyIPRules int `mapstructure:"max_api_key_ip_rules"`
 }
 
 func NormalizeForwardedClientIPHeaders(headers []string) ([]string, error) {
@@ -1165,6 +1169,14 @@ type GatewayConfig struct {
 	MaxBodySize int64 `mapstructure:"max_body_size"`
 	// TextMaxBodySize limits endpoints that cannot carry inline image/video payloads.
 	TextMaxBodySize int64 `mapstructure:"text_max_body_size"`
+	// TokenCountRPM 限制每个用户对 count_tokens / input_tokens 这类零计费转发端点的每分钟请求数。
+	// 这些端点不占并发槽、不产生费用，费用窗口对它们不生效，只有 RPM 门控能阻止它们把共享
+	// 账号打到上游 429。0 表示关闭。
+	TokenCountRPM int `mapstructure:"token_count_rpm"`
+	// ImagesMaxN 限制 /v1/images 单次请求的 n（生成张数）上限，超出直接 400。0 表示不限制。
+	ImagesMaxN int `mapstructure:"images_max_n"`
+	// ImagesMaxPendingPerUser 限制单用户同时挂起（尚未终态）的异步生图任务数，超出返回 429。0 表示不限制。
+	ImagesMaxPendingPerUser int `mapstructure:"images_max_pending_per_user"`
 	// 非流式上游响应体读取上限（字节），用于防止无界读取导致内存放大
 	UpstreamResponseReadMaxBytes int64 `mapstructure:"upstream_response_read_max_bytes"`
 	// 上游模型列表响应体读取上限（字节）
@@ -1890,6 +1902,11 @@ type JWTConfig struct {
 	RefreshTokenExpireDays int `mapstructure:"refresh_token_expire_days"`
 	// RefreshWindowMinutes: 刷新窗口（分钟），在Access Token过期前多久开始允许刷新
 	RefreshWindowMinutes int `mapstructure:"refresh_window_minutes"`
+	// RotatePersistedOnMismatch: 配置的 jwt.secret 与数据库 security_secrets 中已持久化的值不一致时的处理策略。
+	// - false（默认）：沿用数据库中的值以保证多实例一致，并输出 error 日志提示如何轮换；
+	// - true：用配置值覆盖数据库中的值（等价于密钥轮换），所有已签发的会话立即失效。
+	// 轮换完成后应改回 false，避免每次启动都被视为轮换。环境变量：JWT_ROTATE_PERSISTED_ON_MISMATCH。
+	RotatePersistedOnMismatch bool `mapstructure:"rotate_persisted_on_mismatch"`
 }
 
 // TotpConfig TOTP 双因素认证配置
@@ -2261,7 +2278,12 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 		}
 		cfg.Totp.EncryptionKey = key
 		cfg.Totp.EncryptionKeyConfigured = false
-		slog.Warn("TOTP encryption key auto-generated. Consider setting a fixed key for production.")
+		if cfg.Server.Mode == "release" {
+			// 每次启动随机生成会让重启后所有已绑定的 TOTP 密文不可解，生产必须固定该值。
+			slog.Error("TOTP encryption key auto-generated in release mode; existing 2FA secrets will become undecryptable after restart. Set totp.encryption_key (TOTP_ENCRYPTION_KEY).")
+		} else {
+			slog.Warn("TOTP encryption key auto-generated. Consider setting a fixed key for production.")
+		}
 	} else {
 		cfg.Totp.EncryptionKeyConfigured = true
 	}
@@ -2332,7 +2354,9 @@ func configureConfigSource(setConfigFile, addConfigPath func(string)) {
 
 func setDefaults() {
 	viper.SetDefault("run_mode", RunModeStandard)
-	viper.SetDefault("group_access_runtime_mode", GroupAccessRuntimeModeAuditOnly)
+	// 默认 ENFORCE：AUDIT_ONLY 会把 VIP-only 分组的拒绝只记日志不拦截，等价于放行；
+	// 需要灰度观察时可显式设回 AUDIT_ONLY。
+	viper.SetDefault("group_access_runtime_mode", GroupAccessRuntimeModeEnforce)
 	viper.SetDefault("vip_config_write_enabled", false)
 	viper.SetDefault("payment_fulfillment_db_tx_timeout", 2*time.Minute)
 	viper.SetDefault("vip_reconcile_enabled", false)
@@ -2448,7 +2472,11 @@ func setDefaults() {
 	viper.SetDefault("security.csp.enabled", true)
 	viper.SetDefault("security.csp.policy", DefaultCSPPolicy)
 	viper.SetDefault("security.proxy_probe.insecure_skip_verify", false)
+	// 兼容开关保持默认开启，但 legacy 解析已收紧：只有直连对端是可信代理（server.trusted_proxies
+	// 或未配置时的私网/回环地址）才读取转发头，且 X-Forwarded-For 取"最右侧非可信"跳而非首跳。
 	viper.SetDefault("security.trust_forwarded_ip_for_api_key_acl", true)
+	viper.SetDefault("security.max_api_keys_per_user", 100)
+	viper.SetDefault("security.max_api_key_ip_rules", 200)
 
 	// Security - disable direct fallback on proxy error
 	viper.SetDefault("security.proxy_fallback.allow_direct_on_error", false)
@@ -2664,6 +2692,7 @@ func setDefaults() {
 	viper.SetDefault("jwt.access_token_expire_minutes", 0) // 0 表示回退到 expire_hour
 	viper.SetDefault("jwt.refresh_token_expire_days", 30)  // 30天Refresh Token有效期
 	viper.SetDefault("jwt.refresh_window_minutes", 2)      // 过期前2分钟开始允许刷新
+	viper.SetDefault("jwt.rotate_persisted_on_mismatch", false)
 
 	// TOTP
 	viper.SetDefault("totp.encryption_key", "")
@@ -2907,6 +2936,9 @@ func setDefaults() {
 	viper.SetDefault("gateway.antigravity_fallback_cooldown_minutes", 1)
 	viper.SetDefault("gateway.antigravity_extra_retries", 10)
 	viper.SetDefault("gateway.max_body_size", int64(256*1024*1024))
+	viper.SetDefault("gateway.token_count_rpm", 60)
+	viper.SetDefault("gateway.images_max_n", 10)
+	viper.SetDefault("gateway.images_max_pending_per_user", 20)
 	viper.SetDefault("gateway.text_max_body_size", int64(32*1024*1024))
 	viper.SetDefault("gateway.upstream_response_read_max_bytes", DefaultUpstreamResponseReadMaxBytes)
 	viper.SetDefault("gateway.models_list_read_max_bytes", DefaultModelsListReadMaxBytes)
@@ -3316,6 +3348,11 @@ func (c *Config) Validate() error {
 	// 选择 bytes 而不是 rune 计数，确保二进制/随机串的长度语义更接近“熵”而非“字符数”。
 	if len([]byte(jwtSecret)) < 32 {
 		return fmt.Errorf("jwt.secret must be at least 32 bytes")
+	}
+	// release 模式下拒绝公开占位串/弱口令：这类值能通过长度校验，却让任何人都能伪造 JWT。
+	// 非 release 仍只告警（见 Load 中的 slog.Warn），方便本地开发。
+	if c.Server.Mode == "release" && isWeakJWTSecret(jwtSecret) {
+		return fmt.Errorf("jwt.secret is a known placeholder or weak value; generate one with `openssl rand -hex 32`")
 	}
 	switch c.Log.Level {
 	case "debug", "info", "warn", "error":
@@ -4475,9 +4512,23 @@ func isWeakJWTSecret(secret string) bool {
 		"12345678":                {},
 		"admin":                   {},
 		"jwt-secret":              {},
+		// 文档与示例配置里出现过的占位串：长度足以通过 32 字节校验，但公开可知。
+		"change-this-to-a-secure-random-string": {},
+		"your_secure_password_here":             {},
+		"your-secure-random-string":             {},
+		"replace-with-a-secure-random-string":   {},
 	}
-	_, exists := weak[lower]
-	return exists
+	if _, exists := weak[lower]; exists {
+		return true
+	}
+	// 占位串变体（change-this-…、your-…-here、example…）：只要同时命中提示性词汇
+	// 且字符集单一，就判定为弱密钥。随机生成的 hex/base64 密钥不会同时满足这两个条件。
+	for _, marker := range []string{"change-this", "change_this", "changeme", "replace-me", "replace_me", "your-secret", "your_secret", "example", "placeholder"} {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func generateJWTSecret(byteLength int) (string, error) {

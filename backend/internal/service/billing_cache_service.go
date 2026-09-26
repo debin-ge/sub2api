@@ -29,6 +29,9 @@ var (
 	// RPM 超限错误。gateway_handler 负责映射为 HTTP 429。
 	ErrGroupRPMExceeded = infraerrors.TooManyRequests("GROUP_RPM_EXCEEDED", "group requests-per-minute limit exceeded")
 	ErrUserRPMExceeded  = infraerrors.TooManyRequests("USER_RPM_EXCEEDED", "user requests-per-minute limit exceeded")
+	// count_tokens / input_tokens 等零计费转发端点的用户级 RPM 超限（SEC-009）。
+	// handler 侧映射为 HTTP 429 + Retry-After（当前分钟剩余秒数）。
+	ErrTokenCountRPMExceeded = infraerrors.TooManyRequests("TOKEN_COUNT_RPM_EXCEEDED", "token counting requests-per-minute limit exceeded")
 
 	// user × platform quota（HTTP 429 Too Many Requests + Retry-After header）。
 	// 选用 429 而非 403：限额耗尽属于"暂时性资源用尽，重试可恢复"的场景（RFC 6585），
@@ -1127,6 +1130,72 @@ func (s *BillingCacheService) checkRPM(ctx context.Context, user *User, group *G
 		}
 	}
 
+	return nil
+}
+
+// tokenCountRPMBucketGroupID 是 token 计数限流复用 UserRPMCache (user, group) 分钟计数器时
+// 使用的伪分组 ID。分组主键恒为正数，-1 不可能与真实分组冲突，因此得到的
+// key `rpm:ug:{userID}:-1:{minute}` 就是一条独立于生成请求 RPM 的固定窗口计数器
+// （INCR+EXPIRE 原子、Redis 服务端时间、120s TTL 均由现有实现保证）。
+const tokenCountRPMBucketGroupID int64 = -1
+
+// CheckTokenCountRate 对 count_tokens / input_tokens / :countTokens 这类零计费、不占并发槽
+// 的转发端点做用户级固定窗口 RPM 限流（SEC-009）。这些端点被 Claude Code 等客户端高频
+// 调用，若不设闸门，单个用户就能把共享账号推进上游 429，进而拖垮生成流量。
+//
+//   - cfg.Gateway.TokenCountRPM <= 0 → 关闭，直接放行。
+//   - 计数器不可用 / Redis 出错 → fail-closed（返回 ErrTokenCountRPMExceeded 并打 Warn）：
+//     与 checkRPM 的 fail-open 不同，这里保护的是上游账号而非用户计费准确性，
+//     宁可短暂拒绝计数请求也不能让限流形同虚设。
+//   - 该计数独立于 user.rpm_limit / group.rpm_limit，不会消耗生成请求的 RPM 配额。
+func (s *BillingCacheService) CheckTokenCountRate(ctx context.Context, userID int64) error {
+	if s == nil || s.cfg == nil || s.cfg.Gateway.TokenCountRPM <= 0 {
+		return nil
+	}
+	limit := s.cfg.Gateway.TokenCountRPM
+	if s.userRPMCache == nil {
+		logger.LegacyPrintf(
+			"service.billing_cache",
+			"Warning: token count rpm counter unavailable for user=%d, failing closed",
+			userID,
+		)
+		return ErrTokenCountRPMExceeded
+	}
+	count, err := s.userRPMCache.IncrementUserGroupRPM(ctx, userID, tokenCountRPMBucketGroupID)
+	if err != nil {
+		logger.LegacyPrintf(
+			"service.billing_cache",
+			"Warning: token count rpm increment failed for user=%d, failing closed: %v",
+			userID, err,
+		)
+		return ErrTokenCountRPMExceeded
+	}
+	if count > limit {
+		return ErrTokenCountRPMExceeded
+	}
+	return nil
+}
+
+// CheckBalanceCoversEstimate 余额模式下的准入预检：要求 (余额 - 最低保留额) >= estimatedCost。
+// 供 /v1/images n>1 这类"单次请求可能远超单价"的路径在转发前拒绝（SEC-011），
+// 避免一次请求把余额打成大额负数。简易模式与 estimatedCost <= 0 直接放行；
+// 余额读取失败与 checkBalanceEligibility 口径一致，返回 ErrBillingServiceUnavailable。
+// 订阅模式不走余额，调用方须自行跳过。
+func (s *BillingCacheService) CheckBalanceCoversEstimate(ctx context.Context, userID int64, estimatedCost float64) error {
+	if s == nil || estimatedCost <= 0 {
+		return nil
+	}
+	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
+		return nil
+	}
+	balance, err := s.GetUserBalance(ctx, userID)
+	if err != nil {
+		logger.LegacyPrintf("service.billing_cache", "ALERT: billing balance precheck failed for user %d: %v", userID, err)
+		return ErrBillingServiceUnavailable.WithCause(err)
+	}
+	if balance-s.minimumBalanceReserve() < estimatedCost {
+		return ErrInsufficientBalance
+	}
 	return nil
 }
 

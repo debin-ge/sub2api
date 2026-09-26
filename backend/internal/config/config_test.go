@@ -66,7 +66,8 @@ func TestLoadGroupAccessRuntimeModeDefaultsAndValidates(t *testing.T) {
 
 		cfg, err := Load()
 		require.NoError(t, err)
-		require.Equal(t, GroupAccessRuntimeModeAuditOnly, cfg.GroupAccessRuntimeMode)
+		// 默认 ENFORCE：AUDIT_ONLY 会把 VIP-only 拒绝降级为日志，等价于放行。
+		require.Equal(t, GroupAccessRuntimeModeEnforce, cfg.GroupAccessRuntimeMode)
 	})
 
 	t.Run("unknown", func(t *testing.T) {

@@ -2,12 +2,14 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/domain"
+	pkgerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -15,6 +17,20 @@ import (
 	"github.com/tidwall/gjson"
 	"go.uber.org/zap"
 )
+
+// tokenCountRateErrorDetails 把 count_tokens / input_tokens 专用的用户级 RPM 超限
+// （SEC-009）映射为 429 + Retry-After（当前分钟剩余秒数），其余错误沿用
+// billingErrorDetails 的既有映射。四个 token 计数入口共用，保证口径一致。
+func tokenCountRateErrorDetails(err error) (status int, code, message string, retryAfter int) {
+	if errors.Is(err, service.ErrTokenCountRPMExceeded) {
+		msg := pkgerrors.Message(err)
+		if msg == "" {
+			msg = "token counting requests-per-minute limit exceeded"
+		}
+		return http.StatusTooManyRequests, "rate_limit_exceeded", msg, 60 - int(time.Now().Unix()%60)
+	}
+	return billingErrorDetails(err)
+}
 
 // ResponsesInputTokens handles native OpenAI POST
 // /v1/responses/input_tokens requests without routing them through the normal
@@ -77,6 +93,16 @@ func (h *OpenAIGatewayHandler) ResponsesInputTokens(c *gin.Context) {
 	if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
 		reqLog.Info("openai_input_tokens.billing_eligibility_check_failed", zap.Error(err))
 		status, code, message, retryAfter := billingErrorDetails(err)
+		if retryAfter > 0 {
+			c.Header("Retry-After", strconv.Itoa(retryAfter))
+		}
+		h.errorResponse(c, status, code, message)
+		return
+	}
+	// 零计费端点不占并发槽，须单独限速，否则单用户就能把共享账号推进上游 429（SEC-009）。
+	if err := h.billingCacheService.CheckTokenCountRate(c.Request.Context(), apiKey.UserID); err != nil {
+		reqLog.Info("openai_input_tokens.rate_limited", zap.Error(err))
+		status, code, message, retryAfter := tokenCountRateErrorDetails(err)
 		if retryAfter > 0 {
 			c.Header("Retry-After", strconv.Itoa(retryAfter))
 		}
@@ -256,6 +282,16 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 	if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
 		reqLog.Info("openai_count_tokens.billing_eligibility_check_failed", zap.Error(err))
 		status, code, message, retryAfter := billingErrorDetails(err)
+		if retryAfter > 0 {
+			c.Header("Retry-After", strconv.Itoa(retryAfter))
+		}
+		h.anthropicErrorResponse(c, status, code, message)
+		return
+	}
+	// 零计费端点不占并发槽，须单独限速，否则单用户就能把共享账号推进上游 429（SEC-009）。
+	if err := h.billingCacheService.CheckTokenCountRate(c.Request.Context(), apiKey.UserID); err != nil {
+		reqLog.Info("openai_count_tokens.rate_limited", zap.Error(err))
+		status, code, message, retryAfter := tokenCountRateErrorDetails(err)
 		if retryAfter > 0 {
 			c.Header("Retry-After", strconv.Itoa(retryAfter))
 		}

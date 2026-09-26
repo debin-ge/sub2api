@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -142,4 +143,97 @@ func TestAsyncImageHandlerDisabledReturns404(t *testing.T) {
 
 	// No task was created / persisted.
 	require.Empty(t, store.tasks)
+}
+
+// SEC-025：单用户挂起任务达到 gateway.images_max_pending_per_user 后，Submit 必须以 429
+// 拒绝并给出 Retry-After，而不是继续 go h.run 无界并发。
+func TestAsyncImageHandlerSubmitRejectsWhenPendingLimitReached(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	store := &asyncImageMemoryStore{tasks: make(map[string]*service.ImageTaskRecord)}
+	tasks := service.NewImageTaskServiceWithUploader(store, nil, time.Hour, time.Minute)
+	release := make(chan struct{})
+	h := &AsyncImageHandler{
+		tasks: tasks,
+		cfg:   &config.Config{Gateway: config.GatewayConfig{ImagesMaxPendingPerUser: 1}},
+	}
+	h.execute = func(_ string, c *gin.Context) {
+		<-release
+		c.JSON(http.StatusOK, gin.H{"created": 123, "data": []gin.H{{"url": "https://example.test/image.png"}}})
+	}
+
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		groupID := int64(3)
+		c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
+			ID:      9,
+			UserID:  7,
+			GroupID: &groupID,
+			Group:   &service.Group{ID: groupID, Platform: service.PlatformOpenAI, AllowImageGeneration: true},
+		})
+		c.Next()
+	})
+	router.POST("/v1/images/generations/async", h.Submit)
+
+	submit := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/v1/images/generations/async", strings.NewReader(`{"model":"gpt-image-1","prompt":"cat"}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		return w
+	}
+
+	first := submit()
+	require.Equal(t, http.StatusAccepted, first.Code)
+	var accepted struct {
+		TaskID string `json:"task_id"`
+	}
+	require.NoError(t, json.Unmarshal(first.Body.Bytes(), &accepted))
+
+	second := submit()
+	require.Equal(t, http.StatusTooManyRequests, second.Code)
+	require.Equal(t, "5", second.Header().Get("Retry-After"))
+	require.Equal(t, "no-store", second.Header().Get("Cache-Control"))
+	require.Contains(t, second.Body.String(), "IMAGE_TASKS_PENDING_LIMIT")
+	require.Len(t, store.tasks, 1, "rejected submission must not create a task")
+
+	// 首个任务终结后配额释放，再次提交应被接受。
+	close(release)
+	require.Eventually(t, func() bool {
+		got, err := tasks.Get(context.Background(), service.ImageTaskOwner{UserID: 7, APIKeyID: 9}, accepted.TaskID)
+		return err == nil && got.Status == service.ImageTaskStatusCompleted
+	}, time.Second, 10*time.Millisecond)
+
+	third := submit()
+	require.Equal(t, http.StatusAccepted, third.Code)
+}
+
+func TestAsyncImageHandlerSubmitPendingLimitDisabledByDefault(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	store := &asyncImageMemoryStore{tasks: make(map[string]*service.ImageTaskRecord)}
+	tasks := service.NewImageTaskServiceWithUploader(store, nil, time.Hour, time.Minute)
+	release := make(chan struct{})
+	defer close(release)
+	h := &AsyncImageHandler{tasks: tasks, cfg: &config.Config{}} // ImagesMaxPendingPerUser == 0
+	h.execute = func(_ string, c *gin.Context) {
+		<-release
+		c.JSON(http.StatusOK, gin.H{"created": 1, "data": []gin.H{}})
+	}
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		groupID := int64(3)
+		c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
+			ID: 9, UserID: 7, GroupID: &groupID,
+			Group: &service.Group{ID: groupID, Platform: service.PlatformOpenAI, AllowImageGeneration: true},
+		})
+		c.Next()
+	})
+	router.POST("/v1/images/generations/async", h.Submit)
+
+	for i := 0; i < 3; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/v1/images/generations/async", strings.NewReader(`{"model":"gpt-image-1","prompt":"cat"}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusAccepted, w.Code)
+	}
 }

@@ -692,10 +692,10 @@ func TestSettingService_LoadForwardedClientIPSettingsMigration(t *testing.T) {
 			wantMigrationMarkerSet: true,
 		},
 		{
-			name:                   "legacy false without proxy config migrates to compatibility",
+			// 迁移不再把已持久化的 false 回翻成 true：未配置可信代理时只告警，保持关闭。
+			name:                   "legacy false without proxy config stays disabled",
 			values:                 map[string]string{SettingKeyAPIKeyACLTrustForwardedIP: "false"},
-			wantEnabled:            true,
-			wantForwardedIPUpdate:  "true",
+			wantEnabled:            false,
 			wantMigrationMarkerSet: true,
 		},
 		{
@@ -804,7 +804,8 @@ func TestSettingService_LoadForwardedClientIPSettingsWriteFailureUsesComputedMod
 		trustedProxiesSet bool
 		wantEnabled       bool
 	}{
-		{name: "compatibility migration remains effective", wantEnabled: true},
+		// 写入失败时仍按计算结果生效；持久化的 false 不再被回翻为 true。
+		{name: "legacy false without proxy config stays disabled", wantEnabled: false},
 		{name: "explicit proxy policy remains secure", trustedProxiesSet: true, wantEnabled: false},
 	}
 

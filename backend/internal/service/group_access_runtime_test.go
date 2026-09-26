@@ -14,8 +14,29 @@ func TestApplyGroupAccessRuntimeDecisionRollout(t *testing.T) {
 	policy := NewGroupAccessPolicy()
 	nonVIP := &GroupAccessProfile{UserID: 7, VIPAccessState: VIPAccessStatePaymentRequired}
 
-	t.Run("audit bypasses new primary VIP denial", func(t *testing.T) {
-		decision := policy.Evaluate(nonVIP, &Group{ID: 1, Status: StatusActive, VIPOnly: true}, GroupAccessPrimaryAuth)
+	t.Run("audit still enforces primary VIP denial", func(t *testing.T) {
+		// SEC-008: VIP 专属分组是管理员显式配置的边界，AUDIT_ONLY 不得放行。
+		for _, entry := range []GroupAccessRuntimeEntry{
+			GroupAccessRuntimeEntryPrimaryAuth,
+			GroupAccessRuntimeEntryGooglePrimaryAuth,
+		} {
+			decision := policy.Evaluate(nonVIP, &Group{ID: 1, Status: StatusActive, VIPOnly: true}, GroupAccessPrimaryAuth)
+			err := ApplyGroupAccessRuntimeDecision(
+				config.GroupAccessRuntimeModeAuditOnly,
+				entry,
+				decision,
+				7,
+				1,
+			)
+			require.Equal(t, "GROUP_VIP_ONLY", infraerrors.Reason(err), "entry=%s", entry)
+			require.Equal(t, 403, infraerrors.Code(err), "entry=%s", entry)
+		}
+	})
+
+	t.Run("audit bypasses new primary profile-missing denial", func(t *testing.T) {
+		decision := policy.Evaluate(nil, &Group{ID: 1, Status: StatusActive}, GroupAccessPrimaryAuth)
+		require.False(t, decision.Allowed)
+		require.Equal(t, GroupAccessDenyProfileMissing, decision.Reason)
 		require.NoError(t, ApplyGroupAccessRuntimeDecision(
 			config.GroupAccessRuntimeModeAuditOnly,
 			GroupAccessRuntimeEntryPrimaryAuth,
@@ -106,19 +127,43 @@ func TestGroupAccessRuntimeMetricsRecordWouldDeny(t *testing.T) {
 	before := groupAccessRuntimeMetricCount(
 		config.GroupAccessRuntimeModeAuditOnly,
 		GroupAccessRuntimeOutcomeWouldDeny,
-		GroupAccessDenyVIPOnly,
+		GroupAccessDenyProfileMissing,
 		GroupAccessRuntimeEntryGooglePrimaryAuth,
 	)
 	require.NoError(t, ApplyGroupAccessRuntimeDecision(
 		config.GroupAccessRuntimeModeAuditOnly,
 		GroupAccessRuntimeEntryGooglePrimaryAuth,
-		GroupAccessDecision{Reason: GroupAccessDenyVIPOnly},
+		GroupAccessDecision{Reason: GroupAccessDenyProfileMissing},
 		7,
 		10,
 	))
 	after := groupAccessRuntimeMetricCount(
 		config.GroupAccessRuntimeModeAuditOnly,
 		GroupAccessRuntimeOutcomeWouldDeny,
+		GroupAccessDenyProfileMissing,
+		GroupAccessRuntimeEntryGooglePrimaryAuth,
+	)
+	require.Equal(t, before+1, after)
+}
+
+func TestGroupAccessRuntimeMetricsRecordDenyForPrimaryVIPInAudit(t *testing.T) {
+	before := groupAccessRuntimeMetricCount(
+		config.GroupAccessRuntimeModeAuditOnly,
+		GroupAccessRuntimeOutcomeDeny,
+		GroupAccessDenyVIPOnly,
+		GroupAccessRuntimeEntryGooglePrimaryAuth,
+	)
+	err := ApplyGroupAccessRuntimeDecision(
+		config.GroupAccessRuntimeModeAuditOnly,
+		GroupAccessRuntimeEntryGooglePrimaryAuth,
+		GroupAccessDecision{Reason: GroupAccessDenyVIPOnly},
+		7,
+		10,
+	)
+	require.Equal(t, "GROUP_VIP_ONLY", infraerrors.Reason(err))
+	after := groupAccessRuntimeMetricCount(
+		config.GroupAccessRuntimeModeAuditOnly,
+		GroupAccessRuntimeOutcomeDeny,
 		GroupAccessDenyVIPOnly,
 		GroupAccessRuntimeEntryGooglePrimaryAuth,
 	)

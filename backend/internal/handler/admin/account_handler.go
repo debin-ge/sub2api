@@ -2139,6 +2139,23 @@ func (h *AccountHandler) RevertProxyFallback(c *gin.Context) {
 	response.Success(c, gin.H{"message": "reverted"})
 }
 
+// maxAccountBatchSize 是账号批量接口单次可处理的条目上限（ID 列表或账号定义列表）。
+// 超出直接 400，避免一次请求把整张 accounts 表拉进内存或占满并发槽。
+const maxAccountBatchSize = 500
+
+// rejectOversizedAccountBatch 在批量条目数超过 maxAccountBatchSize 时写出
+// 400 BATCH_TOO_LARGE 并返回 true；调用方应直接 return。
+func rejectOversizedAccountBatch(c *gin.Context, size int) bool {
+	if size <= maxAccountBatchSize {
+		return false
+	}
+	response.ErrorFrom(c, infraerrors.BadRequest(
+		"BATCH_TOO_LARGE",
+		fmt.Sprintf("batch contains %d items, exceeding the maximum of %d", size, maxAccountBatchSize),
+	))
+	return true
+}
+
 // BatchDelete handles deleting multiple accounts with bounded concurrency.
 // POST /api/v1/admin/accounts/batch-delete
 func (h *AccountHandler) BatchDelete(c *gin.Context) {
@@ -2147,6 +2164,9 @@ func (h *AccountHandler) BatchDelete(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if rejectOversizedAccountBatch(c, len(req.AccountIDs)) {
 		return
 	}
 
@@ -2284,6 +2304,9 @@ func (h *AccountHandler) BatchClearError(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
+	if rejectOversizedAccountBatch(c, len(req.AccountIDs)) {
+		return
+	}
 	if len(req.AccountIDs) == 0 {
 		response.BadRequest(c, "account_ids is required")
 		return
@@ -2352,6 +2375,9 @@ func (h *AccountHandler) BatchRefresh(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if rejectOversizedAccountBatch(c, len(req.AccountIDs)) {
 		return
 	}
 	if len(req.AccountIDs) == 0 {
@@ -2450,6 +2476,9 @@ func (h *AccountHandler) BatchCreate(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if rejectOversizedAccountBatch(c, len(req.Accounts)) {
 		return
 	}
 	for _, item := range req.Accounts {
@@ -2617,6 +2646,9 @@ func (h *AccountHandler) BatchUpdateCredentials(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
+	if rejectOversizedAccountBatch(c, len(req.AccountIDs)) {
+		return
+	}
 
 	// Validate value type based on field
 	if req.Field == "intercept_warmup_requests" {
@@ -2700,6 +2732,9 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 	var req BulkUpdateAccountsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if rejectOversizedAccountBatch(c, len(req.AccountIDs)) {
 		return
 	}
 	if req.RateMultiplier != nil && *req.RateMultiplier < 0 {
@@ -3094,6 +3129,9 @@ func (h *AccountHandler) GetBatchTodayStats(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
+	if rejectOversizedAccountBatch(c, len(req.AccountIDs)) {
+		return
+	}
 
 	accountIDs := normalizeInt64IDList(req.AccountIDs)
 	if len(accountIDs) == 0 {
@@ -3138,6 +3176,9 @@ func (h *AccountHandler) GetBatchUsage(c *gin.Context) {
 	var req BatchUsageRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if rejectOversizedAccountBatch(c, len(req.AccountIDs)) {
 		return
 	}
 

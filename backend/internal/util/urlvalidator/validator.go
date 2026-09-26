@@ -129,8 +129,7 @@ func ValidateResolvedIPContext(ctx context.Context, host string) error {
 	}
 
 	for _, ip := range ips {
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
-			ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+		if isBlockedIP(ip) {
 			return fmt.Errorf("resolved ip %s is not allowed", ip.String())
 		}
 	}
@@ -174,18 +173,91 @@ func isAllowedHost(host string, allowlist []string) bool {
 	return false
 }
 
-// IsBlockedHost 报告 host 是否为 localhost、*.localhost，或回环、私网、链路本地、未指定地址的字面量 IP。
-// 只判断字面量，域名的解析结果由 ValidateResolvedIP 校验。
+// ErrBlockedHost 标识目标主机/IP 被 SSRF 策略拒绝（字面量或解析结果落在私网、回环、
+// 链路本地、云元数据等禁止范围）。调用方可用 errors.Is 区分“策略拒绝”与普通网络错误。
+var ErrBlockedHost = errors.New("host is blocked by SSRF policy")
+
+// blockedHostnames 是不经解析即拒绝的主机名（小写比较）：云元数据服务的固定域名。
+var blockedHostnames = map[string]struct{}{
+	"localhost":                {},
+	"metadata.google.internal": {},
+}
+
+// blockedHostSuffixes 是不经解析即拒绝的主机名后缀：只在本机/内网有意义的域，
+// 公网上游不会使用，出现即说明目标是内网。
+var blockedHostSuffixes = []string{".localhost", ".internal", ".local", ".localdomain"}
+
+// blockedCIDRs 补充 net.IP 内建判定（IsLoopback/IsPrivate/IsLinkLocal*/IsUnspecified）
+// 未覆盖、但同样不应作为出站目标的网段。IPv4 网段对 IPv4-mapped IPv6（::ffff:a.b.c.d）同样生效，
+// 因为 net.IPNet.Contains 会先做 To4 归一化。
+var blockedCIDRs = mustParseCIDRs([]string{
+	"0.0.0.0/8",          // "this network"
+	"100.64.0.0/10",      // CGNAT（RFC 6598），常见于云内网/Tailscale
+	"192.0.0.0/24",       // IETF 协议分配（RFC 6890）
+	"198.18.0.0/15",      // 基准测试网段（RFC 2544）
+	"240.0.0.0/4",        // 保留段（含 255.255.255.255 广播）
+	"169.254.169.254/32", // 云元数据（已在 link-local 内，显式列出便于审计）
+	"fd00:ec2::254/128",  // AWS IMDS IPv6（已在 ULA 内，显式列出便于审计）
+})
+
+func mustParseCIDRs(cidrs []string) []*net.IPNet {
+	out := make([]*net.IPNet, 0, len(cidrs))
+	for _, c := range cidrs {
+		_, n, err := net.ParseCIDR(c)
+		if err != nil {
+			panic("urlvalidator: invalid CIDR " + c + ": " + err.Error())
+		}
+		out = append(out, n)
+	}
+	return out
+}
+
+// IsBlockedHost 报告 host 是否为 localhost、*.localhost、*.internal、*.local、*.localdomain、
+// 云元数据域名，或回环、私网、链路本地、CGNAT、保留段、未指定地址的字面量 IP。
+// 只判断字面量，域名的解析结果由 ValidateResolvedIP / SafeDialContext 校验。
 func IsBlockedHost(host string) bool {
 	return isBlockedHost(strings.ToLower(strings.TrimSpace(host)))
 }
 
+// IsBlockedIP 报告 ip 是否落在禁止作为出站目标的范围内（回环、私网、链路本地、
+// CGNAT、保留段、未指定地址、云元数据地址）。nil 视为禁止。
+func IsBlockedIP(ip net.IP) bool {
+	return isBlockedIP(ip)
+}
+
 func isBlockedHost(host string) bool {
-	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+	if host == "" {
+		return false
+	}
+	// URL 主机名可能带 IPv6 方括号或 zone（fe80::1%eth0），先剥离再判断字面量。
+	host = strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")
+	if _, blocked := blockedHostnames[host]; blocked {
 		return true
 	}
-	if ip := net.ParseIP(host); ip != nil {
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+	for _, suffix := range blockedHostSuffixes {
+		if strings.HasSuffix(host, suffix) {
+			return true
+		}
+	}
+	literal := host
+	if idx := strings.IndexByte(literal, '%'); idx >= 0 {
+		literal = literal[:idx]
+	}
+	if ip := net.ParseIP(literal); ip != nil {
+		return isBlockedIP(ip)
+	}
+	return false
+}
+
+func isBlockedIP(ip net.IP) bool {
+	if ip == nil {
+		return true
+	}
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+		return true
+	}
+	for _, n := range blockedCIDRs {
+		if n.Contains(ip) {
 			return true
 		}
 	}

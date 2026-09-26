@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"net/http"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/handler"
@@ -11,6 +12,40 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 )
+
+// publicJSONBodyLimit 匿名（无需认证）面板接口的请求体上限（SEC-012）。
+//
+// 全局 http.MaxBytesHandler（默认 256MiB）是为网关流式大请求体设计的，无法保护
+// 这些未认证即可打到的端点：handler 会把整个 body 读进内存再绑定 JSON。这里的
+// 端点全部只接收小型 JSON：
+//   - 注册/登录/验证码/找回密码：邮箱 + 密码 + 验证码 + 验证码票据，< 2KiB；
+//   - Passkey 登录 finish：WebAuthn 断言（authenticatorData + clientDataJSON +
+//     signature，base64url），实测通常 < 4KiB；
+//   - OAuth start/complete/pending 系列：code/state/ticket/验证码，不含头像等二进制。
+//
+// 64KiB 已留出十倍以上余量，任何超出的请求体都不是合法客户端会发出的。
+// 未来若新增需要大 body 的匿名路由（如上传），请给该路由单独设置更大的限制，
+// 不要放宽组级别的上限。
+const publicJSONBodyLimit int64 = 64 << 10
+
+// rejectOversizedBody 在读取任何字节之前，按客户端声明的 Content-Length 直接以 413
+// 拒绝超限请求。http.MaxBytesReader 只会在读取过程中报错，而认证 handler 统一把绑定
+// 错误映射为 400；两者叠加：声明长度超限 → 413，chunked/谎报长度 → 读到上限即 400，
+// 无论哪种情况都不会把超限 body 读进内存。
+func rejectOversizedBody(maxBytes int64) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.Request != nil && c.Request.ContentLength > maxBytes {
+			servermiddleware.AbortWithError(c, http.StatusRequestEntityTooLarge, "REQUEST_ENTITY_TOO_LARGE", "request body too large")
+			return
+		}
+		c.Next()
+	}
+}
+
+// publicBodyLimit 返回匿名接口使用的请求体限制中间件组合（先看声明长度，再包 MaxBytesReader）。
+func publicBodyLimit(maxBytes int64) []gin.HandlerFunc {
+	return []gin.HandlerFunc{rejectOversizedBody(maxBytes), servermiddleware.RequestBodyLimit(maxBytes)}
+}
 
 // RegisterAuthRoutes 注册认证相关路由
 func RegisterAuthRoutes(
@@ -33,6 +68,8 @@ func RegisterAuthRoutes(
 
 	// 公开接口
 	auth := v1.Group("/auth")
+	// 请求体上限放在最前面：先于限流/审计执行，超限请求不会消耗任何下游资源
+	auth.Use(publicBodyLimit(publicJSONBodyLimit)...)
 	auth.Use(servermiddleware.BackendModeAuthGuard(settingService))
 	// 认证事件（登录/注册/2FA/token 刷新失败）入审计
 	auth.Use(gin.HandlerFunc(auditLog))
@@ -261,6 +298,8 @@ func RegisterAuthRoutes(
 	// 公开设置（无需认证）：每次请求都会查询 DB，按客户端 IP 兜底限流，
 	// 防止匿名高频刷接口打爆数据库（反代内部地址会被自动跳过，不会误伤）。
 	settings := v1.Group("/settings")
+	// 当前全部为 GET，不读 body；仍统一挂上匿名接口的请求体上限，避免日后新增 POST 时漏配
+	settings.Use(publicBodyLimit(publicJSONBodyLimit)...)
 	settings.Use(panelRateLimiter.PublicIP())
 	{
 		settings.GET("/public", h.Setting.GetPublicSettings)
@@ -270,6 +309,7 @@ func RegisterAuthRoutes(
 
 	// 公开渠道（无需认证）
 	channels := v1.Group("/channels")
+	channels.Use(publicBodyLimit(publicJSONBodyLimit)...)
 	channels.Use(servermiddleware.OptionalJWTAuth(jwtAuth))
 	channels.Use(panelRateLimiter.PublicIP())
 	{

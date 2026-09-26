@@ -92,6 +92,24 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;')
 }
 
+/**
+ * Matches fenced code blocks and inline code spans. Used with `String#split`
+ * (single capture group), so odd indices of the result are code segments.
+ */
+const CODE_SEGMENT_PATTERN = /(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]+`)/g
+
+/**
+ * Replace the doc placeholders with the given values. Replacement callbacks
+ * are used so `$&`/`$1` inside a site name are inserted literally.
+ */
+function substituteDocPlaceholders(value: string, name: string, baseUrl: string): string {
+  return value
+    .replace(/\{\{SITE_NAME\}\}/g, () => name)
+    .replace(/\{\{BASE_URL\}\}/g, () => baseUrl)
+    .replace(/Sub2API/g, () => name)
+    .replace(/https:\/\/tiktoken\.net\//g, () => baseUrl)
+}
+
 function getTextContent(html: string): string {
   const template = document.createElement('template')
   template.innerHTML = html
@@ -112,21 +130,34 @@ export function useDocMarkdown(options: UseDocMarkdownOptions) {
   let scrollRafId = 0
 
   function resolveDocText(value: string): string {
-    return value
-      .replace(/\{\{SITE_NAME\}\}/g, siteName.value)
-      .replace(/\{\{BASE_URL\}\}/g, siteBaseUrl.value)
-      .replace(/Sub2API/g, siteName.value)
-      .replace(/https:\/\/tiktoken\.net\//g, siteBaseUrl.value)
+    return substituteDocPlaceholders(value, siteName.value, siteBaseUrl.value)
   }
 
-  function resolveDocHtml(value: string): string {
-    const escapedSiteName = escapeHtml(siteName.value)
-    const escapedBaseUrl = escapeHtml(siteBaseUrl.value)
+  /**
+   * Substitute placeholders in the markdown *source*, before `marked.parse`,
+   * so the admin-controlled site name / API base URL are covered by the
+   * DOMPurify pass below (a `javascript:` base URL inside a link must be
+   * stripped, not spliced into an already-sanitized href).
+   *
+   * Prose segments receive HTML-escaped values so a site name such as
+   * `<b>x</b>` renders literally; code spans and fenced blocks receive the raw
+   * values because marked escapes code content itself and escaping twice would
+   * display `&amp;` to the reader.
+   */
+  function resolveDocSource(value: string): string {
+    const rawName = siteName.value
+    const rawBaseUrl = siteBaseUrl.value
+    const escapedName = escapeHtml(rawName)
+    const escapedBaseUrl = escapeHtml(rawBaseUrl)
     return value
-      .replace(/\{\{SITE_NAME\}\}/g, escapedSiteName)
-      .replace(/\{\{BASE_URL\}\}/g, escapedBaseUrl)
-      .replace(/Sub2API/g, escapedSiteName)
-      .replace(/https:\/\/tiktoken\.net\//g, escapedBaseUrl)
+      .split(CODE_SEGMENT_PATTERN)
+      .map((segment, index) => {
+        const isCode = index % 2 === 1
+        return isCode
+          ? substituteDocPlaceholders(segment, rawName, rawBaseUrl)
+          : substituteDocPlaceholders(segment, escapedName, escapedBaseUrl)
+      })
+      .join('')
   }
 
   const readingTimeText = computed(() => {
@@ -156,14 +187,14 @@ export function useDocMarkdown(options: UseDocMarkdownOptions) {
       return
     }
 
-    const html = marked.parse(current.content) as string
+    const html = marked.parse(resolveDocSource(current.content)) as string
     const sanitized = DOMPurify.sanitize(html, {
       FORBID_TAGS: ['iframe', 'script'],
       FORBID_ATTR: ['onerror', 'onload', 'onclick'],
     })
 
     const template = document.createElement('template')
-    template.innerHTML = resolveDocHtml(sanitized)
+    template.innerHTML = sanitized
 
     // The article header already renders the doc title; drop a leading H1
     // that duplicates it so the body starts with the actual content.

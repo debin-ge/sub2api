@@ -128,9 +128,11 @@ func validGroupAccessRuntimeEntry(entry GroupAccessRuntimeEntry) bool {
 func isNewGroupAccessRuntimeDenial(entry GroupAccessRuntimeEntry, reason GroupAccessDenyReason) bool {
 	switch entry {
 	case GroupAccessRuntimeEntryPrimaryAuth, GroupAccessRuntimeEntryGooglePrimaryAuth:
-		// Exclusive primary-group enforcement predates VIP and must never be
-		// bypassed by AUDIT_ONLY.
-		return reason == GroupAccessDenyVIPOnly || reason == GroupAccessDenyProfileMissing
+		// 主认证入口只有 ProfileMissing 仍算"新增判定"（可审计放行）：它是运行时
+		// 上下文缺失，需要观察期确认不误伤。Exclusive 与 VIPOnly 都是管理员显式
+		// 配置的访问边界，不能被 AUDIT_ONLY 绕过——否则非 VIP 用户在审计期内
+		// 可以直接消耗 VIP 专属分组（SEC-008）。
+		return reason == GroupAccessDenyProfileMissing
 	case GroupAccessRuntimeEntryFallback, GroupAccessRuntimeEntryInvalidRequestFallback:
 		switch reason {
 		case GroupAccessDenyGroupNotAllowed,

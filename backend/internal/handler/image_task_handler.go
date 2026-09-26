@@ -5,12 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
@@ -24,12 +26,51 @@ type AsyncImageHandler struct {
 	tasks   *service.ImageTaskService
 	openAI  *OpenAIGatewayHandler
 	execute func(platform string, c *gin.Context)
+	// cfg 提供 gateway.images_max_pending_per_user 等运行参数；从 openAI handler
+	// 共享同一份配置，避免改动 wire 装配签名。
+	cfg *config.Config
 }
 
 func NewAsyncImageHandler(tasks *service.ImageTaskService, openAI *OpenAIGatewayHandler) *AsyncImageHandler {
 	h := &AsyncImageHandler{tasks: tasks, openAI: openAI}
+	if openAI != nil {
+		h.cfg = openAI.cfg
+	}
 	h.execute = h.executeWithGateway
 	return h
+}
+
+// imageTaskPendingLimitRetryAfterSeconds 是挂起任务达到上限时建议客户端的重试间隔。
+const imageTaskPendingLimitRetryAfterSeconds = "5"
+
+// maxPendingPerUser 返回单用户挂起任务上限；<=0 表示不限制。
+func (h *AsyncImageHandler) maxPendingPerUser() int {
+	if h == nil || h.cfg == nil {
+		return 0
+	}
+	return h.cfg.Gateway.ImagesMaxPendingPerUser
+}
+
+// rejectIfPendingLimitReached 在用户挂起任务数达到上限时写出 429 并返回 true。
+// 计数与创建之间存在窄小竞态窗口，这是软上限：目的在于阻断单用户以无界并发
+// 触发 go h.run 的资源耗尽，而非精确配额。
+func (h *AsyncImageHandler) rejectIfPendingLimitReached(c *gin.Context, userID int64) bool {
+	limit := h.maxPendingPerUser()
+	if limit <= 0 {
+		return false
+	}
+	pending, err := h.tasks.CountPendingForUser(c.Request.Context(), userID)
+	if err != nil {
+		imageTaskError(c, err)
+		return true
+	}
+	if pending < limit {
+		return false
+	}
+	c.Header("Retry-After", imageTaskPendingLimitRetryAfterSeconds)
+	imageTaskJSONError(c, http.StatusTooManyRequests, "IMAGE_TASKS_PENDING_LIMIT",
+		fmt.Sprintf("too many pending image tasks: at most %d may be in progress per user, retry later", limit))
+	return true
 }
 
 // enabled reports whether the async image task feature is available. Object
@@ -72,6 +113,10 @@ func (h *AsyncImageHandler) Submit(c *gin.Context) {
 	}
 	if h == nil || h.tasks == nil || h.execute == nil {
 		imageTaskError(c, service.ErrImageTaskUnavailable)
+		return
+	}
+	// 挂起上限在读体/审核之前判定：被拒绝的请求不应消耗解析与内容审核开销。
+	if h.rejectIfPendingLimitReached(c, apiKey.UserID) {
 		return
 	}
 

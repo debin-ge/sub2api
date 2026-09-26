@@ -819,7 +819,9 @@ func TestGatewayServiceRecordUsage_UsageLogWriteErrorDoesNotSkipBilling(t *testi
 	require.Equal(t, 1, quotaSvc.quotaCalls)
 }
 
-func TestGatewayServiceRecordUsage_UsesFallbackRequestIDForUsageLog(t *testing.T) {
+// SEC-016：ctxkey.RequestID 直接来自客户端可控的 X-Request-ID 请求头，不能作为计费幂等键；
+// 没有 client_request_id 且上游也没返回 request id 时必须走随机生成，而不是 "local:" 回退。
+func TestGatewayServiceRecordUsage_IgnoresClientControlledRequestIDForUsageLog(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{}
 	userRepo := &openAIRecordUsageUserRepoStub{}
 	subRepo := &openAIRecordUsageSubRepoStub{}
@@ -843,7 +845,9 @@ func TestGatewayServiceRecordUsage_UsesFallbackRequestIDForUsageLog(t *testing.T
 
 	require.NoError(t, err)
 	require.NotNil(t, usageRepo.lastLog)
-	require.Equal(t, "local:gateway-local-fallback", usageRepo.lastLog.RequestID)
+	require.True(t, strings.HasPrefix(usageRepo.lastLog.RequestID, "generated:"), "got %q", usageRepo.lastLog.RequestID)
+	require.NotContains(t, usageRepo.lastLog.RequestID, "gateway-local-fallback")
+	require.NotContains(t, usageRepo.lastLog.RequestID, "local:")
 }
 
 func TestGatewayServiceRecordUsage_PrefersClientRequestIDOverUpstreamRequestID(t *testing.T) {

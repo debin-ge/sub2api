@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -140,6 +141,9 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			c.Header("Retry-After", strconv.Itoa(retryAfter))
 		}
 		h.handleStreamingAwareError(c, status, code, message, streamStarted)
+		return
+	}
+	if !h.checkImagesBatchBalance(c, reqLog, apiKey, subscription, parsed, channelMapping.MappedModel, streamStarted) {
 		return
 	}
 
@@ -432,6 +436,63 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		)
 		return
 	}
+}
+
+// checkImagesBatchBalance 是 /v1/images n>1 的余额预检（SEC-011）。CheckBillingEligibility
+// 只要求余额 > 最低保留额，与 n 无关；n 张图会一次性扣掉 n 倍单价，必须在转发前确认
+// (余额 - 保留额) 能覆盖预估金额，否则单次请求就能把余额打成大额负数。
+//
+//   - 只在 n > 1 时生效，n = 1 保持既有准入行为不变。
+//   - 订阅模式不走余额，跳过。
+//   - 价格不可知 / 按 token 计费时 fail-open（EstimateOpenAIImagesCost 返回 ok=false）：
+//     准入层拿不到可靠金额时不误拒，交给结算侧 pricing-unavailable 路径兜底。
+//
+// 返回 false 表示已写出错误响应，调用方应直接 return。
+func (h *OpenAIGatewayHandler) checkImagesBatchBalance(
+	c *gin.Context,
+	reqLog *zap.Logger,
+	apiKey *service.APIKey,
+	subscription *service.UserSubscription,
+	parsed *service.OpenAIImagesRequest,
+	channelMappedModel string,
+	streamStarted bool,
+) bool {
+	if parsed == nil || parsed.N <= 1 || apiKey == nil {
+		return true
+	}
+	if apiKey.Group != nil && apiKey.Group.IsSubscriptionType() && subscription != nil {
+		return true
+	}
+	estimated, ok := h.gatewayService.EstimateOpenAIImagesCost(c.Request.Context(), apiKey, parsed, channelMappedModel)
+	if !ok {
+		reqLog.Debug("openai.images.batch_balance_precheck_skipped_price_unknown", zap.Int("n", parsed.N))
+		return true
+	}
+	err := h.billingCacheService.CheckBalanceCoversEstimate(c.Request.Context(), apiKey.UserID, estimated)
+	if err == nil {
+		return true
+	}
+	reqLog.Info("openai.images.batch_balance_precheck_failed",
+		zap.Int("n", parsed.N),
+		zap.Float64("estimated_cost", estimated),
+		zap.Error(err),
+	)
+	if errors.Is(err, service.ErrInsufficientBalance) {
+		h.handleStreamingAwareError(
+			c,
+			http.StatusPaymentRequired,
+			"insufficient_balance",
+			fmt.Sprintf("insufficient balance: generating %d images requires an estimated $%.4f", parsed.N, estimated),
+			streamStarted,
+		)
+		return false
+	}
+	status, code, message, retryAfter := billingErrorDetails(err)
+	if retryAfter > 0 {
+		c.Header("Retry-After", strconv.Itoa(retryAfter))
+	}
+	h.handleStreamingAwareError(c, status, code, message, streamStarted)
+	return false
 }
 
 func (h *OpenAIGatewayHandler) openAIImagesJSONKeepaliveInterval() time.Duration {

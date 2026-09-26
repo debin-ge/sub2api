@@ -51,6 +51,11 @@ type OpenAIRecordUsageInput struct {
 	// Responses handler from stream=true + compaction_trigger. It never stores
 	// the request payload and does not replace the transport request type.
 	NativeCompactionV2 bool
+	// WSTurn 是 WebSocket 接入连接内的 turn 序号（从 1 开始），由 handler 的
+	// AfterTurn 钩子传入。上游中继若在每个 turn 都回同一个 response id，仅用
+	// "upstream:<id>" 做计费幂等键会把整条连接压成第一轮的一次扣费；带上 turn
+	// 序号后每轮独立结算。0 表示调用方未提供，沿用不带序号的旧键。
+	WSTurn int
 	ChannelUsageFields
 }
 
@@ -141,6 +146,17 @@ func (s *OpenAIGatewayService) ResolveUserGroupRateMultiplier(ctx context.Contex
 
 // openAIUsagePricingAt 返回本次用量记录使用的定价时刻：优先请求级 PricingAt
 // （与利润门 D 同源同刻），未装配时回退记录时刻（既有行为）。
+// openAIWSBillingRequestID 生成 WebSocket 模式下的计费幂等键。turn > 0 时形如
+// "upstream:<id>#<turn>"，同一 upstream id 在不同 turn 得到不同键；turn <= 0
+// 时退回 "upstream:<id>"（调用方未提供 turn 序号）。
+func openAIWSBillingRequestID(upstreamRequestID string, turn int) string {
+	upstreamRequestID = strings.TrimSpace(upstreamRequestID)
+	if turn > 0 {
+		return fmt.Sprintf("upstream:%s#%d", upstreamRequestID, turn)
+	}
+	return "upstream:" + upstreamRequestID
+}
+
 func openAIUsagePricingAt(input *OpenAIRecordUsageInput) time.Time {
 	if input != nil && !input.PricingAt.IsZero() {
 		return input.PricingAt
@@ -443,8 +459,11 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 			// correlation ID across turns, so the upstream turn ID remains the
 			// correct billing key. Keep it in the same explicit namespace as
 			// non-WebSocket upstream IDs to prevent values such as "client:*"
-			// from colliding with another identity source.
-			requestID = "upstream:" + upstreamRequestID
+			// from colliding with another identity source. The per-connection
+			// turn index is appended so a relay that echoes one response id
+			// for every turn cannot collapse the whole connection into a
+			// single billed turn.
+			requestID = openAIWSBillingRequestID(upstreamRequestID, input.WSTurn)
 		} else {
 			// The client correlation ID is connection-scoped in WS mode. Using
 			// it here would collapse every ID-less turn into one billing key,

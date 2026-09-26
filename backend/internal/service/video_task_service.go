@@ -1078,10 +1078,12 @@ func videoTerminalBillingFor(task *VideoTask, target string, providerTask *Provi
 		metadata = videoObservedMetadata(task, providerTask.Metadata)
 	}
 	if err := videoCheckObservedSpecification(task, metadata); err != nil {
-		zero := 0.0
-		return videoTerminalBillingDecision{state: VideoBillingReleasePending, actualUnits: &zero, actualCost: &zero,
-			errorKind: "specification", errorCode: "execution_spec_conflict",
-			errorMessage: "provider output conflicts with the frozen execution specification"}
+		// 上游确实交付了视频，只是产出与创建时冻结的执行规格不一致。与 usage_missing
+		// 一样按冻结报价结算（预扣多少收多少），而不是把预扣全额退回让这次生成免费；
+		// 错误种类/码/文案照旧写进任务与用量日志，运维仍能据此定位这类任务。
+		// 冻结报价本身不可用（无 HoldAmount/EstimatedUnits）时 videoFrozenQuoteBilling 仍会释放。
+		return videoFrozenQuoteBilling(task, "specification", "execution_spec_conflict",
+			"provider output conflicts with the frozen execution specification: "+err.Error())
 	}
 	candidate := *task
 	candidate.GenerationState = target
@@ -1709,19 +1711,17 @@ func (s *VideoTaskService) GetContentTaskByURLForOwner(ctx context.Context, user
 	return lookup.GetVideoTaskByProxyKeyForOwner(ctx, userID, key)
 }
 
-func (s *VideoTaskService) GetContentTaskByURL(ctx context.Context, requestURI string) (*VideoTask, error) {
+// GetContentTaskByPublicID 按 public_id 加载任务且不校验属主，仅供签名内容链接使用：
+// 链接上的 HMAC 签名已经证明持有者是从属主的任务详情里拿到它的，签名校验由 handler 完成。
+func (s *VideoTaskService) GetContentTaskByPublicID(ctx context.Context, publicID string) (*VideoTask, error) {
 	if s == nil || s.tasks == nil {
 		return nil, ErrVideoTaskNotFound
 	}
-	key, err := videoRequestURIProxyKey(requestURI)
-	if err != nil {
+	publicID = strings.TrimSpace(publicID)
+	if !IsValidVideoTaskID(publicID) {
 		return nil, ErrVideoTaskNotFound
 	}
-	lookup, ok := s.tasks.(VideoTaskProxyLookupRepository)
-	if !ok {
-		return nil, ErrVideoTaskNotFound
-	}
-	return lookup.GetVideoTaskByProxyKey(ctx, key)
+	return s.tasks.GetVideoTaskByPublicID(ctx, publicID)
 }
 
 func (s *VideoTaskService) VideoURLForOwner(ctx context.Context, userID int64, publicID string) (string, error) {

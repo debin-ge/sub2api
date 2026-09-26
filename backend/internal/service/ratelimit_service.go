@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -328,6 +329,78 @@ func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Accoun
 		return ErrorPolicyTempUnscheduled
 	}
 	return ErrorPolicyNone
+}
+
+// softUpstreamErrorMetrics 记录只读转发路径（count_tokens / input_tokens）上被"软处理"
+// 的上游 429/5xx 次数，供运维排查上游拥塞而不必翻日志。有界：key 只有 平台 × 状态码。
+type softUpstreamErrorMetricKey struct {
+	platform   string
+	statusCode int
+}
+
+type SoftUpstreamErrorMetric struct {
+	Platform   string
+	StatusCode int
+	Count      uint64
+}
+
+var softUpstreamErrorMetrics = struct {
+	sync.Mutex
+	counts map[softUpstreamErrorMetricKey]uint64
+}{counts: make(map[softUpstreamErrorMetricKey]uint64)}
+
+func recordSoftUpstreamErrorMetric(platform string, statusCode int) {
+	key := softUpstreamErrorMetricKey{platform: platform, statusCode: statusCode}
+	softUpstreamErrorMetrics.Lock()
+	softUpstreamErrorMetrics.counts[key]++
+	softUpstreamErrorMetrics.Unlock()
+}
+
+// SoftUpstreamErrorMetricsSnapshot 导出软处理计数（按平台、状态码排序）。
+func SoftUpstreamErrorMetricsSnapshot() []SoftUpstreamErrorMetric {
+	softUpstreamErrorMetrics.Lock()
+	out := make([]SoftUpstreamErrorMetric, 0, len(softUpstreamErrorMetrics.counts))
+	for key, count := range softUpstreamErrorMetrics.counts {
+		out = append(out, SoftUpstreamErrorMetric{Platform: key.platform, StatusCode: key.statusCode, Count: count})
+	}
+	softUpstreamErrorMetrics.Unlock()
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Platform != out[j].Platform {
+			return out[i].Platform < out[j].Platform
+		}
+		return out[i].StatusCode < out[j].StatusCode
+	})
+	return out
+}
+
+// HandleUpstreamErrorSoft 是 HandleUpstreamError 的"只观测"变体，供 count_tokens /
+// input_tokens 这类零计费、只读转发路径使用（SEC-009）。
+//
+// 上游 429 与 5xx（含 529）只记日志与计数，不改动账号的限流 / 过载 / 临时停调状态：
+// token 计数在上游是独立的限流桶，且被 Claude Code 等客户端高频调用，用它的失败去
+// 冷却整账号会把正常生成流量一起拖下水，也让攻击者可以用零成本请求"打停"共享账号。
+// 其余状态码（400/401/402/403 等凭据或账号级错误）仍是账号真实状态的信号，
+// 原样交给 HandleUpstreamError 完整处置。生成路径请继续使用 HandleUpstreamError。
+func (s *RateLimitService) HandleUpstreamErrorSoft(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte, requestedModel ...string) (shouldDisable bool) {
+	if statusCode == http.StatusTooManyRequests || statusCode >= 500 {
+		accountID := int64(0)
+		platform := ""
+		if account != nil {
+			accountID = account.ID
+			platform = account.Platform
+		}
+		recordSoftUpstreamErrorMetric(platform, statusCode)
+		slog.Warn("count_tokens_upstream_error_soft",
+			"account_id", accountID,
+			"platform", platform,
+			"status_code", statusCode,
+			"requested_model", firstRequestedModel(requestedModel),
+			"upstream_message", truncateForLog([]byte(sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(responseBody)))), 256),
+			"retry_after", strings.TrimSpace(headers.Get("Retry-After")),
+		)
+		return false
+	}
+	return s.HandleUpstreamError(ctx, account, statusCode, headers, responseBody, requestedModel...)
 }
 
 // HandleUpstreamError 处理上游错误响应，标记账号状态

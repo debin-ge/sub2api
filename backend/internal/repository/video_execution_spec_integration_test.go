@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestVideoExecutionSpecPersistsConflictAndReleasesTheHold(t *testing.T) {
+func TestVideoExecutionSpecPersistsConflictAndSettlesAtFrozenQuote(t *testing.T) {
 	for _, failure := range []string{"provider_model", "snapshot_hash"} {
 		t.Run(failure, func(t *testing.T) {
 			ctx := context.Background()
@@ -54,18 +54,21 @@ func TestVideoExecutionSpecPersistsConflictAndReleasesTheHold(t *testing.T) {
 			task, err = svc.ReconcileProviderObservation(ctx, task, observed, "provider_polled")
 			require.NoError(t, err)
 			// The conflict is durable audit evidence, and it no longer parks the task
-			// either: migration 269 removed manual review, so the terminal transition
-			// releases the hold in full rather than charging for output that does not
-			// match the specification frozen on creation. The hold itself is still
-			// frozen here — release_pending is the intent, the worker applies it.
-			require.Equal(t, service.VideoBillingReleasePending, task.BillingState)
+			// either: migration 269 removed manual review. The provider did deliver a
+			// video, so the terminal transition settles at the frozen quote (the held
+			// amount) rather than releasing the hold and handing the output away for
+			// free. The hold itself is still frozen here — capture_pending is the
+			// intent, the worker applies it.
+			require.Equal(t, service.VideoBillingCapturePending, task.BillingState)
+			require.NotNil(t, task.LastErrorKind)
+			require.Equal(t, "specification", *task.LastErrorKind)
 			require.NotNil(t, task.LastErrorCode)
 			require.Equal(t, "execution_spec_conflict", *task.LastErrorCode)
 			require.NotNil(t, task.NextActionAt)
 			require.NotNil(t, task.ActualUnits)
 			require.NotNil(t, task.ActualCost)
-			require.Zero(t, *task.ActualUnits)
-			require.Zero(t, *task.ActualCost)
+			require.Equal(t, float64(8), *task.ActualUnits)
+			require.Equal(t, float64(4), *task.ActualCost)
 			assertVideoBudgetTotals(t, user.ID, 1, 96, 4)
 			var intents int
 			require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM usage_billing_outbox WHERE api_key_id = $1`, key.ID).Scan(&intents))

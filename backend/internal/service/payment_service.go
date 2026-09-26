@@ -3,11 +3,11 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
 	"fmt"
 	"log/slog"
-	"math/rand/v2"
 	"os"
 	"strings"
 	"sync"
@@ -161,13 +161,39 @@ func chinesePinyinInitial(ch rune) (byte, bool) {
 	}
 }
 
+// randomStringCharset 订单号随机后缀字符集（大小写字母 + 数字，共 62 个）。
+const randomStringCharset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+// generateRandomString 生成 n 位不可预测的随机字符串（用于 out_trade_no 后缀）。
+//
+// 使用 crypto/rand 而非 math/rand：订单号会暴露给支付渠道与匿名查询接口，
+// 可预测的后缀会让攻击者枚举/碰撞他人订单。采用拒绝采样消除取模偏差：
+// 只接受 [0, 248) 区间内的随机字节（248 = 62 * 4），其余丢弃重采，
+// 保证 62 个字符等概率。
 func generateRandomString(n int) string {
-	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	b := make([]byte, n)
-	for i := range b {
-		b[i] = charset[rand.IntN(len(charset))]
+	if n <= 0 {
+		return ""
 	}
-	return string(b)
+	// 62 * (256 / 62) = 248，编译期常量，落在 byte 范围内
+	const maxUnbiased = byte(len(randomStringCharset) * (256 / len(randomStringCharset)))
+	out := make([]byte, 0, n)
+	buf := make([]byte, n)
+	for len(out) < n {
+		if _, err := rand.Read(buf); err != nil {
+			// Go 1.24+ 的 crypto/rand.Read 永不返回错误；这里只是防御性兜底
+			panic("payment: crypto/rand unavailable: " + err.Error())
+		}
+		for _, v := range buf {
+			if v >= maxUnbiased {
+				continue
+			}
+			out = append(out, randomStringCharset[int(v)%len(randomStringCharset)])
+			if len(out) == n {
+				break
+			}
+		}
+	}
+	return string(out)
 }
 
 type CreateOrderRequest struct {

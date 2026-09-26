@@ -235,29 +235,31 @@ func postUsageBilling(ctx context.Context, p *postUsageBillingParams, deps *bill
 	// by the caller after recording the usage log.
 }
 
+// resolveUsageBillingRequestID 决定一笔用量的计费幂等键（usage_logs.request_id / 去重键）。
+//
+// 优先级：强制的持久化金额事件 ID（web_search / grok-video / grok_audio / grok_realtime）
+// > 服务端生成的 client_request_id（middleware.ClientRequestID，进程内 UUID）
+// > 上游返回的 request id > 本地随机生成。
+//
+// SEC-016：这里**不能**回退到 ctxkey.RequestID（旧的 "local:" 前缀）。该值由
+// server/middleware/request_logger.go 直接透传客户端的 X-Request-ID 请求头；
+// 一旦某条计费路由漏挂 ClientRequestID 中间件，攻击者只要固定 X-Request-ID
+// 就能让后续所有请求被幂等去重成"同一笔"，从而免单重放。
 func resolveUsageBillingRequestID(ctx context.Context, upstreamRequestID string) string {
 	resolved := ""
-	// Forced durable money-event IDs must win over client/local context IDs so
+	upstreamRequestID = strings.TrimSpace(upstreamRequestID)
+	// Forced durable money-event IDs must win over client context IDs so
 	// standalone web_search / async video cannot collapse under a reused client id.
-	if requestID := strings.TrimSpace(upstreamRequestID); requestID != "" {
-		if isForcedUsageBillingRequestID(requestID) {
-			return requestID
-		}
+	if upstreamRequestID != "" && isForcedUsageBillingRequestID(upstreamRequestID) {
+		return upstreamRequestID
 	}
 	if ctx != nil {
 		if clientRequestID, _ := ctx.Value(ctxkey.ClientRequestID).(string); strings.TrimSpace(clientRequestID) != "" {
 			resolved = "client:" + strings.TrimSpace(clientRequestID)
 		}
-		if resolved == "" {
-			if requestID, _ := ctx.Value(ctxkey.RequestID).(string); strings.TrimSpace(requestID) != "" {
-				resolved = "local:" + strings.TrimSpace(requestID)
-			}
-		}
 	}
-	if resolved == "" {
-		if requestID := strings.TrimSpace(upstreamRequestID); requestID != "" {
-			resolved = "upstream:" + requestID
-		}
+	if resolved == "" && upstreamRequestID != "" {
+		resolved = "upstream:" + upstreamRequestID
 	}
 	if resolved == "" {
 		resolved = "generated:" + generateRequestID()

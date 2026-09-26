@@ -525,7 +525,9 @@ func (w *failingGinResponseWriter) WriteString(s string) (int, error) {
 	return 0, errors.New("write failed")
 }
 
-func TestMiniMaxGatewayServiceRollsBackQuotaOnStreamReadError(t *testing.T) {
+// 上游已产生部分 usage 后读取失败：按 forwardCompatSSEStream 约定返回 (result, err)，
+// 上游已实际消费本次请求，不回滚配额（SEC-001）。
+func TestMiniMaxGatewayServiceStreamReadErrorAfterUsageReturnsPartialResultWithoutRollback(t *testing.T) {
 	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusOK,
@@ -537,21 +539,57 @@ func TestMiniMaxGatewayServiceRollsBackQuotaOnStreamReadError(t *testing.T) {
 	svc := NewMiniMaxGatewayService(client, NewMiniMaxQuotaService(cache, nil), nil)
 	c, _ := newMiniMaxGatewayTestContext()
 
-	_, err := svc.ForwardMessages(context.Background(), c, miniMaxGatewayTestAccount(""), miniMaxMessagesBody(true), "req-stream-error")
+	result, err := svc.ForwardMessages(context.Background(), c, miniMaxGatewayTestAccount(""), miniMaxMessagesBody(true), "req-stream-error")
 	if err == nil {
 		t.Fatalf("expected stream read error")
+	}
+	if result == nil || result.Usage.InputTokens != 1 {
+		t.Fatalf("expected partial usage result, got %+v", result)
+	}
+	if result.ClientDisconnect {
+		t.Fatalf("client did not disconnect, result = %+v", result)
+	}
+	if cache.rollbackCalls != 0 {
+		t.Fatalf("unexpected rollback calls=%d", cache.rollbackCalls)
+	}
+}
+
+// 读取失败且没有解析到任何 usage：保持原语义，返回 (nil, err) 并回滚配额。
+func TestMiniMaxGatewayServiceRollsBackQuotaOnStreamReadErrorWithoutUsage(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": {"text/event-stream"}},
+			Body:       &errorAfterReader{data: []byte("event: ping\ndata: {\"type\":\"ping\"}\n\n")},
+		}, nil
+	})}
+	cache := &minimaxQuotaCacheStub{allowed: true, used: 1}
+	svc := NewMiniMaxGatewayService(client, NewMiniMaxQuotaService(cache, nil), nil)
+	c, _ := newMiniMaxGatewayTestContext()
+
+	result, err := svc.ForwardMessages(context.Background(), c, miniMaxGatewayTestAccount(""), miniMaxMessagesBody(true), "req-stream-error")
+	if err == nil {
+		t.Fatalf("expected stream read error")
+	}
+	if result != nil {
+		t.Fatalf("expected nil result without usage, got %+v", result)
 	}
 	if cache.rollbackCalls != 1 || cache.rollbackRequestID != "req-stream-error" {
 		t.Fatalf("rollback call = calls %d requestID %q", cache.rollbackCalls, cache.rollbackRequestID)
 	}
 }
 
-func TestMiniMaxGatewayServiceRollsBackQuotaOnStreamWriteError(t *testing.T) {
+// 客户端写失败视为断开：不再写入但继续读完上游 usage，返回 (result, nil) 且 ClientDisconnect=true，
+// 配额不回滚（SEC-001）。
+func TestMiniMaxGatewayServiceStreamWriteErrorDrainsUsageWithoutRollback(t *testing.T) {
 	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Header:     http.Header{"Content-Type": {"text/event-stream"}},
-			Body:       io.NopCloser(strings.NewReader("data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":1}}}\n\n")),
+			Body: io.NopCloser(strings.NewReader(
+				"data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":1}}}\n\n" +
+					"data: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":9}}\n\n",
+			)),
 		}, nil
 	})}
 	cache := &minimaxQuotaCacheStub{allowed: true, used: 1}
@@ -559,12 +597,18 @@ func TestMiniMaxGatewayServiceRollsBackQuotaOnStreamWriteError(t *testing.T) {
 	c, _ := newMiniMaxGatewayTestContext()
 	c.Writer = &failingGinResponseWriter{ResponseWriter: c.Writer}
 
-	_, err := svc.ForwardMessages(context.Background(), c, miniMaxGatewayTestAccount(""), miniMaxMessagesBody(true), "req-stream-write-error")
-	if err == nil {
-		t.Fatalf("expected stream write error")
+	result, err := svc.ForwardMessages(context.Background(), c, miniMaxGatewayTestAccount(""), miniMaxMessagesBody(true), "req-stream-write-error")
+	if err != nil {
+		t.Fatalf("ForwardMessages error = %v, want nil after client disconnect drain", err)
 	}
-	if cache.rollbackCalls != 1 || cache.rollbackRequestID != "req-stream-write-error" {
-		t.Fatalf("rollback call = calls %d requestID %q", cache.rollbackCalls, cache.rollbackRequestID)
+	if result == nil || !result.ClientDisconnect {
+		t.Fatalf("expected ClientDisconnect result, got %+v", result)
+	}
+	if result.Usage.InputTokens != 1 || result.Usage.OutputTokens != 9 {
+		t.Fatalf("usage = %+v", result.Usage)
+	}
+	if cache.rollbackCalls != 0 {
+		t.Fatalf("unexpected rollback calls=%d", cache.rollbackCalls)
 	}
 }
 

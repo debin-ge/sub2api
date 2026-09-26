@@ -211,7 +211,7 @@ func (s *OpenAIGatewayService) ParseOpenAIImagesRequest(c *gin.Context, body []b
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err == nil && strings.EqualFold(mediaType, "multipart/form-data") {
 		req.Multipart = true
-		if parseErr := parseOpenAIImagesMultipartRequest(body, contentType, req); parseErr != nil {
+		if parseErr := parseOpenAIImagesMultipartRequest(body, contentType, req, s.imagesMaxN()); parseErr != nil {
 			return nil, parseErr
 		}
 	} else {
@@ -224,7 +224,7 @@ func (s *OpenAIGatewayService) ParseOpenAIImagesRequest(c *gin.Context, body []b
 		if err := validateUniqueOpenAIImagesBillingFields(body); err != nil {
 			return nil, err
 		}
-		if parseErr := parseOpenAIImagesJSONRequest(body, req); parseErr != nil {
+		if parseErr := parseOpenAIImagesJSONRequest(body, req, s.imagesMaxN()); parseErr != nil {
 			return nil, parseErr
 		}
 	}
@@ -236,6 +236,61 @@ func (s *OpenAIGatewayService) ParseOpenAIImagesRequest(c *gin.Context, body []b
 	req.SizeTier = normalizeOpenAIImageSizeTier(req.Size)
 	req.RequiredCapability = classifyOpenAIImagesCapability(req)
 	return req, nil
+}
+
+// EstimateOpenAIImagesCost 预估按张计费口径下本次 /v1/images 请求的应付金额
+// （单价 × n × 图片倍率），供 handler 在转发前做余额预检（SEC-011）。
+//
+// 仅用于准入：此时账号尚未选定，计费模型取渠道映射后的模型（无映射则取请求模型），
+// 平台候选只含分组平台，倍率口径与结算侧一致（用户专属 > 分组 rate_multiplier >
+// 系统默认，再按 image_rate_independent 取图片倍率）。返回 ok=false 表示价格不可知
+// 或该模型按 token 计费——此时无法在转发前给出可靠金额，调用方应 fail-open，
+// 交给结算侧的 pricing-unavailable 路径兜底，而不是误拒。
+func (s *OpenAIGatewayService) EstimateOpenAIImagesCost(
+	ctx context.Context,
+	apiKey *APIKey,
+	parsed *OpenAIImagesRequest,
+	channelMappedModel string,
+) (estimatedCost float64, ok bool) {
+	if s == nil || s.billingService == nil || apiKey == nil || apiKey.Group == nil || parsed == nil || parsed.N <= 0 {
+		return 0, false
+	}
+	billingModel := strings.TrimSpace(channelMappedModel)
+	if billingModel == "" {
+		billingModel = strings.TrimSpace(parsed.Model)
+	}
+	if billingModel == "" {
+		return 0, false
+	}
+	plan, err := s.resolveOpenAIImageBillingPlanForPlatforms(
+		ctx,
+		apiKey,
+		apiKey.GroupID,
+		pricingPlatformCandidates(apiKey, nil),
+		billingModel,
+		parsed.SizeTier,
+		parsed.IsEdits(),
+	)
+	if err != nil || plan == nil || plan.Mode != BillingModeImage || plan.Resolved == nil || !plan.Resolved.DefaultPerRequestPriceSet {
+		return 0, false
+	}
+	unitPrice := plan.Resolved.DefaultPerRequestPrice
+	if !isFiniteNonNegativePrice(unitPrice) {
+		return 0, false
+	}
+
+	multiplier := 1.0
+	if s.cfg != nil {
+		multiplier = s.cfg.Default.RateMultiplier
+	}
+	if apiKey.GroupID != nil {
+		multiplier = s.ResolveUserGroupRateMultiplier(ctx, apiKey.UserID, *apiKey.GroupID, apiKey.Group.RateMultiplier)
+	}
+	imageMultiplier := resolveImageRateMultiplier(apiKey, multiplier)
+	if imageMultiplier < 0 {
+		imageMultiplier = 0
+	}
+	return unitPrice * float64(parsed.N) * imageMultiplier, true
 }
 
 // validateUniqueOpenAIImagesBillingFields rejects ambiguous JSON before
@@ -267,7 +322,7 @@ func validateUniqueOpenAIImagesBillingFields(body []byte) error {
 	return nil
 }
 
-func parseOpenAIImagesJSONRequest(body []byte, req *OpenAIImagesRequest) error {
+func parseOpenAIImagesJSONRequest(body []byte, req *OpenAIImagesRequest, maxN int) error {
 	if modelResult := gjson.GetBytes(body, "model"); modelResult.Exists() {
 		req.Model = strings.TrimSpace(modelResult.String())
 		req.ExplicitModel = req.Model != ""
@@ -285,7 +340,7 @@ func parseOpenAIImagesJSONRequest(body []byte, req *OpenAIImagesRequest) error {
 		if nResult.Type != gjson.Number {
 			return fmt.Errorf("invalid n field type")
 		}
-		n, err := parseOpenAIImagesCount(nResult.Raw)
+		n, err := parseOpenAIImagesCount(nResult.Raw, maxN)
 		if err != nil {
 			return err
 		}
@@ -357,7 +412,7 @@ func parseOpenAIImagesJSONRequest(body []byte, req *OpenAIImagesRequest) error {
 	return nil
 }
 
-func parseOpenAIImagesMultipartRequest(body []byte, contentType string, req *OpenAIImagesRequest) error {
+func parseOpenAIImagesMultipartRequest(body []byte, contentType string, req *OpenAIImagesRequest, maxN int) error {
 	_, params, err := mime.ParseMediaType(contentType)
 	if err != nil {
 		return fmt.Errorf("invalid multipart content-type: %w", err)
@@ -451,7 +506,7 @@ func parseOpenAIImagesMultipartRequest(body []byte, contentType string, req *Ope
 			}
 			req.Stream = parsed
 		case "n":
-			n, err := parseOpenAIImagesCount(value)
+			n, err := parseOpenAIImagesCount(value, maxN)
 			if err != nil {
 				return err
 			}
@@ -501,12 +556,26 @@ func parseOpenAIImagesMultipartRequest(body []byte, contentType string, req *Ope
 	return nil
 }
 
-func parseOpenAIImagesCount(value string) (int, error) {
+// parseOpenAIImagesCount 解析 n（生成张数）。maxN > 0 时同时施加上限（SEC-011）：
+// n 直接乘进按张计费金额，且上游会真实生成 n 张，不设上限等于允许单次请求
+// 消耗任意倍单价；超限返回 handler 直接映射为 400 的错误。maxN <= 0 表示不限制。
+func parseOpenAIImagesCount(value string, maxN int) (int, error) {
 	n, err := strconv.ParseInt(strings.TrimSpace(value), 10, 32)
 	if err != nil || n <= 0 {
 		return 0, fmt.Errorf("n must be a positive 32-bit integer")
 	}
+	if maxN > 0 && n > int64(maxN) {
+		return 0, fmt.Errorf("n must be between 1 and %d", maxN)
+	}
 	return int(n), nil
+}
+
+// imagesMaxN 返回 /v1/images 单次请求允许的最大 n；0 表示不限制。
+func (s *OpenAIGatewayService) imagesMaxN() int {
+	if s == nil || s.cfg == nil || s.cfg.Gateway.ImagesMaxN <= 0 {
+		return 0
+	}
+	return s.cfg.Gateway.ImagesMaxN
 }
 
 // validateOpenAIImagesBillingSize distinguishes a deliberately unspecified

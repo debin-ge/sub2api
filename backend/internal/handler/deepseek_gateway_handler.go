@@ -206,6 +206,15 @@ func (h *DeepSeekGatewayHandler) Messages(c *gin.Context) {
 		return
 	}
 
+	usageCtx := deepseekForwardUsageContext{
+		component:      "handler.deepseek_gateway.messages",
+		apiKey:         apiKey,
+		subscription:   subscription,
+		userID:         subject.UserID,
+		reqModel:       reqModel,
+		channelMapping: channelMapping,
+		body:           body,
+	}
 	sessionHash := h.gatewayService.GenerateSessionHash(parsedReq)
 	fs := NewFailoverState(h.maxAccountSwitches, false)
 	var mappingFallback service.ChannelMappingFallbackState
@@ -245,6 +254,9 @@ func (h *DeepSeekGatewayHandler) Messages(c *gin.Context) {
 		releaseOnce()
 		if err != nil {
 			if c.Writer.Written() || streamStarted {
+				// 响应已提交（流已开始或已写出）：若上游已产生 usage（含客户端中途断开后的 drain 结果）
+				// 仍照常计费，避免客户端主动断开逃避计费（SEC-001）。
+				h.handleInterruptedForward(c, usageCtx, account, result, err, streamStarted)
 				return
 			}
 			var failoverErr *service.UpstreamFailoverError
@@ -275,40 +287,7 @@ func (h *DeepSeekGatewayHandler) Messages(c *gin.Context) {
 			return
 		}
 
-		userAgent := c.GetHeader("User-Agent")
-		clientIP := ip.GetClientIP(c)
-		requestPayloadHash := service.HashUsageRequestPayload(body)
-		inboundEndpoint := GetInboundEndpoint(c)
-		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
-		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
-		channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
-
-		h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
-			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
-				Result:             result,
-				QuotaPlatform:      quotaPlatform,
-				APIKey:             apiKey,
-				User:               apiKey.User,
-				Account:            account,
-				Subscription:       subscription,
-				InboundEndpoint:    inboundEndpoint,
-				UpstreamEndpoint:   upstreamEndpoint,
-				UserAgent:          userAgent,
-				IPAddress:          clientIP,
-				RequestPayloadHash: requestPayloadHash,
-				APIKeyService:      h.apiKeyService,
-				ChannelUsageFields: channelUsageFields,
-			}); err != nil {
-				logger.L().With(
-					zap.String("component", "handler.deepseek_gateway.messages"),
-					zap.Int64("user_id", subject.UserID),
-					zap.Int64("api_key_id", apiKey.ID),
-					zap.Any("group_id", apiKey.GroupID),
-					zap.String("model", reqModel),
-					zap.Int64("account_id", account.ID),
-				).Error("deepseek_gateway.record_usage_failed", zap.Error(err))
-			}
-		})
+		h.submitForwardUsage(c, usageCtx, account, result)
 		return
 	}
 }
@@ -424,6 +403,15 @@ func (h *DeepSeekGatewayHandler) ChatCompletions(c *gin.Context) {
 		return
 	}
 
+	usageCtx := deepseekForwardUsageContext{
+		component:      "handler.deepseek_gateway.chat_completions",
+		apiKey:         apiKey,
+		subscription:   subscription,
+		userID:         subject.UserID,
+		reqModel:       reqModel,
+		channelMapping: channelMapping,
+		body:           body,
+	}
 	sessionHash := h.gatewayService.GenerateSessionHash(parsedReq)
 	fs := NewFailoverState(h.maxAccountSwitches, false)
 	var mappingFallback service.ChannelMappingFallbackState
@@ -463,6 +451,9 @@ func (h *DeepSeekGatewayHandler) ChatCompletions(c *gin.Context) {
 		releaseOnce()
 		if err != nil {
 			if c.Writer.Written() || streamStarted {
+				// 响应已提交（流已开始或已写出）：若上游已产生 usage（含客户端中途断开后的 drain 结果）
+				// 仍照常计费，避免客户端主动断开逃避计费（SEC-001）。
+				h.handleInterruptedForward(c, usageCtx, account, result, err, streamStarted)
 				return
 			}
 			var failoverErr *service.UpstreamFailoverError
@@ -493,40 +484,7 @@ func (h *DeepSeekGatewayHandler) ChatCompletions(c *gin.Context) {
 			return
 		}
 
-		userAgent := c.GetHeader("User-Agent")
-		clientIP := ip.GetClientIP(c)
-		requestPayloadHash := service.HashUsageRequestPayload(body)
-		inboundEndpoint := GetInboundEndpoint(c)
-		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
-		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
-		channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
-
-		h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
-			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
-				Result:             result,
-				QuotaPlatform:      quotaPlatform,
-				APIKey:             apiKey,
-				User:               apiKey.User,
-				Account:            account,
-				Subscription:       subscription,
-				InboundEndpoint:    inboundEndpoint,
-				UpstreamEndpoint:   upstreamEndpoint,
-				UserAgent:          userAgent,
-				IPAddress:          clientIP,
-				RequestPayloadHash: requestPayloadHash,
-				APIKeyService:      h.apiKeyService,
-				ChannelUsageFields: channelUsageFields,
-			}); err != nil {
-				logger.L().With(
-					zap.String("component", "handler.deepseek_gateway.chat_completions"),
-					zap.Int64("user_id", subject.UserID),
-					zap.Int64("api_key_id", apiKey.ID),
-					zap.Any("group_id", apiKey.GroupID),
-					zap.String("model", reqModel),
-					zap.Int64("account_id", account.ID),
-				).Error("deepseek_gateway.record_usage_failed", zap.Error(err))
-			}
-		})
+		h.submitForwardUsage(c, usageCtx, account, result)
 		return
 	}
 }
@@ -656,6 +614,15 @@ func (h *DeepSeekGatewayHandler) Responses(c *gin.Context) {
 		return
 	}
 
+	usageCtx := deepseekForwardUsageContext{
+		component:      "handler.deepseek_gateway.responses",
+		apiKey:         apiKey,
+		subscription:   subscription,
+		userID:         subject.UserID,
+		reqModel:       reqModel,
+		channelMapping: channelMapping,
+		body:           body,
+	}
 	sessionHash := h.gatewayService.GenerateSessionHash(parsedReq)
 	fs := NewFailoverState(h.maxAccountSwitches, false)
 	var mappingFallback service.ChannelMappingFallbackState
@@ -695,6 +662,9 @@ func (h *DeepSeekGatewayHandler) Responses(c *gin.Context) {
 		releaseOnce()
 		if err != nil {
 			if c.Writer.Written() || streamStarted {
+				// 响应已提交（流已开始或已写出）：若上游已产生 usage（含客户端中途断开后的 drain 结果）
+				// 仍照常计费，避免客户端主动断开逃避计费（SEC-001）。
+				h.handleInterruptedForward(c, usageCtx, account, result, err, streamStarted)
 				return
 			}
 			var failoverErr *service.UpstreamFailoverError
@@ -725,40 +695,7 @@ func (h *DeepSeekGatewayHandler) Responses(c *gin.Context) {
 			return
 		}
 
-		userAgent := c.GetHeader("User-Agent")
-		clientIP := ip.GetClientIP(c)
-		requestPayloadHash := service.HashUsageRequestPayload(body)
-		inboundEndpoint := GetInboundEndpoint(c)
-		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
-		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
-		channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel)
-
-		h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
-			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
-				Result:             result,
-				QuotaPlatform:      quotaPlatform,
-				APIKey:             apiKey,
-				User:               apiKey.User,
-				Account:            account,
-				Subscription:       subscription,
-				InboundEndpoint:    inboundEndpoint,
-				UpstreamEndpoint:   upstreamEndpoint,
-				UserAgent:          userAgent,
-				IPAddress:          clientIP,
-				RequestPayloadHash: requestPayloadHash,
-				APIKeyService:      h.apiKeyService,
-				ChannelUsageFields: channelUsageFields,
-			}); err != nil {
-				logger.L().With(
-					zap.String("component", "handler.deepseek_gateway.responses"),
-					zap.Int64("user_id", subject.UserID),
-					zap.Int64("api_key_id", apiKey.ID),
-					zap.Any("group_id", apiKey.GroupID),
-					zap.String("model", reqModel),
-					zap.Int64("account_id", account.ID),
-				).Error("deepseek_gateway.record_usage_failed", zap.Error(err))
-			}
-		})
+		h.submitForwardUsage(c, usageCtx, account, result)
 		return
 	}
 }
@@ -947,4 +884,87 @@ func truncateDeepSeekUpstreamMessage(message string) string {
 		return message
 	}
 	return message[:300] + "..."
+}
+
+// deepseekForwardUsageContext 聚合一次转发的计费上下文，供成功路径与流中断路径共用同一份 RecordUsage 提交逻辑。
+type deepseekForwardUsageContext struct {
+	component      string
+	apiKey         *service.APIKey
+	subscription   *service.UserSubscription
+	userID         int64
+	reqModel       string
+	channelMapping service.ChannelMappingResult
+	body           []byte
+}
+
+// submitForwardUsage 异步提交 RecordUsage；成功路径与客户端断开后的流中断路径都走这里，保证计费口径一致。
+func (h *DeepSeekGatewayHandler) submitForwardUsage(c *gin.Context, uc deepseekForwardUsageContext, account *service.Account, result *service.ForwardResult) {
+	if result == nil || account == nil || uc.apiKey == nil {
+		return
+	}
+	apiKey := uc.apiKey
+	userAgent := c.GetHeader("User-Agent")
+	clientIP := ip.GetClientIP(c)
+	requestPayloadHash := service.HashUsageRequestPayload(uc.body)
+	inboundEndpoint := GetInboundEndpoint(c)
+	upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
+	quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+	channelUsageFields := clientRequestedUsageFields(c, uc.channelMapping, uc.reqModel, result.UpstreamModel)
+
+	h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
+		if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
+			Result:             result,
+			QuotaPlatform:      quotaPlatform,
+			APIKey:             apiKey,
+			User:               apiKey.User,
+			Account:            account,
+			Subscription:       uc.subscription,
+			InboundEndpoint:    inboundEndpoint,
+			UpstreamEndpoint:   upstreamEndpoint,
+			UserAgent:          userAgent,
+			IPAddress:          clientIP,
+			RequestPayloadHash: requestPayloadHash,
+			APIKeyService:      h.apiKeyService,
+			ChannelUsageFields: channelUsageFields,
+		}); err != nil {
+			logger.L().With(
+				zap.String("component", uc.component),
+				zap.Int64("user_id", uc.userID),
+				zap.Int64("api_key_id", apiKey.ID),
+				zap.Any("group_id", apiKey.GroupID),
+				zap.String("model", uc.reqModel),
+				zap.Int64("account_id", account.ID),
+			).Error("deepseek_gateway.record_usage_failed", zap.Error(err))
+		}
+	})
+}
+
+// handleInterruptedForward 处理响应已提交后 Forward 返回错误的情形：
+// result != nil 表示上游已产生（可能是部分）usage，按成功路径计费；
+// result == nil 表示没有任何 usage 对象，只记录告警，不凭空计费。
+func (h *DeepSeekGatewayHandler) handleInterruptedForward(c *gin.Context, uc deepseekForwardUsageContext, account *service.Account, result *service.ForwardResult, err error, streamStarted bool) {
+	if result != nil {
+		h.submitForwardUsage(c, uc, account, result)
+		return
+	}
+	var accountID int64
+	if account != nil {
+		accountID = account.ID
+	}
+	var apiKeyID int64
+	var groupID *int64
+	if uc.apiKey != nil {
+		apiKeyID = uc.apiKey.ID
+		groupID = uc.apiKey.GroupID
+	}
+	logger.L().With(
+		zap.String("component", uc.component),
+		zap.Int64("user_id", uc.userID),
+		zap.Int64("api_key_id", apiKeyID),
+		zap.Any("group_id", groupID),
+		zap.String("model", uc.reqModel),
+		zap.Int64("account_id", accountID),
+		zap.Bool("stream_started", streamStarted),
+		zap.Bool("response_written", c.Writer.Written()),
+	).Warn("deepseek_gateway.stream_interrupted_without_usage", zap.Error(err))
 }

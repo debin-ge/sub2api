@@ -77,7 +77,8 @@ func TestSessionBindingContextSnapshotsForwardedModeAndHeaders(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/t", nil)
-	req.RemoteAddr = "9.9.9.9:12345"
+	// 反代与应用同 Docker 网络：直连对端为内网地址，默认可信
+	req.RemoteAddr = "172.18.0.2:12345"
 	req.Header.Set("X-Initial-IP", "1.2.3.4")
 	req.Header.Set("X-Changed-IP", "4.4.4.4")
 	req.Header.Set("X-Real-IP", "8.8.8.8")
@@ -87,6 +88,56 @@ func TestSessionBindingContextSnapshotsForwardedModeAndHeaders(t *testing.T) {
 	runtimeSettings := cfg.ForwardedClientIPSettings()
 	require.False(t, runtimeSettings.TrustForwardedIP)
 	require.Equal(t, []string{"X-Changed-IP"}, runtimeSettings.Headers)
+}
+
+// SEC-002：兼容模式下只有可信直连对端发来的转发头才会被采纳。
+// 未配置 server.trusted_proxies 时默认信任内网/回环对端；配置后仅信任列表。
+func TestSessionBindingContextAppliesTrustedProxyPolicy(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	for _, tc := range []struct {
+		name           string
+		trustedProxies []string
+		configured     bool
+		remoteAddr     string
+		wantIP         string
+	}{
+		{name: "unconfigured: public peer cannot forge headers", remoteAddr: "9.9.9.9:12345", wantIP: "9.9.9.9"},
+		{name: "unconfigured: private peer headers are honored", remoteAddr: "172.18.0.2:12345", wantIP: "1.2.3.4"},
+		{name: "configured: peer outside the list is untrusted", trustedProxies: []string{"10.0.0.0/8"}, configured: true, remoteAddr: "172.18.0.2:12345", wantIP: "172.18.0.2"},
+		{name: "configured: peer inside the list is trusted", trustedProxies: []string{"10.0.0.0/8"}, configured: true, remoteAddr: "10.0.0.5:12345", wantIP: "1.2.3.4"},
+		{name: "configured: explicit empty list trusts nobody", trustedProxies: []string{}, configured: true, remoteAddr: "127.0.0.1:12345", wantIP: "127.0.0.1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &config.Config{Server: config.ServerConfig{
+				TrustedProxies:           tc.trustedProxies,
+				TrustedProxiesConfigured: tc.configured,
+			}}
+			cfg.SetTrustForwardedIPForAPIKeyACL(true)
+
+			r := gin.New()
+			require.NoError(t, r.SetTrustedProxies(nil))
+			r.Use(SessionBindingContext(cfg))
+			r.GET("/t", func(c *gin.Context) {
+				binding := service.SessionBindingFromContext(c.Request.Context())
+				require.NotNil(t, binding)
+				require.Equal(t, tc.wantIP, binding.IP)
+				require.Equal(t, tc.wantIP, SecurityClientIP(c))
+				require.Equal(t, tc.wantIP, ip.GetClientIP(c), "logs and security paths must agree")
+				c.Status(200)
+			})
+
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest("GET", "/t", nil)
+			req.RemoteAddr = tc.remoteAddr
+			req.Header.Set("X-Forwarded-For", "1.2.3.4")
+			req.Header.Set("X-Real-IP", "1.2.3.4")
+			req.Header.Set("CF-Connecting-IP", "1.2.3.4")
+			r.ServeHTTP(w, req)
+
+			require.Equal(t, 200, w.Code)
+		})
+	}
 }
 
 func TestSessionBindingContextBoundsPersistedUserAgent(t *testing.T) {

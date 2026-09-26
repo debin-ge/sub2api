@@ -6,6 +6,13 @@ import "strings"
 const (
 	SortOrderAsc  = "asc"
 	SortOrderDesc = "desc"
+
+	// DefaultPageSize 未指定或非法 page_size 时的默认每页条数。
+	DefaultPageSize = 20
+	// MaxPageSize 单页条数上限：超出会被截断，避免一次查询拖出整张表。
+	MaxPageSize = 1000
+	// MaxPage 页码上限：超出会被截断，避免 OFFSET 被推到天文数字触发全表扫描。
+	MaxPage = 10000
 )
 
 // PaginationParams 分页参数
@@ -33,23 +40,38 @@ func DefaultPagination() PaginationParams {
 	}
 }
 
-// Offset 计算偏移量
-func (p PaginationParams) Offset() int {
+// NormalizedPage 返回夹在 [1, MaxPage] 内的页码。
+func (p PaginationParams) NormalizedPage() int {
 	if p.Page < 1 {
-		p.Page = 1
+		return 1
 	}
-	return (p.Page - 1) * p.Limit()
+	if p.Page > MaxPage {
+		return MaxPage
+	}
+	return p.Page
 }
 
-// Limit 获取限制数
+// Offset 计算偏移量（页码与每页条数均先做上下限归一）。
+func (p PaginationParams) Offset() int {
+	return (p.NormalizedPage() - 1) * p.Limit()
+}
+
+// Limit 获取限制数：非法值回落到 DefaultPageSize，超出 MaxPageSize 截断。
 func (p PaginationParams) Limit() int {
 	if p.PageSize < 1 {
-		return 20
+		return DefaultPageSize
 	}
-	if p.PageSize > 1000 {
-		return 1000
+	if p.PageSize > MaxPageSize {
+		return MaxPageSize
 	}
 	return p.PageSize
+}
+
+// Normalized 返回 Page/PageSize 已归一到合法区间的副本，供需要回显分页参数的调用方使用。
+func (p PaginationParams) Normalized() PaginationParams {
+	p.Page = p.NormalizedPage()
+	p.PageSize = p.Limit()
+	return p
 }
 
 // NormalizeSortOrder normalizes sort order to asc/desc and falls back to defaultOrder.

@@ -24,6 +24,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/httpclient"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/servertiming"
+	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 )
 
 const (
@@ -501,15 +502,18 @@ type ContentModerationHashCache interface {
 }
 
 type ContentModerationService struct {
-	settingRepo              SettingRepository
-	repo                     ContentModerationRepository
-	hashCache                ContentModerationHashCache
-	groupRepo                GroupRepository
-	userRepo                 UserRepository
-	proxyRepo                ProxyRepository
-	authCacheInvalidator     APIKeyAuthCacheInvalidator
-	emailService             *EmailService
-	httpClient               *http.Client
+	settingRepo          SettingRepository
+	repo                 ContentModerationRepository
+	hashCache            ContentModerationHashCache
+	groupRepo            GroupRepository
+	userRepo             UserRepository
+	proxyRepo            ProxyRepository
+	authCacheInvalidator APIKeyAuthCacheInvalidator
+	emailService         *EmailService
+	httpClient           *http.Client
+	// allowPrivateTestTargets 仅供测试：放开“测试连接”路径对私网/回环目标的阻断，
+	// 以便用 httptest 本地服务器覆盖 TestAPIKeys。生产路径始终为 false。
+	allowPrivateTestTargets  bool
 	moderationProxyCache     atomic.Pointer[moderationProxyURLCacheEntry]
 	asyncQueue               chan contentModerationTask
 	workerCount              int
@@ -755,8 +759,25 @@ func (s *ContentModerationService) TestAPIKeys(ctx context.Context, input TestCo
 		keys = cfg.apiKeys()
 		configured = true
 	}
-	if strings.TrimSpace(input.BaseURL) != "" {
-		cfg.BaseURL = input.BaseURL
+	// 调用者临时指定了与已保存配置不同的 Base URL 时：
+	//   1. 必须同时显式提供 API Key——否则等于把已保存的密钥送往任意地址（凭据外泄）；
+	//   2. 不论全局 security.url_allowlist.allow_private_hosts 如何配置，都不允许指向
+	//      私网/回环/链路本地/云元数据地址——被劫持的管理员会话不能把服务当作内网探针。
+	// 与已保存配置相同的 URL 不受上述限制：运行时本就会请求该地址，测试并未扩大可达范围。
+	untrustedTarget := false
+	if requested := strings.TrimSpace(input.BaseURL); requested != "" {
+		if !sameModerationBaseURL(requested, cfg.BaseURL) {
+			if configured {
+				return nil, infraerrors.BadRequest("BASE_URL_OVERRIDE_REQUIRES_EXPLICIT_KEYS", "更换 Base URL 测试时必须显式提供 API Key，不能沿用已保存的密钥")
+			}
+			validated, err := urlvalidator.ValidateHTTPURL(requested, true, urlvalidator.ValidationOptions{AllowPrivate: s.allowPrivateTestTargets})
+			if err != nil {
+				return nil, infraerrors.BadRequest("INVALID_CONTENT_MODERATION_BASE_URL", fmt.Sprintf("测试用 Base URL 不被允许: %v", err))
+			}
+			requested = validated
+			untrustedTarget = true
+		}
+		cfg.BaseURL = requested
 	}
 	if strings.TrimSpace(input.Model) != "" {
 		cfg.Model = input.Model
@@ -791,12 +812,17 @@ func (s *ContentModerationService) TestAPIKeys(ctx context.Context, input TestCo
 	if len(keys) == 0 {
 		return &TestContentModerationAPIKeysResult{Items: []ContentModerationAPIKeyStatus{}, ImageCount: imageCount}, nil
 	}
+	client, releaseClient, err := s.moderationTestHTTPClient(ctx, cfg, untrustedTarget)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseClient()
 	items := make([]ContentModerationAPIKeyStatus, 0, len(keys))
 	var auditResult *ContentModerationTestAuditResult
 	for idx, key := range keys {
 		start := time.Now()
 		httpStatus := 0
-		result, err := s.callModerationOnceWithInput(ctx, cfg, key, testInput, &httpStatus)
+		result, err := s.callModerationOnceWithClient(ctx, cfg, key, testInput, &httpStatus, client)
 		latency := int(time.Since(start).Milliseconds())
 		keyHash := moderationAPIKeyHash(key)
 		if err != nil {
@@ -1737,6 +1763,17 @@ func (s *ContentModerationService) callModeration(ctx context.Context, cfg *Cont
 }
 
 func (s *ContentModerationService) callModerationOnceWithInput(ctx context.Context, cfg *ContentModerationConfig, apiKey string, input any, httpStatus *int) (*moderationAPIResult, error) {
+	client, err := s.moderationHTTPClient(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return s.callModerationOnceWithClient(ctx, cfg, apiKey, input, httpStatus, client)
+}
+
+func (s *ContentModerationService) callModerationOnceWithClient(ctx context.Context, cfg *ContentModerationConfig, apiKey string, input any, httpStatus *int, client *http.Client) (*moderationAPIResult, error) {
+	if client == nil {
+		return nil, errors.New("moderation http client unavailable")
+	}
 	base := strings.TrimRight(cfg.BaseURL, "/")
 	endpoint, err := url.JoinPath(base, "/v1/moderations")
 	if err != nil {
@@ -1761,10 +1798,6 @@ func (s *ContentModerationService) callModerationOnceWithInput(ctx context.Conte
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	client, err := s.moderationHTTPClient(ctx, cfg)
-	if err != nil {
-		return nil, err
-	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -1817,6 +1850,68 @@ func (s *ContentModerationService) moderationHTTPClient(ctx context.Context, cfg
 		return nil, fmt.Errorf("build moderation proxy client: %w", err)
 	}
 	return client, nil
+}
+
+// moderationTestHTTPClient 返回“测试连接”（TestAPIKeys）路径使用的 HTTP 客户端及其释放函数。
+//
+// 目标为调用者临时指定（untrustedTarget）且直连时，不复用共享客户端，而是构建一个以
+// urlvalidator.SafeDialContext 建连的一次性客户端：在 socket 层对解析后的真实 IP 再做一次
+// 私网/元数据阻断，并保证“被校验的 IP”就是“实际连接的 IP”，堵住 DNS rebinding 绕过字面量校验
+// 的时间窗；同时不继承环境代理，否则目的地会由代理解析而绕过校验。
+// 经管理员配置的代理访问时，目的地由代理解析，沿用共享代理客户端（字面量校验已在入口完成）。
+func (s *ContentModerationService) moderationTestHTTPClient(ctx context.Context, cfg *ContentModerationConfig, untrustedTarget bool) (*http.Client, func(), error) {
+	if !untrustedTarget || cfg == nil || cfg.ProxyID != nil {
+		client, err := s.moderationHTTPClient(ctx, cfg)
+		return client, func() {}, err
+	}
+	transport := &http.Transport{
+		Proxy:                 nil,
+		DialContext:           urlvalidator.SafeDialContext(s.allowPrivateTestTargets),
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          4,
+		IdleConnTimeout:       30 * time.Second,
+		TLSHandshakeTimeout:   5 * time.Second,
+		ExpectContinueTimeout: time.Second,
+	}
+	client := servertiming.InstrumentClient(&http.Client{Transport: transport})
+	return client, transport.CloseIdleConnections, nil
+}
+
+// sameModerationBaseURL 判断两个 Base URL 是否指向同一目标：scheme/host 不区分大小写，
+// 忽略末尾斜杠；userinfo/query/fragment 任一不同即视为不同（会进入“临时目标”校验路径）。
+// 任一方无法解析时退化为去掉末尾斜杠后的字符串比较。
+func sameModerationBaseURL(a, b string) bool {
+	ka, okA := moderationBaseURLCompareKey(a)
+	kb, okB := moderationBaseURLCompareKey(b)
+	if !okA || !okB {
+		return strings.TrimRight(strings.TrimSpace(a), "/") == strings.TrimRight(strings.TrimSpace(b), "/")
+	}
+	return ka == kb
+}
+
+func moderationBaseURLCompareKey(raw string) (string, bool) {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", false
+	}
+	var b strings.Builder
+	b.WriteString(strings.ToLower(parsed.Scheme))
+	b.WriteString("://")
+	if parsed.User != nil {
+		b.WriteString(parsed.User.String())
+		b.WriteString("@")
+	}
+	b.WriteString(strings.ToLower(parsed.Host))
+	b.WriteString(strings.TrimRight(parsed.Path, "/"))
+	if parsed.RawQuery != "" {
+		b.WriteString("?")
+		b.WriteString(parsed.RawQuery)
+	}
+	if parsed.Fragment != "" {
+		b.WriteString("#")
+		b.WriteString(parsed.Fragment)
+	}
+	return b.String(), true
 }
 
 func (s *ContentModerationService) resolveModerationProxyURL(ctx context.Context, proxyID int64) (string, error) {

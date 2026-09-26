@@ -23,6 +23,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 )
 
 const (
@@ -396,16 +397,29 @@ func (s *BackupService) UpdateS3Config(ctx context.Context, cfg BackupS3Config) 
 }
 
 func (s *BackupService) TestS3Connection(ctx context.Context, cfg BackupS3Config) error {
-	// 如果没提供 secret，用已保存的
-	if cfg.SecretAccessKey == "" {
-		old, _ := s.loadS3Config(ctx)
-		if old != nil {
-			cfg.SecretAccessKey = old.SecretAccessKey
+	stored, _ := s.loadS3Config(ctx)
+
+	// 如果没提供 secret，用已保存的——但此时目标（端点/区域/桶/AK）必须与已保存配置完全一致：
+	// 否则等于用已保存的密钥向调用者临时指定的地址发起签名请求（凭据外泄 + 内网探测）。
+	if cfg.SecretAccessKey == "" && stored != nil && stored.SecretAccessKey != "" {
+		if !sameBackupS3Target(cfg, *stored) {
+			return errors.New("changing the endpoint requires providing the secret: endpoint/region/bucket/access_key_id differ from the saved S3 config")
 		}
+		cfg.SecretAccessKey = stored.SecretAccessKey
 	}
 
 	if cfg.Bucket == "" || cfg.AccessKeyID == "" || cfg.SecretAccessKey == "" {
 		return fmt.Errorf("incomplete S3 config: bucket, access_key_id, secret_access_key are required")
+	}
+
+	// 私网 S3 端点（MinIO、内网对象存储）对部分运营者是合法配置，因此不能一律阻断；
+	// 只在端点与已保存配置不同（即调用者临时指定的目标）时拒绝私网/回环/链路本地/云元数据地址，
+	// 且不受全局 allow_private_hosts 影响——被劫持的管理员会话不能借“测试连接”探测内网。
+	// 首次配置私网端点的运营者需先保存（PUT 受 step-up 保护）再测试。
+	if endpoint := strings.TrimSpace(cfg.Endpoint); endpoint != "" && (stored == nil || !sameBackupS3Endpoint(endpoint, stored.Endpoint)) {
+		if _, err := urlvalidator.ValidateHTTPURL(endpoint, true, urlvalidator.ValidationOptions{AllowPrivate: false}); err != nil {
+			return fmt.Errorf("s3 endpoint is not allowed for a connection test (save the config first to test a private endpoint): %w", err)
+		}
 	}
 
 	store, err := s.storeFactory(ctx, &cfg)
@@ -413,6 +427,20 @@ func (s *BackupService) TestS3Connection(ctx context.Context, cfg BackupS3Config
 		return err
 	}
 	return store.HeadBucket(ctx)
+}
+
+// sameBackupS3Endpoint 忽略首尾空白与末尾斜杠后精确比较两个端点。
+func sameBackupS3Endpoint(a, b string) bool {
+	return strings.TrimRight(strings.TrimSpace(a), "/") == strings.TrimRight(strings.TrimSpace(b), "/")
+}
+
+// sameBackupS3Target 判断请求中的目标四元组（端点/区域/桶/AK）是否与已保存配置一致。
+// 用于决定“沿用已保存 secret 测试”是否安全。
+func sameBackupS3Target(req, stored BackupS3Config) bool {
+	return sameBackupS3Endpoint(req.Endpoint, stored.Endpoint) &&
+		strings.TrimSpace(req.Region) == strings.TrimSpace(stored.Region) &&
+		strings.TrimSpace(req.Bucket) == strings.TrimSpace(stored.Bucket) &&
+		strings.TrimSpace(req.AccessKeyID) == strings.TrimSpace(stored.AccessKeyID)
 }
 
 // ─── 定时备份管理 ───

@@ -25,8 +25,12 @@ import (
 
 type countTokensRuntimeStateRepo struct {
 	AccountRepository
-	tempUnschedCalls int
-	setErrorCalls    int
+	tempUnschedCalls    int
+	setErrorCalls       int
+	rateLimitedCalls    int
+	modelRateLimitCalls int
+	overloadedCalls     int
+	updateExtraCalls    int
 }
 
 func (r *countTokensRuntimeStateRepo) SetTempUnschedulable(_ context.Context, _ int64, _ time.Time, _ string) error {
@@ -37,6 +41,137 @@ func (r *countTokensRuntimeStateRepo) SetTempUnschedulable(_ context.Context, _ 
 func (r *countTokensRuntimeStateRepo) SetError(_ context.Context, _ int64, _ string) error {
 	r.setErrorCalls++
 	return nil
+}
+
+func (r *countTokensRuntimeStateRepo) SetRateLimited(_ context.Context, _ int64, _ time.Time) error {
+	r.rateLimitedCalls++
+	return nil
+}
+
+func (r *countTokensRuntimeStateRepo) SetModelRateLimit(_ context.Context, _ int64, _ string, _ time.Time, _ ...string) error {
+	r.modelRateLimitCalls++
+	return nil
+}
+
+func (r *countTokensRuntimeStateRepo) SetOverloaded(_ context.Context, _ int64, _ time.Time) error {
+	r.overloadedCalls++
+	return nil
+}
+
+func (r *countTokensRuntimeStateRepo) UpdateExtra(_ context.Context, _ int64, _ map[string]any) error {
+	r.updateExtraCalls++
+	return nil
+}
+
+// mutationCalls 汇总所有会改动账号调度状态的仓储调用次数。
+func (r *countTokensRuntimeStateRepo) mutationCalls() int {
+	return r.tempUnschedCalls + r.setErrorCalls + r.rateLimitedCalls + r.modelRateLimitCalls + r.overloadedCalls + r.updateExtraCalls
+}
+
+// SEC-009：count_tokens / input_tokens 是零计费只读路径，上游 429/5xx 只能观测，
+// 不得把共享账号标成限流 / 过载 / 临时停调。
+func TestOpenAIGatewayService_CountTokensUpstream429And5xxDoNotMutateAccountState(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	anthropicBody := []byte(`{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hello"}]}`)
+	responsesBody := []byte(`{"model":"gpt-5.4","input":"hello"}`)
+	newAPIKeyAccount := func(baseURL string) *Account {
+		creds := map[string]any{"api_key": "sk-test"}
+		if baseURL != "" {
+			creds["base_url"] = baseURL
+		}
+		return &Account{
+			ID:          303,
+			Name:        "openai-apikey",
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Concurrency: 1,
+			Credentials: creds,
+			Status:      StatusActive,
+			Schedulable: true,
+		}
+	}
+
+	for _, tt := range []struct {
+		name       string
+		statusCode int
+		body       string
+		headers    http.Header
+	}{
+		{
+			name:       "429_rate_limited",
+			statusCode: http.StatusTooManyRequests,
+			body:       `{"error":{"type":"rate_limit_exceeded","code":"rate_limit_exceeded","message":"Rate limit reached"}}`,
+			headers:    http.Header{"Content-Type": []string{"application/json"}, "Retry-After": []string{"30"}},
+		},
+		{
+			name:       "503_upstream_unavailable",
+			statusCode: http.StatusServiceUnavailable,
+			body:       `{"error":{"type":"server_error","message":"overloaded"}}`,
+			headers:    http.Header{"Content-Type": []string{"application/json"}},
+		},
+		{
+			name:       "529_overloaded",
+			statusCode: 529,
+			body:       `{"error":{"type":"overloaded_error","message":"Overloaded"}}`,
+			headers:    http.Header{"Content-Type": []string{"application/json"}},
+		},
+	} {
+		t.Run("count_tokens_"+tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens", bytes.NewReader(anthropicBody))
+			c.Request.Header.Set("Content-Type", "application/json")
+
+			upstream := &httpUpstreamRecorder{resp: &http.Response{
+				StatusCode: tt.statusCode,
+				Header:     tt.headers,
+				Body:       io.NopCloser(strings.NewReader(tt.body)),
+			}}
+			repo := &countTokensRuntimeStateRepo{}
+			svc := &OpenAIGatewayService{
+				cfg: &config.Config{Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{
+					Enabled:           false,
+					AllowInsecureHTTP: true,
+				}}},
+				httpUpstream:     upstream,
+				rateLimitService: &RateLimitService{accountRepo: repo, cfg: &config.Config{}},
+			}
+
+			err := svc.ForwardCountTokensAsAnthropic(context.Background(), c, newAPIKeyAccount("http://upstream.example"), anthropicBody, "gpt-5.4")
+			require.Error(t, err)
+			require.Equal(t, tt.statusCode, rec.Code)
+			require.NotNil(t, upstream.lastReq, "must have reached upstream")
+			require.Zero(t, repo.mutationCalls(), "count_tokens upstream %d must not mutate account state: %+v", tt.statusCode, repo)
+		})
+
+		t.Run("responses_input_tokens_"+tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses/input_tokens", bytes.NewReader(responsesBody))
+			c.Request.Header.Set("Content-Type", "application/json")
+
+			upstream := &httpUpstreamRecorder{resp: &http.Response{
+				StatusCode: tt.statusCode,
+				Header:     tt.headers,
+				Body:       io.NopCloser(strings.NewReader(tt.body)),
+			}}
+			repo := &countTokensRuntimeStateRepo{}
+			svc := &OpenAIGatewayService{
+				cfg:              &config.Config{},
+				httpUpstream:     upstream,
+				rateLimitService: &RateLimitService{accountRepo: repo, cfg: &config.Config{}},
+			}
+
+			// 空 base_url → api.openai.com，才会真的转发（自定义中继一律本地估算）。
+			err := svc.ForwardResponsesInputTokens(context.Background(), c, newAPIKeyAccount(""), responsesBody)
+			require.Error(t, err)
+			require.Equal(t, tt.statusCode, rec.Code)
+			require.NotNil(t, upstream.lastReq, "must have reached upstream")
+			require.Equal(t, "https://api.openai.com/v1/responses/input_tokens", upstream.lastReq.URL.String())
+			require.Zero(t, repo.mutationCalls(), "input_tokens upstream %d must not mutate account state: %+v", tt.statusCode, repo)
+		})
+	}
 }
 
 func TestOpenAIGatewayService_ForwardCountTokensAsAnthropic_APIKeyUsesResponsesInputTokens(t *testing.T) {

@@ -100,11 +100,14 @@ webauthn:
 # - simple: 隐藏 SaaS 功能，跳过计费和余额校验
 run_mode: "standard"
 
-# VIP/fallback runtime rollout. Omitted values default to AUDIT_ONLY; unknown
+# VIP/fallback runtime rollout. Omitted values default to ENFORCE; unknown
 # explicit values are rejected.
-# Phase A: AUDIT_ONLY records would-deny without changing existing traffic.
-# Phase B: ENFORCE rejects the new VIP/fallback authorization failures.
-group_access_runtime_mode: "AUDIT_ONLY"
+# AUDIT_ONLY only logs would-deny decisions, which effectively lets non-VIP keys
+# keep using vip_only groups. Use it for a short observation window only.
+# ENFORCE rejects VIP/fallback authorization failures.
+# 省略时默认 ENFORCE。AUDIT_ONLY 只记日志不拦截，等价于放行非 VIP 用户使用 vip_only 分组，
+# 仅建议短期灰度观察时使用。
+group_access_runtime_mode: "ENFORCE"
 
 # Independent write-side gate. Keep false until every binary is upgraded and
 # runtime enforcement has been verified.
@@ -179,6 +182,12 @@ security:
   # forwarded_client_ip_headers:
   #   - "True-Client-IP"
   #   - "X-CDN-Client-IP"
+  # Max API keys a single user may own (including disabled ones). 0 = unlimited.
+  # 单个用户可持有的 API Key 总数上限（含已禁用），0 表示不限制。
+  max_api_keys_per_user: 100
+  # Max IP whitelist/blacklist entries per API key. 0 = unlimited.
+  # 单个 API Key 的 IP 白/黑名单条目数上限，0 表示不限制。
+  max_api_key_ip_rules: 200
   url_allowlist:
     # Enable URL allowlist validation (disable to skip all URL checks)
     # 启用 URL 白名单验证（禁用则跳过所有 URL 检查）
@@ -327,6 +336,17 @@ gateway:
   # Pure-text endpoint body limit (embeddings and alpha/search), default 32 MiB.
   # 纯文本端点请求体上限（embeddings、alpha/search），默认 32 MiB。
   text_max_body_size: 33554432
+  # Per-user RPM for zero-cost token-count endpoints (count_tokens / input_tokens).
+  # These endpoints hold no concurrency slot and cost nothing, so this is the only
+  # gate that stops them from pushing shared accounts into upstream 429. 0 = off.
+  # count_tokens / input_tokens 这类零计费端点的单用户每分钟请求数上限，0 表示关闭。
+  token_count_rpm: 60
+  # Max `n` (images per request) accepted by /v1/images; larger values get 400. 0 = unlimited.
+  # /v1/images 单次请求 n（生成张数）上限，超出返回 400；0 表示不限制。
+  images_max_n: 10
+  # Max pending (non-terminal) async image tasks per user; extra submissions get 429. 0 = unlimited.
+  # 单用户同时挂起的异步生图任务数上限，超出返回 429；0 表示不限制。
+  images_max_pending_per_user: 20
   # Max bytes to read for non-stream upstream responses (default: 8MB)
   # 非流式上游响应体读取上限（默认 8MB）
   upstream_response_read_max_bytes: 8388608
@@ -1022,10 +1042,22 @@ ops:
 # JWT 配置
 # =============================================================================
 jwt:
-  # IMPORTANT: Change this to a random string in production!
-  # 重要：生产环境中请更改为随机字符串！
-  # Generate with / 生成命令: openssl rand -hex 32
-  secret: "change-this-to-a-secure-random-string"
+  # Leave empty to auto-generate a random secret on first start and persist it in
+  # the database (recommended). If you set a value, generate it with
+  # `openssl rand -hex 32`. Known placeholders and weak values are rejected in
+  # release mode. The first secret seen is persisted and reused across restarts
+  # and instances; a later change in this file is ignored unless
+  # rotate_persisted_on_mismatch is true.
+  # 留空则首次启动自动生成随机密钥并持久化到数据库（推荐）。手工填写请用
+  # `openssl rand -hex 32` 生成；release 模式会拒绝已知占位串与弱口令。首次持久化后的
+  # 密钥会跨重启/多实例复用，之后修改此处不会生效，除非开启 rotate_persisted_on_mismatch。
+  secret: ""
+  # When true and the configured secret differs from the persisted one, the
+  # persisted secret is replaced by the configured value (all existing sessions
+  # become invalid). Set it only for a deliberate rotation, then turn it back off.
+  # 为 true 时，配置的密钥与库中持久化值不同会以配置为准覆盖（所有已登录会话失效）。
+  # 仅在有意轮换时临时开启，完成后关闭。
+  rotate_persisted_on_mismatch: false
   # Token expiration time in hours (max 168)
   # 令牌过期时间（小时，最大 168）
   expire_hour: 24

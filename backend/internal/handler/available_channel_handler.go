@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
@@ -12,10 +13,156 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/sync/singleflight"
 )
 
-// publicRecentCallsWindow 公开模型广场的调用量统计窗口。
-const publicRecentCallsWindow = 7 * 24 * time.Hour
+const (
+	// publicRecentCallsWindow 公开模型广场的调用量统计窗口。
+	publicRecentCallsWindow = 7 * 24 * time.Hour
+	// publicPlazaResponseCacheTTL 匿名广场响应的进程内缓存时长，与响应头
+	// Cache-Control: max-age=60 对齐：客户端可接受的陈旧度，服务端同样接受。
+	publicPlazaResponseCacheTTL = 60 * time.Second
+	// publicRecentCallsCacheTTL 近 7 天调用量聚合（usage_logs 上的 GROUP BY）的缓存时长；
+	// 匿名与登录态请求共享，登录态响应本身不缓存，但不必每次都重跑聚合。
+	publicRecentCallsCacheTTL = 5 * time.Minute
+	// publicPlazaAnonymousCacheKey 匿名响应缓存键。ListPublic 不读取任何查询参数、
+	// 语言或用户信息，匿名输出对所有请求相同；若日后引入影响输出的参数，须并入该键。
+	publicPlazaAnonymousCacheKey = "anonymous"
+)
+
+// publicPlazaCache 缓存匿名模型广场的最终响应体。匿名请求无需认证、输出与用户无关，
+// 每次重算都要跑渠道/分组/目录/定价/调用量五套查询，因此用 singleflight 合并并发
+// miss，并在 TTL 内直接复用；登录态响应含用户专属分组与倍率，不经此缓存。
+type publicPlazaCache struct {
+	now     func() time.Time
+	sf      singleflight.Group
+	mu      sync.Mutex
+	entries map[string]publicPlazaCacheEntry
+}
+
+type publicPlazaCacheEntry struct {
+	out       []userAvailableChannel
+	expiresAt time.Time
+}
+
+func newPublicPlazaCache(now func() time.Time) *publicPlazaCache {
+	if now == nil {
+		now = time.Now
+	}
+	return &publicPlazaCache{now: now, entries: make(map[string]publicPlazaCacheEntry)}
+}
+
+func (c *publicPlazaCache) lookup(key string) ([]userAvailableChannel, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	entry, ok := c.entries[key]
+	if !ok || !c.now().Before(entry.expiresAt) {
+		return nil, false
+	}
+	return entry.out, true
+}
+
+// get 返回 key 对应的缓存响应；未命中时由 build 生成，并发 miss 只执行一次 build。
+// c 为 nil 时不缓存（直接构建），便于直接以字面量构造 handler 的测试沿用旧行为。
+func (c *publicPlazaCache) get(key string, build func() ([]userAvailableChannel, error)) ([]userAvailableChannel, error) {
+	if c == nil {
+		return build()
+	}
+	if out, ok := c.lookup(key); ok {
+		return out, nil
+	}
+	v, err, _ := c.sf.Do(key, func() (any, error) {
+		// 排队等待期间前一次 build 可能已经落地，先复查再重算。
+		if out, ok := c.lookup(key); ok {
+			return out, nil
+		}
+		out, err := build()
+		if err != nil {
+			return nil, err
+		}
+		c.mu.Lock()
+		c.entries[key] = publicPlazaCacheEntry{out: out, expiresAt: c.now().Add(publicPlazaResponseCacheTTL)}
+		c.mu.Unlock()
+		return out, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	out, _ := v.([]userAvailableChannel)
+	return out, nil
+}
+
+// recentCallCountsCache 缓存近 7 天模型调用量聚合结果。窗口起点按 TTL 粒度对齐，
+// 同一粒度桶内所有请求共用一次查询；桶切换后重新聚合。
+type recentCallCountsCache struct {
+	now func() time.Time
+	sf  singleflight.Group
+
+	mu        sync.Mutex
+	windowKey int64
+	counts    map[string]int64
+	expiresAt time.Time
+}
+
+func newRecentCallCountsCache(now func() time.Time) *recentCallCountsCache {
+	if now == nil {
+		now = time.Now
+	}
+	return &recentCallCountsCache{now: now}
+}
+
+// window 返回当前请求应使用的聚合窗口起点及其缓存键。
+func (c *recentCallCountsCache) window(now time.Time) (time.Time, int64) {
+	since := now.UTC().Add(-publicRecentCallsWindow).Truncate(publicRecentCallsCacheTTL)
+	return since, since.Unix()
+}
+
+func (c *recentCallCountsCache) lookup(windowKey int64) (map[string]int64, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.counts == nil || c.windowKey != windowKey || !c.now().Before(c.expiresAt) {
+		return nil, false
+	}
+	return c.counts, true
+}
+
+// get 返回窗口内各模型调用量。c 为 nil 时直接查询（不缓存）。
+func (c *recentCallCountsCache) get(ctx context.Context, stats publicModelStatsProvider) (map[string]int64, error) {
+	if stats == nil {
+		return nil, nil
+	}
+	if c == nil {
+		return stats.GetPublicModelRecentCallCounts(ctx, time.Now().UTC().Add(-publicRecentCallsWindow))
+	}
+	since, windowKey := c.window(c.now())
+	if counts, ok := c.lookup(windowKey); ok {
+		return counts, nil
+	}
+	v, err, _ := c.sf.Do("recent_calls", func() (any, error) {
+		if counts, ok := c.lookup(windowKey); ok {
+			return counts, nil
+		}
+		// 与请求上下文解耦：一次聚合服务于所有并发等待者，不应被首个请求方的取消拖垮。
+		counts, err := stats.GetPublicModelRecentCallCounts(context.WithoutCancel(ctx), since)
+		if err != nil {
+			return nil, err
+		}
+		if counts == nil {
+			counts = map[string]int64{}
+		}
+		c.mu.Lock()
+		c.windowKey = windowKey
+		c.counts = counts
+		c.expiresAt = c.now().Add(publicRecentCallsCacheTTL)
+		c.mu.Unlock()
+		return counts, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	counts, _ := v.(map[string]int64)
+	return counts, nil
+}
 
 // publicModelStatsProvider 提供公开广场排序所需的近期调用量统计。
 type publicModelStatsProvider interface {
@@ -61,6 +208,12 @@ type AvailableChannelHandler struct {
 	modelStats      publicModelStatsProvider
 	billingFallback billingFallbackProvider
 	modelPrices     *service.PricingService
+
+	// now 供缓存 TTL 判定使用，测试可注入假时钟；nil 时为 time.Now。
+	now func() time.Time
+	// publicCache / recentCalls 为 nil 时不缓存（以字面量构造 handler 的测试沿用旧行为）。
+	publicCache *publicPlazaCache
+	recentCalls *recentCallCountsCache
 }
 
 // NewAvailableChannelHandler 创建用户侧可用渠道 handler。
@@ -77,7 +230,7 @@ func NewAvailableChannelHandler(
 	if modelCatalogService != nil {
 		modelCatalog = modelCatalogService
 	}
-	return &AvailableChannelHandler{
+	h := &AvailableChannelHandler{
 		channelService:  channelService,
 		apiKeyService:   apiKeyService,
 		settingService:  settingService,
@@ -86,6 +239,18 @@ func NewAvailableChannelHandler(
 		billingFallback: billingFallback,
 		modelPrices:     modelPrices,
 	}
+	h.useClock(time.Now)
+	return h
+}
+
+// useClock 以给定时钟初始化匿名响应缓存与调用量缓存；测试用它注入假时钟。
+func (h *AvailableChannelHandler) useClock(now func() time.Time) {
+	if now == nil {
+		now = time.Now
+	}
+	h.now = now
+	h.publicCache = newPublicPlazaCache(now)
+	h.recentCalls = newRecentCallCountsCache(now)
 }
 
 // featureEnabled 返回 available-channels 开关是否启用。默认关闭（opt-in）。
@@ -290,33 +455,63 @@ func (h *AvailableChannelHandler) ListPublic(c *gin.Context) {
 		return
 	}
 
-	var visibleCatalog map[int64]service.GroupCatalogEntry
-	var userRates map[int64]float64
-	if authenticated {
-		if h.apiKeyService == nil {
-			response.InternalError(c, "Model plaza user catalog is not configured")
-			return
-		}
-		catalog, err := h.apiKeyService.GetVisibleGroupCatalog(c.Request.Context(), subject.UserID)
+	c.Header("Vary", "Authorization")
+	if !authenticated {
+		// 匿名输出与用户无关：走进程内缓存，并发 miss 由 singleflight 合并为一次构建。
+		out, err := h.publicCache.get(publicPlazaAnonymousCacheKey, func() ([]userAvailableChannel, error) {
+			return h.buildAnonymousPlaza(context.WithoutCancel(c.Request.Context()))
+		})
 		if err != nil {
 			response.ErrorFrom(c, err)
 			return
 		}
-		visibleCatalog = make(map[int64]service.GroupCatalogEntry, len(catalog))
-		for i := range catalog {
-			visibleCatalog[catalog[i].ID] = catalog[i]
-		}
-		userRates, err = h.apiKeyService.GetUserGroupRates(c.Request.Context(), subject.UserID)
-		if err != nil {
-			slog.Warn("public plaza: user group rates query failed", "user_id", subject.UserID, "err", err)
-			userRates = nil
-		}
+		c.Header("Cache-Control", "public, max-age=60, stale-while-revalidate=300")
+		response.Success(c, out)
+		return
 	}
 
-	channels, err := h.channelService.ListPublicAvailable(c.Request.Context())
+	if h.apiKeyService == nil {
+		response.InternalError(c, "Model plaza user catalog is not configured")
+		return
+	}
+	catalog, err := h.apiKeyService.GetVisibleGroupCatalog(c.Request.Context(), subject.UserID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
+	}
+	visibleCatalog := make(map[int64]service.GroupCatalogEntry, len(catalog))
+	for i := range catalog {
+		visibleCatalog[catalog[i].ID] = catalog[i]
+	}
+	userRates, err := h.apiKeyService.GetUserGroupRates(c.Request.Context(), subject.UserID)
+	if err != nil {
+		slog.Warn("public plaza: user group rates query failed", "user_id", subject.UserID, "err", err)
+		userRates = nil
+	}
+
+	out, err := h.buildPlaza(c.Request.Context(), visibleCatalog, userRates)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	c.Header("Cache-Control", "private, no-store")
+	response.Success(c, out)
+}
+
+// buildAnonymousPlaza 构建匿名广场响应（仅公开分组、默认倍率）。
+func (h *AvailableChannelHandler) buildAnonymousPlaza(ctx context.Context) ([]userAvailableChannel, error) {
+	return h.buildPlaza(ctx, nil, nil)
+}
+
+// buildPlaza 构建广场响应：visibleCatalog 为 nil 表示匿名视图，否则按用户可见分组与专属倍率裁剪。
+func (h *AvailableChannelHandler) buildPlaza(
+	ctx context.Context,
+	visibleCatalog map[int64]service.GroupCatalogEntry,
+	userRates map[int64]float64,
+) ([]userAvailableChannel, error) {
+	channels, err := h.channelService.ListPublicAvailable(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	groupCatalogs := make(map[int64][]string)
@@ -324,34 +519,22 @@ func (h *AvailableChannelHandler) ListPublic(c *gin.Context) {
 	if h.modelCatalog != nil {
 		for _, ch := range channels {
 			visibleGroups := filterPlazaVisibleGroups(ch.Groups, visibleCatalog, userRates)
-			if err := h.resolveGroupCatalogs(
-				c.Request.Context(),
-				visibleGroups,
-				groupCatalogs,
-				resolvedGroups,
-			); err != nil {
-				response.ErrorFrom(c, err)
-				return
+			if err := h.resolveGroupCatalogs(ctx, visibleGroups, groupCatalogs, resolvedGroups); err != nil {
+				return nil, err
 			}
 		}
 	}
 
-	if authenticated {
-		c.Header("Cache-Control", "private, no-store")
-	} else {
-		c.Header("Cache-Control", "public, max-age=60, stale-while-revalidate=300")
-	}
-	c.Header("Vary", "Authorization")
 	var out []userAvailableChannel
-	if authenticated {
+	if visibleCatalog != nil {
 		out = buildPlazaAvailableChannels(h.channelService, groupCatalogs, channels, visibleCatalog, userRates)
 	} else {
 		out = buildPublicAvailableChannels(h.channelService, groupCatalogs, channels)
 	}
 	applyPlazaModelPricesToChannels(h.modelPrices, h.billingFallback, out)
 	applyPlazaMediaPricesToChannels(h.modelPrices, out)
-	applyRecentCallCounts(c.Request.Context(), h.modelStats, out)
-	response.Success(c, out)
+	h.applyRecentCallCounts(ctx, out)
+	return out, nil
 }
 
 func (h *AvailableChannelHandler) resolveGroupCatalogs(
@@ -517,16 +700,12 @@ func toUserMediaTierPrices(src []service.PlazaMediaTierPrice) []userMediaTierPri
 	return out
 }
 
-func applyRecentCallCounts(
-	ctx context.Context,
-	stats publicModelStatsProvider,
-	channels []userAvailableChannel,
-) {
-	if stats == nil || len(channels) == 0 {
+// applyRecentCallCounts 为广场模型附上近 7 天调用量；聚合结果经 recentCalls 缓存复用。
+func (h *AvailableChannelHandler) applyRecentCallCounts(ctx context.Context, channels []userAvailableChannel) {
+	if h.modelStats == nil || len(channels) == 0 {
 		return
 	}
-	since := time.Now().UTC().Add(-publicRecentCallsWindow)
-	counts, err := stats.GetPublicModelRecentCallCounts(ctx, since)
+	counts, err := h.recentCalls.get(ctx, h.modelStats)
 	if err != nil {
 		slog.Warn("public plaza: recent call counts query failed", "err", err)
 		return

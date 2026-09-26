@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -1917,9 +1918,29 @@ func TestVideoTaskServiceOpenContentResolvesRewrittenProviderPathAndOriginalURL(
 	require.NoError(t, err)
 	require.Same(t, task, byURL)
 
-	publicByURL, err := svc.GetContentTaskByURL(context.Background(), "/assets/render/final.mp4?token=signed&disposition=inline")
+	// 按 URL 反查只存在属主限定的版本：其他用户拿着同一条链接查不到任何任务。
+	_, err = svc.GetContentTaskByURLForOwner(context.Background(), task.UserID+1, "/assets/render/final.mp4?token=signed&disposition=inline")
+	require.ErrorIs(t, err, ErrVideoTaskNotFound)
+	_, hasOwnerless := reflect.TypeOf(svc).MethodByName("GetContentTaskByURL")
+	require.False(t, hasOwnerless, "ownerless content lookup by URL must not exist")
+}
+
+func TestVideoTaskServiceGetContentTaskByPublicIDValidatesIDShape(t *testing.T) {
+	svc, tasks, _ := newVideoTaskServiceForTest(&videoProviderStub{}, videoGroupForTest(SubscriptionTypeStandard), nil)
+	task := baseVideoWorkerTask()
+	tasks.task = task
+
+	loaded, err := svc.GetContentTaskByPublicID(context.Background(), " "+task.PublicID+" ")
 	require.NoError(t, err)
-	require.Same(t, task, publicByURL)
+	require.Same(t, task, loaded)
+
+	for _, invalid := range []string{"", "models", "video_short", "char_0123456789abcdef0123456789abcdef", "/etc/passwd"} {
+		_, err = svc.GetContentTaskByPublicID(context.Background(), invalid)
+		require.ErrorIs(t, err, ErrVideoTaskNotFound, "id=%q", invalid)
+	}
+	var nilService *VideoTaskService
+	_, err = nilService.GetContentTaskByPublicID(context.Background(), task.PublicID)
+	require.ErrorIs(t, err, ErrVideoTaskNotFound)
 }
 
 func TestVideoTaskServiceOpenContentRejectsInvalidProviderStatusAndClosesBody(t *testing.T) {

@@ -87,6 +87,46 @@ describe('HomeView compact mode', () => {
     expect(wrapper.find('[data-testid="compact-home"]').exists()).toBe(false)
   })
 
+  it('sanitizes custom HTML home content while keeping iframe embeds', () => {
+    const wrapper = mountHome({
+      home_content: [
+        '<section id="custom-home" class="hero" style="color: red">',
+        '<script>window.__homeXss = true</script>',
+        '<img src="x" onerror="window.__homeXss = true">',
+        '<a href="javascript:alert(1)" onclick="window.__homeXss = true">bad link</a>',
+        '<a href="https://example.com/docs" target="_blank" rel="noopener noreferrer">docs</a>',
+        '<iframe src="https://example.com/embed" title="Embed" allow="fullscreen" allowfullscreen',
+        ' frameborder="0" width="640" height="360" loading="lazy" referrerpolicy="no-referrer"',
+        ' sandbox="allow-scripts"></iframe>',
+        '<iframe id="bad-frame" src="javascript:alert(1)" title="Bad"></iframe>',
+        '</section>',
+      ].join(''),
+    })
+
+    const section = wrapper.get('#custom-home')
+    const html = section.html()
+    expect(html).not.toContain('<script')
+    expect(html).not.toContain('onerror')
+    expect(html).not.toContain('onclick')
+    expect(html).not.toContain('javascript:')
+    expect(section.attributes('class')).toBe('hero')
+    expect(section.attributes('style')).toBe('color: red')
+    expect(wrapper.get('a[href="https://example.com/docs"]').attributes('target')).toBe('_blank')
+
+    const frame = wrapper.get('iframe[title="Embed"]')
+    expect(frame.attributes('src')).toBe('https://example.com/embed')
+    expect(frame.attributes('allow')).toBe('fullscreen')
+    expect(frame.attributes()).toHaveProperty('allowfullscreen')
+    expect(frame.attributes('frameborder')).toBe('0')
+    expect(frame.attributes('width')).toBe('640')
+    expect(frame.attributes('height')).toBe('360')
+    expect(frame.attributes('loading')).toBe('lazy')
+    expect(frame.attributes('referrerpolicy')).toBe('no-referrer')
+    expect(frame.attributes('sandbox')).toBe('allow-scripts')
+
+    expect(wrapper.get('#bad-frame').attributes('src')).toBeUndefined()
+  })
+
   it('renders custom URL content ahead of compact mode', () => {
     const wrapper = mountHome({
       compact_home_enabled: true,

@@ -49,6 +49,10 @@ api.sub2api.com {
 		header_up X-Forwarded-For {remote_host}
 		header_up X-Forwarded-Proto {scheme}
 		header_up X-Forwarded-Host {host}
+		# 丢弃 CDN 专用客户端 IP 头：Caddy 直连公网时不存在可信 CDN，这些头只可能
+		# 由客户端伪造；后端已把它们排在 XFF / X-Real-IP 之后，但仍不应透传。
+		header_up -CF-Connecting-IP
+		header_up -True-Client-IP
 		# 连接池优化
 		transport http {
 			keepalive 120s

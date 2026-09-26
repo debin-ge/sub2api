@@ -205,6 +205,20 @@ WHERE batch_id = $1`, batchID, providerOutputRef, time.Now())
 	return nil
 }
 
+// UpdateBatchImageJobPricingSnapshot 为旧版（提交时未写定价快照）job 在结算阶段补写单价
+// 快照。只在快照尚不存在（pricing_snapshot_version < 1）时写入；已有快照的行不覆盖，
+// 并发结算或重复调用时静默返回 nil，避免把已固定的价格改掉。
+func (r *batchImageRepository) UpdateBatchImageJobPricingSnapshot(ctx context.Context, batchID string, billableUnitPrice float64, snapshotVersion int) error {
+	_, err := r.sql.ExecContext(ctx, `
+UPDATE batch_image_jobs
+SET billable_unit_price = $2, pricing_snapshot_version = $3, updated_at = $4
+WHERE batch_id = $1 AND pricing_snapshot_version < 1`, batchID, billableUnitPrice, snapshotVersion, time.Now())
+	if err != nil {
+		return translatePersistenceError(err, service.ErrBatchImageJobNotFound, nil)
+	}
+	return nil
+}
+
 func (r *batchImageRepository) UpdateBatchImageJobProviderSubmit(ctx context.Context, params service.UpdateBatchImageJobProviderSubmitParams) error {
 	if r.db == nil {
 		return r.updateBatchImageJobProviderSubmitWithSQL(ctx, r.sql, params)

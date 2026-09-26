@@ -3,6 +3,7 @@ package handler
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -35,6 +36,13 @@ const (
 	videoJSONBodyMaxBytes    = int64(1 << 20)
 	videoScalarFieldMaxBytes = int64(64 << 10)
 	videoMultipartMaxParts   = 64
+	// videoContentURLTTL 是签名内容链接的最长有效期；实际过期时间还会被任务内容
+	// 自身的过期时间（ContentExpiresAt）截断，二者取更早者。
+	videoContentURLTTL = 24 * time.Hour
+	// 签名内容链接只对这一条路由有效：签名消息里带上路由模板，换到别的路径即失效。
+	videoContentURLPathPrefix = "/v1/videos/"
+	videoContentURLPathSuffix = "/content/signed"
+	videoContentURLSignLabel  = "sub2api/video-content-url/v1\x00"
 )
 
 type videoTaskAPI interface {
@@ -42,8 +50,7 @@ type videoTaskAPI interface {
 	GetForOwner(context.Context, int64, string) (*service.VideoTask, error)
 	GetContentTaskForOwner(context.Context, int64, string) (*service.VideoTask, error)
 	GetContentTaskByURLForOwner(context.Context, int64, string) (*service.VideoTask, error)
-	GetContentTaskByURL(context.Context, string) (*service.VideoTask, error)
-	VideoURLForOwner(context.Context, int64, string) (string, error)
+	GetContentTaskByPublicID(context.Context, string) (*service.VideoTask, error)
 	ListForOwner(context.Context, int64, service.VideoTaskFilter) (*service.VideoTaskPage, error)
 	ListVideoModels(context.Context, *service.APIKey) (*service.VideoModelsResponse, error)
 	GetCharacterForOwner(context.Context, int64, string) (*service.VideoResource, error)
@@ -62,13 +69,14 @@ type videoGrokMediaHandler interface {
 }
 
 type VideoHandler struct {
-	tasks         videoTaskAPI
-	spool         *service.VideoSubmissionSpool
-	cfg           *config.Config
-	openAI        *OpenAIGatewayHandler
-	grok          videoGrokMediaHandler
-	webhooks      *service.VideoWebhookService
-	contentLimits *videoContentLimiter
+	tasks            videoTaskAPI
+	spool            *service.VideoSubmissionSpool
+	cfg              *config.Config
+	openAI           *OpenAIGatewayHandler
+	grok             videoGrokMediaHandler
+	webhooks         *service.VideoWebhookService
+	contentLimits    *videoContentLimiter
+	contentURLSigner *videoContentURLSigner
 }
 
 func NewVideoHandler(tasks *service.VideoTaskService, spool *service.VideoSubmissionSpool, cfg *config.Config, openAI *OpenAIGatewayHandler, webhooks *service.VideoWebhookService) *VideoHandler {
@@ -81,10 +89,11 @@ func NewVideoHandler(tasks *service.VideoTaskService, spool *service.VideoSubmis
 
 func newVideoHandler(tasks videoTaskAPI, spool *service.VideoSubmissionSpool, cfg *config.Config) *VideoHandler {
 	return &VideoHandler{
-		tasks:         tasks,
-		spool:         spool,
-		cfg:           cfg,
-		contentLimits: newVideoContentLimiter(cfg),
+		tasks:            tasks,
+		spool:            spool,
+		cfg:              cfg,
+		contentLimits:    newVideoContentLimiter(cfg),
+		contentURLSigner: newVideoContentURLSigner(cfg),
 	}
 }
 
@@ -404,7 +413,9 @@ func (h *VideoHandler) Retrieve(c *gin.Context) {
 	task, err := h.tasks.GetForOwner(c.Request.Context(), apiKey.UserID, videoPathID(c))
 	if err != nil {
 		if errors.Is(err, service.ErrVideoTaskNotFound) {
-			h.ContentURL(c)
+			// 改版前下发过的"上游同形"内容链接可能恰好落到本路由；只允许链接所属
+			// 用户本人取回，不存在无属主的反查路径。
+			h.contentByProviderURLForOwner(c, apiKey)
 			return
 		}
 		videoError(c, err)
@@ -597,12 +608,18 @@ func (h *VideoHandler) Content(c *gin.Context) {
 	})
 }
 
-func (h *VideoHandler) ContentURL(c *gin.Context) {
+// contentByProviderURLForOwner 处理改版前下发的"上游同形"内容链接：按请求 URI 反查
+// 归属于当前 API Key 用户的任务，再以该用户身份取回内容。
+func (h *VideoHandler) contentByProviderURLForOwner(c *gin.Context, apiKey *service.APIKey) {
 	startedAt := time.Now()
 	variant := "video"
 	defer func() {
 		observability.DefaultVideoMetrics().RecordContent(variant, c.Writer.Status(), time.Since(startedAt))
 	}()
+	if apiKey == nil || apiKey.UserID <= 0 {
+		videoError(c, service.ErrVideoTaskNotFound)
+		return
+	}
 	if !h.readEnabled(c) {
 		return
 	}
@@ -610,40 +627,59 @@ func (h *VideoHandler) ContentURL(c *gin.Context) {
 		videoError(c, service.ErrVideoDisabled)
 		return
 	}
-	task, err := h.tasks.GetContentTaskByURL(c.Request.Context(), c.Request.URL.RequestURI())
+	task, err := h.tasks.GetContentTaskByURLForOwner(c.Request.Context(), apiKey.UserID, c.Request.URL.RequestURI())
 	if err != nil {
 		videoError(c, err)
 		return
 	}
 	h.serveVideoContent(c, task, variant, true, func(ctx context.Context, request service.ProviderContentRequest) (*service.ProviderContent, error) {
-		return h.tasks.OpenContentForTask(ctx, task, request)
+		return h.tasks.OpenContentForOwner(ctx, apiKey.UserID, task.PublicID, request)
 	})
 }
 
-func (h *VideoHandler) PublicContentProxy(c *gin.Context) {
-	if c == nil {
+// SignedContent 提供签名内容链接对应的下载。链接不走 API Key 鉴权：URL 里的 exp/sig
+// 就是全部凭据，由任务属主在任务详情里拿到并自行分发。签名无效一律 404（不区分
+// "任务不存在"与"签名错误"），签名有效但已过期返回 410。
+func (h *VideoHandler) SignedContent(c *gin.Context) {
+	startedAt := time.Now()
+	variant := "video"
+	defer func() {
+		observability.DefaultVideoMetrics().RecordContent(variant, c.Writer.Status(), time.Since(startedAt))
+	}()
+	if h == nil || h.tasks == nil || h.cfg == nil || !h.cfg.Gateway.Video.Enabled || !h.cfg.Gateway.Video.ContentProxy.Enabled {
+		videoError(c, service.ErrVideoDisabled)
 		return
 	}
-	if h == nil || c.Request == nil ||
-		(c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead) ||
-		h.cfg == nil || !h.cfg.Gateway.Video.Enabled || !h.cfg.Gateway.Video.ContentProxy.Enabled || h.tasks == nil {
-		c.Next()
+	if c.Request == nil || (c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead) {
+		videoError(c, service.ErrVideoTaskNotFound)
 		return
 	}
-	task, err := h.tasks.GetContentTaskByURL(c.Request.Context(), c.Request.URL.RequestURI())
-	if errors.Is(err, service.ErrVideoTaskNotFound) {
-		c.Next()
+	publicID := strings.TrimSpace(videoPathID(c))
+	exp, err := strconv.ParseInt(strings.TrimSpace(c.Query("exp")), 10, 64)
+	if err != nil || !service.IsValidVideoTaskID(publicID) || !h.verifyVideoContentSignature(publicID, exp, c.Query("sig")) {
+		videoError(c, service.ErrVideoTaskNotFound)
 		return
 	}
+	if !time.Now().Before(time.Unix(exp, 0)) {
+		videoError(c, service.ErrVideoContentExpired)
+		return
+	}
+	task, err := h.tasks.GetContentTaskByPublicID(c.Request.Context(), publicID)
 	if err != nil {
 		videoError(c, err)
-		c.Abort()
 		return
 	}
-	h.serveVideoContent(c, task, "video", true, func(ctx context.Context, request service.ProviderContentRequest) (*service.ProviderContent, error) {
+	if task == nil || task.PublicID != publicID || task.DeleteState == service.VideoDeleteDeleted || task.DeletedAt != nil {
+		videoError(c, service.ErrVideoTaskNotFound)
+		return
+	}
+	if task.GenerationState != service.VideoGenerationCompleted || !hasVideoContentVariant(task.ContentVariants, variant) {
+		videoError(c, service.ErrVideoContentNotReady)
+		return
+	}
+	h.serveVideoContent(c, task, variant, true, func(ctx context.Context, request service.ProviderContentRequest) (*service.ProviderContent, error) {
 		return h.tasks.OpenContentForTask(ctx, task, request)
 	})
-	c.Abort()
 }
 
 type videoContentOpener func(context.Context, service.ProviderContentRequest) (*service.ProviderContent, error)
@@ -1605,12 +1641,10 @@ func (h *VideoHandler) projectTask(ctx context.Context, userID int64, task *serv
 	}
 	if response.Status == service.VideoGenerationCompleted && h.cfg != nil &&
 		h.cfg.Gateway.Video.ContentProxy.Enabled && hasVideoContentVariant(task.ContentVariants, "video") {
-		providerURL, err := h.tasks.VideoURLForOwner(ctx, userID, task.PublicID)
-		if err != nil {
-			return videoTaskResponse{}, err
-		}
-		if len(requests) > 0 && requests[0] != nil && providerURL != "" {
-			response.URL = rewriteVideoURLHost(providerURL, requests[0])
+		// 对外只下发带签名、会过期、且仅对签名路由有效的链接；上游原始 URL 不再以
+		// 任何形式暴露。签名密钥缺失或内容已过期时退回需要 API Key 的相对路径。
+		if len(requests) > 0 && requests[0] != nil {
+			response.URL = h.signedVideoContentURL(task, requests[0], time.Now())
 		}
 		if response.URL == "" {
 			response.URL = "/v1/videos/" + url.PathEscape(task.PublicID) + "/content"
@@ -1651,9 +1685,100 @@ func (h *VideoHandler) projectTask(ctx context.Context, userID int64, task *serv
 	return response, nil
 }
 
-func rewriteVideoURLHost(providerURL string, request *http.Request) string {
-	provider, err := url.Parse(strings.TrimSpace(providerURL))
-	if err != nil || provider.Hostname() == "" || request == nil {
+// videoContentURLSigner 用从 JWT secret 派生的独立密钥给内容链接做 HMAC-SHA256 签名。
+// 域分隔标签保证这里的签名不能与 JWT、内部回环标记等其他 HMAC 互换使用。
+type videoContentURLSigner struct {
+	key [sha256.Size]byte
+	ok  bool
+}
+
+func newVideoContentURLSigner(cfg *config.Config) *videoContentURLSigner {
+	signer := &videoContentURLSigner{}
+	if cfg == nil {
+		return signer
+	}
+	secret := strings.TrimSpace(cfg.JWT.Secret)
+	if secret == "" {
+		return signer
+	}
+	signer.key = sha256.Sum256([]byte(videoContentURLSignLabel + secret))
+	signer.ok = true
+	return signer
+}
+
+func (s *videoContentURLSigner) mac(publicID string, exp int64) []byte {
+	mac := hmac.New(sha256.New, s.key[:])
+	_, _ = io.WriteString(mac, videoContentURLPathPrefix+publicID+videoContentURLPathSuffix+"\n"+strconv.FormatInt(exp, 10))
+	return mac.Sum(nil)
+}
+
+// signVideoContentURL 返回 publicID 在 exp（Unix 秒）之前有效的十六进制签名；
+// 签名密钥不可用时返回空串，调用方据此不下发签名链接。
+func (h *VideoHandler) signVideoContentURL(publicID string, exp int64) string {
+	if h == nil || h.contentURLSigner == nil || !h.contentURLSigner.ok || publicID == "" || exp <= 0 {
+		return ""
+	}
+	return hex.EncodeToString(h.contentURLSigner.mac(publicID, exp))
+}
+
+// verifyVideoContentSignature 用常量时间比较校验签名。这里不检查过期时间，
+// 由调用方决定 404（签名无效）与 410（签名有效但过期）的区分。
+func (h *VideoHandler) verifyVideoContentSignature(publicID string, exp int64, sig string) bool {
+	if h == nil || h.contentURLSigner == nil || !h.contentURLSigner.ok || publicID == "" || exp <= 0 {
+		return false
+	}
+	sig = strings.TrimSpace(sig)
+	if len(sig) != hex.EncodedLen(sha256.Size) {
+		return false
+	}
+	decoded, err := hex.DecodeString(sig)
+	if err != nil || len(decoded) != sha256.Size {
+		return false
+	}
+	return hmac.Equal(decoded, h.contentURLSigner.mac(publicID, exp))
+}
+
+// videoContentURLExpiry 计算签名链接的过期时间：now+TTL 与任务内容过期时间取更早者；
+// 内容已经过期时返回 0，调用方据此不再下发链接。
+func videoContentURLExpiry(task *service.VideoTask, now time.Time) int64 {
+	exp := now.Add(videoContentURLTTL)
+	if task != nil && task.ContentExpiresAt != nil && task.ContentExpiresAt.Before(exp) {
+		exp = *task.ContentExpiresAt
+	}
+	if !exp.After(now) {
+		return 0
+	}
+	return exp.Unix()
+}
+
+// signedVideoContentURL 生成 <scheme>://<host>/v1/videos/{public_id}/content/signed?exp=<unix>&sig=<hex>
+// 形式的公开链接；无法推导对外 host、内容已过期或签名密钥缺失时返回空串。
+func (h *VideoHandler) signedVideoContentURL(task *service.VideoTask, request *http.Request, now time.Time) string {
+	if task == nil || strings.TrimSpace(task.PublicID) == "" {
+		return ""
+	}
+	base := videoPublicBaseURL(request)
+	if base == "" {
+		return ""
+	}
+	exp := videoContentURLExpiry(task, now)
+	if exp == 0 {
+		return ""
+	}
+	sig := h.signVideoContentURL(task.PublicID, exp)
+	if sig == "" {
+		return ""
+	}
+	query := url.Values{}
+	query.Set("exp", strconv.FormatInt(exp, 10))
+	query.Set("sig", sig)
+	return base + videoContentURLPathPrefix + url.PathEscape(task.PublicID) + videoContentURLPathSuffix + "?" + query.Encode()
+}
+
+// videoPublicBaseURL 按请求推导对外可见的 scheme://host：Host 头给出主机，
+// TLS 或 X-Forwarded-Proto 给出协议；Host 非法（带用户信息或路径）时返回空串。
+func videoPublicBaseURL(request *http.Request) string {
+	if request == nil {
 		return ""
 	}
 	host := strings.TrimSpace(request.Host)
@@ -1668,10 +1793,7 @@ func rewriteVideoURLHost(providerURL string, request *http.Request) string {
 	if forwarded := strings.TrimSpace(strings.Split(request.Header.Get("X-Forwarded-Proto"), ",")[0]); forwarded == "http" || forwarded == "https" {
 		scheme = forwarded
 	}
-	provider.Scheme = scheme
-	provider.Host = current.Host
-	provider.User = nil
-	return provider.String()
+	return scheme + "://" + current.Host
 }
 
 func hasVideoContentVariant(variants []string, expected string) bool {

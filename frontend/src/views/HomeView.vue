@@ -8,8 +8,8 @@
       class="h-screen w-full border-0"
       allowfullscreen
     ></iframe>
-    <!-- HTML mode - SECURITY: homeContent is admin-only setting, XSS risk is acceptable -->
-    <div v-else v-html="homeContent"></div>
+    <!-- HTML mode - admin-authored HTML, sanitized with DOMPurify (iframes kept, scripts/handlers/javascript: URLs stripped) -->
+    <div v-else v-html="sanitizedHomeContent"></div>
   </div>
 
   <!-- Compact Home Page -->
@@ -444,6 +444,7 @@ import { useAuthStore, useAppStore } from '@/stores'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import SiteHeader from '@/components/common/SiteHeader.vue'
 import Icon from '@/components/icons/Icon.vue'
+import DOMPurify from 'dompurify'
 import { sanitizeUrl } from '@/utils/url'
 
 const { t } = useI18n()
@@ -473,6 +474,27 @@ const currentYear = computed(() => new Date().getFullYear())
 const isHomeContentUrl = computed(() => {
   const content = homeContent.value.trim()
   return content.startsWith('http://') || content.startsWith('https://')
+})
+
+// Custom home HTML is admin-authored, but an admin session is not a license to
+// run script in every visitor's browser. Keep the layout primitives admins rely
+// on (iframe embeds, inline style/class, links opening in a new tab) and let
+// DOMPurify drop <script>, event handlers and javascript: URLs.
+const HOME_CONTENT_SANITIZE_CONFIG = {
+  ADD_TAGS: ['iframe'],
+  ADD_ATTR: [
+    'allow',
+    'allowfullscreen',
+    'frameborder',
+    'loading',
+    'referrerpolicy',
+    'sandbox',
+    'target',
+  ],
+}
+const sanitizedHomeContent = computed(() => {
+  if (!hasHomeContent.value || isHomeContentUrl.value) return ''
+  return DOMPurify.sanitize(homeContent.value, HOME_CONTENT_SANITIZE_CONFIG)
 })
 
 // Auth state

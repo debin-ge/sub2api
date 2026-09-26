@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
@@ -23,6 +24,12 @@ const (
 	glmUpstreamHeaderTimeout     = compatibleGatewayDefaultUpstreamTimeout
 	glmUpstreamIdleConnTimeout   = compatibleGatewayIdleConnTimeout
 	glmDefaultAnthropicMaxTokens = int64(4096)
+
+	// compatStreamDrainTimeout 客户端中途断开后，兼容网关（GLM/Kimi/DeepSeek/Windsurf/MiniMax）
+	// 继续读取上游以收集 usage 的最长时长；超时后取消上游请求，按已解析到的 usage 结算。
+	compatStreamDrainTimeout = 30 * time.Second
+	// compatStreamDrainMaxBytes 客户端断开后最多再从上游读取的字节数，防止不带 usage 的长流拖住 goroutine。
+	compatStreamDrainMaxBytes = 4 << 20
 )
 
 type GLMGatewayService struct {
@@ -111,7 +118,11 @@ func (s *GLMGatewayService) ForwardMessages(ctx context.Context, c *gin.Context,
 		return nil, err
 	}
 
-	upstreamReq, originalModel, upstreamModel, err := s.buildMessagesRequest(ctx, c, account, body)
+	stream := gjson.GetBytes(body, "stream").Bool()
+	upstreamCtx, cancelUpstream := compatUpstreamContext(ctx, stream)
+	defer cancelUpstream()
+
+	upstreamReq, originalModel, upstreamModel, err := s.buildMessagesRequest(upstreamCtx, c, account, body)
 	if err != nil {
 		return nil, err
 	}
@@ -134,8 +145,8 @@ func (s *GLMGatewayService) ForwardMessages(ctx context.Context, c *gin.Context,
 		}
 	}
 
-	if gjson.GetBytes(body, "stream").Bool() {
-		return s.handleStreamingMessagesResponse(resp, c, originalModel, upstreamModel, start)
+	if stream {
+		return s.handleStreamingMessagesResponse(resp, c, originalModel, upstreamModel, start, newCompatStreamDrain(cancelUpstream))
 	}
 	return s.handleNonStreamingMessagesResponse(resp, c, originalModel, upstreamModel, start)
 }
@@ -153,7 +164,11 @@ func (s *GLMGatewayService) ForwardChatCompletions(ctx context.Context, c *gin.C
 		return nil, err
 	}
 
-	upstreamReq, originalModel, upstreamModel, err := s.buildChatCompletionsRequest(ctx, c, account, body)
+	stream := gjson.GetBytes(body, "stream").Bool()
+	upstreamCtx, cancelUpstream := compatUpstreamContext(ctx, stream)
+	defer cancelUpstream()
+
+	upstreamReq, originalModel, upstreamModel, err := s.buildChatCompletionsRequest(upstreamCtx, c, account, body)
 	if err != nil {
 		return nil, err
 	}
@@ -176,8 +191,8 @@ func (s *GLMGatewayService) ForwardChatCompletions(ctx context.Context, c *gin.C
 		}
 	}
 
-	if gjson.GetBytes(body, "stream").Bool() {
-		return s.handleStreamingChatCompletionsResponse(resp, c, originalModel, upstreamModel, start)
+	if stream {
+		return s.handleStreamingChatCompletionsResponse(resp, c, originalModel, upstreamModel, start, newCompatStreamDrain(cancelUpstream))
 	}
 	return s.handleNonStreamingChatCompletionsResponse(resp, c, originalModel, upstreamModel, start)
 }
@@ -565,64 +580,126 @@ func (s *GLMGatewayService) handleNonStreamingChatCompletionsResponse(resp *http
 	}, nil
 }
 
-func (s *GLMGatewayService) handleStreamingMessagesResponse(resp *http.Response, c *gin.Context, originalModel string, upstreamModel string, start time.Time) (*ForwardResult, error) {
-	usage := &ClaudeUsage{}
-	if c != nil {
-		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
-		c.Writer.Header().Set("Content-Type", "text/event-stream")
-		c.Status(resp.StatusCode)
+// compatUpstreamContext 构造兼容网关的上游请求上下文。
+// 流式请求脱离客户端取消（context.WithoutCancel）：客户端中途断开时仍能读完上游 usage 完成计费（SEC-001），
+// 返回的 cancel 交给 compatStreamDrain 在 drain 超时后中断阻塞中的上游读取。
+// 非流式请求保持原上下文，客户端断开仍会取消上游请求。
+func compatUpstreamContext(ctx context.Context, stream bool) (context.Context, context.CancelFunc) {
+	detached, cancel := detachStreamUpstreamContext(ctx, stream)
+	if !stream {
+		return detached, cancel
 	}
-
-	reader := bufio.NewReaderSize(resp.Body, 64*1024)
-	gatewayUsageParser := &GatewayService{}
-	for {
-		line, readErr := reader.ReadString('\n')
-		if line != "" {
-			if len(line) > defaultMaxLineSize {
-				return nil, fmt.Errorf("glm upstream stream line too large")
-			}
-			trimmed := strings.TrimSpace(line)
-			if strings.HasPrefix(trimmed, "data:") {
-				data := strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
-				if data != "" && data != "[DONE]" {
-					gatewayUsageParser.parseSSEUsage(data, usage)
-				}
-			}
-			if c != nil {
-				if _, err := io.WriteString(c.Writer, line); err != nil {
-					return nil, err
-				}
-				if strings.TrimRight(line, "\r\n") == "" {
-					if flusher, ok := c.Writer.(http.Flusher); ok {
-						flusher.Flush()
-					}
-				}
-			}
-		}
-		if readErr != nil {
-			if readErr == io.EOF {
-				break
-			}
-			return nil, readErr
-		}
-	}
-
-	return &ForwardResult{
-		RequestID:     resp.Header.Get("x-request-id"),
-		Usage:         *usage,
-		Model:         originalModel,
-		UpstreamModel: upstreamModel,
-		Stream:        true,
-		Duration:      time.Since(start),
-	}, nil
+	return context.WithCancel(detached)
 }
 
-func (s *GLMGatewayService) handleStreamingChatCompletionsResponse(resp *http.Response, c *gin.Context, originalModel string, upstreamModel string, start time.Time) (*ForwardResult, error) {
+// compatStreamDrain 限制客户端断开后继续读取上游的时长：arm 后启动定时器，
+// 到期时标记超时并取消上游请求，使阻塞中的 Read 返回。
+type compatStreamDrain struct {
+	cancel context.CancelFunc
+	// timeout 为 0 时使用 compatStreamDrainTimeout；测试可注入更短的值。
+	timeout  time.Duration
+	timer    *time.Timer
+	timedOut atomic.Bool
+}
+
+func newCompatStreamDrain(cancel context.CancelFunc) *compatStreamDrain {
+	return &compatStreamDrain{cancel: cancel, timeout: compatStreamDrainTimeout}
+}
+
+func (d *compatStreamDrain) arm() {
+	if d == nil || d.timer != nil {
+		return
+	}
+	timeout := d.timeout
+	if timeout <= 0 {
+		timeout = compatStreamDrainTimeout
+	}
+	d.timer = time.AfterFunc(timeout, func() {
+		d.timedOut.Store(true)
+		if d.cancel != nil {
+			d.cancel()
+		}
+	})
+}
+
+func (d *compatStreamDrain) stop() {
+	if d == nil || d.timer == nil {
+		return
+	}
+	d.timer.Stop()
+}
+
+func (d *compatStreamDrain) expired() bool {
+	return d != nil && d.timedOut.Load()
+}
+
+// compatStreamUsageParser 解析单条 SSE data 并合并进 usage。
+type compatStreamUsageParser func(data string, usage *ClaudeUsage)
+
+func compatUsageParsed(usage *ClaudeUsage) bool {
+	if usage == nil {
+		return false
+	}
+	return usage.InputTokens > 0 || usage.OutputTokens > 0 ||
+		usage.CacheCreationInputTokens > 0 || usage.CacheReadInputTokens > 0 ||
+		usage.ImageOutputTokens > 0
+}
+
+// forwardCompatSSEStream 把上游 SSE 流逐行透传给客户端并解析 usage，是 GLM/Kimi/DeepSeek/Windsurf/MiniMax
+// 流式响应的共享循环。
+//
+// 返回值约定：
+//   - 上游正常读到 EOF，或客户端断开后 drain 超时 / 达到字节上限：返回 (result, nil)，
+//     result.ClientDisconnect 标记客户端是否中途断开；
+//   - 上游读取失败但已解析到部分 usage：返回 (result, err)，result 非空，调用方须据此计费；
+//   - 上游读取失败且未解析到任何 usage：返回 (nil, err)。
+//
+// 客户端写失败或请求上下文已取消后不再写入 / Flush，但继续读取上游直到 EOF 或 drain 上限，
+// 以便把已产生的 usage 结算掉，避免客户端主动断开逃避计费（SEC-001）。
+func forwardCompatSSEStream(
+	resp *http.Response,
+	c *gin.Context,
+	filter *responseheaders.CompiledHeaderFilter,
+	serviceName string,
+	parseUsage compatStreamUsageParser,
+	originalModel string,
+	upstreamModel string,
+	start time.Time,
+	drain *compatStreamDrain,
+) (*ForwardResult, error) {
 	usage := &ClaudeUsage{}
 	if c != nil {
-		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, filter)
 		c.Writer.Header().Set("Content-Type", "text/event-stream")
 		c.Status(resp.StatusCode)
+	}
+	defer drain.stop()
+
+	clientDisconnected := false
+	drainedBytes := 0
+	markDisconnected := func() {
+		if clientDisconnected {
+			return
+		}
+		clientDisconnected = true
+		drain.arm()
+	}
+	buildResult := func() *ForwardResult {
+		return &ForwardResult{
+			RequestID:        resp.Header.Get("x-request-id"),
+			Usage:            *usage,
+			Model:            originalModel,
+			UpstreamModel:    upstreamModel,
+			Stream:           true,
+			Duration:         time.Since(start),
+			ClientDisconnect: clientDisconnected,
+		}
+	}
+	failWith := func(err error) (*ForwardResult, error) {
+		if compatUsageParsed(usage) {
+			return buildResult(), err
+		}
+		return nil, err
 	}
 
 	reader := bufio.NewReaderSize(resp.Body, 64*1024)
@@ -630,23 +707,30 @@ func (s *GLMGatewayService) handleStreamingChatCompletionsResponse(resp *http.Re
 		line, readErr := reader.ReadString('\n')
 		if line != "" {
 			if len(line) > defaultMaxLineSize {
-				return nil, fmt.Errorf("glm upstream stream line too large")
+				return failWith(fmt.Errorf("%s upstream stream line too large", serviceName))
 			}
 			trimmed := strings.TrimSpace(line)
 			if strings.HasPrefix(trimmed, "data:") {
 				data := strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
 				if data != "" && data != "[DONE]" {
-					parseGLMOpenAIStreamingUsage(data, usage)
+					parseUsage(data, usage)
 				}
 			}
-			if c != nil {
-				if _, err := io.WriteString(c.Writer, line); err != nil {
-					return nil, err
-				}
-				if strings.TrimRight(line, "\r\n") == "" {
+			if c != nil && !clientDisconnected {
+				if c.Request != nil && c.Request.Context().Err() != nil {
+					markDisconnected()
+				} else if _, err := io.WriteString(c.Writer, line); err != nil {
+					markDisconnected()
+				} else if strings.TrimRight(line, "\r\n") == "" {
 					if flusher, ok := c.Writer.(http.Flusher); ok {
 						flusher.Flush()
 					}
+				}
+			}
+			if clientDisconnected {
+				drainedBytes += len(line)
+				if drainedBytes > compatStreamDrainMaxBytes {
+					break
 				}
 			}
 		}
@@ -654,16 +738,23 @@ func (s *GLMGatewayService) handleStreamingChatCompletionsResponse(resp *http.Re
 			if readErr == io.EOF {
 				break
 			}
-			return nil, readErr
+			if clientDisconnected && drain.expired() {
+				break
+			}
+			return failWith(readErr)
 		}
 	}
 
-	return &ForwardResult{
-		RequestID:     resp.Header.Get("x-request-id"),
-		Usage:         *usage,
-		Model:         originalModel,
-		UpstreamModel: upstreamModel,
-		Stream:        true,
-		Duration:      time.Since(start),
-	}, nil
+	return buildResult(), nil
+}
+
+// handleStreamingMessagesResponse 透传 Anthropic Messages SSE 流；返回值约定见 forwardCompatSSEStream。
+func (s *GLMGatewayService) handleStreamingMessagesResponse(resp *http.Response, c *gin.Context, originalModel string, upstreamModel string, start time.Time, drain *compatStreamDrain) (*ForwardResult, error) {
+	gatewayUsageParser := &GatewayService{}
+	return forwardCompatSSEStream(resp, c, s.responseHeaderFilter, "glm", gatewayUsageParser.parseSSEUsage, originalModel, upstreamModel, start, drain)
+}
+
+// handleStreamingChatCompletionsResponse 透传 OpenAI Chat Completions SSE 流；返回值约定见 forwardCompatSSEStream。
+func (s *GLMGatewayService) handleStreamingChatCompletionsResponse(resp *http.Response, c *gin.Context, originalModel string, upstreamModel string, start time.Time, drain *compatStreamDrain) (*ForwardResult, error) {
+	return forwardCompatSSEStream(resp, c, s.responseHeaderFilter, "glm", parseGLMOpenAIStreamingUsage, originalModel, upstreamModel, start, drain)
 }

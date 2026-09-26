@@ -24,6 +24,7 @@ type fakeMiniMaxForwarder struct {
 	chatCalled      bool
 	responsesCalled bool
 	err             error
+	panicMessages   bool
 }
 
 func (f *fakeMiniMaxForwarder) ForwardMessages(ctx context.Context, c *gin.Context, account *service.Account, body []byte, requestID string) (*service.ForwardResult, error) {
@@ -31,6 +32,9 @@ func (f *fakeMiniMaxForwarder) ForwardMessages(ctx context.Context, c *gin.Conte
 	f.account = account
 	f.body = append([]byte(nil), body...)
 	f.requestID = requestID
+	if f.panicMessages {
+		panic("minimax forward panic")
+	}
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -601,4 +605,60 @@ func TestMiniMaxGatewayHandlerUnsupportedReturnsNotFound(t *testing.T) {
 
 	require.Equal(t, http.StatusNotFound, rec.Code)
 	require.Contains(t, rec.Body.String(), "not_found_error")
+}
+
+// Forward panic 被上层 recover 时账号槽位仍须归还；显式释放 + defer 的幂等包装保证只释放一次（SEC-028）。
+func TestMiniMaxGatewayHandlerMessagesReleasesAcquiredAccountOnForwardPanic(t *testing.T) {
+	released := 0
+	account := &service.Account{
+		ID:          101,
+		Platform:    service.PlatformMiniMax,
+		Type:        service.AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "sk-minimax"},
+		Concurrency: 1,
+	}
+	h := &MiniMaxGatewayHandler{
+		minimaxService: &fakeMiniMaxForwarder{panicMessages: true},
+		gatewayService: &fakeMiniMaxGatewayService{selection: &service.AccountSelectionResult{
+			Account:     account,
+			Acquired:    true,
+			ReleaseFunc: func() { released++ },
+		}},
+		concurrencyHelper:   &fakeMiniMaxConcurrencyController{allowWait: true},
+		billingCacheService: &fakeMiniMaxBillingChecker{},
+	}
+	c, _, _ := newMiniMaxHandlerTestContext(t, service.PlatformMiniMax, `{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hello"}]}`)
+
+	require.Panics(t, func() {
+		h.Messages(c)
+	})
+	require.Equal(t, 1, released)
+}
+
+// 正常路径下显式释放与 defer 释放叠加也只释放一次。
+func TestMiniMaxGatewayHandlerMessagesReleasesAccountSlotExactlyOnce(t *testing.T) {
+	released := 0
+	account := &service.Account{
+		ID:          101,
+		Platform:    service.PlatformMiniMax,
+		Type:        service.AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "sk-minimax"},
+		Concurrency: 1,
+	}
+	h := &MiniMaxGatewayHandler{
+		minimaxService: &fakeMiniMaxForwarder{},
+		gatewayService: &fakeMiniMaxGatewayService{selection: &service.AccountSelectionResult{
+			Account:     account,
+			Acquired:    true,
+			ReleaseFunc: func() { released++ },
+		}},
+		concurrencyHelper:   &fakeMiniMaxConcurrencyController{allowWait: true},
+		billingCacheService: &fakeMiniMaxBillingChecker{},
+	}
+	c, rec, _ := newMiniMaxHandlerTestContext(t, service.PlatformMiniMax, `{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"hello"}]}`)
+
+	h.Messages(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, 1, released)
 }

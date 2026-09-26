@@ -3,6 +3,7 @@ package handler
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -15,12 +16,16 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/textproto"
+	"net/url"
+	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	servermiddleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -50,8 +55,9 @@ type videoTaskAPIFake struct {
 	contentRequest        service.ProviderContentRequest
 	contentReference      string
 	contentURLReference   string
-	videoURL              string
-	videoURLErr           error
+	publicIDTask          *service.VideoTask
+	publicIDErr           error
+	publicIDReference     string
 	deleteTask            *service.VideoTask
 	deleteErr             error
 	models                *service.VideoModelsResponse
@@ -150,17 +156,13 @@ func (f *videoTaskAPIFake) GetContentTaskByURLForOwner(_ context.Context, userID
 	return f.getTask, f.getErr
 }
 
-func (f *videoTaskAPIFake) GetContentTaskByURL(_ context.Context, requestURI string) (*service.VideoTask, error) {
+func (f *videoTaskAPIFake) GetContentTaskByPublicID(_ context.Context, publicID string) (*service.VideoTask, error) {
 	f.getCalls++
-	f.contentURLReference = requestURI
-	if f.contentURLTask != nil || f.contentURLErr != nil {
-		return f.contentURLTask, f.contentURLErr
+	f.publicIDReference = publicID
+	if f.publicIDTask != nil || f.publicIDErr != nil {
+		return f.publicIDTask, f.publicIDErr
 	}
 	return f.getTask, f.getErr
-}
-
-func (f *videoTaskAPIFake) VideoURLForOwner(context.Context, int64, string) (string, error) {
-	return f.videoURL, f.videoURLErr
 }
 
 func (f *videoTaskAPIFake) ListForOwner(_ context.Context, userID int64, filter service.VideoTaskFilter) (*service.VideoTaskPage, error) {
@@ -260,7 +262,7 @@ func TestVideoHandlerProjectsSpecificUpstreamFailure(t *testing.T) {
 
 func videoHandlerTestConfig(t *testing.T) *config.Config {
 	t.Helper()
-	return &config.Config{Gateway: config.GatewayConfig{Video: config.GatewayVideoConfig{
+	return &config.Config{JWT: config.JWTConfig{Secret: "video-handler-test-jwt-secret"}, Gateway: config.GatewayConfig{Video: config.GatewayVideoConfig{
 		Enabled: true, CreationEnabled: true, DisclosurePolicy: config.VideoDisclosureIdentity,
 		Spool: config.GatewayVideoSpoolConfig{
 			Directory: t.TempDir(), MaxPartBytes: 1 << 20, MaxRequestBytes: 2 << 20,
@@ -493,34 +495,156 @@ func TestVideoHandlerRetrieveListAndDeleteContracts(t *testing.T) {
 	})
 }
 
-func TestVideoHandlerCompletedTaskIncludesLocalContentURL(t *testing.T) {
+func TestVideoHandlerCompletedTaskIncludesSignedContentURL(t *testing.T) {
 	task := videoHandlerTask()
 	task.GenerationState = service.VideoGenerationCompleted
 	task.BillingState = service.VideoBillingCaptured
 	task.ContentVariants = []string{"thumbnail", "video"}
 	task.ActualCost = float64Pointer(0.4213)
 	task.Currency = "USD"
-	fake := &videoTaskAPIFake{
-		getTask:  task,
-		videoURL: "https://video-upstream.example/v1/videos/video_upstream_1/content?token=signed&disposition=inline",
-	}
+	fake := &videoTaskAPIFake{getTask: task}
 	handler := newVideoHandler(fake, nil, videoHandlerTestConfig(t))
 	ctx, recorder := newVideoHandlerTestContext(http.MethodGet, "/v1/videos/"+task.PublicID, "", nil)
 	ctx.Params = gin.Params{{Key: "video_id", Value: task.PublicID}}
 	ctx.Request.Host = "api.current.example"
 	ctx.Request.Header.Set("X-Forwarded-Proto", "https")
+	before := time.Now()
 
 	handler.Retrieve(ctx)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
-	require.Contains(t, recorder.Body.String(), "token=signed&disposition=inline")
 	require.NotContains(t, recorder.Body.String(), `\u0026`)
 	var response map[string]any
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
-	require.Equal(t, "https://api.current.example/v1/videos/video_upstream_1/content?token=signed&disposition=inline", response["url"])
+	rawURL, _ := response["url"].(string)
+	parsed, err := url.Parse(rawURL)
+	require.NoError(t, err)
+	require.Equal(t, "https", parsed.Scheme)
+	require.Equal(t, "api.current.example", parsed.Host)
+	require.Equal(t, "/v1/videos/"+task.PublicID+"/content/signed", parsed.Path)
+	exp, err := strconv.ParseInt(parsed.Query().Get("exp"), 10, 64)
+	require.NoError(t, err)
+	require.Greater(t, exp, before.Unix())
+	require.LessOrEqual(t, exp, time.Now().Add(videoContentURLTTL).Unix())
+	require.True(t, handler.verifyVideoContentSignature(task.PublicID, exp, parsed.Query().Get("sig")))
+	// 上游原始 URL 与 provider 标识不得以任何形式出现在响应里。
+	require.NotContains(t, recorder.Body.String(), "video_upstream_1")
 	require.NotContains(t, response, "provider_task_id")
 	require.InDelta(t, 0.4213, response["actual_cost"], 1e-9)
 	require.Equal(t, "USD", response["currency"])
+}
+
+func TestVideoHandlerSignedContentURLClampsToContentExpiry(t *testing.T) {
+	task := videoHandlerTask()
+	task.GenerationState = service.VideoGenerationCompleted
+	task.BillingState = service.VideoBillingCaptured
+	task.ContentVariants = []string{"video"}
+	handler := newVideoHandler(&videoTaskAPIFake{getTask: task}, nil, videoHandlerTestConfig(t))
+	now := time.Unix(1_700_000_000, 0).UTC()
+	request := httptest.NewRequest(http.MethodGet, "/v1/videos/"+task.PublicID, nil)
+	request.Host = "api.current.example"
+
+	// 内容过期时间早于 TTL：链接过期时间被截断到内容过期时间。
+	contentExpiry := now.Add(2 * time.Hour)
+	task.ContentExpiresAt = &contentExpiry
+	parsed, err := url.Parse(handler.signedVideoContentURL(task, request, now))
+	require.NoError(t, err)
+	require.Equal(t, strconv.FormatInt(contentExpiry.Unix(), 10), parsed.Query().Get("exp"))
+	require.Equal(t, "http", parsed.Scheme)
+
+	// 内容过期时间晚于 TTL：链接按 TTL 过期。
+	contentExpiry = now.Add(72 * time.Hour)
+	parsed, err = url.Parse(handler.signedVideoContentURL(task, request, now))
+	require.NoError(t, err)
+	require.Equal(t, strconv.FormatInt(now.Add(videoContentURLTTL).Unix(), 10), parsed.Query().Get("exp"))
+
+	// 内容已过期：不再下发签名链接。
+	contentExpiry = now.Add(-time.Second)
+	require.Empty(t, handler.signedVideoContentURL(task, request, now))
+
+	// Host 非法或缺失：无法推导对外地址，不下发。
+	task.ContentExpiresAt = nil
+	request.Host = "user@evil.example"
+	require.Empty(t, handler.signedVideoContentURL(task, request, now))
+	request.Host = ""
+	require.Empty(t, handler.signedVideoContentURL(task, request, now))
+}
+
+func TestVideoHandlerCompletedTaskFallsBackToRelativeContentPathWithoutSigningKey(t *testing.T) {
+	task := videoHandlerTask()
+	task.GenerationState = service.VideoGenerationCompleted
+	task.BillingState = service.VideoBillingCaptured
+	task.ContentVariants = []string{"video"}
+	cfg := videoHandlerTestConfig(t)
+	cfg.JWT.Secret = ""
+	handler := newVideoHandler(&videoTaskAPIFake{getTask: task}, nil, cfg)
+	ctx, recorder := newVideoHandlerTestContext(http.MethodGet, "/v1/videos/"+task.PublicID, "", nil)
+	ctx.Params = gin.Params{{Key: "video_id", Value: task.PublicID}}
+	ctx.Request.Host = "api.current.example"
+
+	handler.Retrieve(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var response map[string]any
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+	require.Equal(t, "/v1/videos/"+task.PublicID+"/content", response["url"])
+}
+
+func TestVideoContentURLSignatureRoundTrip(t *testing.T) {
+	handler := newVideoHandler(&videoTaskAPIFake{}, nil, videoHandlerTestConfig(t))
+	publicID := videoHandlerTask().PublicID
+	exp := time.Now().Add(time.Hour).Unix()
+	sig := handler.signVideoContentURL(publicID, exp)
+	require.Len(t, sig, hex.EncodedLen(sha256.Size))
+	require.True(t, handler.verifyVideoContentSignature(publicID, exp, sig))
+	require.True(t, handler.verifyVideoContentSignature(publicID, exp, " "+sig+" "))
+
+	// 任一签名输入变化都使签名失效。
+	require.False(t, handler.verifyVideoContentSignature("video_ffffffffffffffffffffffffffffffff", exp, sig))
+	require.False(t, handler.verifyVideoContentSignature(publicID, exp+1, sig))
+	tampered := []byte(sig)
+	if tampered[0] == '0' {
+		tampered[0] = '1'
+	} else {
+		tampered[0] = '0'
+	}
+	require.False(t, handler.verifyVideoContentSignature(publicID, exp, string(tampered)))
+	require.False(t, handler.verifyVideoContentSignature(publicID, exp, sig[:len(sig)-2]))
+	require.False(t, handler.verifyVideoContentSignature(publicID, exp, strings.Repeat("zz", sha256.Size)))
+	require.False(t, handler.verifyVideoContentSignature(publicID, exp, ""))
+	require.False(t, handler.verifyVideoContentSignature(publicID, 0, sig))
+	require.False(t, handler.verifyVideoContentSignature("", exp, sig))
+
+	// 不同 JWT secret 派生的密钥互不认可。
+	other := videoHandlerTestConfig(t)
+	other.JWT.Secret = "another-secret"
+	require.False(t, newVideoHandler(&videoTaskAPIFake{}, nil, other).verifyVideoContentSignature(publicID, exp, sig))
+
+	// 没有密钥时既签不出也验不过。
+	other.JWT.Secret = ""
+	unsigned := newVideoHandler(&videoTaskAPIFake{}, nil, other)
+	require.Empty(t, unsigned.signVideoContentURL(publicID, exp))
+	require.False(t, unsigned.verifyVideoContentSignature(publicID, exp, sig))
+}
+
+func TestVideoContentURLSignatureIsNotInterchangeableWithInternalRelayKey(t *testing.T) {
+	// 签名密钥用独立标签从 JWT secret 派生，不能与直接用 secret 或其他标签算出的 HMAC 互换。
+	cfg := videoHandlerTestConfig(t)
+	handler := newVideoHandler(&videoTaskAPIFake{}, nil, cfg)
+	publicID := videoHandlerTask().PublicID
+	exp := int64(1_700_003_600)
+	message := videoContentURLPathPrefix + publicID + videoContentURLPathSuffix + "\n" + strconv.FormatInt(exp, 10)
+	for _, key := range [][]byte{
+		[]byte(cfg.JWT.Secret),
+		func() []byte {
+			sum := sha256.Sum256([]byte("sub2api/internal-relay/v1\x00" + cfg.JWT.Secret))
+			return sum[:]
+		}(),
+	} {
+		mac := hmac.New(sha256.New, key)
+		_, _ = mac.Write([]byte(message))
+		require.False(t, handler.verifyVideoContentSignature(publicID, exp, hex.EncodeToString(mac.Sum(nil))))
+	}
 }
 
 // 实际消费只有在任务真正结算（captured）后才允许暴露。这是 omitempty 陷阱的回归测试：
@@ -621,80 +745,166 @@ func TestVideoHandlerContentAcceptsRewrittenProviderTaskPath(t *testing.T) {
 	require.Equal(t, `attachment; filename="video_0123456789abcdef0123456789abcdef.mp4"`, recorder.Header().Get("Content-Disposition"))
 }
 
-func TestVideoHandlerContentURLProxiesArbitraryUpstreamPath(t *testing.T) {
+func newSignedVideoContentTestContext(t *testing.T, method, publicID string, exp int64, sig string) (*gin.Context, *httptest.ResponseRecorder) {
+	t.Helper()
+	query := url.Values{}
+	query.Set("exp", strconv.FormatInt(exp, 10))
+	query.Set("sig", sig)
+	ctx, recorder := newVideoHandlerTestContext(method, "/v1/videos/"+publicID+"/content/signed?"+query.Encode(), "", nil)
+	// 签名路由没有 API Key 鉴权，上下文里不应有任何身份信息。
+	ctx.Set(string(servermiddleware.ContextKeyAPIKey), nil)
+	ctx.Set(string(servermiddleware.ContextKeyUser), nil)
+	ctx.Params = gin.Params{{Key: "request_id", Value: publicID}}
+	return ctx, recorder
+}
+
+func completedSignedVideoTask() *service.VideoTask {
 	task := videoHandlerTask()
 	task.GenerationState = service.VideoGenerationCompleted
 	task.BillingState = service.VideoBillingCaptured
+	task.ContentVariants = []string{"video"}
+	return task
+}
+
+func TestVideoHandlerSignedContentServesInlineWithoutAPIKey(t *testing.T) {
+	task := completedSignedVideoTask()
 	fake := &videoTaskAPIFake{
-		getTask: task,
+		publicIDTask: task,
 		content: &service.ProviderContent{
 			StatusCode: http.StatusOK,
 			Header:     http.Header{"Content-Type": {"video/mp4"}},
-			Body:       io.NopCloser(strings.NewReader("arbitrary-video")),
+			Body:       io.NopCloser(strings.NewReader("signed-video")),
 		},
 	}
 	handler := newVideoHandler(fake, nil, videoHandlerTestConfig(t))
-	requestURI := "/assets/render/final.mp4?token=signed&variant=download"
-	ctx, recorder := newVideoHandlerTestContext(http.MethodGet, requestURI, "", nil)
-	ctx.Set(string(servermiddleware.ContextKeyAPIKey), nil)
-	ctx.Set(string(servermiddleware.ContextKeyUser), nil)
+	exp := time.Now().Add(time.Hour).Unix()
+	sig := handler.signVideoContentURL(task.PublicID, exp)
+	ctx, recorder := newSignedVideoContentTestContext(t, http.MethodGet, task.PublicID, exp, sig)
 
-	handler.ContentURL(ctx)
+	handler.SignedContent(ctx)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
-	require.Equal(t, "arbitrary-video", recorder.Body.String())
-	require.Equal(t, requestURI, fake.contentURLReference)
+	require.Equal(t, "signed-video", recorder.Body.String())
+	require.Equal(t, task.PublicID, fake.publicIDReference)
 	require.Equal(t, task.PublicID, fake.contentReference)
 	require.Equal(t, "video", fake.contentRequest.Variant)
 	require.Equal(t, `inline; filename="video_0123456789abcdef0123456789abcdef.mp4"`, recorder.Header().Get("Content-Disposition"))
+	require.Equal(t, "private, no-store", recorder.Header().Get("Cache-Control"))
+
+	// HEAD 同样可用且不带正文。
+	headCtx, headRecorder := newSignedVideoContentTestContext(t, http.MethodHead, task.PublicID, exp, sig)
+	fake.content = &service.ProviderContent{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"video/mp4"}}, Body: io.NopCloser(strings.NewReader("ignored"))}
+	handler.SignedContent(headCtx)
+	require.Equal(t, http.StatusOK, headRecorder.Code)
+	require.Empty(t, headRecorder.Body.String())
+	require.Equal(t, http.MethodHead, fake.contentRequest.Method)
 }
 
-func TestVideoHandlerPublicContentProxyRunsBeforeMatchedOrFrontendRoutes(t *testing.T) {
-	task := videoHandlerTask()
-	task.GenerationState = service.VideoGenerationCompleted
-	task.BillingState = service.VideoBillingCaptured
-	fake := &videoTaskAPIFake{
-		contentURLTask: task,
-		content: &service.ProviderContent{
-			StatusCode: http.StatusOK,
-			Header:     http.Header{"Content-Type": {"video/mp4"}},
-			Body:       io.NopCloser(strings.NewReader("middleware-video")),
-		},
+func TestVideoHandlerSignedContentRejectsExpiredLink(t *testing.T) {
+	task := completedSignedVideoTask()
+	fake := &videoTaskAPIFake{publicIDTask: task, content: &service.ProviderContent{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("late"))}}
+	handler := newVideoHandler(fake, nil, videoHandlerTestConfig(t))
+	exp := time.Now().Add(-time.Second).Unix()
+	sig := handler.signVideoContentURL(task.PublicID, exp)
+	ctx, recorder := newSignedVideoContentTestContext(t, http.MethodGet, task.PublicID, exp, sig)
+
+	handler.SignedContent(ctx)
+
+	require.Equal(t, http.StatusGone, recorder.Code)
+	require.Contains(t, recorder.Body.String(), "video_content_expired")
+	require.Empty(t, fake.publicIDReference, "expired links must not touch the task store")
+	require.Empty(t, fake.contentReference)
+}
+
+func TestVideoHandlerSignedContentRejectsInvalidSignatureWithNotFound(t *testing.T) {
+	task := completedSignedVideoTask()
+	handler := newVideoHandler(&videoTaskAPIFake{publicIDTask: task}, nil, videoHandlerTestConfig(t))
+	exp := time.Now().Add(time.Hour).Unix()
+	sig := handler.signVideoContentURL(task.PublicID, exp)
+	otherID := "video_ffffffffffffffffffffffffffffffff"
+	for name, tc := range map[string]struct {
+		publicID string
+		exp      int64
+		sig      string
+	}{
+		"tampered signature":     {task.PublicID, exp, "00" + sig[2:]},
+		"other task same sig":    {otherID, exp, sig},
+		"extended expiry":        {task.PublicID, exp + 3600, sig},
+		"expired and tampered":   {task.PublicID, time.Now().Add(-time.Hour).Unix(), sig},
+		"missing signature":      {task.PublicID, exp, ""},
+		"malformed public id":    {"not-a-video-id", exp, handler.signVideoContentURL("not-a-video-id", exp)},
+		"zero expiry":            {task.PublicID, 0, handler.signVideoContentURL(task.PublicID, 0)},
+		"non-hex signature":      {task.PublicID, exp, strings.Repeat("zz", sha256.Size)},
+		"signature wrong length": {task.PublicID, exp, sig + "00"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			fake := &videoTaskAPIFake{publicIDTask: task, content: &service.ProviderContent{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("leak"))}}
+			handler := newVideoHandler(fake, nil, videoHandlerTestConfig(t))
+			ctx, recorder := newSignedVideoContentTestContext(t, http.MethodGet, tc.publicID, tc.exp, tc.sig)
+
+			handler.SignedContent(ctx)
+
+			require.Equal(t, http.StatusNotFound, recorder.Code)
+			require.Contains(t, recorder.Body.String(), "video_task_not_found")
+			require.Empty(t, fake.publicIDReference, "invalid signatures must not touch the task store")
+			require.Empty(t, fake.contentReference)
+		})
 	}
-	handler := newVideoHandler(fake, nil, videoHandlerTestConfig(t))
-	router := gin.New()
-	router.Use(handler.PublicContentProxy)
-	fallbackCalled := false
-	router.GET("/1fbe6da3be7446b2af1602ca2a2feeea", func(c *gin.Context) {
-		fallbackCalled = true
-		c.Status(http.StatusTeapot)
-	})
 
-	req := httptest.NewRequest(http.MethodGet, "/1fbe6da3be7446b2af1602ca2a2feeea?preview=1&auth_key=signed", nil)
-	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, req)
-
-	require.Equal(t, http.StatusOK, recorder.Code)
-	require.Equal(t, "middleware-video", recorder.Body.String())
-	require.False(t, fallbackCalled)
-	require.Equal(t, req.URL.RequestURI(), fake.contentURLReference)
-	require.Equal(t, "inline", strings.Split(recorder.Header().Get("Content-Disposition"), ";")[0])
+	// 非数字 exp 同样 404。
+	fake := &videoTaskAPIFake{publicIDTask: task}
+	handler = newVideoHandler(fake, nil, videoHandlerTestConfig(t))
+	ctx, recorder := newVideoHandlerTestContext(http.MethodGet, "/v1/videos/"+task.PublicID+"/content/signed?exp=tomorrow&sig="+sig, "", nil)
+	ctx.Params = gin.Params{{Key: "request_id", Value: task.PublicID}}
+	handler.SignedContent(ctx)
+	require.Equal(t, http.StatusNotFound, recorder.Code)
+	require.Empty(t, fake.publicIDReference)
 }
 
-func TestVideoHandlerPublicContentProxyContinuesWhenURLIsUnknown(t *testing.T) {
-	fake := &videoTaskAPIFake{contentURLErr: service.ErrVideoTaskNotFound}
-	handler := newVideoHandler(fake, nil, videoHandlerTestConfig(t))
-	router := gin.New()
-	router.Use(handler.PublicContentProxy)
-	router.GET("/dashboard", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+func TestVideoHandlerSignedContentRefusesUnavailableTasks(t *testing.T) {
+	for name, tc := range map[string]struct {
+		mutate     func(*service.VideoTask, *videoTaskAPIFake, *config.Config)
+		wantStatus int
+		wantCode   string
+	}{
+		"not completed": {mutate: func(task *service.VideoTask, _ *videoTaskAPIFake, _ *config.Config) {
+			task.GenerationState = service.VideoGenerationInProgress
+		}, wantStatus: http.StatusConflict, wantCode: "video_content_not_ready"},
+		"video variant missing": {mutate: func(task *service.VideoTask, _ *videoTaskAPIFake, _ *config.Config) {
+			task.ContentVariants = []string{"thumbnail"}
+		}, wantStatus: http.StatusConflict, wantCode: "video_content_not_ready"},
+		"deleted": {mutate: func(task *service.VideoTask, _ *videoTaskAPIFake, _ *config.Config) {
+			task.DeleteState = service.VideoDeleteDeleted
+		}, wantStatus: http.StatusNotFound, wantCode: "video_task_not_found"},
+		"task missing": {mutate: func(_ *service.VideoTask, fake *videoTaskAPIFake, _ *config.Config) {
+			fake.publicIDTask, fake.publicIDErr = nil, service.ErrVideoTaskNotFound
+		}, wantStatus: http.StatusNotFound, wantCode: "video_task_not_found"},
+		"content proxy disabled": {mutate: func(_ *service.VideoTask, _ *videoTaskAPIFake, cfg *config.Config) {
+			cfg.Gateway.Video.ContentProxy.Enabled = false
+		}, wantStatus: infraerrors.Code(service.ErrVideoDisabled), wantCode: "video_disabled"},
+		"video disabled": {mutate: func(_ *service.VideoTask, _ *videoTaskAPIFake, cfg *config.Config) {
+			cfg.Gateway.Video.Enabled = false
+		}, wantStatus: infraerrors.Code(service.ErrVideoDisabled), wantCode: "video_disabled"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			task := completedSignedVideoTask()
+			cfg := videoHandlerTestConfig(t)
+			fake := &videoTaskAPIFake{publicIDTask: task, content: &service.ProviderContent{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("leak"))}}
+			tc.mutate(task, fake, cfg)
+			handler := newVideoHandler(fake, nil, cfg)
+			exp := time.Now().Add(time.Hour).Unix()
+			ctx, recorder := newSignedVideoContentTestContext(t, http.MethodGet, task.PublicID, exp, handler.signVideoContentURL(task.PublicID, exp))
 
-	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/dashboard", nil))
+			handler.SignedContent(ctx)
 
-	require.Equal(t, http.StatusNoContent, recorder.Code)
+			require.Equal(t, tc.wantStatus, recorder.Code)
+			require.Contains(t, recorder.Body.String(), tc.wantCode)
+			require.Empty(t, fake.contentReference, "content must not be opened")
+		})
+	}
 }
 
-func TestVideoHandlerRetrieveFallsBackToMatchedProviderVideoURL(t *testing.T) {
+func TestVideoHandlerRetrieveFallsBackToOwnerScopedProviderVideoURL(t *testing.T) {
 	task := videoHandlerTask()
 	task.GenerationState = service.VideoGenerationCompleted
 	task.BillingState = service.VideoBillingCaptured
@@ -718,7 +928,45 @@ func TestVideoHandlerRetrieveFallsBackToMatchedProviderVideoURL(t *testing.T) {
 	require.Equal(t, http.StatusOK, recorder.Code)
 	require.Equal(t, "route-collision-video", recorder.Body.String())
 	require.Equal(t, requestURI, fake.contentURLReference)
+	// 反查与取回都限定在 API Key 所属用户（42）名下。
+	require.Equal(t, int64(42), fake.getUserID)
 	require.Equal(t, task.PublicID, fake.contentReference)
+	require.Equal(t, "inline", strings.Split(recorder.Header().Get("Content-Disposition"), ";")[0])
+}
+
+func TestVideoHandlerRetrieveFallbackReturnsNotFoundForOtherOwnersURL(t *testing.T) {
+	fake := &videoTaskAPIFake{
+		getErr:        service.ErrVideoTaskNotFound,
+		contentURLErr: service.ErrVideoTaskNotFound,
+		content:       &service.ProviderContent{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("leak"))},
+	}
+	handler := newVideoHandler(fake, nil, videoHandlerTestConfig(t))
+	requestURI := "/v1/videos/video_upstream_1?token=signed"
+	ctx, recorder := newVideoHandlerTestContext(http.MethodGet, requestURI, "", nil)
+	ctx.Params = gin.Params{{Key: "video_id", Value: "video_upstream_1"}}
+
+	handler.Retrieve(ctx)
+
+	require.Equal(t, http.StatusNotFound, recorder.Code)
+	require.Equal(t, requestURI, fake.contentURLReference)
+	require.Equal(t, int64(42), fake.getUserID)
+	require.Empty(t, fake.contentReference)
+}
+
+func TestVideoHandlerHasNoOwnerlessContentLookup(t *testing.T) {
+	// 无属主的内容反查（曾经的 PublicContentProxy / ContentURL）已被移除：
+	// videoTaskAPI 不再声明任何不带 owner 的按 URL 反查方法。
+	var api videoTaskAPI = &videoTaskAPIFake{}
+	apiType := reflect.TypeOf(api)
+	for i := 0; i < apiType.NumMethod(); i++ {
+		method := apiType.Method(i)
+		require.NotEqual(t, "GetContentTaskByURL", method.Name)
+	}
+	handlerType := reflect.TypeOf(&VideoHandler{})
+	for _, removed := range []string{"PublicContentProxy", "ContentURL"} {
+		_, exists := handlerType.MethodByName(removed)
+		require.False(t, exists, "%s must not exist", removed)
+	}
 }
 
 func TestVideoHandlerTaskOmitsContentURLUntilItIsAvailable(t *testing.T) {

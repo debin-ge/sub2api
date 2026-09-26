@@ -1,12 +1,10 @@
 package service
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -106,7 +104,11 @@ func (s *WindsurfGatewayService) ForwardMessages(ctx context.Context, c *gin.Con
 		return nil, err
 	}
 
-	upstreamReq, originalModel, upstreamModel, err := s.buildMessagesRequest(ctx, c, account, body)
+	stream := gjson.GetBytes(body, "stream").Bool()
+	upstreamCtx, cancelUpstream := compatUpstreamContext(ctx, stream)
+	defer cancelUpstream()
+
+	upstreamReq, originalModel, upstreamModel, err := s.buildMessagesRequest(upstreamCtx, c, account, body)
 	if err != nil {
 		return nil, err
 	}
@@ -130,8 +132,8 @@ func (s *WindsurfGatewayService) ForwardMessages(ctx context.Context, c *gin.Con
 	}
 
 	compat := s.glmResponseCompat()
-	if gjson.GetBytes(body, "stream").Bool() {
-		return compat.handleStreamingMessagesResponse(resp, c, originalModel, upstreamModel, start)
+	if stream {
+		return compat.handleStreamingMessagesResponse(resp, c, originalModel, upstreamModel, start, newCompatStreamDrain(cancelUpstream))
 	}
 	return compat.handleNonStreamingMessagesResponse(resp, c, originalModel, upstreamModel, start)
 }
@@ -149,7 +151,11 @@ func (s *WindsurfGatewayService) ForwardChatCompletions(ctx context.Context, c *
 		return nil, err
 	}
 
-	upstreamReq, originalModel, upstreamModel, err := s.buildChatCompletionsRequest(ctx, c, account, body)
+	stream := gjson.GetBytes(body, "stream").Bool()
+	upstreamCtx, cancelUpstream := compatUpstreamContext(ctx, stream)
+	defer cancelUpstream()
+
+	upstreamReq, originalModel, upstreamModel, err := s.buildChatCompletionsRequest(upstreamCtx, c, account, body)
 	if err != nil {
 		return nil, err
 	}
@@ -172,8 +178,8 @@ func (s *WindsurfGatewayService) ForwardChatCompletions(ctx context.Context, c *
 		}
 	}
 
-	if gjson.GetBytes(body, "stream").Bool() {
-		return s.handleStreamingChatCompletionsResponse(resp, c, originalModel, upstreamModel, start)
+	if stream {
+		return s.handleStreamingChatCompletionsResponse(resp, c, originalModel, upstreamModel, start, newCompatStreamDrain(cancelUpstream))
 	}
 	return s.handleNonStreamingChatCompletionsResponse(resp, c, originalModel, upstreamModel, start)
 }
@@ -500,53 +506,7 @@ func (s *WindsurfGatewayService) handleNonStreamingChatCompletionsResponse(resp 
 	}, nil
 }
 
-func (s *WindsurfGatewayService) handleStreamingChatCompletionsResponse(resp *http.Response, c *gin.Context, originalModel string, upstreamModel string, start time.Time) (*ForwardResult, error) {
-	usage := &ClaudeUsage{}
-	if c != nil {
-		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
-		c.Writer.Header().Set("Content-Type", "text/event-stream")
-		c.Status(resp.StatusCode)
-	}
-
-	reader := bufio.NewReaderSize(resp.Body, 64*1024)
-	for {
-		line, readErr := reader.ReadString('\n')
-		if line != "" {
-			if len(line) > defaultMaxLineSize {
-				return nil, fmt.Errorf("windsurf upstream stream line too large")
-			}
-			trimmed := strings.TrimSpace(line)
-			if strings.HasPrefix(trimmed, "data:") {
-				data := strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
-				if data != "" && data != "[DONE]" {
-					parseWindsurfOpenAIStreamingUsage(data, usage)
-				}
-			}
-			if c != nil {
-				if _, err := io.WriteString(c.Writer, line); err != nil {
-					return nil, err
-				}
-				if strings.TrimRight(line, "\r\n") == "" {
-					if flusher, ok := c.Writer.(http.Flusher); ok {
-						flusher.Flush()
-					}
-				}
-			}
-		}
-		if readErr != nil {
-			if readErr == io.EOF {
-				break
-			}
-			return nil, readErr
-		}
-	}
-
-	return &ForwardResult{
-		RequestID:     resp.Header.Get("x-request-id"),
-		Usage:         *usage,
-		Model:         originalModel,
-		UpstreamModel: upstreamModel,
-		Stream:        true,
-		Duration:      time.Since(start),
-	}, nil
+// handleStreamingChatCompletionsResponse 透传 Windsurf Chat Completions SSE 流；返回值约定见 forwardCompatSSEStream。
+func (s *WindsurfGatewayService) handleStreamingChatCompletionsResponse(resp *http.Response, c *gin.Context, originalModel string, upstreamModel string, start time.Time, drain *compatStreamDrain) (*ForwardResult, error) {
+	return forwardCompatSSEStream(resp, c, s.responseHeaderFilter, "windsurf", parseWindsurfOpenAIStreamingUsage, originalModel, upstreamModel, start, drain)
 }

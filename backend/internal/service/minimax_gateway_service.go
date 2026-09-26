@@ -1,7 +1,6 @@
 package service
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -22,6 +21,9 @@ const (
 	miniMaxInternationalHost         = "api.minimax.io"
 	miniMaxChinaHost                 = "api.minimaxi.com"
 	miniMaxNonStreamResponseMaxBytes = 2 << 20
+	// miniMaxQuotaRollbackTimeout 配额回滚的独立超时：回滚使用脱离请求取消的上下文，
+	// 客户端中途断开不能导致已预留的文本请求配额无法归还。
+	miniMaxQuotaRollbackTimeout = 5 * time.Second
 )
 
 type MiniMaxGatewayService struct {
@@ -105,7 +107,11 @@ func (s *MiniMaxGatewayService) ForwardMessages(ctx context.Context, c *gin.Cont
 		return nil, err
 	}
 
-	upstreamReq, originalModel, upstreamModel, err := s.buildMessagesRequest(ctx, c, account, body)
+	stream := gjson.GetBytes(body, "stream").Bool()
+	upstreamCtx, cancelUpstream := compatUpstreamContext(ctx, stream)
+	defer cancelUpstream()
+
+	upstreamReq, originalModel, upstreamModel, err := s.buildMessagesRequest(upstreamCtx, c, account, body)
 	if err != nil {
 		return nil, err
 	}
@@ -124,14 +130,14 @@ func (s *MiniMaxGatewayService) ForwardMessages(ctx context.Context, c *gin.Cont
 
 	resp, err := s.httpClient.Do(upstreamReq)
 	if err != nil {
-		_ = s.quotaService.RollbackTextRequest(ctx, account.ID, requestID)
+		s.rollbackTextRequest(ctx, account, requestID)
 		return nil, fmt.Errorf("minimax upstream request failed: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if shouldReturnMiniMaxUpstreamError(resp.StatusCode) {
 		body, readErr := readMiniMaxNonStreamResponseBody(resp.Body)
-		_ = s.quotaService.RollbackTextRequest(ctx, account.ID, requestID)
+		s.rollbackTextRequest(ctx, account, requestID)
 		if readErr != nil {
 			return nil, readErr
 		}
@@ -142,21 +148,13 @@ func (s *MiniMaxGatewayService) ForwardMessages(ctx context.Context, c *gin.Cont
 		}
 	}
 
-	stream := gjson.GetBytes(body, "stream").Bool()
 	var result *ForwardResult
 	if stream {
-		result, err = s.handleStreamingMessagesResponse(resp, c, originalModel, upstreamModel, start)
+		result, err = s.handleStreamingMessagesResponse(resp, c, originalModel, upstreamModel, start, newCompatStreamDrain(cancelUpstream))
 	} else {
 		result, err = s.handleNonStreamingMessagesResponse(resp, c, originalModel, upstreamModel, start)
 	}
-	if err != nil {
-		_ = s.quotaService.RollbackTextRequest(ctx, account.ID, requestID)
-		return nil, err
-	}
-	if resp.StatusCode >= http.StatusInternalServerError {
-		_ = s.quotaService.RollbackTextRequest(ctx, account.ID, requestID)
-	}
-	return result, nil
+	return s.finishTextForward(ctx, account, requestID, resp.StatusCode, result, err)
 }
 
 func (s *MiniMaxGatewayService) ForwardChatCompletions(ctx context.Context, c *gin.Context, account *Account, body []byte, requestID string) (*ForwardResult, error) {
@@ -165,7 +163,11 @@ func (s *MiniMaxGatewayService) ForwardChatCompletions(ctx context.Context, c *g
 	}
 	start := time.Now()
 
-	upstreamReq, originalModel, upstreamModel, err := s.buildChatCompletionsRequest(ctx, c, account, body)
+	stream := gjson.GetBytes(body, "stream").Bool()
+	upstreamCtx, cancelUpstream := compatUpstreamContext(ctx, stream)
+	defer cancelUpstream()
+
+	upstreamReq, originalModel, upstreamModel, err := s.buildChatCompletionsRequest(upstreamCtx, c, account, body)
 	if err != nil {
 		return nil, err
 	}
@@ -184,14 +186,14 @@ func (s *MiniMaxGatewayService) ForwardChatCompletions(ctx context.Context, c *g
 
 	resp, err := s.httpClient.Do(upstreamReq)
 	if err != nil {
-		_ = s.quotaService.RollbackTextRequest(ctx, account.ID, requestID)
+		s.rollbackTextRequest(ctx, account, requestID)
 		return nil, fmt.Errorf("minimax upstream request failed: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if shouldReturnMiniMaxUpstreamError(resp.StatusCode) {
 		body, readErr := readMiniMaxNonStreamResponseBody(resp.Body)
-		_ = s.quotaService.RollbackTextRequest(ctx, account.ID, requestID)
+		s.rollbackTextRequest(ctx, account, requestID)
 		if readErr != nil {
 			return nil, readErr
 		}
@@ -202,21 +204,44 @@ func (s *MiniMaxGatewayService) ForwardChatCompletions(ctx context.Context, c *g
 		}
 	}
 
-	stream := gjson.GetBytes(body, "stream").Bool()
 	var result *ForwardResult
 	if stream {
-		result, err = s.handleStreamingChatCompletionsResponse(resp, c, originalModel, upstreamModel, start)
+		result, err = s.handleStreamingChatCompletionsResponse(resp, c, originalModel, upstreamModel, start, newCompatStreamDrain(cancelUpstream))
 	} else {
 		result, err = s.handleNonStreamingChatCompletionsResponse(resp, c, originalModel, upstreamModel, start)
 	}
+	return s.finishTextForward(ctx, account, requestID, resp.StatusCode, result, err)
+}
+
+// finishTextForward 统一处理文本转发的收尾与配额回滚。
+//
+// 约定：result != nil && err != nil 表示上游已产生部分 usage 后读取失败（见 forwardCompatSSEStream），
+// 此时上游已实际消费了本次请求，不回滚配额，并把 result 连同 err 一起返回给调用方计费；
+// result == nil && err != nil 表示请求未产生任何可计费输出，回滚预留的配额。
+func (s *MiniMaxGatewayService) finishTextForward(ctx context.Context, account *Account, requestID string, upstreamStatus int, result *ForwardResult, err error) (*ForwardResult, error) {
 	if err != nil {
-		_ = s.quotaService.RollbackTextRequest(ctx, account.ID, requestID)
-		return nil, err
+		if result == nil {
+			s.rollbackTextRequest(ctx, account, requestID)
+		}
+		return result, err
 	}
-	if resp.StatusCode >= http.StatusInternalServerError {
-		_ = s.quotaService.RollbackTextRequest(ctx, account.ID, requestID)
+	if upstreamStatus >= http.StatusInternalServerError {
+		s.rollbackTextRequest(ctx, account, requestID)
 	}
 	return result, nil
+}
+
+// rollbackTextRequest 使用脱离请求取消、带短超时的上下文回滚文本请求配额，
+// 保证客户端断开后回滚仍能执行（SEC-028）。
+func (s *MiniMaxGatewayService) rollbackTextRequest(ctx context.Context, account *Account, requestID string) {
+	if s == nil || s.quotaService == nil || account == nil {
+		return
+	}
+	detached, cancelDetach := detachUpstreamContext(ctx)
+	defer cancelDetach()
+	rollbackCtx, cancel := context.WithTimeout(detached, miniMaxQuotaRollbackTimeout)
+	defer cancel()
+	_ = s.quotaService.RollbackTextRequest(rollbackCtx, account.ID, requestID)
 }
 
 func (s *MiniMaxGatewayService) ForwardResponses(ctx context.Context, c *gin.Context, account *Account, body []byte, requestID string) (*ForwardResult, error) {
@@ -258,7 +283,7 @@ func (s *MiniMaxGatewayService) ForwardResponses(ctx context.Context, c *gin.Con
 		ResponseHeaderFilter:      s.responseHeaderFilter,
 	})
 	if err != nil {
-		_ = s.quotaService.RollbackTextRequest(ctx, account.ID, requestID)
+		s.rollbackTextRequest(ctx, account, requestID)
 		return nil, err
 	}
 	return result, nil
@@ -584,105 +609,13 @@ func readMiniMaxNonStreamResponseBody(body io.Reader) ([]byte, error) {
 	return data, nil
 }
 
-func (s *MiniMaxGatewayService) handleStreamingMessagesResponse(resp *http.Response, c *gin.Context, originalModel string, upstreamModel string, start time.Time) (*ForwardResult, error) {
-	usage := &ClaudeUsage{}
-	if c != nil {
-		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
-		c.Writer.Header().Set("Content-Type", "text/event-stream")
-		c.Status(resp.StatusCode)
-	}
-
-	reader := bufio.NewReaderSize(resp.Body, 64*1024)
+// handleStreamingMessagesResponse 透传 MiniMax Anthropic Messages SSE 流；返回值约定见 forwardCompatSSEStream。
+func (s *MiniMaxGatewayService) handleStreamingMessagesResponse(resp *http.Response, c *gin.Context, originalModel string, upstreamModel string, start time.Time, drain *compatStreamDrain) (*ForwardResult, error) {
 	gatewayUsageParser := &GatewayService{}
-	for {
-		line, readErr := reader.ReadString('\n')
-		if line != "" {
-			if len(line) > defaultMaxLineSize {
-				return nil, fmt.Errorf("minimax upstream stream line too large")
-			}
-			trimmed := strings.TrimSpace(line)
-			if strings.HasPrefix(trimmed, "data:") {
-				data := strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
-				if data != "" && data != "[DONE]" {
-					gatewayUsageParser.parseSSEUsage(data, usage)
-				}
-			}
-			if c != nil {
-				if _, err := io.WriteString(c.Writer, line); err != nil {
-					return nil, err
-				}
-				if strings.TrimRight(line, "\r\n") == "" {
-					if flusher, ok := c.Writer.(http.Flusher); ok {
-						flusher.Flush()
-					}
-				}
-			}
-		}
-		if readErr != nil {
-			if readErr == io.EOF {
-				break
-			}
-			return nil, readErr
-		}
-	}
-
-	return &ForwardResult{
-		RequestID:     resp.Header.Get("x-request-id"),
-		Usage:         *usage,
-		Model:         originalModel,
-		UpstreamModel: upstreamModel,
-		Stream:        true,
-		Duration:      time.Since(start),
-	}, nil
+	return forwardCompatSSEStream(resp, c, s.responseHeaderFilter, "minimax", gatewayUsageParser.parseSSEUsage, originalModel, upstreamModel, start, drain)
 }
 
-func (s *MiniMaxGatewayService) handleStreamingChatCompletionsResponse(resp *http.Response, c *gin.Context, originalModel string, upstreamModel string, start time.Time) (*ForwardResult, error) {
-	usage := &ClaudeUsage{}
-	if c != nil {
-		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
-		c.Writer.Header().Set("Content-Type", "text/event-stream")
-		c.Status(resp.StatusCode)
-	}
-
-	reader := bufio.NewReaderSize(resp.Body, 64*1024)
-	for {
-		line, readErr := reader.ReadString('\n')
-		if line != "" {
-			if len(line) > defaultMaxLineSize {
-				return nil, fmt.Errorf("minimax upstream stream line too large")
-			}
-			trimmed := strings.TrimSpace(line)
-			if strings.HasPrefix(trimmed, "data:") {
-				data := strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
-				if data != "" && data != "[DONE]" {
-					parseMiniMaxOpenAIStreamingUsage(data, usage)
-				}
-			}
-			if c != nil {
-				if _, err := io.WriteString(c.Writer, line); err != nil {
-					return nil, err
-				}
-				if strings.TrimRight(line, "\r\n") == "" {
-					if flusher, ok := c.Writer.(http.Flusher); ok {
-						flusher.Flush()
-					}
-				}
-			}
-		}
-		if readErr != nil {
-			if readErr == io.EOF {
-				break
-			}
-			return nil, readErr
-		}
-	}
-
-	return &ForwardResult{
-		RequestID:     resp.Header.Get("x-request-id"),
-		Usage:         *usage,
-		Model:         originalModel,
-		UpstreamModel: upstreamModel,
-		Stream:        true,
-		Duration:      time.Since(start),
-	}, nil
+// handleStreamingChatCompletionsResponse 透传 MiniMax Chat Completions SSE 流；返回值约定见 forwardCompatSSEStream。
+func (s *MiniMaxGatewayService) handleStreamingChatCompletionsResponse(resp *http.Response, c *gin.Context, originalModel string, upstreamModel string, start time.Time, drain *compatStreamDrain) (*ForwardResult, error) {
+	return forwardCompatSSEStream(resp, c, s.responseHeaderFilter, "minimax", parseMiniMaxOpenAIStreamingUsage, originalModel, upstreamModel, start, drain)
 }

@@ -278,24 +278,69 @@ func TestPanelRateLimiterPublicIP(t *testing.T) {
 	// 其他公网 IP 独立计数
 	require.Equal(t, http.StatusOK, performPanelRequest(router, "198.51.100.7:1000").Code)
 
-	// 回环/内网地址（反代内部转发地址）：跳过计数，绝不误拦
-	for i := 0; i < 5; i++ {
-		require.Equal(t, http.StatusOK, performPanelRequest(router, "127.0.0.1:1000").Code)
-		require.Equal(t, http.StatusOK, performPanelRequest(router, "10.0.0.8:1000").Code)
-		require.Equal(t, http.StatusOK, performPanelRequest(router, "172.17.0.1:1000").Code)
-		require.Equal(t, http.StatusOK, performPanelRequest(router, "192.168.1.30:1000").Code)
+	// 回环/内网地址：不再跳过限流，按直连对端地址各自独立计数
+	for _, addr := range []string{"127.0.0.1:1000", "10.0.0.8:1000", "172.17.0.1:1000", "192.168.1.30:1000", "[::1]:1000"} {
+		require.Equal(t, http.StatusOK, performPanelRequest(router, addr).Code, addr)
+		require.Equal(t, http.StatusTooManyRequests, performPanelRequest(router, addr).Code, addr)
 	}
 
 	allower.mu.Lock()
 	defer allower.mu.Unlock()
 	require.Contains(t, allower.counts, "panel:public:ip:203.0.113.9")
 	require.Contains(t, allower.counts, "panel:public:ip:198.51.100.7")
-	for key := range allower.counts {
-		require.NotContains(t, key, "127.0.0.1")
-		require.NotContains(t, key, "10.0.0.8")
-		require.NotContains(t, key, "172.17.0.1")
-		require.NotContains(t, key, "192.168.1.30")
+	for _, host := range []string{"127.0.0.1", "10.0.0.8", "172.17.0.1", "192.168.1.30", "::1"} {
+		require.Equal(t, int64(2), allower.counts["panel:public:ip:"+host], host)
 	}
+}
+
+// 解析出的安全客户端 IP 为内网地址（例如反代转发头里全是内网跳）时，
+// 限流键退回 TCP 直连对端地址，而不是跳过限流。
+func TestPanelRateLimiterPublicIPPrivateResolvedIPFallsBackToRemoteAddr(t *testing.T) {
+	allower := &fakePanelAllower{}
+	p := &PanelRateLimiter{
+		limiter:        allower,
+		settingService: newPanelRateLimitTestService(t, `{"enabled":true,"user_rpm":0,"heavy_rpm":0,"exempt_admin":true,"public_ip_rpm":1}`),
+	}
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		binding := &service.SessionBinding{IP: "10.0.0.8", UserAgent: "ua"}
+		c.Request = c.Request.WithContext(service.WithSessionBinding(c.Request.Context(), binding))
+		c.Next()
+	})
+	router.Use(p.PublicIP())
+	router.GET("/test", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"ok": true}) })
+
+	require.Equal(t, http.StatusOK, performPanelRequest(router, "192.168.1.30:1000").Code)
+	require.Equal(t, http.StatusTooManyRequests, performPanelRequest(router, "192.168.1.30:1000").Code)
+	// 另一个直连对端独立计数
+	require.Equal(t, http.StatusOK, performPanelRequest(router, "192.168.1.31:1000").Code)
+	// 对端地址无法解析：无可用限流键，放行
+	require.Equal(t, http.StatusOK, performPanelRequest(router, "").Code)
+	require.Equal(t, http.StatusOK, performPanelRequest(router, "").Code)
+
+	allower.mu.Lock()
+	defer allower.mu.Unlock()
+	require.Equal(t, int64(2), allower.counts["panel:public:ip:192.168.1.30"])
+	require.Equal(t, int64(1), allower.counts["panel:public:ip:192.168.1.31"])
+	require.NotContains(t, allower.counts, "panel:public:ip:10.0.0.8")
+	require.NotContains(t, allower.counts, "panel:public:ip:")
+}
+
+func TestRemoteAddrHost(t *testing.T) {
+	newCtx := func(remoteAddr string) *gin.Context {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+		c.Request.RemoteAddr = remoteAddr
+		return c
+	}
+	require.Equal(t, "203.0.113.9", remoteAddrHost(newCtx("203.0.113.9:1000")))
+	require.Equal(t, "203.0.113.9", remoteAddrHost(newCtx("203.0.113.9")))
+	require.Equal(t, "::1", remoteAddrHost(newCtx("[::1]:1000")))
+	require.Equal(t, "", remoteAddrHost(newCtx("")))
+	require.Equal(t, "", remoteAddrHost(newCtx("not-an-ip:1000")))
+	require.Equal(t, "", remoteAddrHost(nil))
 }
 
 func TestIsPubliclyRoutableClientIP(t *testing.T) {

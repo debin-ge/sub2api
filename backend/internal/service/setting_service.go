@@ -510,12 +510,13 @@ func (s *SettingService) LoadForwardedClientIPSettings(ctx context.Context) erro
 	}
 	if values[settingKeyForwardedClientIPModeV2] != "true" {
 		updates[settingKeyForwardedClientIPModeV2] = "true"
-		// Before this migration, new installations persisted false by default.
-		// Restore compatibility only when no trusted-proxy policy was configured.
-		if headersErr == nil && hasStoredValue && !enabled && !s.cfg.Server.TrustedProxiesConfigured {
-			enabled = true
-			updates[SettingKeyAPIKeyACLTrustForwardedIP] = "true"
-		}
+	}
+	// 早期版本曾在此把持久化的 false 翻回 true「恢复兼容」；这会静默地把管理员
+	// 明确选择的安全模式改回信任转发头，不再这么做。管理员选了 false 但又没配
+	// server.trusted_proxies 时，客户端 IP 会解析为直连对端（通常是反代地址），
+	// 这里只给出告警，由运营方补齐 server.trusted_proxies 配置。
+	if hasStoredValue && !enabled && !s.cfg.Server.TrustedProxiesConfigured {
+		slog.Warn("forwarded client IP compatibility mode is disabled but server.trusted_proxies is not configured; client IPs will resolve to the direct peer address (configure server.trusted_proxies or SERVER_TRUSTED_PROXIES)")
 	}
 	if len(updates) > 0 {
 		if err := s.settingRepo.SetMultiple(ctx, updates); err != nil {

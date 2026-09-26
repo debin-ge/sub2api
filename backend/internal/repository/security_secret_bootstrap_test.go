@@ -127,6 +127,102 @@ func TestEnsureBootstrapSecretsConfiguredSecretDuplicateIgnored(t *testing.T) {
 	require.Equal(t, "existing-jwt-secret-32bytes-long!!!!", cfg.JWT.Secret)
 }
 
+func TestEnsureBootstrapSecretsMismatchKeepsPersistedByDefault(t *testing.T) {
+	client := newSecuritySecretTestClient(t)
+	_, err := client.SecuritySecret.Create().
+		SetKey(securitySecretKeyJWT).
+		SetValue("existing-jwt-secret-32bytes-long!!!!").
+		Save(context.Background())
+	require.NoError(t, err)
+
+	cfg := &config.Config{JWT: config.JWTConfig{
+		Secret:                    "another-configured-jwt-secret-32!!!!",
+		RotatePersistedOnMismatch: false,
+	}}
+	err = ensureBootstrapSecrets(context.Background(), client, cfg)
+	require.NoError(t, err)
+
+	stored, err := client.SecuritySecret.Query().Where(securitysecret.KeyEQ(securitySecretKeyJWT)).Only(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "existing-jwt-secret-32bytes-long!!!!", stored.Value, "persisted secret must win when rotation is not requested")
+	require.Equal(t, "existing-jwt-secret-32bytes-long!!!!", cfg.JWT.Secret, "runtime config must adopt the persisted secret")
+}
+
+func TestEnsureBootstrapSecretsMismatchRotatesWhenRequested(t *testing.T) {
+	client := newSecuritySecretTestClient(t)
+	_, err := client.SecuritySecret.Create().
+		SetKey(securitySecretKeyJWT).
+		SetValue("existing-jwt-secret-32bytes-long!!!!").
+		Save(context.Background())
+	require.NoError(t, err)
+
+	cfg := &config.Config{JWT: config.JWTConfig{
+		Secret:                    "another-configured-jwt-secret-32!!!!",
+		RotatePersistedOnMismatch: true,
+	}}
+	err = ensureBootstrapSecrets(context.Background(), client, cfg)
+	require.NoError(t, err)
+
+	stored, err := client.SecuritySecret.Query().Where(securitysecret.KeyEQ(securitySecretKeyJWT)).Only(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "another-configured-jwt-secret-32!!!!", stored.Value, "persisted secret must be overwritten by the configured one")
+	require.Equal(t, "another-configured-jwt-secret-32!!!!", cfg.JWT.Secret, "runtime config must keep the configured secret")
+
+	count, err := client.SecuritySecret.Query().Where(securitysecret.KeyEQ(securitySecretKeyJWT)).Count(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 1, count)
+}
+
+func TestEnsureBootstrapSecretsRotateFlagNoopWhenSecretsMatch(t *testing.T) {
+	client := newSecuritySecretTestClient(t)
+	_, err := client.SecuritySecret.Create().
+		SetKey(securitySecretKeyJWT).
+		SetValue("existing-jwt-secret-32bytes-long!!!!").
+		Save(context.Background())
+	require.NoError(t, err)
+
+	cfg := &config.Config{JWT: config.JWTConfig{
+		Secret:                    "existing-jwt-secret-32bytes-long!!!!",
+		RotatePersistedOnMismatch: true,
+	}}
+	require.NoError(t, ensureBootstrapSecrets(context.Background(), client, cfg))
+	require.Equal(t, "existing-jwt-secret-32bytes-long!!!!", cfg.JWT.Secret)
+}
+
+func TestEnsureBootstrapSecretsRotateFlagFirstBootPersistsConfigured(t *testing.T) {
+	// 数据库尚无记录时，打开轮换开关不应报错：正常走首次持久化路径。
+	client := newSecuritySecretTestClient(t)
+	cfg := &config.Config{JWT: config.JWTConfig{
+		Secret:                    "configured-jwt-secret-32bytes-long!!",
+		RotatePersistedOnMismatch: true,
+	}}
+	require.NoError(t, ensureBootstrapSecrets(context.Background(), client, cfg))
+
+	stored, err := client.SecuritySecret.Query().Where(securitysecret.KeyEQ(securitySecretKeyJWT)).Only(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "configured-jwt-secret-32bytes-long!!", stored.Value)
+}
+
+func TestRotateSecuritySecret(t *testing.T) {
+	client := newSecuritySecretTestClient(t)
+
+	err := rotateSecuritySecret(context.Background(), client, "rotate_key", "short")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "at least 32 bytes")
+
+	err = rotateSecuritySecret(context.Background(), client, "rotate_key", "rotated-secret-value-32bytes-long!!!")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not found")
+
+	_, err = client.SecuritySecret.Create().SetKey("rotate_key").SetValue("original-secret-value-32bytes-long!!").Save(context.Background())
+	require.NoError(t, err)
+	require.NoError(t, rotateSecuritySecret(context.Background(), client, "rotate_key", "  rotated-secret-value-32bytes-long!!!  "))
+
+	stored, err := client.SecuritySecret.Query().Where(securitysecret.KeyEQ("rotate_key")).Only(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "rotated-secret-value-32bytes-long!!!", stored.Value)
+}
+
 func TestGetOrCreateGeneratedSecuritySecretTrimmedExistingValue(t *testing.T) {
 	client := newSecuritySecretTestClient(t)
 	_, err := client.SecuritySecret.Create().

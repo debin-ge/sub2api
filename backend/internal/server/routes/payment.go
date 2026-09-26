@@ -50,7 +50,19 @@ func RegisterPaymentRoutes(
 	// Signed resume-token recovery is the preferred public lookup path.
 	// The legacy anonymous out_trade_no verify endpoint remains available as a
 	// persisted-state compatibility path for staggered upgrades.
+	//
+	// SEC-018：这两个端点匿名可达且每次都查库（verify 还能按 out_trade_no 枚举订单），
+	// 必须带按客户端 IP 的兜底限流。PanelRateLimiter.PublicIP 走系统设置里的公开接口
+	// RPM（Redis 异常 fail-open，反代内网地址跳过）。
+	// TODO(SEC-018): /orders/verify 还应叠加一层固定阈值、Redis 故障 fail-close 的
+	// internal/middleware.RateLimiter.LimitWithOptions("payment-public-verify", 30, time.Minute,
+	// RateLimitOptions{FailureMode: RateLimitFailClose})，与 routes/auth.go 的注册/登录入口
+	// 一致；这需要 RegisterPaymentRoutes 新增 *internal/middleware.RateLimiter（或 *redis.Client）
+	// 参数并同步修改 server/router.go 调用点。
+	// 请求体同样只包含 out_trade_no / resume_token，沿用匿名接口 64KiB 上限（SEC-012）。
 	public := v1.Group("/payment/public")
+	public.Use(publicBodyLimit(publicJSONBodyLimit)...)
+	public.Use(panelRateLimiter.PublicIP())
 	{
 		public.POST("/orders/verify", paymentHandler.VerifyOrderPublic)
 		public.POST("/orders/resolve", paymentHandler.ResolveOrderPublicByResumeToken)

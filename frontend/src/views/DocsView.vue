@@ -467,6 +467,7 @@ import AppIcon from '@/components/apps/AppIcon.vue'
 import AppCard from '@/components/apps/AppCard.vue'
 import { useAppStore, useAuthStore } from '@/stores'
 import { useDocMarkdown, type RenderableDoc } from '@/composables/useDocMarkdown'
+import { sanitizeUrl } from '@/utils/url'
 
 interface DocGroup {
   category: string
@@ -818,9 +819,10 @@ function docPath(doc: UserDocEntry): string {
 }
 
 function normalizeBaseUrl(value: string): string {
-  const trimmed = value.trim()
   const fallback = typeof window === 'undefined' ? '/' : `${window.location.origin}/`
-  const base = trimmed || fallback
+  // api_base_url is admin-controlled and is spliced into hrefs/env snippets; only
+  // accept http(s) or a same-origin path, falling back to the current origin.
+  const base = sanitizeUrl(value, { allowRelative: true }) || fallback
   return base.endsWith('/') ? base : `${base}/`
 }
 

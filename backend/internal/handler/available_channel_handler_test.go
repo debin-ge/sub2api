@@ -5,10 +5,14 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -1532,4 +1536,192 @@ func TestListPublic_ExposesVideoAndImageTierPrices(t *testing.T) {
 		{Tier: service.ImageBillingSize1K, Price: 0.05},
 		{Tier: service.ImageBillingSize2K, Price: 0.02},
 	}, image.Pricing.ImageTierPrices)
+}
+
+// countingPublicChannelRepo 统计 ListAll 调用次数：ListPublicAvailable 每次都会直接
+// 打到仓储，因此它是"匿名响应是否被重算"的可靠探针。
+type countingPublicChannelRepo struct {
+	publicChannelRepoStub
+	listAllCalls atomic.Int32
+}
+
+func (r *countingPublicChannelRepo) ListAll(ctx context.Context) ([]service.Channel, error) {
+	r.listAllCalls.Add(1)
+	return r.publicChannelRepoStub.ListAll(ctx)
+}
+
+// countingPublicModelStats 统计近 7 天调用量聚合（usage_logs GROUP BY）的执行次数。
+type countingPublicModelStats struct {
+	calls  atomic.Int32
+	counts map[string]int64
+}
+
+func (s *countingPublicModelStats) GetPublicModelRecentCallCounts(context.Context, time.Time) (map[string]int64, error) {
+	s.calls.Add(1)
+	return s.counts, nil
+}
+
+type plazaFakeClock struct {
+	mu sync.Mutex
+	t  time.Time
+}
+
+func (c *plazaFakeClock) now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.t
+}
+
+func (c *plazaFakeClock) advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.t = c.t.Add(d)
+}
+
+func newCachedPlazaHandlerForTest(clock *plazaFakeClock) (*AvailableChannelHandler, *countingPublicChannelRepo, *countingPublicModelStats) {
+	repo := &countingPublicChannelRepo{publicChannelRepoStub: publicChannelRepoStub{channels: []service.Channel{{
+		ID:       1,
+		Name:     "public-channel",
+		Status:   service.StatusActive,
+		GroupIDs: []int64{1},
+	}}}}
+	channelSvc := service.NewChannelService(
+		repo,
+		&publicGroupRepoStub{groups: []service.Group{{
+			ID:       1,
+			Name:     "public-openai",
+			Platform: service.PlatformOpenAI,
+			Status:   service.StatusActive,
+		}}},
+		nil,
+		nil, nil)
+	stats := &countingPublicModelStats{counts: map[string]int64{"gpt-4o-mini": 42}}
+	h := &AvailableChannelHandler{
+		channelService: channelSvc,
+		settingService: stubAvailableChannelSettingService{},
+		modelCatalog:   &stubModelCatalogProvider{byGroup: map[int64][]string{1: {"gpt-4o-mini"}}},
+		modelStats:     stats,
+	}
+	h.useClock(clock.now)
+	return h, repo, stats
+}
+
+func servePlazaRequest(t *testing.T, h *AvailableChannelHandler, authenticated bool) *httptest.ResponseRecorder {
+	t.Helper()
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/channels/public", nil)
+	if authenticated {
+		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 7})
+	}
+	h.ListPublic(c)
+	return w
+}
+
+// SEC-019：匿名广场响应在进程内缓存 60s，并发 miss 由 singleflight 合并为一次构建；
+// 近 7 天调用量聚合独立缓存 5 分钟。
+func TestListPublic_AnonymousResponseCachedAndSingleflighted(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	clock := &plazaFakeClock{t: time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC)}
+	h, repo, stats := newCachedPlazaHandlerForTest(clock)
+
+	const concurrency = 100
+	var wg sync.WaitGroup
+	codes := make([]int, concurrency)
+	bodies := make([]string, concurrency)
+	cacheControl := make([]string, concurrency)
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			w := servePlazaRequest(t, h, false)
+			codes[i] = w.Code
+			bodies[i] = w.Body.String()
+			cacheControl[i] = w.Header().Get("Cache-Control")
+		}(i)
+	}
+	wg.Wait()
+
+	for i := 0; i < concurrency; i++ {
+		require.Equal(t, http.StatusOK, codes[i])
+		require.Equal(t, bodies[0], bodies[i], "all anonymous callers must observe the same cached body")
+		require.Equal(t, "public, max-age=60, stale-while-revalidate=300", cacheControl[i])
+	}
+	require.Contains(t, bodies[0], `"recent_call_count":42`)
+	require.Equal(t, int32(1), repo.listAllCalls.Load(), "100 concurrent anonymous requests must build the response once")
+	require.Equal(t, int32(1), stats.calls.Load(), "recent-call aggregation must run once")
+
+	// TTL 内再次请求：仍命中缓存。
+	clock.advance(59 * time.Second)
+	require.Equal(t, http.StatusOK, servePlazaRequest(t, h, false).Code)
+	require.Equal(t, int32(1), repo.listAllCalls.Load())
+
+	// 超过 60s：响应重建，但 5 分钟内调用量聚合仍复用。
+	clock.advance(2 * time.Second)
+	require.Equal(t, http.StatusOK, servePlazaRequest(t, h, false).Code)
+	require.Equal(t, int32(2), repo.listAllCalls.Load(), "response cache must expire after its TTL")
+	require.Equal(t, int32(1), stats.calls.Load(), "recent-call cache has a longer TTL than the response cache")
+
+	// 超过 5 分钟：调用量聚合重跑。
+	clock.advance(5 * time.Minute)
+	require.Equal(t, http.StatusOK, servePlazaRequest(t, h, false).Code)
+	require.Equal(t, int32(3), repo.listAllCalls.Load())
+	require.Equal(t, int32(2), stats.calls.Load(), "recent-call cache must expire after 5 minutes")
+}
+
+func TestListPublic_AuthenticatedResponseNotCachedButSharesRecentCalls(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	clock := &plazaFakeClock{t: time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC)}
+	h, repo, stats := newCachedPlazaHandlerForTest(clock)
+	h.apiKeyService = stubAvailableChannelAPIKeyService{
+		catalog: []service.GroupCatalogEntry{{Group: service.Group{ID: 1, Name: "public-openai", Platform: service.PlatformOpenAI}}},
+	}
+
+	// 匿名请求预热两个缓存。
+	require.Equal(t, http.StatusOK, servePlazaRequest(t, h, false).Code)
+	require.Equal(t, int32(1), repo.listAllCalls.Load())
+	require.Equal(t, int32(1), stats.calls.Load())
+
+	// 登录态响应是用户专属的：每次重建，不复用匿名响应缓存。
+	for i := 0; i < 3; i++ {
+		w := servePlazaRequest(t, h, true)
+		require.Equal(t, http.StatusOK, w.Code)
+		require.Equal(t, "private, no-store", w.Header().Get("Cache-Control"))
+	}
+	require.Equal(t, int32(4), repo.listAllCalls.Load(), "authenticated responses must be rebuilt per request")
+	// 但调用量聚合在 5 分钟窗口内对登录态同样复用。
+	require.Equal(t, int32(1), stats.calls.Load(), "recent-call aggregation is shared with authenticated requests")
+
+	// 登录态请求不会污染匿名缓存：匿名请求仍命中原缓存。
+	require.Equal(t, http.StatusOK, servePlazaRequest(t, h, false).Code)
+	require.Equal(t, int32(4), repo.listAllCalls.Load())
+}
+
+func TestListPublic_AnonymousBuildErrorIsNotCached(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	clock := &plazaFakeClock{t: time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC)}
+	h, repo, _ := newCachedPlazaHandlerForTest(clock)
+	catalog := &failingModelCatalogProvider{err: errors.New("catalog unavailable")}
+	h.modelCatalog = catalog
+
+	w := servePlazaRequest(t, h, false)
+	require.Equal(t, http.StatusInternalServerError, w.Code)
+	require.Equal(t, int32(1), repo.listAllCalls.Load())
+
+	// 错误不得被缓存：恢复后下一次请求重新构建并成功。
+	catalog.err = nil
+	w = servePlazaRequest(t, h, false)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, int32(2), repo.listAllCalls.Load())
+}
+
+type failingModelCatalogProvider struct {
+	err error
+}
+
+func (p *failingModelCatalogProvider) ListForGroup(context.Context, int64, string) ([]string, error) {
+	if p.err != nil {
+		return nil, p.err
+	}
+	return []string{"gpt-4o-mini"}, nil
 }

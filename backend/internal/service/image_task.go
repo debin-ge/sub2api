@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -69,6 +70,17 @@ type ImageTaskStore interface {
 	Get(ctx context.Context, id string) (*ImageTaskRecord, error)
 }
 
+// ImageTaskPendingCounter 是 store 的可选扩展：若底层存储能够按用户统计未终态任务数
+// （例如维护了 per-user 索引），实现该接口后 CountPendingForUser 优先采用其结果；
+// 否则回落到服务内的进程本地追踪。
+type ImageTaskPendingCounter interface {
+	CountPendingForUser(ctx context.Context, userID int64) (int, error)
+}
+
+// imageTaskPendingGrace 是进程本地追踪对未收到终态回写任务的宽限：任务创建时间超过
+// 执行超时 + 宽限仍未终结（如 finish 落库失败），视为已不再占用挂起配额。
+const imageTaskPendingGrace = time.Minute
+
 // ImageStorageResolver reports the currently effective object-storage binding.
 // It exists so the async image feature can be switched on and off from the admin
 // UI without a restart: the wiring below is fixed at startup, but the answer to
@@ -82,6 +94,14 @@ type ImageTaskService struct {
 	resolve          ImageStorageResolver
 	ttl              time.Duration
 	executionTimeout time.Duration
+
+	now func() time.Time
+
+	// pending 记录本进程创建且尚未终结的任务：userID -> taskID -> 创建时间。
+	// Redis store 只有按 ID 的 K/V，没有 per-user 索引，因此挂起数在此本地统计；
+	// 任务由创建它的进程执行并回写终态，本地视图对该进程是完整的。
+	pendingMu sync.Mutex
+	pending   map[int64]map[string]time.Time
 }
 
 func NewImageTaskService(store ImageTaskStore) *ImageTaskService {
@@ -95,7 +115,13 @@ func NewImageTaskServiceWithOptions(store ImageTaskStore, ttl, executionTimeout 
 	if executionTimeout <= 0 {
 		executionTimeout = defaultImageTaskExecutionTimeout
 	}
-	return &ImageTaskService{store: store, ttl: ttl, executionTimeout: executionTimeout}
+	return &ImageTaskService{
+		store:            store,
+		ttl:              ttl,
+		executionTimeout: executionTimeout,
+		now:              time.Now,
+		pending:          make(map[int64]map[string]time.Time),
+	}
 }
 
 // NewImageTaskServiceWithUploader 构造一个已启用的图片任务服务：结果会先经 uploader
@@ -154,7 +180,7 @@ func (s *ImageTaskService) Create(ctx context.Context, owner ImageTaskOwner) (*I
 	if s == nil || s.store == nil {
 		return nil, ErrImageTaskUnavailable
 	}
-	now := time.Now().UTC()
+	now := s.clock().UTC()
 	task := &ImageTaskRecord{
 		ID:        "imgtask_" + strings.ReplaceAll(uuid.NewString(), "-", ""),
 		UserID:    owner.UserID,
@@ -166,7 +192,89 @@ func (s *ImageTaskService) Create(ctx context.Context, owner ImageTaskOwner) (*I
 	if err := s.store.Save(ctx, task, s.ttl); err != nil {
 		return nil, ErrImageTaskUnavailable.WithCause(err)
 	}
+	s.trackPending(task.UserID, task.ID, now)
 	return imageTaskToPublic(task), nil
+}
+
+// CountPendingForUser 返回用户当前未终态（processing）的异步图片任务数。
+// store 实现了 ImageTaskPendingCounter 时以其为准，否则使用进程本地追踪。
+func (s *ImageTaskService) CountPendingForUser(ctx context.Context, userID int64) (int, error) {
+	if s == nil || s.store == nil {
+		return 0, ErrImageTaskUnavailable
+	}
+	if counter, ok := s.store.(ImageTaskPendingCounter); ok {
+		return counter.CountPendingForUser(ctx, userID)
+	}
+	return s.countTrackedPending(userID), nil
+}
+
+func (s *ImageTaskService) clock() time.Time {
+	if s != nil && s.now != nil {
+		return s.now()
+	}
+	return time.Now()
+}
+
+// pendingStaleAfter 是本地追踪条目的最长存活时间。
+func (s *ImageTaskService) pendingStaleAfter() time.Duration {
+	return s.ExecutionTimeout() + imageTaskPendingGrace
+}
+
+func (s *ImageTaskService) trackPending(userID int64, taskID string, createdAt time.Time) {
+	if s == nil || userID <= 0 || taskID == "" {
+		return
+	}
+	s.pendingMu.Lock()
+	defer s.pendingMu.Unlock()
+	if s.pending == nil {
+		s.pending = make(map[int64]map[string]time.Time)
+	}
+	tasks := s.pending[userID]
+	if tasks == nil {
+		tasks = make(map[string]time.Time)
+		s.pending[userID] = tasks
+	}
+	tasks[taskID] = createdAt
+}
+
+func (s *ImageTaskService) untrackPending(userID int64, taskID string) {
+	if s == nil {
+		return
+	}
+	s.pendingMu.Lock()
+	defer s.pendingMu.Unlock()
+	tasks := s.pending[userID]
+	if tasks == nil {
+		return
+	}
+	delete(tasks, taskID)
+	if len(tasks) == 0 {
+		delete(s.pending, userID)
+	}
+}
+
+// countTrackedPending 统计用户本地追踪的挂起任务数，顺带清理超过宽限仍未终结的条目。
+func (s *ImageTaskService) countTrackedPending(userID int64) int {
+	if s == nil {
+		return 0
+	}
+	s.pendingMu.Lock()
+	defer s.pendingMu.Unlock()
+	tasks := s.pending[userID]
+	if len(tasks) == 0 {
+		return 0
+	}
+	cutoff := s.clock().Add(-s.pendingStaleAfter())
+	for id, createdAt := range tasks {
+		if createdAt.Before(cutoff) {
+			delete(tasks, id)
+		}
+	}
+	if len(tasks) == 0 {
+		delete(s.pending, userID)
+		return 0
+	}
+	return len(tasks)
 }
 
 func (s *ImageTaskService) Get(ctx context.Context, owner ImageTaskOwner, id string) (*ImageTask, error) {
@@ -221,7 +329,7 @@ func (s *ImageTaskService) finish(ctx context.Context, id, status string, status
 		}
 		return ErrImageTaskUnavailable.WithCause(err)
 	}
-	now := time.Now().UTC()
+	now := s.clock().UTC()
 	completedAt := now.Unix()
 	task.Status = status
 	task.HTTPStatus = statusCode
@@ -232,6 +340,7 @@ func (s *ImageTaskService) finish(ctx context.Context, id, status string, status
 	if err := s.store.Save(ctx, task, s.ttl); err != nil {
 		return ErrImageTaskUnavailable.WithCause(err)
 	}
+	s.untrackPending(task.UserID, task.ID)
 	return nil
 }
 

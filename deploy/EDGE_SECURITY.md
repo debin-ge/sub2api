@@ -30,14 +30,37 @@ the application's responsibility.
 ## Trusted client IPs
 
 `security.trust_forwarded_ip_for_api_key_acl` is enabled by default for upgrade
-compatibility. While enabled, raw forwarding headers take over client-IP
-resolution for logs and security-sensitive paths. Custom headers from
-`security.forwarded_client_ip_headers` are checked in configured order before
-the built-in `CF-Connecting-IP`, `X-Real-IP`, and `X-Forwarded-For` fallback.
-Header names are case-insensitive, normalized when loaded, de-duplicated, and
-limited to 16 unique valid HTTP field names. Header values must contain IP
-literals; comma-separated values are supported, invalid entries are skipped,
-and public addresses are preferred over private fallback addresses.
+compatibility. While enabled, forwarding headers take over client-IP resolution
+for logs and security-sensitive paths, but only when the direct TCP peer is a
+trusted proxy:
+
+- If `server.trusted_proxies` is configured, the peer must match one of the
+  listed IPs/CIDRs (an explicit empty list trusts nobody).
+- If it is not configured, loopback, RFC1918/ULA private, and link-local peers
+  are trusted. This keeps the common "reverse proxy on the same host or Docker
+  network" deployment working without configuration.
+- Any other peer is treated as the client itself; every forwarded header it
+  sends is ignored.
+
+From a trusted peer, headers are consulted in this order: custom headers from
+`security.forwarded_client_ip_headers` in configured order, then
+`X-Forwarded-For`, `X-Real-IP`, and finally `CF-Connecting-IP`. Reverse proxies
+overwrite `X-Forwarded-For`/`X-Real-IP` from the real peer, whereas
+`CF-Connecting-IP` is usually passed through untouched, so a client-supplied CDN
+header can no longer win. `X-Forwarded-For` is evaluated right-to-left: hops
+that match the trusted-proxy rule above are skipped and the first remaining
+valid address is the client (the "rightmost untrusted" algorithm). The leftmost
+entry is never trusted on its own because it is client-controlled. When no
+usable address remains, the peer address is used. Custom header names are
+case-insensitive, normalized when loaded, de-duplicated, and limited to 16
+unique valid HTTP field names. Header values must contain IP literals;
+comma-separated values are supported, invalid entries are skipped, and public
+addresses are preferred over private fallback addresses.
+
+Note that without `server.trusted_proxies`, every private hop in
+`X-Forwarded-For` counts as a proxy, so LAN clients behind the proxy resolve to
+the proxy address. Configure `server.trusted_proxies` with the exact proxy
+addresses to attribute those requests to the LAN client.
 
 The list can be supplied in YAML or with the comma-separated environment
 variable `SECURITY_FORWARDED_CLIENT_IP_HEADERS`; an explicitly empty environment
@@ -49,10 +72,11 @@ headers are ignored completely when the switch is disabled. In that mode Gin's
 CIDR/IP addresses that connect directly to Sub2API. An explicit empty list
 trusts no forwarded client IPs.
 
-On the first upgrade to this mode, a legacy `false` value is changed to `true`
-only when `server.trusted_proxies` was not explicitly configured; explicit
-proxy policies remain in secure mode. New installations persist the configured
-custom header list during database initialization. Existing installations
+A persisted `false` value is never changed back to `true`. When the switch is
+off and `server.trusted_proxies` is not configured, startup logs a warning:
+client IPs then resolve to the direct peer, which behind a reverse proxy is the
+proxy address. New installations persist the configured custom header list
+during database initialization. Existing installations
 backfill a missing database value from the YAML configuration. A hidden
 migration marker prevents later administrator changes from being overwritten.
 If settings cannot be read or the persisted custom-header list is malformed,
@@ -60,11 +84,17 @@ the process fails closed to trusted-proxy mode with no custom headers. If a
 migration write fails, the computed mode remains active for the current process
 and startup records a warning.
 
-Compatibility takeover accepts forwarded headers without validating the direct
-peer, including any configured custom header. Protect the origin from direct
-access while it is enabled. A CDN deployment must firewall the origin so only
-the CDN or load balancer can reach it, and that proxy must overwrite every
-trusted client-IP header rather than append an untrusted client value.
+Compatibility mode validates the direct peer, but any configured custom header
+is still accepted as-is from a trusted peer, so that proxy must overwrite every
+trusted client-IP header rather than append an untrusted client value. Protect
+the origin from direct access while it is enabled. A CDN deployment must
+firewall the origin so only the CDN or load balancer can reach it.
+
+Recommended production setting: list the exact proxy addresses in
+`server.trusted_proxies` (or `SERVER_TRUSTED_PROXIES`), verify that logs show
+real client addresses, then set `security.trust_forwarded_ip_for_api_key_acl`
+to `false` (also available from the admin security settings) so Gin's
+trusted-proxy chain alone decides client IPs.
 
 Example for a proxy on the same host:
 
@@ -116,6 +146,10 @@ server {
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $remote_addr;
+        # Drop CDN-only client-IP headers: with clients connecting directly
+        # to Nginx they can only be forged.
+        proxy_set_header CF-Connecting-IP "";
+        proxy_set_header True-Client-IP "";
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
@@ -148,8 +182,10 @@ processing is restricted to explicit trusted proxy CIDRs.
 ## Caddy and CDN
 
 The bundled `deploy/Caddyfile` sets a 64 KiB header limit, a 10-second header
-timeout, a 256 MiB absolute body limit, and overwrites forwarded addresses from
-the TCP peer. It is therefore a direct-to-Caddy baseline. Do not use its
+timeout, a 256 MiB absolute body limit, overwrites forwarded addresses from
+the TCP peer, and strips the CDN-only `CF-Connecting-IP` and `True-Client-IP`
+headers (`header_up -CF-Connecting-IP`). It is therefore a direct-to-Caddy
+baseline. Do not use its
 `{remote_host}` forwarding lines unchanged behind a CDN: all clients would be
 attributed to a CDN egress address, collapsing rejection aggregation and the
 invalid-auth limiter onto unrelated users.
@@ -182,6 +218,10 @@ api.example.com {
 	reverse_proxy 127.0.0.1:8080 {
 		header_up X-Real-IP {client_ip}
 		header_up X-Forwarded-For {client_ip}
+		# Caddy already resolved the client from CF-Connecting-IP above;
+		# do not pass the raw CDN header on to the application.
+		header_up -CF-Connecting-IP
+		header_up -True-Client-IP
 	}
 }
 ```
@@ -190,7 +230,8 @@ Replace the documentation ranges with the CDN's published, automatically
 maintained egress ranges. `CF-Connecting-IP` is safe here only because direct
 origin access is blocked and Caddy trusts only those TCP peers. Configure
 Sub2API `server.trusted_proxies` with the Caddy address/private subnet so the
-application accepts only Caddy's rewritten headers.
+application accepts only Caddy's rewritten headers, then disable the
+forwarded-IP compatibility switch as described above.
 
 Caddy core does not provide a general request-rate limiter; use a trusted
 CDN/WAF, a supported rate-limit module, or host firewall controls.

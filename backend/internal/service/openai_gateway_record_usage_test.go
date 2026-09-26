@@ -1125,7 +1125,9 @@ func TestOpenAIGatewayServiceRecordUsage_BillingFingerprintIncludesRequestPayloa
 	require.Equal(t, payloadHash, billingRepo.lastCmd.RequestPayloadHash)
 }
 
-func TestOpenAIGatewayServiceRecordUsage_UsesFallbackRequestIDForBillingAndUsageLog(t *testing.T) {
+// SEC-016：ctxkey.RequestID 直接来自客户端可控的 X-Request-ID 请求头，不能作为计费幂等键；
+// 没有 client_request_id 且上游也没返回 request id 时必须走随机生成，而不是 "local:" 回退。
+func TestOpenAIGatewayServiceRecordUsage_IgnoresClientControlledRequestIDForBillingAndUsageLog(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{}
 	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
 	userRepo := &openAIRecordUsageUserRepoStub{}
@@ -1150,9 +1152,11 @@ func TestOpenAIGatewayServiceRecordUsage_UsesFallbackRequestIDForBillingAndUsage
 
 	require.NoError(t, err)
 	require.NotNil(t, billingRepo.lastCmd)
-	require.Equal(t, "local:req-local-fallback", billingRepo.lastCmd.RequestID)
+	require.True(t, strings.HasPrefix(billingRepo.lastCmd.RequestID, "generated:"), "got %q", billingRepo.lastCmd.RequestID)
+	require.NotContains(t, billingRepo.lastCmd.RequestID, "req-local-fallback")
 	require.NotNil(t, usageRepo.lastLog)
-	require.Equal(t, "local:req-local-fallback", usageRepo.lastLog.RequestID)
+	// 计费命令与 usage_log 必须共用同一把幂等键
+	require.Equal(t, billingRepo.lastCmd.RequestID, usageRepo.lastLog.RequestID)
 }
 
 func TestOpenAIGatewayServiceRecordUsage_PrefersClientRequestIDOverUpstreamRequestID(t *testing.T) {

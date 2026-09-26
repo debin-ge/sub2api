@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -170,4 +171,59 @@ func TestAccountHandlerBatchDeleteRejectsEmptyNormalizedIDs(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestAccountHandlerBatchDeleteRejectsOversizedBatch(t *testing.T) {
+	adminSvc := &batchDeleteAdminService{stubAdminService: newStubAdminService()}
+	router := setupAccountBatchDeleteRouter(adminSvc)
+
+	ids := make([]byte, 0, 8*(maxAccountBatchSize+1))
+	ids = append(ids, '[')
+	for i := 1; i <= maxAccountBatchSize+1; i++ {
+		if i > 1 {
+			ids = append(ids, ',')
+		}
+		ids = append(ids, []byte(fmt.Sprintf("%d", i))...)
+	}
+	ids = append(ids, ']')
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/admin/accounts/batch-delete",
+		bytes.NewBufferString(`{"account_ids":`+string(ids)+`}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "BATCH_TOO_LARGE")
+	require.Empty(t, adminSvc.deletedIDs, "oversized batch must not delete anything")
+}
+
+func TestAccountHandlerBatchDeleteAcceptsBatchAtLimit(t *testing.T) {
+	adminSvc := &batchDeleteAdminService{stubAdminService: newStubAdminService()}
+	router := setupAccountBatchDeleteRouter(adminSvc)
+
+	ids := make([]byte, 0, 8*maxAccountBatchSize)
+	ids = append(ids, '[')
+	for i := 1; i <= maxAccountBatchSize; i++ {
+		if i > 1 {
+			ids = append(ids, ',')
+		}
+		ids = append(ids, []byte(fmt.Sprintf("%d", i))...)
+	}
+	ids = append(ids, ']')
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/admin/accounts/batch-delete",
+		bytes.NewBufferString(`{"account_ids":`+string(ids)+`}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Len(t, adminSvc.deletedIDs, maxAccountBatchSize)
 }

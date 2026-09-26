@@ -1035,6 +1035,90 @@ func TestBackupService_TestS3Connection(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestBackupService_TestS3Connection_StoredSecretRequiresSameTarget(t *testing.T) {
+	repo := newMockSettingRepo()
+	svc := newTestBackupService(repo, &mockDumper{}, newMockObjectStore())
+	_, err := svc.UpdateS3Config(context.Background(), BackupS3Config{
+		Endpoint:        "http://minio.internal:9000",
+		Region:          "auto",
+		Bucket:          "backups",
+		AccessKeyID:     "ak",
+		SecretAccessKey: "sk",
+	})
+	require.NoError(t, err)
+
+	// 与已保存配置一致（末尾斜杠差异容忍）：沿用已保存 secret，即使端点在私网也允许
+	err = svc.TestS3Connection(context.Background(), BackupS3Config{
+		Endpoint:    "http://minio.internal:9000/",
+		Region:      "auto",
+		Bucket:      "backups",
+		AccessKeyID: "ak",
+	})
+	require.NoError(t, err)
+
+	// 沿用已保存 secret 但更换了端点/桶/AK/区域：必须拒绝
+	for name, cfg := range map[string]BackupS3Config{
+		"endpoint": {Endpoint: "https://attacker.example.net", Region: "auto", Bucket: "backups", AccessKeyID: "ak"},
+		"bucket":   {Endpoint: "http://minio.internal:9000", Region: "auto", Bucket: "other", AccessKeyID: "ak"},
+		"akid":     {Endpoint: "http://minio.internal:9000", Region: "auto", Bucket: "backups", AccessKeyID: "ak2"},
+		"region":   {Endpoint: "http://minio.internal:9000", Region: "us-east-1", Bucket: "backups", AccessKeyID: "ak"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := svc.TestS3Connection(context.Background(), cfg)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "requires providing the secret")
+		})
+	}
+}
+
+func TestBackupService_TestS3Connection_NewPrivateEndpointBlocked(t *testing.T) {
+	repo := newMockSettingRepo()
+	svc := newTestBackupService(repo, &mockDumper{}, newMockObjectStore())
+
+	// 未保存配置时，携带自己的 secret 也不能把测试目标指向私网/元数据地址
+	for _, endpoint := range []string{
+		"http://127.0.0.1:9000",
+		"http://10.0.0.5:9000",
+		"http://169.254.169.254",
+		"http://metadata.google.internal",
+		"http://minio.internal:9000",
+		"http://[::ffff:10.0.0.1]:9000",
+	} {
+		err := svc.TestS3Connection(context.Background(), BackupS3Config{
+			Endpoint:        endpoint,
+			Bucket:          "test",
+			AccessKeyID:     "ak",
+			SecretAccessKey: "sk",
+		})
+		require.Error(t, err, endpoint)
+		require.Contains(t, err.Error(), "not allowed", endpoint)
+	}
+
+	// 公网端点照常放行
+	err := svc.TestS3Connection(context.Background(), BackupS3Config{
+		Endpoint:        "https://s3.example.com",
+		Bucket:          "test",
+		AccessKeyID:     "ak",
+		SecretAccessKey: "sk",
+	})
+	require.NoError(t, err)
+
+	// 已保存的私网端点：携带 secret 再测同一端点允许；换成另一个私网端点则拒绝
+	_, err = svc.UpdateS3Config(context.Background(), BackupS3Config{
+		Endpoint: "http://minio.internal:9000", Bucket: "test", AccessKeyID: "ak", SecretAccessKey: "sk",
+	})
+	require.NoError(t, err)
+	err = svc.TestS3Connection(context.Background(), BackupS3Config{
+		Endpoint: "http://minio.internal:9000", Bucket: "test", AccessKeyID: "ak", SecretAccessKey: "sk-new",
+	})
+	require.NoError(t, err)
+	err = svc.TestS3Connection(context.Background(), BackupS3Config{
+		Endpoint: "http://10.0.0.9:9000", Bucket: "test", AccessKeyID: "ak", SecretAccessKey: "sk-new",
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not allowed")
+}
+
 func TestBackupService_TestS3Connection_Incomplete(t *testing.T) {
 	repo := newMockSettingRepo()
 	svc := newTestBackupService(repo, &mockDumper{}, newMockObjectStore())

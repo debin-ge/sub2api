@@ -671,3 +671,141 @@ func (r *fakeBatchImageBillingRepo) applyHold(cmd *BatchImageBalanceHoldCommand,
 var _ UsageBillingRepository = (*fakeBatchImageBillingRepo)(nil)
 var _ BatchImagePricingResolver = (*fakeBatchImagePricingResolver)(nil)
 var _ = strings.TrimSpace
+
+// sequenceBatchImagePricingResolver 每次调用返回序列中的下一个价格，模拟结算重试之间管理员改价。
+type sequenceBatchImagePricingResolver struct {
+	prices []float64
+	calls  int
+}
+
+func (r *sequenceBatchImagePricingResolver) BatchImageUnitPrice(_ context.Context, _ *BatchImageJob) (float64, error) {
+	idx := r.calls
+	r.calls++
+	if idx >= len(r.prices) {
+		idx = len(r.prices) - 1
+	}
+	return r.prices[idx], nil
+}
+
+// snapshotWritingBatchImageRepo 在 fake 仓储之上实现 BatchImagePricingSnapshotWriter。
+type snapshotWritingBatchImageRepo struct {
+	*fakeBatchImageRepository
+	snapshotWrites int
+	snapshotErr    error
+}
+
+func (r *snapshotWritingBatchImageRepo) UpdateBatchImageJobPricingSnapshot(_ context.Context, batchID string, unitPrice float64, version int) error {
+	r.snapshotWrites++
+	if r.snapshotErr != nil {
+		return r.snapshotErr
+	}
+	job, ok := r.jobs[batchID]
+	if !ok {
+		return ErrBatchImageJobNotFound
+	}
+	job.BillableUnitPrice = unitPrice
+	job.PricingSnapshotVersion = version
+	return nil
+}
+
+// SEC-027：无定价快照的旧版 job 在每次结算重试时都重新解析单价，管理员改价会让
+// actual 超过 hold，重试耗尽后冻结金额被整体释放。首次解析结果必须被固定复用。
+func TestBatchImageSettlementService_LegacyJobFreezesFirstResolvedPriceAcrossRetries(t *testing.T) {
+	repo := newFakeBatchImageRepository()
+	job := testSettlingBatchImageJob("imgbatch_legacy_retry")
+	require.Zero(t, job.PricingSnapshotVersion)
+	repo.jobs[job.BatchID] = job
+	billing := &fakeBatchImageBillingRepo{captureErr: errors.New("temporary billing timeout")}
+	// 第二次解析的 0.7 × 2 张 = 1.4 > hold 1.25：若重新解析会触发 SETTLEMENT_COST_EXCEEDS_HOLD。
+	pricing := &sequenceBatchImagePricingResolver{prices: []float64{0.25, 0.7}}
+	svc := &BatchImageSettlementService{
+		Repo: repo, BillingRepo: billing, UsageLogRepo: &fakeBatchImageUsageLogRepo{}, Pricing: pricing,
+	}
+
+	_, err := svc.Settle(context.Background(), job.BatchID)
+	require.Error(t, err)
+	require.Equal(t, BatchImageJobStatusSettling, repo.jobs[job.BatchID].Status)
+	require.Equal(t, "SETTLEMENT_BILLING_FAILED", batchImageDerefString(repo.jobs[job.BatchID].LastErrorCode))
+	require.Equal(t, 1, pricing.calls)
+
+	billing.captureErr = nil
+	result, err := svc.Settle(context.Background(), job.BatchID)
+	require.NoError(t, err)
+	require.Equal(t, 1, pricing.calls, "second attempt must reuse the first resolved price, not re-resolve")
+	require.InDelta(t, 0.5, result.ActualCost, 1e-12)
+	require.NotEmpty(t, billing.captures)
+	require.InDelta(t, 0.5, billing.captures[len(billing.captures)-1].ActualAmount, 1e-12)
+	require.Equal(t, BatchImageJobStatusCompleted, repo.jobs[job.BatchID].Status)
+
+	// 终态后进程内记忆释放。
+	_, remembered := svc.legacyUnitPrices.Load(job.BatchID)
+	require.False(t, remembered)
+}
+
+func TestBatchImageSettlementService_LegacyJobPersistsSnapshotWhenRepoSupportsIt(t *testing.T) {
+	repo := &snapshotWritingBatchImageRepo{fakeBatchImageRepository: newFakeBatchImageRepository()}
+	job := testSettlingBatchImageJob("imgbatch_legacy_persist")
+	repo.jobs[job.BatchID] = job
+	billing := &fakeBatchImageBillingRepo{captureErr: errors.New("temporary billing timeout")}
+	svc := &BatchImageSettlementService{
+		Repo: repo, BillingRepo: billing, UsageLogRepo: &fakeBatchImageUsageLogRepo{},
+		Pricing: &sequenceBatchImagePricingResolver{prices: []float64{0.25, 0.7}},
+	}
+
+	_, err := svc.Settle(context.Background(), job.BatchID)
+	require.Error(t, err)
+	require.Equal(t, 1, repo.snapshotWrites)
+	require.Equal(t, 1, repo.jobs[job.BatchID].PricingSnapshotVersion)
+	require.InDelta(t, 0.25, repo.jobs[job.BatchID].BillableUnitPrice, 1e-12)
+
+	// 换一个全新的服务实例（如进程重启后另一 worker 接手）：无进程内记忆，
+	// 必须直接采用已落库的快照，且不再调用定价解析。
+	billing.captureErr = nil
+	freshPricing := &sequenceBatchImagePricingResolver{prices: []float64{0.7}}
+	fresh := &BatchImageSettlementService{
+		Repo: repo, BillingRepo: billing, UsageLogRepo: &fakeBatchImageUsageLogRepo{}, Pricing: freshPricing,
+	}
+	result, err := fresh.Settle(context.Background(), job.BatchID)
+	require.NoError(t, err)
+	require.Equal(t, 0, freshPricing.calls)
+	require.InDelta(t, 0.5, result.ActualCost, 1e-12)
+	require.Equal(t, 1, repo.snapshotWrites, "snapshot is written once")
+}
+
+func TestBatchImageSettlementService_LegacyJobSnapshotPersistFailureStillFreezesInProcess(t *testing.T) {
+	repo := &snapshotWritingBatchImageRepo{fakeBatchImageRepository: newFakeBatchImageRepository(), snapshotErr: errors.New("db write failed")}
+	job := testSettlingBatchImageJob("imgbatch_legacy_persist_fail")
+	repo.jobs[job.BatchID] = job
+	billing := &fakeBatchImageBillingRepo{captureErr: errors.New("temporary billing timeout")}
+	pricing := &sequenceBatchImagePricingResolver{prices: []float64{0.25, 0.7}}
+	svc := &BatchImageSettlementService{
+		Repo: repo, BillingRepo: billing, UsageLogRepo: &fakeBatchImageUsageLogRepo{}, Pricing: pricing,
+	}
+
+	_, err := svc.Settle(context.Background(), job.BatchID)
+	require.Error(t, err)
+	require.Zero(t, repo.jobs[job.BatchID].PricingSnapshotVersion, "failed persist must not fake a snapshot on the job")
+
+	billing.captureErr = nil
+	result, err := svc.Settle(context.Background(), job.BatchID)
+	require.NoError(t, err)
+	require.Equal(t, 1, pricing.calls)
+	require.InDelta(t, 0.5, result.ActualCost, 1e-12)
+}
+
+func TestBatchImageSettlementService_SnapshotJobNeverConsultsResolver(t *testing.T) {
+	repo := newFakeBatchImageRepository()
+	job := testSettlingBatchImageJob("imgbatch_snapshot_no_resolve")
+	job.PricingSnapshotVersion = 1
+	job.BillableUnitPrice = 0.25
+	repo.jobs[job.BatchID] = job
+	pricing := &sequenceBatchImagePricingResolver{prices: []float64{9.99}}
+	svc := &BatchImageSettlementService{
+		Repo: repo, BillingRepo: &fakeBatchImageBillingRepo{}, UsageLogRepo: &fakeBatchImageUsageLogRepo{}, Pricing: pricing,
+	}
+
+	result, err := svc.Settle(context.Background(), job.BatchID)
+	require.NoError(t, err)
+	require.Equal(t, 0, pricing.calls)
+	require.InDelta(t, 0.5, result.ActualCost, 1e-12)
+}

@@ -26,6 +26,10 @@ type fakeKimiForwarder struct {
 	responsesCalled int
 	errs            []error
 	panicMessages   bool
+	// interruptStream 模拟流已开始后中断：先写出部分 SSE，再返回 (interruptResult, interruptErr)。
+	interruptStream bool
+	interruptResult *service.ForwardResult
+	interruptErr    error
 }
 
 func (f *fakeKimiForwarder) ForwardMessages(ctx context.Context, c *gin.Context, account *service.Account, body []byte, requestID string) (*service.ForwardResult, error) {
@@ -35,6 +39,12 @@ func (f *fakeKimiForwarder) ForwardMessages(ctx context.Context, c *gin.Context,
 	f.requestID = requestID
 	if f.panicMessages {
 		panic("kimi forward panic")
+	}
+	if f.interruptStream {
+		c.Writer.Header().Set("Content-Type", "text/event-stream")
+		c.Status(http.StatusOK)
+		_, _ = c.Writer.WriteString("event: message_start\ndata: {}\n\n")
+		return f.interruptResult, f.interruptErr
 	}
 	if len(f.errs) > 0 {
 		err := f.errs[0]
@@ -707,4 +717,68 @@ func TestKimiGatewayHandlerChatCompletionsUsesOpenAICompatiblePingFormat(t *test
 	require.True(t, ok)
 	require.NotEqual(t, SSEPingFormatClaude, helper.pingFormat)
 	require.Equal(t, SSEPingFormatComment, helper.pingFormat)
+}
+
+// 流已开始后 Forward 返回 (result, err)（客户端中途断开或上游读取失败但已解析到 usage）：
+// 必须照常提交 RecordUsage（SEC-001）。
+func TestKimiGatewayHandlerMessagesRecordsUsageWhenStreamInterruptedWithResult(t *testing.T) {
+	account := kimiTestAccount(101)
+	forwarder := &fakeKimiForwarder{
+		interruptStream: true,
+		interruptResult: &service.ForwardResult{
+			RequestID:        "kimi-upstream-interrupted",
+			Model:            "kimi-for-coding",
+			UpstreamModel:    "kimi-for-coding",
+			Stream:           true,
+			ClientDisconnect: true,
+			Usage:            service.ClaudeUsage{InputTokens: 17, OutputTokens: 3},
+			Duration:         time.Millisecond,
+		},
+		interruptErr: errors.New("read failed"),
+	}
+	gateway := &fakeKimiGatewayService{
+		selections: []*service.AccountSelectionResult{{Account: account, Acquired: true}},
+	}
+	h := &KimiGatewayHandler{
+		kimiService:         forwarder,
+		gatewayService:      gateway,
+		concurrencyHelper:   &fakeKimiConcurrencyController{allowWait: true},
+		billingCacheService: &fakeKimiBillingChecker{},
+	}
+	c, rec, apiKey := newKimiHandlerTestContext(t, service.PlatformKimi, `{"model":"kimi-for-coding","stream":true,"messages":[{"role":"user","content":"hello"}]}`)
+
+	h.Messages(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, 1, forwarder.messagesCalled, "must not fail over after the stream started")
+	require.NotNil(t, gateway.recorded, "usage must be recorded when Forward returns a result alongside an error")
+	require.Same(t, forwarder.interruptResult, gateway.recorded.Result)
+	require.True(t, gateway.recorded.Result.ClientDisconnect)
+	require.Equal(t, 17, gateway.recorded.Result.Usage.InputTokens)
+	require.Equal(t, apiKey, gateway.recorded.APIKey)
+	require.Equal(t, account, gateway.recorded.Account)
+	require.Equal(t, "/v1/messages", gateway.recorded.InboundEndpoint)
+	require.NotEmpty(t, gateway.recorded.RequestPayloadHash)
+}
+
+// 流已开始但 Forward 没有返回任何 usage 对象：不凭空计费，仅告警。
+func TestKimiGatewayHandlerMessagesDoesNotRecordUsageWhenStreamInterruptedWithoutResult(t *testing.T) {
+	account := kimiTestAccount(101)
+	forwarder := &fakeKimiForwarder{interruptStream: true, interruptErr: errors.New("read failed")}
+	gateway := &fakeKimiGatewayService{
+		selections: []*service.AccountSelectionResult{{Account: account, Acquired: true}},
+	}
+	h := &KimiGatewayHandler{
+		kimiService:         forwarder,
+		gatewayService:      gateway,
+		concurrencyHelper:   &fakeKimiConcurrencyController{allowWait: true},
+		billingCacheService: &fakeKimiBillingChecker{},
+	}
+	c, rec, _ := newKimiHandlerTestContext(t, service.PlatformKimi, `{"model":"kimi-for-coding","stream":true,"messages":[{"role":"user","content":"hello"}]}`)
+
+	h.Messages(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, 1, forwarder.messagesCalled)
+	require.Nil(t, gateway.recorded)
 }

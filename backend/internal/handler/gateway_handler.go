@@ -2412,6 +2412,16 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 		h.errorResponse(c, status, code, message)
 		return
 	}
+	// 零计费端点不占并发槽，须单独限速，否则单用户就能把共享账号推进上游 429（SEC-009）。
+	if err := h.billingCacheService.CheckTokenCountRate(c.Request.Context(), apiKey.UserID); err != nil {
+		reqLog.Info("gateway.count_tokens_rate_limited", zap.Error(err))
+		status, code, message, retryAfter := tokenCountRateErrorDetails(err)
+		if retryAfter > 0 {
+			c.Header("Retry-After", strconv.Itoa(retryAfter))
+		}
+		h.errorResponse(c, status, code, message)
+		return
+	}
 
 	// 计算粘性会话 hash
 	parsedReq.SessionContext = &service.SessionContext{

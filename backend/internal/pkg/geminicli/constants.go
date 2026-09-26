@@ -38,6 +38,13 @@ const (
 	// GeminiCLIOAuthClientID/Secret are the public OAuth client credentials used by Google Gemini CLI.
 	// They enable the "login without creating your own OAuth client" experience, but Google may
 	// restrict which scopes are allowed for this client.
+	//
+	// GeminiCLIOAuthClientSecret is the "installed application" client secret that ships inside
+	// the official Gemini CLI. Per Google's OAuth guidance such desktop/CLI secrets are distributed
+	// with the binary and cannot be kept confidential, so this is NOT a server-side secret of this
+	// service and grants no additional access to it or its users' data. Deployments that want their
+	// own OAuth client can override it via the GEMINI_CLI_OAUTH_CLIENT_SECRET environment variable
+	// (see GeminiCLIOAuthClientSecretEnv and EffectiveOAuthConfig in oauth.go).
 	GeminiCLIOAuthClientID     = "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com"
 	GeminiCLIOAuthClientSecret = "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"
 

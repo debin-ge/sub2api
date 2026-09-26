@@ -81,12 +81,16 @@ func TestVideoExecutionContractDetectsReturnedConflicts(t *testing.T) {
 			bindVideoExecutionSpecForTest(t, task, 0)
 			observed := &ProviderVideoTask{Status: VideoGenerationCompleted, Metadata: test.metadata, Usage: map[string]any{"seconds": 8}}
 			decision := videoTerminalBillingFor(task, VideoGenerationCompleted, observed)
-			// A conflict is recorded as an error and releases the hold. Charging a
-			// frozen quote would bill output that failed the execution contract.
-			require.Equal(t, VideoBillingReleasePending, decision.state)
+			// A conflict is recorded as an error, but the provider still delivered a
+			// video: settle at the frozen quote (the held amount) instead of releasing
+			// the hold and handing the output away for free.
+			require.Equal(t, VideoBillingCapturePending, decision.state)
+			require.Equal(t, "specification", decision.errorKind)
 			require.Equal(t, "execution_spec_conflict", decision.errorCode)
-			require.Zero(t, *decision.actualCost)
-			require.Zero(t, *decision.actualUnits)
+			require.Contains(t, decision.errorMessage, "provider output conflicts with the frozen execution specification")
+			require.NotNil(t, task.HoldAmount)
+			require.Equal(t, *task.HoldAmount, *decision.actualCost)
+			require.Equal(t, *task.EstimatedUnits, *decision.actualUnits)
 			clean := videoObservedMetadata(task, observed.Metadata)
 			require.Equal(t, float64(1), clean["execution_spec_conflict"])
 			encoded, err := json.Marshal(clean)
@@ -168,6 +172,53 @@ func TestVideoExecutionContractExtensionUsesCombinedOutputNotBillableSegment(t *
 	require.Equal(t, "execution_spec_conflict", invalid.errorCode)
 	require.Zero(t, *invalid.actualUnits)
 	require.Zero(t, *invalid.actualCost)
+}
+
+// A spec conflict settles at the frozen quote only when that quote is usable. A
+// task whose hold was never priced (nil HoldAmount) still releases: the conflict
+// is recorded, but nothing is charged for an unpriceable task.
+func TestVideoExecutionContractSpecConflictReleasesWhenFrozenQuoteIsUnusable(t *testing.T) {
+	for name, mutate := range map[string]func(*VideoTask){
+		"hold amount missing":     func(task *VideoTask) { task.HoldAmount = nil },
+		"estimated units missing": func(task *VideoTask) { task.EstimatedUnits = nil },
+		"hold amount negative":    func(task *VideoTask) { task.HoldAmount = floatPointer(-1) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			task := baseVideoWorkerTask()
+			task.EstimatedUnits = floatPointer(8)
+			bindVideoExecutionSpecForTest(t, task, 0)
+			mutate(task)
+			observed := &ProviderVideoTask{Status: VideoGenerationCompleted, Metadata: map[string]any{"seconds": 20}, Usage: map[string]any{"seconds": 20}}
+			decision := videoTerminalBillingFor(task, VideoGenerationCompleted, observed)
+			require.Equal(t, VideoBillingReleasePending, decision.state)
+			require.Equal(t, "specification", decision.errorKind)
+			require.Equal(t, "execution_spec_conflict", decision.errorCode)
+			require.Zero(t, *decision.actualUnits)
+			require.Zero(t, *decision.actualCost)
+		})
+	}
+}
+
+// The frozen quote settlement carries the conflict all the way onto the
+// acceptance/transition so operators can still find these tasks by error code.
+func TestVideoExecutionContractSpecConflictRecordsErrorOnAcceptance(t *testing.T) {
+	task := baseVideoWorkerTask()
+	task.EstimatedUnits = floatPointer(8)
+	bindVideoExecutionSpecForTest(t, task, 0)
+	svc, _, _ := newVideoTaskServiceForTest(&videoProviderStub{}, videoGroupForTest(SubscriptionTypeStandard), nil)
+	observed := &ProviderVideoTask{Status: VideoGenerationCompleted, Metadata: map[string]any{"seconds": 20}, Usage: map[string]any{"seconds": 20}}
+	acceptance := VideoProviderAcceptance{GenerationState: VideoGenerationCompleted, ResponseMetadata: observed.Metadata}
+
+	svc.applyTerminalBillingToAcceptance(task, observed, &acceptance)
+
+	require.Equal(t, VideoBillingCapturePending, acceptance.BillingState)
+	require.Equal(t, *task.HoldAmount, *acceptance.ActualCost)
+	require.Equal(t, *task.EstimatedUnits, *acceptance.ActualUnits)
+	require.Equal(t, "specification", acceptance.ErrorKind)
+	require.Equal(t, "execution_spec_conflict", acceptance.ErrorCode)
+	require.Contains(t, acceptance.ErrorMessage, "provider output conflicts with the frozen execution specification")
+	require.Equal(t, float64(1), acceptance.ResponseMetadata["execution_spec_conflict"])
+	require.NotNil(t, acceptance.NextActionAt)
 }
 
 func TestVideoExecutionContractEnforcesExtensionDepthAndTotalDuration(t *testing.T) {

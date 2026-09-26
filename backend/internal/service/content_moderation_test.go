@@ -10,10 +10,13 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 	"github.com/stretchr/testify/require"
 )
 
@@ -1398,6 +1401,7 @@ func TestContentModerationTestAPIKeys_400DoesNotFreezeAPIKey(t *testing.T) {
 		nil,
 		nil,
 	)
+	svc.allowPrivateTestTargets = true // httptest 服务器是回环地址，测试需放开私网阻断
 	result, err := svc.TestAPIKeys(context.Background(), TestContentModerationAPIKeysInput{
 		APIKeys: []string{"sk-test"},
 		BaseURL: server.URL,
@@ -1872,4 +1876,127 @@ func TestContentModerationUpdateConfig_CyberPolicyExcludeFromBanCount(t *testing
 	})
 	require.NoError(t, err)
 	require.False(t, view.CyberPolicyExcludeFromBanCount)
+}
+
+func TestContentModerationTestAPIKeysBaseURLOverrideRequiresExplicitKeys(t *testing.T) {
+	savedCfg := defaultContentModerationConfig()
+	savedCfg.BaseURL = "https://moderation.example.com"
+	savedCfg.APIKeys = []string{"sk-saved"}
+	rawCfg, err := json.Marshal(savedCfg)
+	require.NoError(t, err)
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{SettingKeyContentModerationConfig: string(rawCfg)}},
+		nil, nil, nil, nil, nil, nil, nil,
+	)
+
+	// 沿用已保存密钥 + 更换目标：必须拒绝，否则已保存密钥会被送往调用者指定的地址。
+	_, err = svc.TestAPIKeys(context.Background(), TestContentModerationAPIKeysInput{
+		BaseURL: "https://attacker.example.net",
+	})
+	require.Error(t, err)
+	require.Equal(t, "BASE_URL_OVERRIDE_REQUIRES_EXPLICIT_KEYS", infraerrors.Reason(err))
+	require.Equal(t, http.StatusBadRequest, infraerrors.Code(err))
+
+	// 私网目标同样先被“需显式密钥”拦下，不会走到网络请求。
+	_, err = svc.TestAPIKeys(context.Background(), TestContentModerationAPIKeysInput{
+		BaseURL: "http://127.0.0.1:9",
+	})
+	require.Error(t, err)
+	require.Equal(t, "BASE_URL_OVERRIDE_REQUIRES_EXPLICIT_KEYS", infraerrors.Reason(err))
+}
+
+func TestContentModerationTestAPIKeysSameBaseURLWithStoredKeysAllowed(t *testing.T) {
+	var hits atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		require.Equal(t, "Bearer sk-saved", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(moderationAPIResponse{Results: []moderationAPIResult{{Flagged: false}}})
+	}))
+	defer server.Close()
+
+	savedCfg := defaultContentModerationConfig()
+	savedCfg.BaseURL = server.URL
+	savedCfg.APIKeys = []string{"sk-saved"}
+	rawCfg, err := json.Marshal(savedCfg)
+	require.NoError(t, err)
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{SettingKeyContentModerationConfig: string(rawCfg)}},
+		nil, nil, nil, nil, nil, nil, nil,
+	)
+
+	// 与已保存配置相同的 URL（允许末尾斜杠/大小写差异）不算更换目标：即便是私网地址也照常测试，
+	// 因为运行时本就会请求它，并未扩大可达范围。
+	result, err := svc.TestAPIKeys(context.Background(), TestContentModerationAPIKeysInput{
+		BaseURL: strings.ToUpper(server.URL[:7]) + server.URL[7:] + "/",
+	})
+	require.NoError(t, err)
+	require.Len(t, result.Items, 1)
+	require.NotEqual(t, "error", result.Items[0].Status)
+	require.Equal(t, int64(1), hits.Load())
+}
+
+func TestContentModerationTestAPIKeysRejectsPrivateOverrideEvenWithExplicitKeys(t *testing.T) {
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{}},
+		nil, nil, nil, nil, nil, nil, nil,
+	)
+	for _, target := range []string{
+		"http://127.0.0.1:9",
+		"http://169.254.169.254/latest",
+		"http://metadata.google.internal",
+		"http://[::ffff:10.0.0.1]",
+		"http://100.64.0.1",
+		"http://moderation.internal",
+		"https://localhost",
+	} {
+		_, err := svc.TestAPIKeys(context.Background(), TestContentModerationAPIKeysInput{
+			APIKeys: []string{"sk-explicit"},
+			BaseURL: target,
+		})
+		require.Error(t, err, target)
+		require.Equal(t, "INVALID_CONTENT_MODERATION_BASE_URL", infraerrors.Reason(err), target)
+	}
+
+	// 非 http(s) scheme 同样拒绝
+	_, err := svc.TestAPIKeys(context.Background(), TestContentModerationAPIKeysInput{
+		APIKeys: []string{"sk-explicit"},
+		BaseURL: "ftp://moderation.example.com",
+	})
+	require.Error(t, err)
+	require.Equal(t, "INVALID_CONTENT_MODERATION_BASE_URL", infraerrors.Reason(err))
+}
+
+func TestContentModerationTestHTTPClientUsesSafeDialerForUntrustedTarget(t *testing.T) {
+	svc := NewContentModerationService(nil, nil, nil, nil, nil, nil, nil, nil)
+	cfg := defaultContentModerationConfig()
+	cfg.normalize()
+
+	// 已保存目标：沿用共享客户端
+	client, release, err := svc.moderationTestHTTPClient(context.Background(), cfg, false)
+	require.NoError(t, err)
+	require.Same(t, svc.httpClient, client)
+	release()
+
+	// 临时目标 + 直连：一次性客户端，直连拨号层阻断私网（即使字面量校验被绕过，例如 DNS 解析到内网）
+	client, release, err = svc.moderationTestHTTPClient(context.Background(), cfg, true)
+	require.NoError(t, err)
+	require.NotSame(t, svc.httpClient, client)
+	defer release()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+	defer server.Close()
+	_, err = client.Get(server.URL)
+	require.Error(t, err)
+	require.ErrorIs(t, err, urlvalidator.ErrBlockedHost)
+}
+
+func TestSameModerationBaseURL(t *testing.T) {
+	require.True(t, sameModerationBaseURL("https://api.openai.com", "https://api.openai.com/"))
+	require.True(t, sameModerationBaseURL("HTTPS://API.openai.com/v1/", "https://api.openai.com/v1"))
+	require.True(t, sameModerationBaseURL("not a url", " not a url/ "))
+	require.False(t, sameModerationBaseURL("https://api.openai.com", "https://api.openai.com/v1"))
+	require.False(t, sameModerationBaseURL("https://api.openai.com", "http://api.openai.com"))
+	require.False(t, sameModerationBaseURL("https://api.openai.com", "https://api.openai.com:8443"))
+	require.False(t, sameModerationBaseURL("https://api.openai.com", "https://user@api.openai.com"))
+	require.False(t, sameModerationBaseURL("https://api.openai.com", "https://api.openai.com?x=1"))
 }

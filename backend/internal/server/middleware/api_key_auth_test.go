@@ -439,7 +439,9 @@ func TestAPIKeyAuthVIPOnlyPrimaryGroupRollout(t *testing.T) {
 		wantStatus int
 		wantCode   string
 	}{
-		{name: "audit non VIP is observed but allowed", mode: config.GroupAccessRuntimeModeAuditOnly, wantStatus: http.StatusOK},
+		// VIP-only 在主鉴权入口不再属于「可审计放行」的新拒绝：AUDIT_ONLY 也必须拦截。
+		{name: "audit non VIP is still denied", mode: config.GroupAccessRuntimeModeAuditOnly, wantStatus: http.StatusForbidden, wantCode: "GROUP_VIP_ONLY"},
+		{name: "audit VIP is allowed", mode: config.GroupAccessRuntimeModeAuditOnly, isVIP: true, wantStatus: http.StatusOK},
 		{name: "enforce non VIP is denied", mode: config.GroupAccessRuntimeModeEnforce, wantStatus: http.StatusForbidden, wantCode: "GROUP_VIP_ONLY"},
 		{name: "enforce VIP is allowed", mode: config.GroupAccessRuntimeModeEnforce, isVIP: true, wantStatus: http.StatusOK},
 	} {

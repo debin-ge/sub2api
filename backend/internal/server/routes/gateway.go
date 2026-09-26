@@ -671,6 +671,18 @@ func RegisterGatewayRoutes(
 	r.DELETE("/videos/:request_id", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, videoDeleteHandler)
 	r.GET("/videos/:request_id/content", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, videoContentHandler)
 	r.HEAD("/videos/:request_id/content", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, requireGroupAnthropic, videoContentHandler)
+	// 签名内容链接（SEC-014）：URL 自带 HMAC 签名与过期时间，这就是全部凭据，因此不挂
+	// API Key 鉴权，也不进入 /v1 分组的平台/模型中间件；只保留请求体上限、client request id
+	// 与 ops 错误日志。路径与需要 API Key 的 /v1/videos/:request_id/content 并存、互不影响。
+	videoSignedContentHandler := func(c *gin.Context) {
+		if h == nil || h.Video == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"type": "not_found_error", "message": "Video content is not available"}})
+			return
+		}
+		h.Video.SignedContent(c)
+	}
+	r.GET("/v1/videos/:request_id/content/signed", bodyLimit, clientRequestID, opsErrorLogger, videoSignedContentHandler)
+	r.HEAD("/v1/videos/:request_id/content/signed", bodyLimit, clientRequestID, opsErrorLogger, videoSignedContentHandler)
 
 	rootVoiceHandler := func(endpoint string) gin.HandlerFunc {
 		return func(c *gin.Context) {

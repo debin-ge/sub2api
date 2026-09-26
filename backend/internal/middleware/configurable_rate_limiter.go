@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"strings"
 	"time"
 
@@ -126,10 +125,11 @@ func (crl *ConfigurableRateLimiter) RegistrationRateLimit() gin.HandlerFunc {
 		}
 		ctx := c.Request.Context()
 
-		// 1. IP 速率限制
+		// 1. IP 速率限制。使用与审计日志 / 会话绑定 / API Key IP ACL 一致的安全
+		// 客户端 IP 解析（可信代理守卫），不再直接读取客户端可伪造的 X-Forwarded-For。
 		ipLimit := crl.settingService.GetRegistrationRateLimitPerIP(ctx)
 		ipWindow := crl.settingService.GetRegistrationRateLimitWindowIP(ctx)
-		clientIP := getClientIP(c)
+		clientIP := clientIPForRateLimit(c)
 		ipKey := fmt.Sprintf("rate:registration:ip:%s", clientIP)
 
 		allowed, err := checkAndIncrRun(ctx, crl.redis, ipKey, windowTTLMillis(time.Duration(ipWindow)*time.Second), ipLimit)
@@ -221,20 +221,26 @@ func (crl *ConfigurableRateLimiter) checkEmailRateLimit(c *gin.Context, scope st
 	return true
 }
 
+// maxPeekEmailBodyBytes 限流中间件为读取 email 字段而预读请求体的上限。
+// 注册/验证码请求体正常只有几百字节；超过该值即放弃解析（后续处理器会按
+// 自己的体积限制拒绝），避免为了看一个字段把任意大的请求体整体缓冲进内存。
+const maxPeekEmailBodyBytes = 64 << 10
+
 // peekEmailFromBody 从请求体中读取 email 字段，同时恢复请求体供后续处理器使用。
-// 返回空字符串表示解析失败或无 email 字段（不影响后续流程）。
+// 返回空字符串表示解析失败、无 email 字段或请求体超过预读上限（不影响后续流程）。
 func peekEmailFromBody(c *gin.Context) string {
 	if c.Request.Body == nil {
 		return ""
 	}
-	bodyBytes, err := io.ReadAll(c.Request.Body)
+	// 多读 1 字节用于判定是否超限
+	bodyBytes, err := io.ReadAll(io.LimitReader(c.Request.Body, maxPeekEmailBodyBytes+1))
 	if err != nil {
 		return ""
 	}
-	// 恢复请求体，供后续处理器读取
-	c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+	// 恢复请求体：已读取的字节 + 尚未读取的剩余部分，供后续处理器完整读取
+	c.Request.Body = io.NopCloser(io.MultiReader(bytes.NewReader(bodyBytes), c.Request.Body))
 
-	if len(bodyBytes) == 0 {
+	if len(bodyBytes) == 0 || len(bodyBytes) > maxPeekEmailBodyBytes {
 		return ""
 	}
 
@@ -245,37 +251,6 @@ func peekEmailFromBody(c *gin.Context) string {
 		return ""
 	}
 	return strings.TrimSpace(req.Email)
-}
-
-// getClientIP 获取客户端真实IP
-func getClientIP(c *gin.Context) string {
-	// 优先从 X-Forwarded-For 获取
-	xff := c.GetHeader("X-Forwarded-For")
-	if xff != "" {
-		ips := strings.Split(xff, ",")
-		if len(ips) > 0 {
-			ip := strings.TrimSpace(ips[0])
-			if net.ParseIP(ip) != nil {
-				return ip
-			}
-		}
-	}
-
-	// 其次从 X-Real-IP 获取
-	xri := c.GetHeader("X-Real-IP")
-	if xri != "" {
-		ip := strings.TrimSpace(xri)
-		if net.ParseIP(ip) != nil {
-			return ip
-		}
-	}
-
-	// 最后使用 RemoteAddr
-	ip, _, err := net.SplitHostPort(c.Request.RemoteAddr)
-	if err != nil {
-		return c.Request.RemoteAddr
-	}
-	return ip
 }
 
 // normalizeEmailAddress 归一化邮箱地址（小写+去空格），与用户表唯一性检查口径一致

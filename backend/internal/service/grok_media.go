@@ -139,16 +139,22 @@ func ValidateGrokMediaBillingFields(contentType string, body []byte) error {
 // the endpoint's billing dimensions. In particular, image resolution values
 // (1k/2k) must not be interpreted as video resolution tiers.
 func ValidateGrokMediaBillingFieldsForEndpoint(endpoint GrokMediaEndpoint, contentType string, body []byte) error {
+	return ValidateGrokMediaBillingFieldsForEndpointWithMaxN(endpoint, contentType, body, 0)
+}
+
+// ValidateGrokMediaBillingFieldsForEndpointWithMaxN 在 ValidateGrokMediaBillingFieldsForEndpoint
+// 的基础上对 n 施加上限（SEC-011，与 /v1/images 共用 gateway.images_max_n）；maxN <= 0 不限制。
+func ValidateGrokMediaBillingFieldsForEndpointWithMaxN(endpoint GrokMediaEndpoint, contentType string, body []byte, maxN int) error {
 	if len(body) == 0 {
 		return fmt.Errorf("request body is empty")
 	}
 	if gjson.ValidBytes(body) {
-		return validateGrokMediaJSONBillingFields(endpoint, body)
+		return validateGrokMediaJSONBillingFields(endpoint, body, maxN)
 	}
-	return validateGrokMediaMultipartBillingFields(endpoint, contentType, body)
+	return validateGrokMediaMultipartBillingFields(endpoint, contentType, body, maxN)
 }
 
-func validateGrokMediaJSONBillingFields(endpoint GrokMediaEndpoint, body []byte) error {
+func validateGrokMediaJSONBillingFields(endpoint GrokMediaEndpoint, body []byte, maxN int) error {
 	if err := ValidateUniqueBillingModelField(body); err != nil {
 		return err
 	}
@@ -201,7 +207,7 @@ func validateGrokMediaJSONBillingFields(endpoint GrokMediaEndpoint, body []byte)
 		if value.Type != gjson.Number {
 			return fmt.Errorf("invalid n field type")
 		}
-		if _, err := parseOpenAIImagesCount(value.Raw); err != nil {
+		if _, err := parseOpenAIImagesCount(value.Raw, maxN); err != nil {
 			return err
 		}
 	}
@@ -216,7 +222,7 @@ func validateGrokMediaJSONBillingFields(endpoint GrokMediaEndpoint, body []byte)
 	return nil
 }
 
-func validateGrokMediaMultipartBillingFields(endpoint GrokMediaEndpoint, contentType string, body []byte) error {
+func validateGrokMediaMultipartBillingFields(endpoint GrokMediaEndpoint, contentType string, body []byte, maxN int) error {
 	mediaType, params, err := mime.ParseMediaType(strings.TrimSpace(contentType))
 	if err != nil || !strings.EqualFold(mediaType, "multipart/form-data") {
 		return fmt.Errorf("request body must be valid JSON or multipart/form-data")
@@ -273,7 +279,7 @@ func validateGrokMediaMultipartBillingFields(endpoint GrokMediaEndpoint, content
 		}
 	}
 	if count, ok := values["n"]; ok {
-		if _, err := parseOpenAIImagesCount(count); err != nil {
+		if _, err := parseOpenAIImagesCount(count, maxN); err != nil {
 			return err
 		}
 	}
@@ -888,7 +894,7 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 		return nil, fmt.Errorf("account platform %s is not supported for grok media", account.Platform)
 	}
 	if endpoint.RequiresRequestBody() {
-		if err := ValidateGrokMediaBillingFieldsForEndpoint(endpoint, contentType, body); err != nil {
+		if err := ValidateGrokMediaBillingFieldsForEndpointWithMaxN(endpoint, contentType, body, s.imagesMaxN()); err != nil {
 			return nil, err
 		}
 	}

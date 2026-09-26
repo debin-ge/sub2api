@@ -260,6 +260,7 @@ func TestContentModerationTestAPIKeysProxySemantics(t *testing.T) {
 		7: {ID: 7, Name: "audit-proxy", Protocol: "http", Host: host, Port: port, Status: StatusActive},
 	}}
 	svc := NewContentModerationService(settingRepo, nil, nil, nil, nil, proxyRepo, nil, nil)
+	svc.allowPrivateTestTargets = true // 下方强制直连用例的目标是 httptest 回环地址
 
 	// nil：沿用已保存配置的代理，测试请求应经过代理成功。
 	result, err := svc.TestAPIKeys(context.Background(), TestContentModerationAPIKeysInput{APIKeys: []string{"sk-input"}})

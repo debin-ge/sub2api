@@ -27,15 +27,30 @@ func NewPaymentHandler(paymentService *service.PaymentService, configService *se
 
 // --- Dashboard ---
 
-// GetDashboard returns payment dashboard statistics.
-// GET /api/v1/admin/payment/dashboard
-func (h *PaymentHandler) GetDashboard(c *gin.Context) {
-	days := 30
-	if d := c.Query("days"); d != "" {
-		if v, err := strconv.Atoi(d); err == nil && v > 0 {
+const (
+	paymentDashboardDefaultDays = 30
+	paymentDashboardMaxDays     = 366
+)
+
+// parsePaymentDashboardDays 解析 days 查询参数并夹在 [1, paymentDashboardMaxDays]；
+// 缺失或非法（非数字、<=0）时回落到默认 30 天，避免任意大 days 触发全表聚合。
+func parsePaymentDashboardDays(raw string) int {
+	days := paymentDashboardDefaultDays
+	if raw != "" {
+		if v, err := strconv.Atoi(raw); err == nil && v > 0 {
 			days = v
 		}
 	}
+	if days > paymentDashboardMaxDays {
+		days = paymentDashboardMaxDays
+	}
+	return days
+}
+
+// GetDashboard returns payment dashboard statistics.
+// GET /api/v1/admin/payment/dashboard
+func (h *PaymentHandler) GetDashboard(c *gin.Context) {
+	days := parsePaymentDashboardDays(c.Query("days"))
 	stats, err := h.paymentService.GetDashboardStats(c.Request.Context(), days)
 	if err != nil {
 		response.ErrorFrom(c, err)

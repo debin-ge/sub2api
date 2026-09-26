@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	ippkg "github.com/Wei-Shaw/sub2api/internal/pkg/ip"
+
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
@@ -198,6 +200,72 @@ func TestSendVerifyCodeRateLimitPreservesBody(t *testing.T) {
 	w := postJSON(router, "/send", body)
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Equal(t, body, handlerBody)
+}
+
+// 预读上限：超大请求体不解析 email（不消耗邮箱限流额度），但请求体必须完整
+// 传递给后续处理器，由其按自身体积限制处理。
+func TestSendVerifyCodeRateLimitSkipsOversizedBodyButPreservesIt(t *testing.T) {
+	counts := fakeEmailRateLimitRun(t)
+	crl := NewConfigurableRateLimiter(nil, defaultStubSettings())
+	var handlerBody string
+	router := newVerifyCodeRouter(crl, &handlerBody)
+
+	body := `{"email":"alice@gmail.com","pad":"` + strings.Repeat("x", maxPeekEmailBodyBytes+1024) + `"}`
+	w := postJSON(router, "/send", body)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, body, handlerBody, "handler must still receive the complete body")
+	require.Empty(t, counts, "oversized body must not consume email rate-limit quota")
+
+	// 恰好等于上限的请求体仍正常解析
+	exact := `{"email":"bob@gmail.com","pad":"` + strings.Repeat("y", maxPeekEmailBodyBytes-len(`{"email":"bob@gmail.com","pad":""}`)) + `"}`
+	require.Len(t, exact, maxPeekEmailBodyBytes)
+	w = postJSON(router, "/send", exact)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, exact, handlerBody)
+	require.Contains(t, counts, "rate:verify-code:email:bob@gmail.com")
+}
+
+// 注册 IP 限流使用安全客户端 IP 解析：可信（内网）反代对端转发的 XFF 被采纳，
+// 公网直连者伪造的 XFF 被忽略并按其真实对端地址计数。
+func TestRegistrationRateLimitUsesSecurityClientIP(t *testing.T) {
+	counts := fakeCheckAndIncrRun(t)
+	fakeEmailRateLimitRun(t)
+	settings := defaultStubSettings()
+	// 本测试只关心 IP 层：放宽邮箱层，避免同一邮箱多次请求触发邮箱限流
+	settings.perEmail = 100
+	crl := NewConfigurableRateLimiter(nil, settings)
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	// 模拟 SessionBindingContext：开启转发 IP 兼容模式快照（默认信任内网/回环对端）
+	router.Use(func(c *gin.Context) {
+		ippkg.SetForwardedIPSettings(c, true, nil)
+		c.Next()
+	})
+	router.POST("/register", crl.RegistrationRateLimit(), func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+
+	send := func(remoteAddr, xff string) int {
+		req := httptest.NewRequest(http.MethodPost, "/register", strings.NewReader(`{"email":"a@gmail.com"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.RemoteAddr = remoteAddr
+		if xff != "" {
+			req.Header.Set("X-Forwarded-For", xff)
+		}
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		return w.Code
+	}
+
+	require.Equal(t, http.StatusOK, send("127.0.0.1:5678", "198.51.100.1"))
+	require.Equal(t, http.StatusOK, send("203.0.113.10:5678", "198.51.100.2"))
+	require.Equal(t, http.StatusOK, send("203.0.113.11:5678", ""))
+
+	require.Contains(t, counts, "rate:registration:ip:198.51.100.1", "trusted proxy peer: forwarded IP is used")
+	require.Contains(t, counts, "rate:registration:ip:203.0.113.10", "public peer: forged XFF ignored")
+	require.NotContains(t, counts, "rate:registration:ip:198.51.100.2")
+	require.Contains(t, counts, "rate:registration:ip:203.0.113.11")
 }
 
 func TestRegistrationRateLimitLayers(t *testing.T) {

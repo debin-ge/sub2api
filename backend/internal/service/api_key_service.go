@@ -34,6 +34,10 @@ var (
 	ErrAPIKeyRateLimited    = infraerrors.TooManyRequests("API_KEY_RATE_LIMITED", "too many failed attempts, please try again later")
 	ErrAPIKeyAuthOverloaded = infraerrors.ServiceUnavailable("API_KEY_AUTH_OVERLOADED", "api key authentication is temporarily overloaded")
 	ErrInvalidIPPattern     = infraerrors.BadRequest("INVALID_IP_PATTERN", "invalid IP or CIDR pattern")
+	// ErrAPIKeyLimitReached 单用户 API Key 总数达到 security.max_api_keys_per_user 上限。
+	ErrAPIKeyLimitReached = infraerrors.BadRequest("API_KEY_LIMIT_REACHED", "api key limit reached")
+	// ErrAPIKeyIPRulesTooMany 单个 API Key 的 IP 白名单或黑名单条目数超过 security.max_api_key_ip_rules。
+	ErrAPIKeyIPRulesTooMany = infraerrors.BadRequest("API_KEY_IP_RULES_TOO_MANY", "too many ip rules")
 	// ErrAPIKeyExpired        = infraerrors.Forbidden("API_KEY_EXPIRED", "api key has expired")
 	ErrAPIKeyExpired = infraerrors.Forbidden("API_KEY_EXPIRED", "api key 已过期")
 	// ErrAPIKeyQuotaExhausted = infraerrors.TooManyRequests("API_KEY_QUOTA_EXHAUSTED", "api key quota exhausted")
@@ -494,6 +498,69 @@ func (s *APIKeyService) evaluateGroupBinding(
 }
 
 // Create 创建API Key
+// maxAPIKeysPerUser 返回单用户 Key 总数上限；未配置或 <=0 表示不限制。
+func (s *APIKeyService) maxAPIKeysPerUser() int {
+	if s == nil || s.cfg == nil {
+		return 0
+	}
+	return s.cfg.Security.MaxAPIKeysPerUser
+}
+
+// maxAPIKeyIPRules 返回单个 Key 每个 IP 列表的条目上限；未配置或 <=0 表示不限制。
+func (s *APIKeyService) maxAPIKeyIPRules() int {
+	if s == nil || s.cfg == nil {
+		return 0
+	}
+	return s.cfg.Security.MaxAPIKeyIPRules
+}
+
+// enforceAPIKeyCountLimit 在用户已持有的 Key 数（含已禁用，不含已删除）达到上限时拒绝创建。
+func (s *APIKeyService) enforceAPIKeyCountLimit(ctx context.Context, userID int64) error {
+	limit := s.maxAPIKeysPerUser()
+	if limit <= 0 {
+		return nil
+	}
+	count, err := s.apiKeyRepo.CountByUserID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("count api keys: %w", err)
+	}
+	if count >= int64(limit) {
+		return infraerrors.BadRequest(
+			infraerrors.Reason(ErrAPIKeyLimitReached),
+			fmt.Sprintf("api key limit reached: at most %d keys per user", limit),
+		)
+	}
+	return nil
+}
+
+// validateIPRuleLimits 分别校验白名单与黑名单的条目数不超过上限。
+func (s *APIKeyService) validateIPRuleLimits(whitelist, blacklist []string) error {
+	limit := s.maxAPIKeyIPRules()
+	if limit <= 0 {
+		return nil
+	}
+	if len(whitelist) > limit {
+		return infraerrors.BadRequest(
+			infraerrors.Reason(ErrAPIKeyIPRulesTooMany),
+			fmt.Sprintf("ip_whitelist has %d entries, exceeding the maximum of %d", len(whitelist), limit),
+		)
+	}
+	if len(blacklist) > limit {
+		return infraerrors.BadRequest(
+			infraerrors.Reason(ErrAPIKeyIPRulesTooMany),
+			fmt.Sprintf("ip_blacklist has %d entries, exceeding the maximum of %d", len(blacklist), limit),
+		)
+	}
+	return nil
+}
+
+func derefStringSlice(v *[]string) []string {
+	if v == nil {
+		return nil
+	}
+	return *v
+}
+
 func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIKeyRequest) (*APIKey, error) {
 	if err := validateCreateAPIKeyRequest(req); err != nil {
 		return nil, err
@@ -502,6 +569,16 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("get user: %w", err)
+	}
+
+	// 单用户 Key 总数上限（0 = 不限制）
+	if err := s.enforceAPIKeyCountLimit(ctx, userID); err != nil {
+		return nil, err
+	}
+
+	// IP 规则条目数上限（0 = 不限制）
+	if err := s.validateIPRuleLimits(req.IPWhitelist, req.IPBlacklist); err != nil {
+		return nil, err
 	}
 
 	// 验证 IP 白名单格式
@@ -825,6 +902,11 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 		return nil, ErrInsufficientPerms
 	}
 	beforeUpdate := cloneAPIKeyForChangeDetection(apiKey)
+
+	// IP 规则条目数上限（0 = 不限制）；nil 表示不修改该列表，不参与校验
+	if err := s.validateIPRuleLimits(derefStringSlice(req.IPWhitelist), derefStringSlice(req.IPBlacklist)); err != nil {
+		return nil, err
+	}
 
 	// 验证 IP 白名单格式
 	if req.IPWhitelist != nil && len(*req.IPWhitelist) > 0 {

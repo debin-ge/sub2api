@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/middleware"
@@ -28,8 +29,8 @@ type panelRateLimitAllower interface {
 // 设计要点：
 //   - 认证接口按「用户 ID」维度计数：与客户端 IP 完全无关，反向代理/共享出口
 //     （所有请求源 IP 坍缩为 127.0.0.1 等）不会互相误伤。
-//   - 公开接口按安全客户端 IP 计数：仅统计全局单播地址，回环/内网/链路本地
-//     地址（反代内部转发地址）直接跳过，避免误拦整条反代链路的流量。
+//   - 公开接口按安全客户端 IP 计数；解析结果不是全局单播地址（回环/内网/
+//     链路本地）时改按 TCP 直连对端地址计数，绝不跳过限流（见 PublicIP）。
 //   - 配置走进程内缓存（60s TTL），热路径零 DB 访问。
 //   - Redis 异常一律 fail-open：限流是保护措施，不能反过来把面板打挂。
 type PanelRateLimiter struct {
@@ -102,9 +103,16 @@ func (p *PanelRateLimiter) userScoped(scope string, limitOf func(service.PanelRa
 }
 
 // PublicIP 无需认证的公开接口按客户端 IP 限流。
-// 使用与审计日志/会话绑定一致的安全客户端 IP 解析；解析结果为回环/内网/
-// 链路本地地址时跳过计数（这类地址通常是反代内部转发地址，按它计数会把
-// 整条反代链路的所有真实用户合并进同一个桶造成大面积误拦截）。
+// 使用与审计日志/会话绑定一致的安全客户端 IP 解析。
+//
+// 解析结果为回环/内网/链路本地地址时不再跳过计数：历史实现担心这类地址是
+// 反代内部转发地址，按它计数会把整条反代链路的所有真实用户合并进同一个桶
+// 造成大面积误拦截，于是直接放行——但「放行」意味着任何能让解析结果落到
+// 非公网地址的请求（直连应用端口、反代未改写转发头、转发头全是内网跳）都
+// 可以完全绕过公开接口限流。现在改为按 TCP 直连对端地址计数：直连者按自己
+// 的地址被限；同机反代场景下对端固定为反代地址，合并进一个桶的风险确实
+// 存在，但这正是「反代转发头没有被正确采纳」的信号，应通过配置
+// server.trusted_proxies 让解析拿到真实客户端 IP 来解决，而不是放弃限流。
 func (p *PanelRateLimiter) PublicIP() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if p == nil || p.limiter == nil || p.settingService == nil {
@@ -118,8 +126,12 @@ func (p *PanelRateLimiter) PublicIP() gin.HandlerFunc {
 		}
 		clientIP := SecurityClientIP(c)
 		if !isPubliclyRoutableClientIP(clientIP) {
-			c.Next()
-			return
+			clientIP = remoteAddrHost(c)
+			if clientIP == "" {
+				// 连对端地址都无法解析（异常连接）：无可用的限流键，放行
+				c.Next()
+				return
+			}
 		}
 
 		result, err := p.limiter.Allow(c.Request.Context(), "panel:public:ip:"+clientIP, settings.PublicIPRPM, panelRateLimitWindow)
@@ -134,6 +146,22 @@ func (p *PanelRateLimiter) PublicIP() gin.HandlerFunc {
 		}
 		c.Next()
 	}
+}
+
+// remoteAddrHost 返回 TCP 直连对端地址（去端口），无法解析时返回空串。
+func remoteAddrHost(c *gin.Context) string {
+	if c == nil || c.Request == nil {
+		return ""
+	}
+	remote := strings.TrimSpace(c.Request.RemoteAddr)
+	if host, _, err := net.SplitHostPort(remote); err == nil {
+		remote = host
+	}
+	parsed := net.ParseIP(remote)
+	if parsed == nil {
+		return ""
+	}
+	return parsed.String()
 }
 
 // isPubliclyRoutableClientIP 判断地址是否为可作为限流依据的全局单播地址。

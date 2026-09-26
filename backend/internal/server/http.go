@@ -108,17 +108,33 @@ func configureTrustedProxies(r *gin.Engine, cfg config.ServerConfig) {
 	}
 }
 
+const (
+	// defaultReadHeaderTimeout / defaultIdleTimeout：配置缺失或非法（<= 0）时的兜底值。
+	// 正常路径由 config.Validate 保证取值合法；这里再兜一层，确保即便绕过校验构造 cfg
+	// （测试、嵌入式调用），Slowloris 型慢速请求头与空闲连接也始终有超时（SEC-012）。
+	defaultReadHeaderTimeout = 10 * time.Second
+	defaultIdleTimeout       = 120 * time.Second
+)
+
 // ProvideHTTPServer 提供 HTTP 服务器
 func ProvideHTTPServer(cfg *config.Config, router *gin.Engine) *http.Server {
 	httpHandler := http.Handler(router)
+	readHeaderTimeout := time.Duration(cfg.Server.ReadHeaderTimeout) * time.Second
+	if readHeaderTimeout <= 0 {
+		readHeaderTimeout = defaultReadHeaderTimeout
+	}
+	idleTimeout := time.Duration(cfg.Server.IdleTimeout) * time.Second
+	if idleTimeout <= 0 {
+		idleTimeout = defaultIdleTimeout
+	}
 	server := &http.Server{
 		Addr:           cfg.Server.Address(),
 		Handler:        httpHandler,
 		MaxHeaderBytes: cfg.Server.MaxHeaderBytes,
 		// ReadHeaderTimeout: 读取请求头的超时时间，防止慢速请求头攻击
-		ReadHeaderTimeout: time.Duration(cfg.Server.ReadHeaderTimeout) * time.Second,
+		ReadHeaderTimeout: readHeaderTimeout,
 		// IdleTimeout: 空闲连接超时时间，释放不活跃的连接资源
-		IdleTimeout: time.Duration(cfg.Server.IdleTimeout) * time.Second,
+		IdleTimeout: idleTimeout,
 		// 注意：不设置 WriteTimeout，因为流式响应可能持续十几分钟
 		// 不设置 ReadTimeout，因为大请求体可能需要较长时间读取
 	}

@@ -98,7 +98,11 @@ func (s *KimiGatewayService) ForwardMessages(ctx context.Context, c *gin.Context
 		return nil, err
 	}
 
-	upstreamReq, originalModel, upstreamModel, err := s.buildMessagesRequest(ctx, c, account, body)
+	stream := gjson.GetBytes(body, "stream").Bool()
+	upstreamCtx, cancelUpstream := compatUpstreamContext(ctx, stream)
+	defer cancelUpstream()
+
+	upstreamReq, originalModel, upstreamModel, err := s.buildMessagesRequest(upstreamCtx, c, account, body)
 	if err != nil {
 		return nil, err
 	}
@@ -122,8 +126,8 @@ func (s *KimiGatewayService) ForwardMessages(ctx context.Context, c *gin.Context
 	}
 
 	compat := s.glmResponseCompat()
-	if gjson.GetBytes(body, "stream").Bool() {
-		return compat.handleStreamingMessagesResponse(resp, c, originalModel, upstreamModel, start)
+	if stream {
+		return compat.handleStreamingMessagesResponse(resp, c, originalModel, upstreamModel, start, newCompatStreamDrain(cancelUpstream))
 	}
 	return compat.handleNonStreamingMessagesResponse(resp, c, originalModel, upstreamModel, start)
 }
@@ -141,7 +145,11 @@ func (s *KimiGatewayService) ForwardChatCompletions(ctx context.Context, c *gin.
 		return nil, err
 	}
 
-	upstreamReq, originalModel, upstreamModel, err := s.buildChatCompletionsRequest(ctx, c, account, body)
+	stream := gjson.GetBytes(body, "stream").Bool()
+	upstreamCtx, cancelUpstream := compatUpstreamContext(ctx, stream)
+	defer cancelUpstream()
+
+	upstreamReq, originalModel, upstreamModel, err := s.buildChatCompletionsRequest(upstreamCtx, c, account, body)
 	if err != nil {
 		return nil, err
 	}
@@ -165,8 +173,8 @@ func (s *KimiGatewayService) ForwardChatCompletions(ctx context.Context, c *gin.
 	}
 
 	compat := s.glmResponseCompat()
-	if gjson.GetBytes(body, "stream").Bool() {
-		return compat.handleStreamingChatCompletionsResponse(resp, c, originalModel, upstreamModel, start)
+	if stream {
+		return compat.handleStreamingChatCompletionsResponse(resp, c, originalModel, upstreamModel, start, newCompatStreamDrain(cancelUpstream))
 	}
 	return compat.handleNonStreamingChatCompletionsResponse(resp, c, originalModel, upstreamModel, start)
 }

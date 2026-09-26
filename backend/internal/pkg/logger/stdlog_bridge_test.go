@@ -164,3 +164,79 @@ func TestLegacyPrintfRoutesLevels(t *testing.T) {
 		t.Fatalf("stderr missing component field: %s", stderrText)
 	}
 }
+
+func TestNormalizeStdLogMessageStripsControlAndANSI(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{
+			name: "ansi color sequence removed",
+			raw:  "user=\x1b[31mmallory\x1b[0m logged in",
+			want: "user=mallory logged in",
+		},
+		{
+			name: "carriage return cannot forge a new line",
+			raw:  "request ok\r[ERROR] fake entry injected",
+			want: "request ok [ERROR] fake entry injected",
+		},
+		{
+			name: "crlf and tab fold to single spaces",
+			raw:  "a\r\nb\tc",
+			want: "a b c",
+		},
+		{
+			name: "nul and other C0 controls dropped",
+			raw:  "a\x00b\x07c\x1fd",
+			want: "abcd",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := normalizeStdLogMessage(tc.raw); got != tc.want {
+				t.Fatalf("normalizeStdLogMessage(%q)=%q want=%q", tc.raw, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSanitizeLogField(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "plain passthrough", in: "hello world", want: "hello world"},
+		{name: "utf8 passthrough", in: "模型 gpt-4o ✓", want: "模型 gpt-4o ✓"},
+		{name: "csi color", in: "\x1b[31mred\x1b[0m", want: "red"},
+		{name: "csi with params", in: "x\x1b[1;32;40my", want: "xy"},
+		{name: "csi cursor movement", in: "\x1b[2J\x1b[Hcleared", want: "cleared"},
+		{name: "osc title with BEL terminator", in: "\x1b]0;owned\x07after", want: "after"},
+		{name: "osc with ST terminator", in: "\x1b]8;;http://x\x1b\\link", want: "link"},
+		{name: "two byte escape", in: "\x1b(Btext", want: "text"},
+		{name: "unterminated csi is dropped", in: "safe\x1b[31", want: "safe"},
+		{name: "lone esc at end", in: "tail\x1b", want: "tail"},
+		{name: "cr and lf become spaces", in: "a\rb\nc", want: "a b c"},
+		{name: "tab becomes space", in: "k\tv", want: "k v"},
+		{name: "vt and ff become spaces", in: "a\vb\fc", want: "a b c"},
+		{name: "nul dropped", in: "a\x00b", want: "ab"},
+		{name: "del dropped", in: "a\x7fb", want: "ab"},
+		{name: "c1 control (8-bit CSI) dropped", in: "a\u009bb", want: "ab"},
+		{name: "latin1 letters above c1 kept", in: "café", want: "café"},
+		{name: "empty", in: "", want: ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := SanitizeLogField(tc.in)
+			if got != tc.want {
+				t.Fatalf("SanitizeLogField(%q)=%q want=%q", tc.in, got, tc.want)
+			}
+			for _, r := range got {
+				if r == 0x1b || (r < 0x20 && r != ' ') || r == 0x7f || (r >= 0x80 && r <= 0x9f) {
+					t.Fatalf("SanitizeLogField(%q) left control rune %U in %q", tc.in, r, got)
+				}
+			}
+		})
+	}
+}

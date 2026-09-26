@@ -69,7 +69,13 @@ var (
 	userAgentVersionResolver UserAgentVersionResolver
 )
 
-// defaultClientSecret 可通过环境变量 ANTIGRAVITY_OAUTH_CLIENT_SECRET 配置
+// defaultClientSecret 是 Antigravity 官方客户端随发行版内置的「已安装应用」
+// (installed application) 类型 Google OAuth client_secret。按 Google OAuth 规范，
+// 此类桌面/CLI 客户端的 secret 随二进制公开分发、任何人都可提取，因而不被视为机密；
+// 它不是本服务的服务端凭据，也不授予对本服务或用户数据的任何额外权限。
+//
+// 如需换用自建 OAuth 客户端，可通过环境变量 ANTIGRAVITY_OAUTH_CLIENT_SECRET
+// （见 AntigravityOAuthClientSecretEnv 与下方 init）覆盖此默认值。
 var defaultClientSecret = "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"
 
 func init() {

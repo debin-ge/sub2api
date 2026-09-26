@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -38,9 +39,23 @@ func ensureBootstrapSecrets(ctx context.Context, client *ent.Client, cfg *config
 		if err != nil {
 			return fmt.Errorf("persist jwt secret: %w", err)
 		}
-		if storedSecret != cfg.JWT.Secret {
-			log.Println("Warning: configured JWT secret mismatches persisted value; using persisted secret for cross-instance consistency.")
+		if storedSecret == cfg.JWT.Secret {
+			return nil
 		}
+		// 配置值与数据库中已持久化的值不一致。默认沿用数据库值保证多实例一致；
+		// 只有运营者显式打开 jwt.rotate_persisted_on_mismatch 才用配置值覆盖（等价于轮换密钥）。
+		if cfg.JWT.RotatePersistedOnMismatch {
+			if err := rotateSecuritySecret(ctx, client, securitySecretKeyJWT, cfg.JWT.Secret); err != nil {
+				return fmt.Errorf("rotate jwt secret: %w", err)
+			}
+			slog.Warn("JWT secret rotated from configuration; all existing sessions are invalidated",
+				"key", securitySecretKeyJWT,
+				"hint", "set jwt.rotate_persisted_on_mismatch back to false after this restart")
+			return nil
+		}
+		slog.Error("configured JWT secret mismatches the persisted value in security_secrets; the persisted secret is being used so tokens stay valid across instances",
+			"key", securitySecretKeyJWT,
+			"how_to_rotate", "set jwt.rotate_persisted_on_mismatch=true (env JWT_ROTATE_PERSISTED_ON_MISMATCH=true) for one restart to overwrite the persisted secret with the configured one; this invalidates every existing session")
 		cfg.JWT.Secret = storedSecret
 		return nil
 	}
@@ -95,6 +110,33 @@ func getOrCreateGeneratedSecuritySecret(ctx context.Context, client *ent.Client,
 		return "", false, fmt.Errorf("stored secret %q must be at least 32 bytes", key)
 	}
 	return value, value == generated, nil
+}
+
+// rotateSecuritySecret 用 value 覆盖已持久化的 key 对应密钥。仅在运营者显式要求轮换时调用；
+// 覆盖后再读回一次确认数据库中确实是新值，避免多实例并发启动时误报成功。
+func rotateSecuritySecret(ctx context.Context, client *ent.Client, key, value string) error {
+	value = strings.TrimSpace(value)
+	if len([]byte(value)) < 32 {
+		return fmt.Errorf("secret %q must be at least 32 bytes", key)
+	}
+	affected, err := client.SecuritySecret.Update().
+		Where(securitysecret.KeyEQ(key)).
+		SetValue(value).
+		Save(ctx)
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return fmt.Errorf("secret %q not found for rotation", key)
+	}
+	stored, err := querySecuritySecretWithRetry(ctx, client, key)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(stored.Value) != value {
+		return fmt.Errorf("secret %q rotation not visible after update", key)
+	}
+	return nil
 }
 
 func createSecuritySecretIfAbsent(ctx context.Context, client *ent.Client, key, value string) (string, error) {

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"net/url"
 	"reflect"
 	"strconv"
 	"strings"
@@ -583,6 +584,15 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	}
 
 	// 验证参数
+	// api_base_url 会被前端文档页/广场直接替换进链接与代码示例，必须是不带凭证的绝对
+	// http(s) 地址，防止 javascript: 等 scheme 经模板替换进入页面。
+	if raw := strings.TrimSpace(req.APIBaseURL); raw != "" {
+		parsed, err := url.Parse(raw)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil {
+			response.BadRequest(c, "api_base_url must be an absolute http(s) URL without credentials")
+			return
+		}
+	}
 	if req.DefaultConcurrency < 1 {
 		req.DefaultConcurrency = 1
 	}

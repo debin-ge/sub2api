@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -445,11 +446,106 @@ func (b *stdLogBridge) Write(p []byte) (int, error) {
 }
 
 func normalizeStdLogMessage(raw string) string {
-	msg := strings.TrimSpace(strings.ReplaceAll(raw, "\n", " "))
-	if msg == "" {
+	msg := SanitizeLogField(raw)
+	if strings.TrimSpace(msg) == "" {
 		return ""
 	}
 	return strings.Join(strings.Fields(msg), " ")
+}
+
+// SanitizeLogField 清洗可能来自外部输入的日志字段，防止日志注入/终端注入：
+//   - 丢弃 ESC 起始的 ANSI 控制序列（CSI、OSC 及两字节转义）；
+//   - 把制表符、换行、回车、垂直制表、换页折叠为单个空格，避免伪造多行日志；
+//   - 丢弃其余 C0 控制字符、DEL(0x7f) 与 C1 控制字符(U+0080-U+009F)。
+//
+// 不含上述字符的输入原样返回（零分配）。
+func SanitizeLogField(s string) string {
+	if !logFieldNeedsSanitize(s) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		switch {
+		case r == 0x1b:
+			i = skipANSIEscape(s, i)
+			continue
+		case r == '\t' || r == '\n' || r == '\r' || r == '\v' || r == '\f':
+			b.WriteByte(' ')
+		case r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f):
+			// 丢弃其余控制字符。
+		default:
+			b.WriteString(s[i : i+size])
+		}
+		i += size
+	}
+	return b.String()
+}
+
+// logFieldNeedsSanitize 快速判断字段是否含需要处理的控制字符。
+func logFieldNeedsSanitize(s string) bool {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c < 0x20 || c == 0x7f || c == 0xc2 { // 0xc2 是 U+0080-U+00BF 的 UTF-8 首字节
+			return true
+		}
+	}
+	return false
+}
+
+// skipANSIEscape 返回位于 s[start] 的 ESC 所引导的转义序列之后的下标。
+//   - CSI（ESC '['）：跳过参数字节 0x30-0x3F、中间字节 0x20-0x2F，直到终止字节 0x40-0x7E；
+//   - OSC（ESC ']'）：跳过到 BEL(0x07) 或 ST（ESC '\\'）；
+//   - 其它转义（ESC + 中间字节 0x20-0x2F* + 终止字节 0x30-0x7E，如 ESC ( B）：整体丢弃；
+//   - 序列未闭合时丢弃到字符串末尾，宁可少打日志也不放行控制字节。
+func skipANSIEscape(s string, start int) int {
+	i := start + 1
+	if i >= len(s) {
+		return len(s)
+	}
+	switch s[i] {
+	case '[':
+		i++
+		for i < len(s) {
+			c := s[i]
+			if c >= 0x40 && c <= 0x7e {
+				return i + 1
+			}
+			if (c >= 0x30 && c <= 0x3f) || (c >= 0x20 && c <= 0x2f) {
+				i++
+				continue
+			}
+			// 非法字节：序列到此为止，让后续字符走常规处理。
+			return i
+		}
+		return len(s)
+	case ']':
+		i++
+		for i < len(s) {
+			if s[i] == 0x07 {
+				return i + 1
+			}
+			if s[i] == 0x1b {
+				if i+1 < len(s) && s[i+1] == '\\' {
+					return i + 2
+				}
+				return i
+			}
+			i++
+		}
+		return len(s)
+	default:
+		// ECMA-48 非 CSI/OSC 转义：若干中间字节 0x20-0x2F 后跟一个终止字节 0x30-0x7E
+		//（如 ESC ( B、ESC 7）。
+		for i < len(s) && s[i] >= 0x20 && s[i] <= 0x2f {
+			i++
+		}
+		if i < len(s) && s[i] >= 0x30 && s[i] <= 0x7e {
+			return i + 1
+		}
+		return i
+	}
 }
 
 func inferStdLogLevel(msg string) Level {

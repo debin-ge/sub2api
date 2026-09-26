@@ -464,17 +464,30 @@ func (h *DashboardHandler) GetGroupStats(c *gin.Context) {
 	})
 }
 
+// dashboardTrendMaxLimit 是趋势接口 limit 参数的上限：Top-N 维度数超过它没有展示意义，
+// 且会让底层 GROUP BY 结果集随 limit 线性膨胀。
+const dashboardTrendMaxLimit = 1000
+
+// parseDashboardTrendLimit 解析 limit 查询参数并夹在 [1, dashboardTrendMaxLimit]；
+// 缺失或非法时回落到 def。
+func parseDashboardTrendLimit(c *gin.Context, def int) int {
+	limit, err := strconv.Atoi(c.DefaultQuery("limit", strconv.Itoa(def)))
+	if err != nil || limit <= 0 {
+		limit = def
+	}
+	if limit > dashboardTrendMaxLimit {
+		limit = dashboardTrendMaxLimit
+	}
+	return limit
+}
+
 // GetAPIKeyUsageTrend handles getting API key usage trend data
 // GET /api/v1/admin/dashboard/api-keys-trend
 // Query params: start_date, end_date (YYYY-MM-DD), granularity (day/hour), limit (default 5)
 func (h *DashboardHandler) GetAPIKeyUsageTrend(c *gin.Context) {
 	startTime, endTime := parseTimeRange(c)
 	granularity := c.DefaultQuery("granularity", "day")
-	limitStr := c.DefaultQuery("limit", "5")
-	limit, err := strconv.Atoi(limitStr)
-	if err != nil || limit <= 0 {
-		limit = 5
-	}
+	limit := parseDashboardTrendLimit(c, 5)
 
 	trend, hit, err := h.getAPIKeyUsageTrendCached(c.Request.Context(), startTime, endTime, granularity, limit)
 	if err != nil {
@@ -497,11 +510,7 @@ func (h *DashboardHandler) GetAPIKeyUsageTrend(c *gin.Context) {
 func (h *DashboardHandler) GetUserUsageTrend(c *gin.Context) {
 	startTime, endTime := parseTimeRange(c)
 	granularity := c.DefaultQuery("granularity", "day")
-	limitStr := c.DefaultQuery("limit", "12")
-	limit, err := strconv.Atoi(limitStr)
-	if err != nil || limit <= 0 {
-		limit = 12
-	}
+	limit := parseDashboardTrendLimit(c, 12)
 
 	trend, hit, err := h.getUserUsageTrendCached(c.Request.Context(), startTime, endTime, granularity, limit)
 	if err != nil {

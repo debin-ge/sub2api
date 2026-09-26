@@ -1,2 +1,12 @@
 .cache/
 .DS_Store
+
+# Local runtime config / secrets and install markers must never enter the
+# build context (the runtime image reads config from /app/data or env vars).
+config.yaml
+.env
+.env.*
+.installed
+
+# Local build output
+bin/
