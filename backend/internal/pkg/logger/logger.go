@@ -472,11 +472,11 @@ func SanitizeLogField(s string) string {
 			i = skipANSIEscape(s, i)
 			continue
 		case r == '\t' || r == '\n' || r == '\r' || r == '\v' || r == '\f':
-			b.WriteByte(' ')
+			_ = b.WriteByte(' ')
 		case r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f):
 			// 丢弃其余控制字符。
 		default:
-			b.WriteString(s[i : i+size])
+			_, _ = b.WriteString(s[i : i+size])
 		}
 		i += size
 	}

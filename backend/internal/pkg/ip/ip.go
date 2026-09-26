@@ -263,15 +263,6 @@ func parseValidIP(value string) net.IP {
 	return net.ParseIP(normalizeIP(value))
 }
 
-// normalizeValidIP 规范化并验证代理头中的候选值，避免把 unknown、主机名等非法值传给安全服务。
-func normalizeValidIP(value string) string {
-	parsed := parseValidIP(value)
-	if parsed == nil {
-		return ""
-	}
-	return parsed.String()
-}
-
 // isTrustedByDefault 是未配置 server.trusted_proxies 时的默认可信对端范围：
 // 回环、RFC1918/ULA 内网、链路本地。
 func isTrustedByDefault(ip net.IP) bool {

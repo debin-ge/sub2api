@@ -1895,21 +1895,21 @@ func moderationBaseURLCompareKey(raw string) (string, bool) {
 		return "", false
 	}
 	var b strings.Builder
-	b.WriteString(strings.ToLower(parsed.Scheme))
-	b.WriteString("://")
+	_, _ = b.WriteString(strings.ToLower(parsed.Scheme))
+	_, _ = b.WriteString("://")
 	if parsed.User != nil {
-		b.WriteString(parsed.User.String())
-		b.WriteString("@")
+		_, _ = b.WriteString(parsed.User.String())
+		_, _ = b.WriteString("@")
 	}
-	b.WriteString(strings.ToLower(parsed.Host))
-	b.WriteString(strings.TrimRight(parsed.Path, "/"))
+	_, _ = b.WriteString(strings.ToLower(parsed.Host))
+	_, _ = b.WriteString(strings.TrimRight(parsed.Path, "/"))
 	if parsed.RawQuery != "" {
-		b.WriteString("?")
-		b.WriteString(parsed.RawQuery)
+		_, _ = b.WriteString("?")
+		_, _ = b.WriteString(parsed.RawQuery)
 	}
 	if parsed.Fragment != "" {
-		b.WriteString("#")
-		b.WriteString(parsed.Fragment)
+		_, _ = b.WriteString("#")
+		_, _ = b.WriteString(parsed.Fragment)
 	}
 	return b.String(), true
 }
