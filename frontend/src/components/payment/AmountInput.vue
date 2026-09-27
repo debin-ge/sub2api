@@ -2,7 +2,7 @@
   <div class="space-y-4">
     <!-- Quick Amount Buttons -->
     <div>
-      <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+      <label class="mb-2 block text-sm font-medium zt-ink-2">
         {{ t('payment.quickAmounts') }}
       </label>
       <div class="grid grid-cols-4 gap-2">
@@ -13,8 +13,8 @@
           :class="[
             'rounded-lg border-2 px-4 py-3 text-center font-medium transition-colors',
             modelValue === amt
-              ? 'border-primary-500 bg-primary-50 text-primary-700 dark:border-primary-400 dark:bg-primary-900/40 dark:text-primary-300'
-              : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-200 dark:hover:border-dark-500',
+              ? 'border-primary-500 bg-primary-50 zt-accent-text dark:border-primary-400 dark:bg-primary-900/40'
+              : 'zt-border-c2 zt-surface zt-ink-2 hover:border-gray-300 dark:hover:border-dark-500',
           ]"
           @click="selectAmount(amt)"
         >
@@ -26,19 +26,19 @@
     <!-- Custom Amount Input -->
     <div>
       <div class="mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+        <label class="block text-sm font-medium zt-ink-2">
           {{ t('payment.customAmount') }}
         </label>
         <span
           v-if="configuredMin > 0"
           data-test="minimum-recharge-amount"
-          class="text-xs text-gray-500 dark:text-gray-400"
+          class="text-xs zt-ink-3"
         >
           {{ t('payment.minimumRechargeAmount', { amount: configuredMin }) }}
         </span>
       </div>
       <div class="relative">
-        <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-dark-500">
+        <span class="absolute left-3 top-1/2 -translate-y-1/2 zt-ink-3">
           $
         </span>
         <input

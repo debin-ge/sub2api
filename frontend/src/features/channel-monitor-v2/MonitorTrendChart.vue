@@ -4,17 +4,17 @@
   >
     <div class="card-header mb-4 flex shrink-0 flex-wrap items-start justify-between gap-3 !border-0 !p-0">
       <div class="min-w-0">
-        <h2 class="flex items-center gap-2 text-sm font-bold text-gray-900 dark:text-white">
+        <h2 class="flex items-center gap-2 text-sm font-bold zt-ink">
           <span class="inline-flex h-4 w-4 text-sky-500" aria-hidden="true">
             <Icon name="chart" size="sm" />
           </span>
           {{ t('channelMonitorV2.chart.title') }}
         </h2>
-        <p class="mt-0.5 text-xs text-gray-500 dark:text-dark-400">
+        <p class="mt-0.5 text-xs zt-ink-3">
           {{ t('channelMonitorV2.chart.description') }}
         </p>
       </div>
-      <div class="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 text-xs text-gray-500 dark:text-gray-400 sm:w-auto">
+      <div class="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 text-xs zt-ink-3 sm:w-auto">
         <span class="flex shrink-0 items-center gap-1">
           <span class="h-2 w-2 rounded-full bg-red-500"></span>{{ t('channelMonitorV2.chart.errorLegend') }}
         </span>
@@ -27,7 +27,7 @@
         <span class="badge badge-gray shrink-0">{{ bucketLabel }}</span>
         <button
           type="button"
-          class="inline-flex shrink-0 items-center rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300 dark:hover:bg-dark-800"
+          class="inline-flex shrink-0 items-center rounded-lg border zt-border-c zt-surface px-2 py-1 text-[11px] font-semibold zt-ink-2 zt-hover-2 disabled:opacity-50"
           :disabled="!zoomed"
           @click="resetChartZoom"
         >
@@ -37,7 +37,7 @@
     </div>
     <div class="card-body min-h-0 flex-1 !p-0">
       <div v-if="loading" class="flex h-[280px] items-center justify-center sm:h-[300px]">
-        <div class="animate-pulse text-sm text-gray-400">{{ t('common.loading') }}</div>
+        <div class="animate-pulse text-sm zt-ink-3">{{ t('common.loading') }}</div>
       </div>
       <div
         v-else-if="chartData"

@@ -13,17 +13,17 @@
       <template v-if="selectedIds.length > 0">
         <button
           @click="$emit('select-page')"
-          class="text-xs font-medium text-primary-700 hover:text-primary-800 dark:text-primary-300 dark:hover:text-primary-200"
+          class="text-xs font-medium zt-accent-text hover:text-primary-800 dark:hover:text-primary-200"
         >
           {{ t('admin.accounts.bulkActions.selectCurrentPage') }}
         </button>
       </template>
       <template v-if="!allResultsSelected && totalResults > selectedIds.length">
-        <span v-if="selectedIds.length > 0" class="text-gray-300 dark:text-primary-800">•</span>
+        <span v-if="selectedIds.length > 0" class="zt-ink-3 dark:text-primary-800">•</span>
         <button
           :disabled="selectingAll"
           @click="$emit('select-all-results')"
-          class="text-xs font-medium text-primary-700 hover:text-primary-800 disabled:cursor-not-allowed disabled:opacity-60 dark:text-primary-300 dark:hover:text-primary-200"
+          class="text-xs font-medium zt-accent-text hover:text-primary-800 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:text-primary-200"
         >
           {{
             selectingAll
@@ -33,10 +33,10 @@
         </button>
       </template>
       <template v-if="selectedIds.length > 0">
-        <span class="text-gray-300 dark:text-primary-800">•</span>
+        <span class="zt-ink-3 dark:text-primary-800">•</span>
         <button
           @click="$emit('clear')"
-          class="text-xs font-medium text-primary-700 hover:text-primary-800 dark:text-primary-300 dark:hover:text-primary-200"
+          class="text-xs font-medium zt-accent-text hover:text-primary-800 dark:hover:text-primary-200"
         >
           {{ t('admin.accounts.bulkActions.clear') }}
         </button>

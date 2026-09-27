@@ -2,7 +2,7 @@
   <div
     :class="[
       'group relative rounded-lg border transition-all',
-      enabled ? 'border-gray-200 dark:border-dark-600' : 'border-gray-200 bg-gray-50 opacity-50 dark:border-dark-700 dark:bg-dark-800/50',
+      enabled ? 'zt-border-c2' : 'zt-border-c zt-surface-2 opacity-50',
     ]"
     :title="!enabled ? t('admin.settings.payment.typeDisabled') + ' — ' + t('admin.settings.payment.enableTypesFirst') : undefined"
   >
@@ -14,18 +14,18 @@
       <div class="flex items-center gap-3">
         <div :class="[
           'rounded-md p-1.5',
-          provider.enabled && enabled ? 'bg-green-100 dark:bg-green-900/30' : 'bg-gray-100 dark:bg-dark-700',
+          provider.enabled && enabled ? 'bg-green-100 dark:bg-green-900/30' : 'zt-surface-3',
         ]">
           <Icon
             name="server"
             size="sm"
-            :class="provider.enabled && enabled ? 'text-green-600 dark:text-green-400' : 'text-gray-400'"
+            :class="provider.enabled && enabled ? 'zt-good-text' : 'zt-ink-3'"
           />
         </div>
-        <span class="text-sm font-medium text-gray-900 dark:text-white">{{ provider.name }}</span>
-        <span class="text-xs text-gray-400 dark:text-gray-500">{{ keyLabel }}</span>
-        <span v-if="provider.payment_mode" class="text-xs text-gray-400 dark:text-gray-500">· {{ modeLabel }}</span>
-        <span v-if="enabled && availableTypes.length" class="text-xs text-gray-300 dark:text-gray-600">|</span>
+        <span class="text-sm font-medium zt-ink">{{ provider.name }}</span>
+        <span class="text-xs zt-ink-3">{{ keyLabel }}</span>
+        <span v-if="provider.payment_mode" class="text-xs zt-ink-3">· {{ modeLabel }}</span>
+        <span v-if="enabled && availableTypes.length" class="text-xs zt-ink-3">|</span>
         <div v-if="enabled" class="flex items-center gap-1">
           <button
             v-for="pt in availableTypes"
@@ -36,7 +36,7 @@
               'rounded px-2 py-0.5 text-xs font-medium transition-all',
               isSelected(pt.value)
                 ? 'bg-primary-500 text-white'
-                : 'bg-gray-100 text-gray-400 dark:bg-dark-700 dark:text-gray-500',
+                : 'zt-surface-3 zt-ink-3',
             ]"
           >{{ pt.label }}</button>
         </div>
@@ -47,12 +47,12 @@
         <ToggleSwitch :label="t('common.enabled')" :checked="provider.enabled" @toggle="emit('toggleField', 'enabled')" />
         <ToggleSwitch :label="t('admin.settings.payment.refundEnabled')" :checked="provider.refund_enabled" @toggle="emit('toggleField', 'refund_enabled')" />
         <ToggleSwitch v-if="provider.refund_enabled" :label="t('admin.settings.payment.allowUserRefund')" :checked="provider.allow_user_refund" @toggle="emit('toggleField', 'allow_user_refund')" />
-        <div class="flex items-center gap-2 border-l border-gray-200 pl-3 dark:border-dark-600">
-          <button type="button" @click="emit('edit')" class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/20 dark:hover:text-blue-400">
+        <div class="flex items-center gap-2 border-l zt-border-c2 pl-3">
+          <button type="button" @click="emit('edit')" class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 zt-ink-3 transition-colors hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/20 dark:hover:text-blue-400">
             <Icon name="edit" size="sm" />
             <span class="text-xs">{{ t('common.edit') }}</span>
           </button>
-          <button type="button" @click="emit('delete')" class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400">
+          <button type="button" @click="emit('delete')" class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 zt-ink-3 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400">
             <Icon name="trash" size="sm" />
             <span class="text-xs">{{ t('common.delete') }}</span>
           </button>

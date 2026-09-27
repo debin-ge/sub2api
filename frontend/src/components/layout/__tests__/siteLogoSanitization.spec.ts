@@ -5,12 +5,12 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 const dir = dirname(fileURLToPath(import.meta.url))
-const sidebarSource = readFileSync(resolve(dir, '../AppSidebar.vue'), 'utf8')
+const sidebarSource = readFileSync(resolve(dir, '../SideRail.vue'), 'utf8')
 const siteHeaderSource = readFileSync(resolve(dir, '../../common/SiteHeader.vue'), 'utf8')
 const keyUsageViewSource = readFileSync(resolve(dir, '../../../views/KeyUsageView.vue'), 'utf8')
 
 describe('site_logo sanitization', () => {
-  it('AppSidebar imports sanitizeUrl and applies it to siteLogo', () => {
+  it('SideRail imports sanitizeUrl and applies it to siteLogo', () => {
     expect(sidebarSource).toContain("import { sanitizeUrl } from '@/utils/url'")
     expect(sidebarSource).toContain('sanitizeUrl(appStore.siteLogo')
   })

@@ -1,32 +1,40 @@
 <template>
-  <div
-    class="flex items-center justify-between border-t border-gray-200 bg-white px-4 py-3 dark:border-dark-700 dark:bg-dark-800 sm:px-6"
-  >
-    <div class="flex flex-1 items-center justify-between sm:hidden">
-      <!-- Mobile pagination -->
-      <button
-        @click="goToPage(page - 1)"
-        :disabled="page === 1"
-        class="relative inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-dark-600 dark:bg-dark-700 dark:text-gray-200 dark:hover:bg-dark-600"
-      >
+  <div class="zt-pagination" :class="{ 'is-compact': compact }">
+    <!-- 紧凑模式：单行「‹ 第 x / y 页 · 每页 ›」 -->
+    <div v-if="compact" class="zt-pagination-mobile">
+      <button type="button" class="zt-page-nav" :disabled="page === 1" :aria-label="t('pagination.previous')" @click="goToPage(page - 1)">‹</button>
+      <div class="zt-pagination-mid">
+        <span class="text-sm zt-ink-2">
+          {{ t('pagination.pageOf', { page, total: totalPages }) }}
+        </span>
+        <div v-if="showPageSizeSelector" class="page-size-select w-20">
+          <Select
+            :model-value="pageSize"
+            :options="pageSizeSelectOptions"
+            @update:model-value="handlePageSizeChange"
+          />
+        </div>
+      </div>
+      <button type="button" class="zt-page-nav" :disabled="page === totalPages" :aria-label="t('pagination.next')" @click="goToPage(page + 1)">›</button>
+    </div>
+
+    <!-- Mobile pagination -->
+    <div v-if="!compact" class="zt-pagination-mobile sm:hidden">
+      <button type="button" class="zt-page-nav" :disabled="page === 1" @click="goToPage(page - 1)">
         {{ t('pagination.previous') }}
       </button>
-      <span class="text-sm text-gray-700 dark:text-gray-300">
+      <span class="text-sm zt-ink-2">
         {{ t('pagination.pageOf', { page, total: totalPages }) }}
       </span>
-      <button
-        @click="goToPage(page + 1)"
-        :disabled="page === totalPages"
-        class="relative ml-3 inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-dark-600 dark:bg-dark-700 dark:text-gray-200 dark:hover:bg-dark-600"
-      >
+      <button type="button" class="zt-page-nav" :disabled="page === totalPages" @click="goToPage(page + 1)">
         {{ t('pagination.next') }}
       </button>
     </div>
 
-    <div class="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+    <div v-if="!compact" class="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
       <!-- Desktop pagination info -->
       <div class="flex items-center space-x-4">
-        <p class="text-sm text-gray-700 dark:text-gray-300">
+        <p class="text-sm zt-ink-2">
           {{ t('pagination.showing') }}
           <span class="font-medium">{{ fromItem }}</span>
           {{ t('pagination.to') }}
@@ -38,7 +46,7 @@
 
         <!-- Page size selector -->
         <div v-if="showPageSizeSelector" class="flex items-center space-x-2">
-          <span class="text-sm text-gray-700 dark:text-gray-300"
+          <span class="text-sm zt-ink-2"
             >{{ t('pagination.perPage') }}:</span
           >
           <div class="page-size-select w-20">
@@ -51,7 +59,7 @@
         </div>
 
         <div v-if="showJump" class="flex items-center space-x-2">
-          <span class="text-sm text-gray-700 dark:text-gray-300">{{ t('pagination.jumpTo') }}</span>
+          <span class="text-sm zt-ink-2">{{ t('pagination.jumpTo') }}</span>
           <input
             v-model="jumpPage"
             type="number"
@@ -76,7 +84,7 @@
         <button
           @click="goToPage(page - 1)"
           :disabled="page === 1"
-          class="relative inline-flex items-center rounded-l-md border border-gray-300 bg-white px-2 py-2 text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-dark-600 dark:bg-dark-700 dark:text-gray-400 dark:hover:bg-dark-600"
+          class="zt-page-btn is-first"
           :aria-label="t('pagination.previous')"
         >
           <Icon name="chevronLeft" size="md" />
@@ -89,10 +97,8 @@
           @click="typeof pageNum === 'number' && goToPage(pageNum)"
           :disabled="typeof pageNum !== 'number'"
           :class="[
-            'relative inline-flex items-center border px-4 py-2 text-sm font-medium',
-            pageNum === page
-              ? 'z-10 border-primary-500 bg-primary-50 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400'
-              : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-dark-600 dark:bg-dark-700 dark:text-gray-300 dark:hover:bg-dark-600',
+            'zt-page-btn',
+            pageNum === page && 'is-current',
             typeof pageNum !== 'number' && 'cursor-default'
           ]"
           :aria-label="
@@ -107,7 +113,7 @@
         <button
           @click="goToPage(page + 1)"
           :disabled="page === totalPages"
-          class="relative inline-flex items-center rounded-r-md border border-gray-300 bg-white px-2 py-2 text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-dark-600 dark:bg-dark-700 dark:text-gray-400 dark:hover:bg-dark-600"
+          class="zt-page-btn is-last"
           :aria-label="t('pagination.next')"
         >
           <Icon name="chevronRight" size="md" />
@@ -134,6 +140,8 @@ interface Props {
   pageSizeOptions?: number[]
   showPageSizeSelector?: boolean
   showJump?: boolean
+  /** 紧凑模式：单行「‹ 第 x / y 页 · 每页 ›」，用于窄列（如分栏视图的列表列） */
+  compact?: boolean
 }
 
 interface Emits {
@@ -144,7 +152,8 @@ interface Emits {
 const props = withDefaults(defineProps<Props>(), {
   pageSizeOptions: () => getConfiguredTablePageSizeOptions(),
   showPageSizeSelector: true,
-  showJump: false
+  showJump: false,
+  compact: false
 })
 
 const emit = defineEmits<Emits>()
@@ -243,5 +252,105 @@ const submitJump = () => {
 <style scoped>
 .page-size-select :deep(.select-trigger) {
   @apply px-3 py-1.5 text-sm;
+}
+</style>
+
+<style scoped>
+.zt-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--zt-border);
+  background: var(--zt-surface);
+  font-size: 13px;
+}
+@media (min-width: 640px) {
+  .zt-pagination {
+    padding-inline: 24px;
+  }
+}
+.zt-pagination.is-compact {
+  padding: 8px;
+  background: transparent;
+}
+.zt-pagination-mobile {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+/* 非紧凑模式下，≥640px 只显示桌面分页；scoped 属性选择器会压过 Tailwind 的 sm:hidden，这里显式覆盖 */
+@media (min-width: 640px) {
+  .zt-pagination:not(.is-compact) .zt-pagination-mobile {
+    display: none;
+  }
+}
+.zt-pagination-mid {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.zt-page-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--zt-ink);
+  background: var(--zt-surface);
+  border: 1px solid var(--zt-border-2);
+}
+.zt-page-nav:hover:not(:disabled) {
+  background: var(--zt-surface-2);
+}
+.zt-page-nav:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.zt-page-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 30px;
+  padding: 0 8px;
+  font: 500 12.5px/1 var(--zt-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--zt-ink-2);
+  background: var(--zt-surface);
+  border: 1px solid var(--zt-border-2);
+}
+.zt-page-btn.is-first {
+  border-radius: 7px 0 0 7px;
+}
+.zt-page-btn.is-last {
+  border-radius: 0 7px 7px 0;
+}
+.zt-page-btn:hover:not(:disabled):not(.is-current) {
+  background: var(--zt-surface-2);
+  color: var(--zt-ink);
+}
+.zt-page-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.zt-page-btn.is-current {
+  z-index: 1;
+  border-color: var(--zt-accent-400);
+  background: var(--zt-accent-50);
+  color: var(--zt-accent);
+  font-weight: 600;
 }
 </style>

@@ -1,11 +1,11 @@
 <template>
   <div
-    class="rounded-2xl border border-gray-200 bg-white p-3 shadow-lg dark:border-gray-700 dark:bg-gray-800"
+    class="rounded-2xl border zt-border-c bg-white p-3 shadow-lg dark:border-gray-700 dark:bg-gray-800"
   >
     <Transition name="fade">
       <div
         v-if="open"
-        class="mb-3 max-h-80 overflow-y-auto rounded-xl bg-gray-50 p-3 dark:bg-gray-900/40"
+        class="mb-3 max-h-80 overflow-y-auto rounded-xl zt-surface-2 p-3 dark:bg-gray-900/40"
       >
         <slot name="settings" />
       </div>
@@ -44,7 +44,7 @@
       </button>
     </div>
 
-    <p v-if="hint" class="mt-2 px-1 text-xs text-gray-500 dark:text-gray-400">{{ hint }}</p>
+    <p v-if="hint" class="mt-2 px-1 text-xs zt-ink-3">{{ hint }}</p>
   </div>
 </template>
 

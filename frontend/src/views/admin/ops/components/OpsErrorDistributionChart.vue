@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useChartTheme } from '@/composables/useChartTheme'
 import { Chart as ChartJS, ArcElement, Legend, Tooltip } from 'chart.js'
 import { Doughnut } from 'vue-chartjs'
 import type { OpsErrorDistributionResponse } from '@/api/admin/ops'
@@ -21,13 +22,13 @@ const emit = defineEmits<{
 }>()
 const { t } = useI18n()
 
-const isDarkMode = computed(() => document.documentElement.classList.contains('dark'))
+const { theme: chartTheme } = useChartTheme()
 const colors = computed(() => ({
-  blue: '#3b82f6',
-  red: '#ef4444',
-  orange: '#f59e0b',
-  gray: '#9ca3af',
-  text: isDarkMode.value ? '#9ca3af' : '#6b7280'
+  blue: chartTheme.value.series[0],
+  red: chartTheme.value.series[3],
+  orange: chartTheme.value.series[1],
+  gray: chartTheme.value.other,
+  text: chartTheme.value.text
 }))
 
 const totalSlaErrors = computed(() =>
@@ -100,18 +101,18 @@ const options = computed(() => ({
   plugins: {
     legend: { display: false },
     tooltip: {
-      backgroundColor: isDarkMode.value ? '#1f2937' : '#ffffff',
-      titleColor: isDarkMode.value ? '#f3f4f6' : '#111827',
-      bodyColor: isDarkMode.value ? '#d1d5db' : '#4b5563'
+      backgroundColor: chartTheme.value.surface, borderColor: chartTheme.value.border, borderWidth: 1,
+      titleColor: chartTheme.value.ink,
+      bodyColor: chartTheme.value.text
     }
   }
 }))
 </script>
 
 <template>
-  <div class="flex h-full flex-col rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700">
+  <div class="card flex h-full flex-col p-5">
     <div class="mb-4 flex items-center justify-between">
-      <h3 class="flex items-center gap-2 text-sm font-bold text-gray-900 dark:text-white">
+      <h3 class="zt-chart-title flex items-center gap-2">
         <svg class="h-4 w-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path
             stroke-linecap="round"
@@ -125,7 +126,7 @@ const options = computed(() => ({
       </h3>
       <button
         type="button"
-        class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300 dark:hover:bg-dark-800"
+        class="inline-flex items-center rounded-lg border zt-border-c2 zt-surface px-2 py-1 text-[11px] font-semibold zt-ink-2 zt-hover-2 disabled:opacity-50"
         :disabled="state !== 'ready'"
         :title="t('admin.ops.errorTrend')"
         @click="emit('openDetails')"
@@ -140,20 +141,20 @@ const options = computed(() => ({
           <Doughnut :data="chartData" :options="{ ...options, cutout: '65%' }" />
         </div>
         <div class="mt-4 flex flex-col items-center gap-2">
-          <div v-if="topReason" class="text-xs font-bold text-gray-900 dark:text-white">
+          <div v-if="topReason" class="text-xs font-bold zt-ink">
             {{ t('admin.ops.top') }}: <span :style="{ color: topReason.color }">{{ topReason.label }}</span>
           </div>
           <div class="flex flex-wrap justify-center gap-3">
             <div v-for="item in categories" :key="item.label" class="flex items-center gap-1.5 text-xs">
               <span class="h-2 w-2 rounded-full" :style="{ backgroundColor: item.color }"></span>
-              <span class="text-gray-500 dark:text-gray-400">{{ item.label }} {{ item.count }}</span>
+              <span class="zt-ink-3">{{ item.label }} {{ item.count }}</span>
             </div>
           </div>
         </div>
       </div>
 
       <div v-else class="flex h-full items-center justify-center">
-        <div v-if="state === 'loading'" class="animate-pulse text-sm text-gray-400">{{ t('common.loading') }}</div>
+        <div v-if="state === 'loading'" class="animate-pulse text-sm zt-ink-3">{{ t('common.loading') }}</div>
         <EmptyState v-else :title="t('common.noData')" :description="t('admin.ops.charts.emptyError')" />
       </div>
     </div>

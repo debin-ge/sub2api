@@ -1,6 +1,6 @@
 <template>
   <label class="flex flex-col items-center gap-0.5 cursor-pointer">
-    <span class="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">{{ label }}</span>
+    <span class="text-xs zt-ink-3 whitespace-nowrap">{{ label }}</span>
     <button
       type="button"
       role="switch"

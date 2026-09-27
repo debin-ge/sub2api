@@ -3,9 +3,9 @@
     <div class="space-y-5" data-test="video-admin-page">
       <section class="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div v-for="metric in overviewMetrics" :key="metric.key" class="card min-w-0 p-4">
-          <p class="truncate text-xs font-medium text-gray-500 dark:text-gray-400">{{ metric.label }}</p>
-          <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">{{ metric.value }}</p>
-          <p class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">{{ metric.meta }}</p>
+          <p class="truncate text-xs font-medium zt-ink-3">{{ metric.label }}</p>
+          <p class="mt-2 text-2xl font-semibold zt-ink">{{ metric.value }}</p>
+          <p class="mt-1 truncate text-xs zt-ink-3">{{ metric.meta }}</p>
         </div>
       </section>
 
@@ -25,7 +25,7 @@
         </ul>
       </section>
 
-      <section class="border-b border-gray-200 dark:border-dark-700">
+      <section class="border-b zt-border-c">
         <div class="flex min-w-0 gap-1 overflow-x-auto" role="tablist" :aria-label="t('admin.videos.tabs.label')">
           <button
             v-for="tab in tabs"
@@ -34,23 +34,23 @@
             role="tab"
             class="inline-flex h-10 flex-none items-center gap-2 border-b-2 px-3 text-sm font-medium transition-colors"
             :class="activeTab === tab.key
-              ? 'border-primary-500 text-primary-600 dark:text-primary-400'
-              : 'border-transparent text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'"
+              ? 'border-primary-500 zt-accent-text'
+              : 'border-transparent zt-ink-3 hover:text-gray-800 dark:hover:text-gray-200'"
             :aria-selected="activeTab === tab.key"
             @click="selectTab(tab.key)"
           >
             <Icon :name="tab.icon" size="sm" />
             <span>{{ tab.label }}</span>
-            <span v-if="tab.count !== undefined" class="font-mono text-xs text-gray-400">{{ tab.count }}</span>
+            <span v-if="tab.count !== undefined" class="font-mono text-xs zt-ink-3">{{ tab.count }}</span>
           </button>
         </div>
       </section>
 
       <section class="flex flex-col gap-3 lg:flex-row lg:items-end">
         <label class="min-w-0 flex-1">
-          <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">{{ t('admin.videos.filters.search') }}</span>
+          <span class="mb-1 block text-xs font-medium zt-ink-2">{{ t('admin.videos.filters.search') }}</span>
           <div class="relative">
-            <Icon name="search" size="sm" class="pointer-events-none absolute left-3 top-2.5 text-gray-400" />
+            <Icon name="search" size="sm" class="pointer-events-none absolute left-3 top-2.5 zt-ink-3" />
             <input
               v-model.trim="filters.q"
               class="input h-9 w-full pl-9"
@@ -60,28 +60,28 @@
           </div>
         </label>
         <label v-if="activeTab === 'tasks'" class="w-full lg:w-44">
-          <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">{{ t('admin.videos.filters.generation') }}</span>
+          <span class="mb-1 block text-xs font-medium zt-ink-2">{{ t('admin.videos.filters.generation') }}</span>
           <select v-model="filters.generation_state" class="input h-9 w-full">
             <option value="">{{ t('admin.videos.filters.all') }}</option>
             <option v-for="state in generationStates" :key="state" :value="state">{{ stateLabel(state) }}</option>
           </select>
         </label>
         <label v-if="activeTab === 'tasks'" class="w-full lg:w-44">
-          <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">{{ t('admin.videos.filters.billing') }}</span>
+          <span class="mb-1 block text-xs font-medium zt-ink-2">{{ t('admin.videos.filters.billing') }}</span>
           <select v-model="filters.billing_state" class="input h-9 w-full">
             <option value="">{{ t('admin.videos.filters.all') }}</option>
             <option v-for="state in currentBillingStates" :key="state" :value="state">{{ stateLabel(state) }}</option>
           </select>
         </label>
         <label v-if="activeTab === 'resources' || activeTab === 'callbacks'" class="w-full lg:w-44">
-          <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">{{ t('admin.videos.filters.status') }}</span>
+          <span class="mb-1 block text-xs font-medium zt-ink-2">{{ t('admin.videos.filters.status') }}</span>
           <select v-model="filters.status" class="input h-9 w-full">
             <option value="">{{ t('admin.videos.filters.all') }}</option>
             <option v-for="state in currentStatusOptions" :key="state" :value="state">{{ stateLabel(state) }}</option>
           </select>
         </label>
         <label v-if="activeTab === 'tasks' || activeTab === 'resources'" class="w-full lg:w-32">
-          <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">{{ t('admin.videos.filters.account') }}</span>
+          <span class="mb-1 block text-xs font-medium zt-ink-2">{{ t('admin.videos.filters.account') }}</span>
           <input v-model.trim="filters.account_id" inputmode="numeric" class="input h-9 w-full" placeholder="ID" @keyup.enter="applyFilters" />
         </label>
         <div class="flex h-9 gap-2">
@@ -98,7 +98,7 @@
         </div>
         <div class="overflow-x-auto">
           <table v-if="activeTab === 'tasks'" class="w-full min-w-[860px] text-sm">
-            <thead class="bg-gray-50 text-left text-xs text-gray-500 dark:bg-dark-800 dark:text-gray-400">
+            <thead class="zt-surface-2 text-left text-xs zt-ink-3">
               <tr>
                 <th class="px-4 py-3 font-medium">{{ t('admin.videos.columns.task') }}</th>
                 <th class="px-4 py-3 font-medium">{{ t('admin.videos.columns.owner') }}</th>
@@ -109,25 +109,25 @@
                 <th class="px-4 py-3 text-right font-medium">{{ t('common.actions') }}</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-gray-100 dark:divide-dark-700">
+            <tbody class="divide-y zt-divide">
               <tr v-for="task in taskRows" :key="task.public_id" class="hover:bg-gray-50/60 dark:hover:bg-dark-800/60">
                 <td class="px-4 py-3">
-                  <button class="block max-w-64 truncate font-mono text-xs text-primary-600 hover:underline dark:text-primary-400" @click="openTask(task)">{{ task.public_id }}</button>
-                  <p class="mt-1 max-w-64 truncate text-xs text-gray-500">{{ taskSubtitle(task) }}</p>
+                  <button class="block max-w-64 truncate font-mono text-xs zt-accent-text hover:underline" @click="openTask(task)">{{ task.public_id }}</button>
+                  <p class="mt-1 max-w-64 truncate text-xs zt-ink-3">{{ taskSubtitle(task) }}</p>
                 </td>
                 <td class="px-4 py-3 font-mono text-xs">U{{ task.user_id }} / A{{ task.account_id ?? '-' }}</td>
                 <td class="px-4 py-3"><span :class="statusClass(task.generation_state)">{{ stateLabel(task.generation_state) }}</span></td>
                 <td class="px-4 py-3"><span :class="statusClass(task.billing_state)">{{ stateLabel(task.billing_state) }}</span></td>
 				<td class="px-4 py-3 text-xs" data-test="video-task-amounts">
-					<p v-if="task.actual_cost != null" class="font-mono font-medium text-emerald-600 dark:text-emerald-400">
-						<span class="mr-1 font-sans text-gray-400">{{ actualAmountLabel(task) }}</span>{{ formatMoney(task.actual_cost, task.currency) }}
+					<p v-if="task.actual_cost != null" class="font-mono font-medium zt-good-text">
+						<span class="mr-1 font-sans zt-ink-3">{{ actualAmountLabel(task) }}</span>{{ formatMoney(task.actual_cost, task.currency) }}
 					</p>
-					<p v-if="task.hold_amount != null" class="mt-0.5 font-mono text-gray-500 dark:text-gray-400">
-						<span class="mr-1 font-sans text-gray-400">{{ t('admin.videos.detail.heldShort') }}</span>{{ formatMoney(task.hold_amount, task.currency) }}
+					<p v-if="task.hold_amount != null" class="mt-0.5 font-mono zt-ink-3">
+						<span class="mr-1 font-sans zt-ink-3">{{ t('admin.videos.detail.heldShort') }}</span>{{ formatMoney(task.hold_amount, task.currency) }}
 					</p>
 					<span v-if="task.actual_cost == null && task.hold_amount == null">-</span>
 				</td>
-                <td class="px-4 py-3 text-xs text-gray-500">{{ formatDate(task.updated_at) }}</td>
+                <td class="px-4 py-3 text-xs zt-ink-3">{{ formatDate(task.updated_at) }}</td>
                 <td class="px-4 py-3">
                   <div class="flex justify-end gap-1">
                     <button type="button" class="icon-action" :title="t('admin.videos.actions.inspect')" @click="openTask(task)"><Icon name="eye" size="sm" /></button>
@@ -137,44 +137,44 @@
                   </div>
                 </td>
               </tr>
-              <tr v-if="!loading && taskRows.length === 0"><td colspan="7" class="px-4 py-12 text-center text-gray-500">{{ t('admin.videos.empty') }}</td></tr>
+              <tr v-if="!loading && taskRows.length === 0"><td colspan="7" class="px-4 py-12 text-center zt-ink-3">{{ t('admin.videos.empty') }}</td></tr>
             </tbody>
           </table>
 
           <table v-else-if="activeTab === 'resources'" class="w-full min-w-[900px] text-sm">
-            <thead class="bg-gray-50 text-left text-xs text-gray-500 dark:bg-dark-800 dark:text-gray-400"><tr>
+            <thead class="zt-surface-2 text-left text-xs zt-ink-3"><tr>
               <th class="px-4 py-3 font-medium">{{ t('admin.videos.columns.resource') }}</th><th class="px-4 py-3 font-medium">{{ t('admin.videos.columns.owner') }}</th><th class="px-4 py-3 font-medium">{{ t('admin.videos.columns.provider') }}</th><th class="px-4 py-3 font-medium">{{ t('admin.videos.columns.account') }}</th><th class="px-4 py-3 font-medium">{{ t('admin.videos.columns.model') }}</th><th class="px-4 py-3 font-medium">{{ t('admin.videos.columns.status') }}</th><th class="px-4 py-3 font-medium">{{ t('admin.videos.columns.updated') }}</th>
             </tr></thead>
-            <tbody class="divide-y divide-gray-100 dark:divide-dark-700">
+            <tbody class="divide-y zt-divide">
               <tr v-for="resource in resourceRows" :key="resource.public_id">
-                <td class="px-4 py-3"><p class="font-mono text-xs">{{ resource.public_id }}</p><p class="mt-1 font-mono text-xs text-gray-500">{{ resource.provider_resource_id }}</p></td>
-                <td class="px-4 py-3 font-mono text-xs">U{{ resource.user_id }}</td><td class="px-4 py-3">{{ resource.provider }}</td><td class="px-4 py-3 font-mono">{{ resource.account_id }}</td><td class="px-4 py-3">{{ resource.model || '-' }}</td><td class="px-4 py-3"><span :class="statusClass(resource.status)">{{ stateLabel(resource.status) }}</span></td><td class="px-4 py-3 text-xs text-gray-500">{{ formatDate(resource.updated_at) }}</td>
+                <td class="px-4 py-3"><p class="font-mono text-xs">{{ resource.public_id }}</p><p class="mt-1 font-mono text-xs zt-ink-3">{{ resource.provider_resource_id }}</p></td>
+                <td class="px-4 py-3 font-mono text-xs">U{{ resource.user_id }}</td><td class="px-4 py-3">{{ resource.provider }}</td><td class="px-4 py-3 font-mono">{{ resource.account_id }}</td><td class="px-4 py-3">{{ resource.model || '-' }}</td><td class="px-4 py-3"><span :class="statusClass(resource.status)">{{ stateLabel(resource.status) }}</span></td><td class="px-4 py-3 text-xs zt-ink-3">{{ formatDate(resource.updated_at) }}</td>
               </tr>
-              <tr v-if="!loading && resourceRows.length === 0"><td colspan="7" class="px-4 py-12 text-center text-gray-500">{{ t('admin.videos.empty') }}</td></tr>
+              <tr v-if="!loading && resourceRows.length === 0"><td colspan="7" class="px-4 py-12 text-center zt-ink-3">{{ t('admin.videos.empty') }}</td></tr>
             </tbody>
           </table>
 
           <table v-else-if="activeTab === 'unmatched'" class="w-full min-w-[900px] text-sm">
-            <thead class="bg-gray-50 text-left text-xs text-gray-500 dark:bg-dark-800 dark:text-gray-400"><tr>
+            <thead class="zt-surface-2 text-left text-xs zt-ink-3"><tr>
               <th class="px-4 py-3 font-medium">{{ t('admin.videos.columns.event') }}</th><th class="px-4 py-3 font-medium">{{ t('admin.videos.columns.provider') }}</th><th class="px-4 py-3 font-medium">{{ t('admin.videos.columns.account') }}</th><th class="px-4 py-3 font-medium">{{ t('admin.videos.columns.upstreamTask') }}</th><th class="px-4 py-3 font-medium">{{ t('admin.videos.columns.providerEvent') }}</th><th class="px-4 py-3 font-medium">{{ t('admin.videos.columns.created') }}</th>
             </tr></thead>
-            <tbody class="divide-y divide-gray-100 dark:divide-dark-700">
-              <tr v-for="event in eventRows" :key="event.id"><td class="px-4 py-3">{{ event.event_type }}</td><td class="px-4 py-3">{{ event.provider || '-' }}</td><td class="px-4 py-3 font-mono">{{ event.account_id ?? '-' }}</td><td class="max-w-56 truncate px-4 py-3 font-mono text-xs">{{ event.provider_task_id || '-' }}</td><td class="max-w-56 truncate px-4 py-3 font-mono text-xs">{{ event.provider_event_id || '-' }}</td><td class="px-4 py-3 text-xs text-gray-500">{{ formatDate(event.created_at) }}</td></tr>
-              <tr v-if="!loading && eventRows.length === 0"><td colspan="6" class="px-4 py-12 text-center text-gray-500">{{ t('admin.videos.empty') }}</td></tr>
+            <tbody class="divide-y zt-divide">
+              <tr v-for="event in eventRows" :key="event.id"><td class="px-4 py-3">{{ event.event_type }}</td><td class="px-4 py-3">{{ event.provider || '-' }}</td><td class="px-4 py-3 font-mono">{{ event.account_id ?? '-' }}</td><td class="max-w-56 truncate px-4 py-3 font-mono text-xs">{{ event.provider_task_id || '-' }}</td><td class="max-w-56 truncate px-4 py-3 font-mono text-xs">{{ event.provider_event_id || '-' }}</td><td class="px-4 py-3 text-xs zt-ink-3">{{ formatDate(event.created_at) }}</td></tr>
+              <tr v-if="!loading && eventRows.length === 0"><td colspan="6" class="px-4 py-12 text-center zt-ink-3">{{ t('admin.videos.empty') }}</td></tr>
             </tbody>
           </table>
 
           <table v-else class="w-full min-w-[980px] text-sm">
-            <thead class="bg-gray-50 text-left text-xs text-gray-500 dark:bg-dark-800 dark:text-gray-400"><tr>
+            <thead class="zt-surface-2 text-left text-xs zt-ink-3"><tr>
               <th class="px-4 py-3 font-medium">{{ t('admin.videos.columns.callback') }}</th><th class="px-4 py-3 font-medium">{{ t('admin.videos.columns.event') }}</th><th class="px-4 py-3 font-medium">{{ t('admin.videos.columns.status') }}</th><th class="px-4 py-3 font-medium">{{ t('admin.videos.columns.attempts') }}</th><th class="px-4 py-3 font-medium">{{ t('admin.videos.columns.nextAttempt') }}</th><th class="px-4 py-3 font-medium">{{ t('admin.videos.columns.error') }}</th><th class="px-4 py-3 text-right font-medium">{{ t('common.actions') }}</th>
             </tr></thead>
-            <tbody class="divide-y divide-gray-100 dark:divide-dark-700">
-              <tr v-for="callback in callbackRows" :key="callback.id"><td class="px-4 py-3 font-mono">#{{ callback.id }} / T{{ callback.task_id }}</td><td class="px-4 py-3">{{ callback.event_type }}</td><td class="px-4 py-3"><span :class="statusClass(callback.status)">{{ stateLabel(callback.status) }}</span></td><td class="px-4 py-3 font-mono">{{ callback.attempts }}</td><td class="px-4 py-3 text-xs text-gray-500">{{ formatDate(callback.next_attempt_at) }}</td><td class="max-w-72 truncate px-4 py-3 text-xs text-red-600 dark:text-red-300">{{ callback.last_error || '-' }}</td><td class="px-4 py-3 text-right"><button v-if="canRetryCallback(callback)" type="button" class="icon-action" :disabled="callbackActionID !== null" :title="t('admin.videos.actions.retryCallback')" @click="retryCallback(callback)"><Icon name="refresh" size="sm" /></button><span v-else>-</span></td></tr>
-              <tr v-if="!loading && callbackRows.length === 0"><td colspan="7" class="px-4 py-12 text-center text-gray-500">{{ t('admin.videos.empty') }}</td></tr>
+            <tbody class="divide-y zt-divide">
+              <tr v-for="callback in callbackRows" :key="callback.id"><td class="px-4 py-3 font-mono">#{{ callback.id }} / T{{ callback.task_id }}</td><td class="px-4 py-3">{{ callback.event_type }}</td><td class="px-4 py-3"><span :class="statusClass(callback.status)">{{ stateLabel(callback.status) }}</span></td><td class="px-4 py-3 font-mono">{{ callback.attempts }}</td><td class="px-4 py-3 text-xs zt-ink-3">{{ formatDate(callback.next_attempt_at) }}</td><td class="max-w-72 truncate px-4 py-3 text-xs text-red-600 dark:text-red-300">{{ callback.last_error || '-' }}</td><td class="px-4 py-3 text-right"><button v-if="canRetryCallback(callback)" type="button" class="icon-action" :disabled="callbackActionID !== null" :title="t('admin.videos.actions.retryCallback')" @click="retryCallback(callback)"><Icon name="refresh" size="sm" /></button><span v-else>-</span></td></tr>
+              <tr v-if="!loading && callbackRows.length === 0"><td colspan="7" class="px-4 py-12 text-center zt-ink-3">{{ t('admin.videos.empty') }}</td></tr>
             </tbody>
           </table>
         </div>
-        <div v-if="loading" class="border-t border-gray-100 px-4 py-3 text-sm text-gray-500 dark:border-dark-700">{{ t('common.loading') }}</div>
+        <div v-if="loading" class="border-t zt-border-c px-4 py-3 text-sm zt-ink-3">{{ t('common.loading') }}</div>
         <Pagination v-if="pagination.total > 0" :page="pagination.page" :page-size="pagination.page_size" :total="pagination.total" @update:page="changePage" @update:page-size="changePageSize" />
       </section>
     </div>
@@ -182,11 +182,11 @@
     <BaseDialog :show="Boolean(selectedTask)" :title="t('admin.videos.detail.title')" width="extra-wide" @close="closeTask">
       <div v-if="selectedTask" class="space-y-5">
 		<section v-for="section in detailSections" :key="section.key" :data-test="`video-detail-${section.key}`">
-			<h4 class="mb-3 text-sm font-semibold text-gray-900 dark:text-white">{{ section.title }}</h4>
+			<h4 class="mb-3 text-sm font-semibold zt-ink">{{ section.title }}</h4>
 			<div class="grid grid-cols-1 gap-x-6 gap-y-3 text-sm md:grid-cols-2 xl:grid-cols-3">
-				<div v-for="field in section.fields" :key="field.label" class="min-w-0 border-b border-gray-100 pb-2 dark:border-dark-700">
-					<p class="text-xs text-gray-500">{{ field.label }}</p>
-					<p class="mt-1 break-all font-mono text-gray-900 dark:text-gray-100">{{ field.value }}</p>
+				<div v-for="field in section.fields" :key="field.label" class="min-w-0 border-b zt-border-c pb-2">
+					<p class="text-xs zt-ink-3">{{ field.label }}</p>
+					<p class="mt-1 break-all font-mono zt-ink">{{ field.value }}</p>
 				</div>
 			</div>
 		</section>
@@ -196,8 +196,8 @@
           font-mono 的短值，一段几百字的提示词进去就成了一堵没有断行的字墙。
         -->
         <section v-if="selectedTask.prompt" data-test="video-detail-prompt">
-          <h4 class="mb-3 text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.videos.detail.prompt') }}</h4>
-          <p class="max-h-48 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-gray-50 p-3 text-sm text-gray-800 dark:bg-dark-800 dark:text-gray-200">{{ selectedTask.prompt }}</p>
+          <h4 class="mb-3 text-sm font-semibold zt-ink">{{ t('admin.videos.detail.prompt') }}</h4>
+          <p class="max-h-48 overflow-y-auto whitespace-pre-wrap break-words rounded-lg zt-surface-2 p-3 text-sm zt-ink">{{ selectedTask.prompt }}</p>
         </section>
 
         <div v-if="selectedTask.last_error_message" class="border-l-2 border-red-500 bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950/20 dark:text-red-300">
@@ -211,13 +211,13 @@
         </div>
 
         <section>
-          <h4 class="mb-3 text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.videos.detail.timeline') }}</h4>
-          <div class="max-h-80 overflow-y-auto border-y border-gray-100 dark:border-dark-700">
-            <div v-for="event in taskEvents" :key="event.id" class="grid grid-cols-[9rem_minmax(0,1fr)] gap-4 border-b border-gray-100 py-3 text-sm last:border-0 dark:border-dark-700">
-              <time class="text-xs text-gray-500">{{ formatDate(event.created_at) }}</time>
-              <div class="min-w-0"><p class="font-medium text-gray-900 dark:text-gray-100">{{ event.event_type }}</p><p class="mt-1 break-words text-xs text-gray-500">{{ eventTransition(event) }}</p></div>
+          <h4 class="mb-3 text-sm font-semibold zt-ink">{{ t('admin.videos.detail.timeline') }}</h4>
+          <div class="max-h-80 overflow-y-auto border-y zt-border-c">
+            <div v-for="event in taskEvents" :key="event.id" class="grid grid-cols-[9rem_minmax(0,1fr)] gap-4 border-b zt-border-c py-3 text-sm last:border-0">
+              <time class="text-xs zt-ink-3">{{ formatDate(event.created_at) }}</time>
+              <div class="min-w-0"><p class="font-medium zt-ink">{{ event.event_type }}</p><p class="mt-1 break-words text-xs zt-ink-3">{{ eventTransition(event) }}</p></div>
             </div>
-            <p v-if="taskEvents.length === 0" class="py-8 text-center text-sm text-gray-500">{{ t('admin.videos.empty') }}</p>
+            <p v-if="taskEvents.length === 0" class="py-8 text-center text-sm zt-ink-3">{{ t('admin.videos.empty') }}</p>
           </div>
         </section>
       </div>

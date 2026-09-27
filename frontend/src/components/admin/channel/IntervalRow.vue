@@ -1,62 +1,62 @@
 <template>
   <div class="flex items-start gap-2 rounded border p-2"
-       :class="isEmpty ? 'border-red-400 bg-red-50 dark:border-red-500 dark:bg-red-950/20' : 'border-gray-200 bg-white dark:border-dark-500 dark:bg-dark-700'">
+       :class="isEmpty ? 'border-red-400 bg-red-50 dark:border-red-500 dark:bg-red-950/20' : 'zt-border-c zt-surface'">
     <!-- Token mode: context range + prices ($/MTok) -->
     <template v-if="mode === 'token'">
       <div class="pricing-interval-grid grid min-w-0 flex-1 gap-2">
         <div>
-          <label class="text-xs text-gray-400">{{ t('admin.channels.form.minTokens') }}</label>
+          <label class="text-xs zt-ink-3">{{ t('admin.channels.form.minTokens') }}</label>
           <input :value="interval.min_tokens" @input="emitField('min_tokens', toInt(($event.target as HTMLInputElement).value))"
             type="number" min="0" class="input mt-0.5 text-xs" />
         </div>
         <div>
-          <label class="text-xs text-gray-400">{{ t('admin.channels.form.maxTokens') }} <span class="text-gray-300">{{ t('admin.channels.form.inclusive') }}</span></label>
+          <label class="text-xs zt-ink-3">{{ t('admin.channels.form.maxTokens') }} <span class="zt-ink-3">{{ t('admin.channels.form.inclusive') }}</span></label>
           <input :value="interval.max_tokens ?? ''" @input="emitField('max_tokens', toIntOrNull(($event.target as HTMLInputElement).value))"
             type="number" min="0" class="input mt-0.5 text-xs" :placeholder="'∞'" />
         </div>
         <div>
-          <label class="text-xs text-gray-400">{{ t('admin.channels.form.inputPrice') }} <span v-if="isEmpty" class="text-red-500">*</span> <span class="text-gray-300">$/M</span></label>
+          <label class="text-xs zt-ink-3">{{ t('admin.channels.form.inputPrice') }} <span v-if="isEmpty" class="text-red-500">*</span> <span class="zt-ink-3">$/M</span></label>
           <input :value="interval.input_price" @input="emitField('input_price', ($event.target as HTMLInputElement).value)"
             type="number" step="any" min="0" class="input mt-0.5 text-xs" />
         </div>
         <div>
-          <label class="text-xs text-gray-400">{{ t('admin.channels.form.outputPrice') }} <span v-if="isEmpty" class="text-red-500">*</span> <span class="text-gray-300">$/M</span></label>
+          <label class="text-xs zt-ink-3">{{ t('admin.channels.form.outputPrice') }} <span v-if="isEmpty" class="text-red-500">*</span> <span class="zt-ink-3">$/M</span></label>
           <input :value="interval.output_price" @input="emitField('output_price', ($event.target as HTMLInputElement).value)"
             type="number" step="any" min="0" class="input mt-0.5 text-xs" />
         </div>
         <div>
-          <label class="text-xs text-gray-400">{{ t('admin.channels.form.cacheWrite5mPriceShort') }} <span class="text-gray-300">$/M</span></label>
+          <label class="text-xs zt-ink-3">{{ t('admin.channels.form.cacheWrite5mPriceShort') }} <span class="zt-ink-3">$/M</span></label>
           <input :value="interval.cache_write_price" @input="emitField('cache_write_price', ($event.target as HTMLInputElement).value)"
             type="number" step="any" min="0" class="input mt-0.5 text-xs" />
         </div>
         <div>
-          <label class="text-xs text-gray-400">{{ t('admin.channels.form.cacheWrite1hPriceShort') }} <span class="text-gray-300">$/M</span></label>
+          <label class="text-xs zt-ink-3">{{ t('admin.channels.form.cacheWrite1hPriceShort') }} <span class="zt-ink-3">$/M</span></label>
           <input :value="interval.cache_write_1h_price" @input="emitField('cache_write_1h_price', ($event.target as HTMLInputElement).value)"
             type="number" step="any" min="0" class="input mt-0.5 text-xs" />
         </div>
         <div>
-          <label class="text-xs text-gray-400">{{ t('admin.channels.form.cacheReadPriceShort') }} <span class="text-gray-300">$/M</span></label>
+          <label class="text-xs zt-ink-3">{{ t('admin.channels.form.cacheReadPriceShort') }} <span class="zt-ink-3">$/M</span></label>
           <input :value="interval.cache_read_price" @input="emitField('cache_read_price', ($event.target as HTMLInputElement).value)"
             type="number" step="any" min="0" class="input mt-0.5 text-xs" />
         </div>
         <template v-if="enableMultipliers">
           <div>
-            <label class="text-xs text-gray-400">{{ t('admin.channels.form.inputMultiplier') }}</label>
+            <label class="text-xs zt-ink-3">{{ t('admin.channels.form.inputMultiplier') }}</label>
             <input :value="interval.input_multiplier" @input="emitField('input_multiplier', ($event.target as HTMLInputElement).value)"
               type="number" step="any" min="0.000001" class="input mt-0.5 text-xs" />
           </div>
           <div>
-            <label class="text-xs text-gray-400">{{ t('admin.channels.form.outputMultiplier') }}</label>
+            <label class="text-xs zt-ink-3">{{ t('admin.channels.form.outputMultiplier') }}</label>
             <input :value="interval.output_multiplier" @input="emitField('output_multiplier', ($event.target as HTMLInputElement).value)"
               type="number" step="any" min="0.000001" class="input mt-0.5 text-xs" />
           </div>
           <div>
-            <label class="text-xs text-gray-400">{{ t('admin.channels.form.cacheWriteMultiplier') }}</label>
+            <label class="text-xs zt-ink-3">{{ t('admin.channels.form.cacheWriteMultiplier') }}</label>
             <input :value="interval.cache_write_multiplier" @input="emitField('cache_write_multiplier', ($event.target as HTMLInputElement).value)"
               type="number" step="any" min="0.000001" class="input mt-0.5 text-xs" />
           </div>
           <div>
-            <label class="text-xs text-gray-400">{{ t('admin.channels.form.cacheReadMultiplier') }}</label>
+            <label class="text-xs zt-ink-3">{{ t('admin.channels.form.cacheReadMultiplier') }}</label>
             <input :value="interval.cache_read_multiplier" @input="emitField('cache_read_multiplier', ($event.target as HTMLInputElement).value)"
               type="number" step="any" min="0.000001" class="input mt-0.5 text-xs" />
           </div>
@@ -68,12 +68,12 @@
     <template v-else-if="mode === 'video'">
       <div class="grid min-w-0 flex-1 grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-6">
         <div>
-          <label class="text-xs text-gray-400">{{ t('admin.channels.form.ruleLabel') }}</label>
+          <label class="text-xs zt-ink-3">{{ t('admin.channels.form.ruleLabel') }}</label>
           <input :value="interval.tier_label" @input="emitField('tier_label', ($event.target as HTMLInputElement).value)"
             type="text" class="input mt-0.5 text-xs" placeholder="sora-2-720p" />
         </div>
         <div>
-          <label class="text-xs text-gray-400">{{ t('admin.channels.form.billingUnit') }}</label>
+          <label class="text-xs zt-ink-3">{{ t('admin.channels.form.billingUnit') }}</label>
           <select :value="interval.billing_unit || 'second'" class="input mt-0.5 text-xs" @change="emitField('billing_unit', ($event.target as HTMLSelectElement).value)">
             <option value="request">{{ t('admin.channels.form.billingUnitRequest') }}</option>
             <option value="second">{{ t('admin.channels.form.billingUnitSecond') }}</option>
@@ -81,30 +81,30 @@
           </select>
         </div>
         <div>
-          <label class="text-xs text-gray-400">{{ t('admin.channels.form.unitPrice') }} <span class="text-gray-300">$</span></label>
+          <label class="text-xs zt-ink-3">{{ t('admin.channels.form.unitPrice') }} <span class="zt-ink-3">$</span></label>
           <input :value="interval.per_request_price" @input="emitField('per_request_price', ($event.target as HTMLInputElement).value)"
             type="number" step="any" min="0" class="input mt-0.5 text-xs" />
         </div>
         <div>
-          <label class="text-xs text-gray-400">{{ t('admin.channels.form.priority') }}</label>
+          <label class="text-xs zt-ink-3">{{ t('admin.channels.form.priority') }}</label>
           <input :value="interval.priority || 0" @input="emitField('priority', toInt(($event.target as HTMLInputElement).value))"
             type="number" step="1" class="input mt-0.5 text-xs" />
         </div>
         <div>
-          <label class="text-xs text-gray-400">{{ t('admin.channels.form.validFrom') }}</label>
+          <label class="text-xs zt-ink-3">{{ t('admin.channels.form.validFrom') }}</label>
           <input :value="interval.valid_from || ''" @input="emitField('valid_from', ($event.target as HTMLInputElement).value)"
             type="datetime-local" class="input mt-0.5 text-xs" />
         </div>
         <div>
-          <label class="text-xs text-gray-400">{{ t('admin.channels.form.validUntil') }}</label>
+          <label class="text-xs zt-ink-3">{{ t('admin.channels.form.validUntil') }}</label>
           <input :value="interval.valid_until || ''" @input="emitField('valid_until', ($event.target as HTMLInputElement).value)"
             type="datetime-local" class="input mt-0.5 text-xs" />
         </div>
         <div class="md:col-span-2 xl:col-span-6">
-          <label class="text-xs text-gray-400">{{ t('admin.channels.form.conditions') }}</label>
+          <label class="text-xs zt-ink-3">{{ t('admin.channels.form.conditions') }}</label>
           <textarea :value="interval.conditions_json || '{}'" @input="emitField('conditions_json', ($event.target as HTMLTextAreaElement).value)"
             rows="3" spellcheck="false" class="input mt-0.5 min-h-20 w-full resize-y font-mono text-xs" placeholder='{"operations":["generate"],"sizes":["1280x720"],"seconds":[8]}'></textarea>
-          <p class="mt-1 text-xs text-gray-400">{{ t('admin.channels.form.conditionsHint') }}</p>
+          <p class="mt-1 text-xs zt-ink-3">{{ t('admin.channels.form.conditionsHint') }}</p>
         </div>
       </div>
     </template>
@@ -112,30 +112,30 @@
     <!-- Per-request / Image mode: tier label + context range + price -->
     <template v-else>
       <div class="w-24">
-        <label class="text-xs text-gray-400">
+        <label class="text-xs zt-ink-3">
           {{ mode === 'image' ? t('admin.channels.form.resolution') : t('admin.channels.form.tierLabel') }}
         </label>
         <input :value="interval.tier_label" @input="emitField('tier_label', ($event.target as HTMLInputElement).value)"
           type="text" class="input mt-0.5 text-xs" :placeholder="mode === 'image' ? '1K / 2K / 4K' : ''" />
       </div>
       <div class="w-20">
-        <label class="text-xs text-gray-400">{{ t('admin.channels.form.minTokens') }}</label>
+        <label class="text-xs zt-ink-3">{{ t('admin.channels.form.minTokens') }}</label>
         <input :value="interval.min_tokens" @input="emitField('min_tokens', toInt(($event.target as HTMLInputElement).value))"
           type="number" min="0" class="input mt-0.5 text-xs" />
       </div>
       <div class="w-20">
-        <label class="text-xs text-gray-400">{{ t('admin.channels.form.maxTokens') }} <span class="text-gray-300">{{ t('admin.channels.form.inclusive') }}</span></label>
+        <label class="text-xs zt-ink-3">{{ t('admin.channels.form.maxTokens') }} <span class="zt-ink-3">{{ t('admin.channels.form.inclusive') }}</span></label>
         <input :value="interval.max_tokens ?? ''" @input="emitField('max_tokens', toIntOrNull(($event.target as HTMLInputElement).value))"
           type="number" min="0" class="input mt-0.5 text-xs" :placeholder="'∞'" />
       </div>
       <div class="flex-1">
-        <label class="text-xs text-gray-400">{{ t('admin.channels.form.perRequestPrice') }} <span v-if="isEmpty" class="text-red-500">*</span> <span class="text-gray-300">$</span></label>
+        <label class="text-xs zt-ink-3">{{ t('admin.channels.form.perRequestPrice') }} <span v-if="isEmpty" class="text-red-500">*</span> <span class="zt-ink-3">$</span></label>
         <input :value="interval.per_request_price" @input="emitField('per_request_price', ($event.target as HTMLInputElement).value)"
           type="number" step="any" min="0" class="input mt-0.5 text-xs" />
       </div>
     </template>
 
-    <button type="button" @click="emit('remove')" class="mt-4 rounded p-0.5 text-gray-400 hover:text-red-500">
+    <button type="button" @click="emit('remove')" class="mt-4 rounded p-0.5 zt-ink-3 hover:text-red-500">
       <Icon name="x" size="sm" />
     </button>
   </div>

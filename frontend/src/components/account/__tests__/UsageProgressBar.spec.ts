@@ -160,10 +160,10 @@ describe('UsageProgressBar', () => {
     expect(mountAt(90).get('.h-1\\.5 > div').classes()).toContain('bg-red-500')
 
     // 百分比文本同步分级
-    expect(mountAt(74).get('.h-1\\.5 + span').classes()).toContain('text-gray-600')
-    expect(mountAt(75).get('.h-1\\.5 + span').classes()).toContain('text-amber-600')
-    expect(mountAt(89).get('.h-1\\.5 + span').classes()).toContain('text-amber-600')
-    expect(mountAt(90).get('.h-1\\.5 + span').classes()).toContain('text-red-600')
+    expect(mountAt(74).get('.h-1\\.5 + span').classes()).toContain('zt-ink-2')
+    expect(mountAt(75).get('.h-1\\.5 + span').classes()).toContain('zt-warn-text')
+    expect(mountAt(89).get('.h-1\\.5 + span').classes()).toContain('zt-warn-text')
+    expect(mountAt(90).get('.h-1\\.5 + span').classes()).toContain('zt-bad-text')
   })
 
   it('labelWidth 默认 fixed：标签保持定宽居中，百分比列不变', () => {

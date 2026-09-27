@@ -14,11 +14,11 @@
       </button>
     </div>
 
-    <p v-if="mode === 'inherit'" class="text-sm text-gray-500 dark:text-gray-400">
+    <p v-if="mode === 'inherit'" class="text-sm zt-ink-3">
       {{ t('admin.modelPrices.video.inheritHint') }}
       <span v-if="inheritedValue?.enabled">{{ t('admin.modelPrices.video.inheritedSummary', { count: inheritedValue.rules?.length || 0 }) }}</span>
     </p>
-    <p v-else-if="mode === 'disabled'" class="text-sm text-gray-500 dark:text-gray-400">
+    <p v-else-if="mode === 'disabled'" class="text-sm zt-ink-3">
       {{ t('admin.modelPrices.video.disabledHint') }}
     </p>
 
@@ -27,7 +27,7 @@
         <div v-for="error in validationErrors" :key="error">{{ error }}</div>
       </div>
 
-      <div class="flex border-b border-gray-200 dark:border-dark-600" role="tablist">
+      <div class="flex border-b zt-border-c2" role="tablist">
         <button
           type="button"
           class="experience-tab"
@@ -94,10 +94,10 @@
               <option value="offline">{{ t('admin.modelPrices.video.offline') }}</option>
             </select>
           </label>
-          <label class="flex min-h-10 items-center gap-2 self-end text-sm text-gray-700 dark:text-gray-200">
+          <label class="flex min-h-10 items-center gap-2 self-end text-sm zt-ink-2">
             <input
               type="checkbox"
-              class="rounded border-gray-300"
+              class="rounded zt-border-c2"
               :checked="config.defaults?.generate_audio || false"
               @change="updateDefaults({ generate_audio: checkedValue($event) })"
             />
@@ -114,7 +114,7 @@
             <span>{{ t('admin.modelPrices.video.addResolution') }}</span>
           </button>
         </div>
-        <div v-if="resolutionEntries.length" class="divide-y divide-gray-200 dark:divide-dark-600">
+        <div v-if="resolutionEntries.length" class="divide-y zt-divide">
           <div v-for="entry in resolutionEntries" :key="entry[0]" class="editor-row grid gap-2 sm:grid-cols-[11rem,1fr,2.5rem]">
             <input class="input" :value="entry[0]" :placeholder="t('admin.modelPrices.video.resolutionName')" @change="renameResolution(entry[0], inputValue($event))" />
             <input class="input" :value="entry[1].sizes.join(', ')" :placeholder="t('admin.modelPrices.video.sizesPlaceholder')" @input="updateResolutionSizes(entry[0], inputValue($event))" />
@@ -198,8 +198,8 @@
                 <span>{{ priceUnitLabel(rule.billing_unit) }}</span>
                 <input class="input" type="number" min="0" step="any" :value="displayRulePrice(rule)" @input="updateRulePrice(index, inputValue($event))" />
               </label>
-              <div class="min-w-0 text-xs text-gray-500 dark:text-gray-400">
-                <div class="font-medium text-gray-600 dark:text-gray-300">{{ t('admin.modelPrices.video.appliesTo') }}</div>
+              <div class="min-w-0 text-xs zt-ink-3">
+                <div class="font-medium zt-ink-2">{{ t('admin.modelPrices.video.appliesTo') }}</div>
                 <div class="mt-2 truncate" :title="ruleScopeSummary(rule)">{{ ruleScopeSummary(rule) }}</div>
               </div>
               <div class="flex items-end justify-end gap-1">
@@ -295,7 +295,7 @@
           <label class="field-label"><span>{{ t('admin.modelPrices.video.qualities') }}</span><input v-model="preview.quality" class="input" /></label>
           <label class="field-label"><span>{{ t('admin.modelPrices.video.serviceTiers') }}</span><input v-model="preview.serviceTier" class="input" /></label>
         </div>
-        <p class="mt-3 text-sm" :class="previewResponse?.matched ? 'text-gray-700 dark:text-gray-200' : 'text-red-600 dark:text-red-300'">
+        <p class="mt-3 text-sm" :class="previewResponse?.matched ? 'zt-ink-2' : 'text-red-600 dark:text-red-300'">
           {{ previewMessage }}
         </p>
         <div v-if="previewResponse && !previewResponse.matched && previewResponse.rejected_rules.length" class="mt-3 space-y-2" data-test="video-preview-mismatches">

@@ -15,6 +15,9 @@ export const useAppStore = defineStore('app', () => {
   const sidebarCollapsed = ref<boolean>(false)
   const mobileOpen = ref<boolean>(false)
   const sidebarScrollTop = ref<number>(0)
+  // 侧栏域分组折叠状态（按分组 key），持久化到浏览器；默认全部展开。
+  const NAV_COLLAPSED_STORAGE_KEY = 'zt.nav.collapsed'
+  const navCollapsedGroups = ref<Record<string, boolean>>(loadNavCollapsedGroups())
   const loading = ref<boolean>(false)
   const toasts = ref<Toast[]>([])
 
@@ -42,6 +45,28 @@ export const useAppStore = defineStore('app', () => {
   const loadingCount = ref<number>(0)
 
   // ==================== Actions ====================
+
+  function loadNavCollapsedGroups(): Record<string, boolean> {
+    try {
+      const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(NAV_COLLAPSED_STORAGE_KEY) : null
+      const parsed = raw ? JSON.parse(raw) : null
+      return parsed && typeof parsed === 'object' ? (parsed as Record<string, boolean>) : {}
+    } catch {
+      return {}
+    }
+  }
+
+  /**
+   * Persist the collapsed state of a sidebar navigation group
+   */
+  function setNavGroupCollapsed(key: string, collapsed: boolean): void {
+    navCollapsedGroups.value = { ...navCollapsedGroups.value, [key]: collapsed }
+    try {
+      localStorage.setItem(NAV_COLLAPSED_STORAGE_KEY, JSON.stringify(navCollapsedGroups.value))
+    } catch {
+      // 私有模式或存储被禁用时静默忽略，仅保留内存状态
+    }
+  }
 
   /**
    * Toggle sidebar collapsed state
@@ -390,6 +415,7 @@ export const useAppStore = defineStore('app', () => {
     sidebarCollapsed,
     mobileOpen,
     sidebarScrollTop,
+    navCollapsedGroups,
     loading,
     toasts,
 
@@ -411,6 +437,7 @@ export const useAppStore = defineStore('app', () => {
     // Actions
     toggleSidebar,
     setSidebarCollapsed,
+    setNavGroupCollapsed,
     toggleMobileSidebar,
     setMobileOpen,
     setLoading,

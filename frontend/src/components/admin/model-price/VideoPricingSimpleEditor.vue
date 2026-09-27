@@ -23,9 +23,9 @@
       </label>
     </div>
 
-    <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
-      <label class="flex items-center gap-2 text-sm font-medium text-gray-800 dark:text-gray-200">
-        <input type="checkbox" class="rounded border-gray-300" :checked="profile.standardEnabled" @change="update({ standardEnabled: checkedValue($event) })" />
+    <div class="border-t zt-border-c2 pt-4">
+      <label class="flex items-center gap-2 text-sm font-medium zt-ink">
+        <input type="checkbox" class="rounded zt-border-c2" :checked="profile.standardEnabled" @change="update({ standardEnabled: checkedValue($event) })" />
         {{ t('admin.modelPrices.video.simpleStandardEnabled') }}
       </label>
       <label v-if="profile.standardEnabled" class="field-label mt-3 block max-w-md">
@@ -34,13 +34,13 @@
       </label>
     </div>
 
-    <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
-      <label class="flex items-center gap-2 text-sm font-medium text-gray-800 dark:text-gray-200">
-        <input type="checkbox" class="rounded border-gray-300" :checked="profile.referenceEnabled" @change="update({ referenceEnabled: checkedValue($event) })" />
+    <div class="border-t zt-border-c2 pt-4">
+      <label class="flex items-center gap-2 text-sm font-medium zt-ink">
+        <input type="checkbox" class="rounded zt-border-c2" :checked="profile.referenceEnabled" @change="update({ referenceEnabled: checkedValue($event) })" />
         {{ t('admin.modelPrices.video.simpleReferenceEnabled') }}
       </label>
-      <label v-if="profile.referenceEnabled && profile.standardEnabled" class="mt-3 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-        <input type="checkbox" class="rounded border-gray-300" :checked="profile.referenceSameAsStandard" @change="update({ referenceSameAsStandard: checkedValue($event) })" />
+      <label v-if="profile.referenceEnabled && profile.standardEnabled" class="mt-3 flex items-center gap-2 text-sm zt-ink-2">
+        <input type="checkbox" class="rounded zt-border-c2" :checked="profile.referenceSameAsStandard" @change="update({ referenceSameAsStandard: checkedValue($event) })" />
         {{ t('admin.modelPrices.video.simpleReferenceSamePrice') }}
       </label>
       <label v-if="profile.referenceEnabled && (!profile.referenceSameAsStandard || !profile.standardEnabled)" class="field-label mt-3 block max-w-md">
@@ -49,14 +49,14 @@
       </label>
     </div>
 
-    <div class="grid gap-3 border-t border-gray-200 pt-4 text-sm sm:grid-cols-2 dark:border-dark-600">
+    <div class="grid gap-3 border-t zt-border-c2 pt-4 text-sm sm:grid-cols-2">
       <div>
-        <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.modelPrices.video.simpleEstimateStandard') }}</div>
-        <div class="mt-1 font-medium text-gray-900 dark:text-white">{{ estimate(profile.standardEnabled, profile.standardUnitPriceUsd) }}</div>
+        <div class="text-xs zt-ink-3">{{ t('admin.modelPrices.video.simpleEstimateStandard') }}</div>
+        <div class="mt-1 font-medium zt-ink">{{ estimate(profile.standardEnabled, profile.standardUnitPriceUsd) }}</div>
       </div>
       <div>
-        <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.modelPrices.video.simpleEstimateReference') }}</div>
-        <div class="mt-1 font-medium text-gray-900 dark:text-white">{{ estimate(profile.referenceEnabled, referencePrice) }}</div>
+        <div class="text-xs zt-ink-3">{{ t('admin.modelPrices.video.simpleEstimateReference') }}</div>
+        <div class="mt-1 font-medium zt-ink">{{ estimate(profile.referenceEnabled, referencePrice) }}</div>
       </div>
     </div>
   </section>

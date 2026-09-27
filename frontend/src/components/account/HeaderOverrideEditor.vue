@@ -38,7 +38,7 @@
     type="button"
     :id="addButtonId"
     :data-testid="addButtonTestId"
-    class="w-full rounded-lg border-2 border-dashed border-gray-300 px-4 py-2 text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
+    class="w-full rounded-lg border-2 border-dashed zt-border-c2 px-4 py-2 zt-ink-2 transition-colors hover:border-gray-400 hover:text-gray-700 dark:hover:border-dark-400 dark:hover:text-gray-300"
     @click="addRow"
   >
     <svg class="mr-1 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -59,7 +59,7 @@
     <HeaderOverrideJsonTools :rows="rows" @update:rows="emit('update:rows', $event)" />
   </div>
 
-  <p class="text-xs text-gray-500 dark:text-gray-400">
+  <p class="text-xs zt-ink-3">
     {{ t('admin.accounts.headerOverride.emptyValueHint') }}
   </p>
 </template>

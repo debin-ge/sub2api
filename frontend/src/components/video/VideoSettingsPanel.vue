@@ -2,7 +2,7 @@
   <div class="space-y-4">
     <!-- 模型 -->
     <div>
-      <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">
+      <label class="mb-1 block text-xs font-medium zt-ink-2">
         {{ t('videoPlayground.settings.model') }}
       </label>
       <Select
@@ -22,9 +22,9 @@
          · 两者都没有 → 自由输入。都没有并不代表不能选时长——按秒计价的价目本就不必逐条
            列 conditions.seconds。整块藏掉只会让用户被迫接受上游默认值。 -->
     <div v-if="hasModel">
-      <label class="mb-1 flex items-center justify-between gap-2 text-xs font-medium text-gray-600 dark:text-gray-300">
+      <label class="mb-1 flex items-center justify-between gap-2 text-xs font-medium zt-ink-2">
         <span>{{ t('videoPlayground.settings.seconds') }}</span>
-        <span v-if="secondsRange" class="tabular-nums font-semibold text-primary-600 dark:text-primary-400">
+        <span v-if="secondsRange" class="tabular-nums font-semibold zt-accent-text">
           {{ t('videoPlayground.card.seconds', { seconds: sliderValue }) }}
         </span>
       </label>
@@ -50,7 +50,7 @@
           :aria-label="t('videoPlayground.settings.seconds')"
           @input="onSliderInput"
         />
-        <div class="mt-1 flex justify-between text-[11px] tabular-nums text-gray-400 dark:text-gray-500">
+        <div class="mt-1 flex justify-between text-[11px] tabular-nums zt-ink-3">
           <span>{{ t('videoPlayground.card.seconds', { seconds: secondsRange.min }) }}</span>
           <span>{{ t('videoPlayground.card.seconds', { seconds: secondsRange.max }) }}</span>
         </div>
@@ -65,7 +65,7 @@
           :placeholder="t('videoPlayground.settings.secondsPlaceholder')"
           @input="onSecondsInput"
         />
-        <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+        <p class="mt-1 text-xs zt-ink-3">
           {{ t('videoPlayground.settings.secondsFreeHint') }}
         </p>
       </template>
@@ -74,18 +74,18 @@
     <!-- 画幅：size 与 ratio/aspect_ratio/resolution 被拉平成同一种控件，
          可用性完全由目录里声明的互斥与"被素材决定"关系派生。 -->
     <div v-for="control in framingControls" :key="control.name">
-      <label class="mb-1 flex flex-wrap items-center gap-2 text-xs font-medium text-gray-600 dark:text-gray-300">
+      <label class="mb-1 flex flex-wrap items-center gap-2 text-xs font-medium zt-ink-2">
         <span>{{ framingLabel(control.name) }}</span>
-        <span v-if="control.disabledByConflict" class="font-normal text-amber-600 dark:text-amber-400">
+        <span v-if="control.disabledByConflict" class="font-normal zt-warn-text">
           {{ t('videoPlayground.settings.conflictHint', { field: fieldLabel(control.disabledByConflict) }) }}
         </span>
-        <span v-else-if="control.ignoredBy" class="font-normal text-amber-600 dark:text-amber-400">
+        <span v-else-if="control.ignoredBy" class="font-normal zt-warn-text">
           {{ t('videoPlayground.settings.ignoredHint', { field: fieldLabel(control.ignoredBy) }) }}
         </span>
         <!-- 还没填素材时也要先说清楚"这个控件只在文生视频下生效"。等填完素材才由上面那条
              琥珀色提示告知，用户已经白选了一次画幅。Ark 的 resolution/ratio 不声明这层关系，
              ignoredWhenPresent 为空，不会误挂这句。 -->
-        <span v-else-if="control.ignoredWhenPresent.length > 0" class="font-normal text-gray-400 dark:text-gray-500">
+        <span v-else-if="control.ignoredWhenPresent.length > 0" class="font-normal zt-ink-3">
           {{ t('videoPlayground.settings.framingTextOnlyHint') }}
         </span>
       </label>
@@ -107,7 +107,7 @@
     <div v-if="referenceSlots.length > 0">
       <button
         type="button"
-        class="flex items-center gap-1 text-xs font-medium text-gray-600 dark:text-gray-300"
+        class="flex items-center gap-1 text-xs font-medium zt-ink-2"
         @click="showReferences = !showReferences"
       >
         <Icon :name="showReferences ? 'chevronDown' : 'chevronRight'" size="sm" />
@@ -115,19 +115,19 @@
       </button>
       <div v-if="showReferences" class="mt-2 space-y-3">
         <div v-for="slot in referenceSlots" :key="slot.field">
-          <label class="mb-1 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+          <label class="mb-1 flex flex-wrap items-center gap-2 text-xs zt-ink-2">
             <span class="font-medium">{{ fieldLabel(slot.field) }}</span>
-            <span class="text-gray-400 dark:text-gray-500">{{ t('videoPlayground.settings.slotMax', { max: slot.max }) }}</span>
-            <span v-if="slot.disabledByConflict" class="text-amber-600 dark:text-amber-400">
+            <span class="zt-ink-3">{{ t('videoPlayground.settings.slotMax', { max: slot.max }) }}</span>
+            <span v-if="slot.disabledByConflict" class="zt-warn-text">
               {{ t('videoPlayground.settings.conflictHint', { field: fieldLabel(slot.disabledByConflict) }) }}
             </span>
-            <span v-else-if="slot.missingPrerequisite" class="text-amber-600 dark:text-amber-400">
+            <span v-else-if="slot.missingPrerequisite" class="zt-warn-text">
               {{ t('videoPlayground.settings.requiresHint', { fields: (slot.requires_any || []).map(fieldLabel).join(' / ') }) }}
             </span>
           </label>
           <!-- 六个槽位光看名字分不出用途：首帧、首尾帧、风格参考、运镜参考是四件不同的事，
                混填的后果是上游一个笼统的 400。用途与硬规则就地写在槽位上，不靠用户去翻文档。 -->
-          <p v-if="fieldHint(slot.field)" class="mb-1 text-[11px] leading-relaxed text-gray-400 dark:text-gray-500">
+          <p v-if="fieldHint(slot.field)" class="mb-1 text-[11px] leading-relaxed zt-ink-3">
             {{ fieldHint(slot.field) }}
           </p>
           <div class="space-y-1">
@@ -155,14 +155,14 @@
           <button
             v-if="slot.max > 1 && slotRowCount(slot) < slot.max"
             type="button"
-            class="mt-1 text-xs text-primary-600 hover:underline disabled:opacity-50 dark:text-primary-400"
+            class="mt-1 text-xs zt-accent-text hover:underline disabled:opacity-50"
             :disabled="!!slot.disabledByConflict || slot.missingPrerequisite"
             @click="addReference(slot)"
           >
             + {{ t('videoPlayground.settings.addUrl') }}
           </button>
         </div>
-        <p class="text-xs text-gray-400 dark:text-gray-500">
+        <p class="text-xs zt-ink-3">
           {{ t('videoPlayground.settings.referenceHint') }}
         </p>
       </div>
@@ -232,8 +232,8 @@ const chipBase =
 
 function chipClass(active: boolean, disabled: boolean): string {
   const tone = active
-    ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
-    : 'border-gray-300 text-gray-600 hover:border-gray-400 dark:border-gray-600 dark:text-gray-300'
+    ? 'border-primary-500 bg-primary-50 zt-accent-text dark:bg-primary-900/30'
+    : 'zt-border-c2 zt-ink-2 hover:border-gray-400 dark:border-gray-600'
   return `${chipBase} ${tone}${disabled ? ' opacity-50' : ''}`
 }
 

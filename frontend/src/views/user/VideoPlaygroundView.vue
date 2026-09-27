@@ -1,44 +1,37 @@
 <template>
   <AppLayout>
-    <div class="mx-auto flex h-full max-w-4xl flex-col gap-4 px-4 py-4">
-      <header class="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
-            {{ t('videoPlayground.title') }}
-          </h1>
-          <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('videoPlayground.subtitle') }}</p>
-        </div>
-        <div class="flex items-center gap-2">
-          <Select
-            v-if="videoApiKeys.length > 0"
-            :model-value="selectedApiKeyId"
-            :options="apiKeyOptions"
-            class="w-56"
-            :aria-label="t('videoPlayground.apiKey')"
-            @update:modelValue="(value) => selectApiKey(Number(value ?? 0))"
-          />
-          <button
-            type="button"
-            class="btn btn-secondary btn-icon"
-            :disabled="refreshing"
-            :title="t('common.refresh')"
-            @click="refreshAll"
-          >
-            <Icon name="refresh" size="md" :class="refreshing ? 'animate-spin' : ''" />
-          </button>
-        </div>
-      </header>
+    <!-- 标题/副标题由页头统一渲染；密钥选择与刷新放到页头右侧操作区 -->
+    <template #actions>
+      <Select
+        v-if="videoApiKeys.length > 0"
+        :model-value="selectedApiKeyId"
+        :options="apiKeyOptions"
+        class="w-56"
+        :aria-label="t('videoPlayground.apiKey')"
+        @update:modelValue="(value) => selectApiKey(Number(value ?? 0))"
+      />
+      <button
+        type="button"
+        class="btn btn-secondary btn-icon"
+        :disabled="refreshing"
+        :title="t('common.refresh')"
+        @click="refreshAll"
+      >
+        <Icon name="refresh" size="md" :class="refreshing ? 'animate-spin' : ''" />
+      </button>
+    </template>
+    <div class="flex h-full flex-col gap-4">
 
       <!-- 无可用 Key：明确引导，不留白也不报错 -->
       <div
         v-if="!loadingKeys && videoApiKeys.length === 0"
-        class="rounded-xl border border-dashed border-gray-300 p-8 text-center dark:border-gray-600"
+        class="rounded-xl border border-dashed zt-border-c2 p-8 text-center dark:border-gray-600"
       >
-        <Icon name="key" size="lg" class="mx-auto text-gray-400" />
-        <p class="mt-2 text-sm font-medium text-gray-700 dark:text-gray-200">
+        <Icon name="key" size="lg" class="mx-auto zt-ink-3" />
+        <p class="mt-2 text-sm font-medium zt-ink-2">
           {{ t('videoPlayground.noKey.title') }}
         </p>
-        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('videoPlayground.noKey.description') }}</p>
+        <p class="mt-1 text-xs zt-ink-3">{{ t('videoPlayground.noKey.description') }}</p>
         <RouterLink to="/keys" class="btn btn-primary mt-3 inline-flex">
           {{ t('videoPlayground.noKey.action') }}
         </RouterLink>
@@ -49,7 +42,7 @@
           <!-- 历史在最上方：往上翻是"更早"，与对话流的方向一致 -->
           <p
             v-if="loadingHistory && !historyLoaded"
-            class="flex items-center justify-center gap-1 text-xs text-gray-400 dark:text-gray-500"
+            class="flex items-center justify-center gap-1 text-xs zt-ink-3"
           >
             <Icon name="refresh" size="sm" class="animate-spin" />
             {{ t('videoPlayground.history.loading') }}
@@ -67,13 +60,13 @@
           </div>
           <p
             v-else-if="historyLoaded && cards.length > 0"
-            class="text-center text-xs text-gray-400 dark:text-gray-500"
+            class="text-center text-xs zt-ink-3"
           >
             {{ t('videoPlayground.history.end') }}
           </p>
           <div
             v-if="cards.length === 0 && !loadingHistory"
-            class="rounded-xl border border-dashed border-gray-300 p-10 text-center text-sm text-gray-500 dark:border-gray-600 dark:text-gray-400"
+            class="rounded-xl border border-dashed zt-border-c2 p-10 text-center text-sm zt-ink-3 dark:border-gray-600"
           >
             {{ t('videoPlayground.empty') }}
           </div>

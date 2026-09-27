@@ -346,9 +346,9 @@ onUnmounted(() => {
 .date-picker-trigger {
   @apply flex items-center gap-2;
   @apply rounded-lg px-3 py-2 text-sm;
-  @apply bg-white dark:bg-dark-800;
+  background-color: var(--zt-surface);
   @apply border border-gray-200 dark:border-dark-600;
-  @apply text-gray-700 dark:text-gray-300;
+  color: var(--zt-ink-2);
   @apply transition-all duration-200;
   @apply focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30;
   @apply hover:border-gray-300 dark:hover:border-dark-500;
@@ -360,7 +360,7 @@ onUnmounted(() => {
 }
 
 .date-picker-icon {
-  @apply text-gray-400 dark:text-dark-400;
+  color: var(--zt-ink-3);
 }
 
 .date-picker-value {
@@ -368,14 +368,15 @@ onUnmounted(() => {
 }
 
 .date-picker-chevron {
-  @apply text-gray-400 dark:text-dark-400;
+  color: var(--zt-ink-3);
 }
 
 .date-picker-dropdown {
   @apply absolute left-0 z-[100] mt-2;
-  @apply bg-white dark:bg-dark-800;
+  background-color: var(--zt-surface);
   @apply rounded-xl;
-  @apply border border-gray-200 dark:border-dark-700;
+  @apply border;
+  border-color: var(--zt-border);
   @apply shadow-lg shadow-black/10 dark:shadow-black/30;
   @apply overflow-hidden;
   @apply min-w-[320px];
@@ -387,9 +388,12 @@ onUnmounted(() => {
 
 .date-picker-preset {
   @apply rounded-md px-3 py-1.5 text-xs font-medium;
-  @apply text-gray-600 dark:text-gray-400;
-  @apply hover:bg-gray-100 dark:hover:bg-dark-700;
+  color: var(--zt-ink-2);
   @apply transition-colors duration-150;
+}
+
+.date-picker-preset:hover {
+  background-color: var(--zt-surface-2);
 }
 
 .date-picker-preset-active {
@@ -398,7 +402,8 @@ onUnmounted(() => {
 }
 
 .date-picker-divider {
-  @apply border-t border-gray-100 dark:border-dark-700;
+  @apply border-t;
+  border-color: var(--zt-border);
 }
 
 .date-picker-custom {
@@ -410,14 +415,15 @@ onUnmounted(() => {
 }
 
 .date-picker-label {
-  @apply mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400;
+  @apply mb-1 block text-xs font-medium;
+  color: var(--zt-ink-3);
 }
 
 .date-picker-input {
   @apply w-full rounded-md px-2 py-1.5 text-sm;
   @apply bg-gray-50 dark:bg-dark-700;
   @apply border border-gray-200 dark:border-dark-600;
-  @apply text-gray-900 dark:text-gray-100;
+  color: var(--zt-ink);
   @apply focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30;
 }
 

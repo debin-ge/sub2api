@@ -2,12 +2,12 @@
   <AppLayout>
     <div class="space-y-6">
       <section class="card overflow-hidden" aria-labelledby="vip-reconcile-preview-title">
-        <div class="flex flex-col gap-4 border-b border-gray-100 px-4 py-5 dark:border-dark-700 sm:px-6 lg:flex-row lg:items-start lg:justify-between">
+        <div class="flex flex-col gap-4 border-b zt-border-c px-4 py-5 sm:px-6 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <h2 id="vip-reconcile-preview-title" class="text-lg font-semibold text-gray-900 dark:text-white">
+            <h2 id="vip-reconcile-preview-title" class="text-lg font-semibold zt-ink">
               {{ t('admin.vipReconcile.preview.title') }}
             </h2>
-            <p class="mt-1 max-w-3xl text-sm text-gray-500 dark:text-gray-400">
+            <p class="mt-1 max-w-3xl text-sm zt-ink-3">
               {{ t('admin.vipReconcile.preview.description') }}
             </p>
           </div>
@@ -53,19 +53,19 @@
 
           <template v-if="preview">
             <dl class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div class="rounded-lg bg-gray-50 px-4 py-3 dark:bg-dark-900/60">
-                <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              <div class="rounded-lg zt-surface-2 px-4 py-3">
+                <dt class="text-xs font-medium uppercase tracking-wide zt-ink-3">
                   {{ t('admin.vipReconcile.preview.asOf') }}
                 </dt>
-                <dd class="mt-1 break-all text-sm font-medium text-gray-900 dark:text-white" data-testid="preview-as-of">
+                <dd class="mt-1 break-all text-sm font-medium zt-ink" data-testid="preview-as-of">
                   {{ formatDateTime(preview.as_of) }}
                 </dd>
               </div>
-              <div class="rounded-lg bg-gray-50 px-4 py-3 dark:bg-dark-900/60">
-                <dt class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              <div class="rounded-lg zt-surface-2 px-4 py-3">
+                <dt class="text-xs font-medium uppercase tracking-wide zt-ink-3">
                   {{ t('admin.vipReconcile.preview.total') }}
                 </dt>
-                <dd class="mt-1 text-xl font-semibold text-gray-900 dark:text-white">
+                <dd class="mt-1 text-xl font-semibold zt-ink">
                   {{ formatNumber(preview.total) }}
                 </dd>
               </div>
@@ -85,9 +85,9 @@
             </div>
           </template>
 
-          <div class="overflow-x-auto rounded-xl border border-gray-200 dark:border-dark-700">
+          <div class="overflow-x-auto rounded-xl border zt-border-c">
             <table class="w-full min-w-[900px] text-left text-sm">
-              <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500 dark:bg-dark-900 dark:text-gray-400">
+              <thead class="zt-surface-2 text-xs uppercase tracking-wide zt-ink-3">
                 <tr>
                   <th class="px-4 py-3">{{ t('admin.vipReconcile.preview.columns.category') }}</th>
                   <th class="px-4 py-3">{{ t('admin.vipReconcile.preview.columns.user') }}</th>
@@ -98,21 +98,21 @@
                   <th class="px-4 py-3">{{ t('admin.vipReconcile.preview.columns.willChange') }}</th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-gray-100 dark:divide-dark-700">
+              <tbody class="divide-y zt-divide">
                 <tr v-if="previewLoading && !preview" data-testid="preview-loading">
-                  <td colspan="7" class="px-4 py-10 text-center text-gray-500 dark:text-gray-400">
+                  <td colspan="7" class="px-4 py-10 text-center zt-ink-3">
                     {{ t('common.loading') }}
                   </td>
                 </tr>
                 <tr v-else-if="previewItems.length === 0">
-                  <td colspan="7" class="px-4 py-10 text-center text-gray-500 dark:text-gray-400">
+                  <td colspan="7" class="px-4 py-10 text-center zt-ink-3">
                     {{ t('admin.vipReconcile.preview.empty') }}
                   </td>
                 </tr>
                 <tr
                   v-for="item in previewItems"
                   :key="`${item.category}-${item.order_id}`"
-                  class="text-gray-700 dark:text-gray-300"
+                  class="zt-ink-2"
                   data-testid="preview-item"
                 >
                   <td class="px-4 py-3">
@@ -125,12 +125,12 @@
                   <td class="whitespace-nowrap px-4 py-3 text-xs">{{ formatDateTime(item.completed_at) }}</td>
                   <td class="px-4 py-3">{{ vipModeLabel(item.current_vip_mode) }}</td>
                   <td class="px-4 py-3">
-                    <span :class="item.current_is_vip ? 'text-emerald-600 dark:text-emerald-300' : 'text-gray-500 dark:text-gray-400'">
+                    <span :class="item.current_is_vip ? 'text-emerald-600 dark:text-emerald-300' : 'zt-ink-3'">
                       {{ booleanLabel(item.current_is_vip) }}
                     </span>
                   </td>
                   <td class="px-4 py-3">
-                    <span :class="item.will_effective_change ? 'font-medium text-amber-700 dark:text-amber-300' : 'text-gray-500 dark:text-gray-400'">
+                    <span :class="item.will_effective_change ? 'font-medium text-amber-700 dark:text-amber-300' : 'zt-ink-3'">
                       {{ booleanLabel(item.will_effective_change) }}
                     </span>
                   </td>
@@ -140,7 +140,7 @@
           </div>
 
           <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p class="text-xs text-gray-500 dark:text-gray-400">
+            <p class="text-xs zt-ink-3">
               {{ t('admin.vipReconcile.preview.page', { page: previewPage }) }}
             </p>
             <div class="flex items-center gap-2">
@@ -168,11 +168,11 @@
       </section>
 
       <section class="card overflow-hidden" aria-labelledby="vip-reconcile-execute-title">
-        <div class="border-b border-gray-100 px-4 py-5 dark:border-dark-700 sm:px-6">
-          <h2 id="vip-reconcile-execute-title" class="text-lg font-semibold text-gray-900 dark:text-white">
+        <div class="border-b zt-border-c px-4 py-5 sm:px-6">
+          <h2 id="vip-reconcile-execute-title" class="text-lg font-semibold zt-ink">
             {{ t('admin.vipReconcile.execute.title') }}
           </h2>
-          <p class="mt-1 max-w-3xl text-sm text-gray-500 dark:text-gray-400">
+          <p class="mt-1 max-w-3xl text-sm zt-ink-3">
             {{ t('admin.vipReconcile.execute.description') }}
           </p>
         </div>
@@ -191,7 +191,7 @@
                 readonly
                 data-testid="request-id"
               />
-              <span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">
+              <span class="mt-1 block text-xs zt-ink-3">
                 {{ t('admin.vipReconcile.execute.requestIdHint') }}
               </span>
             </label>
@@ -234,7 +234,7 @@
             >
               {{ submitting ? t('admin.vipReconcile.execute.submitting') : t('admin.vipReconcile.execute.submit') }}
             </button>
-            <p class="text-xs text-gray-500 dark:text-gray-400">
+            <p class="text-xs zt-ink-3">
               {{ t('admin.vipReconcile.execute.stepUpHint') }}
             </p>
           </div>
@@ -242,18 +242,18 @@
       </section>
 
       <section v-if="job || restoringJob" class="card overflow-hidden" aria-labelledby="vip-reconcile-job-title">
-        <div class="flex flex-col gap-4 border-b border-gray-100 px-4 py-5 dark:border-dark-700 sm:px-6 lg:flex-row lg:items-start lg:justify-between">
+        <div class="flex flex-col gap-4 border-b zt-border-c px-4 py-5 sm:px-6 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <div class="flex flex-wrap items-center gap-3">
-              <h2 id="vip-reconcile-job-title" class="text-lg font-semibold text-gray-900 dark:text-white">
+              <h2 id="vip-reconcile-job-title" class="text-lg font-semibold zt-ink">
                 {{ t('admin.vipReconcile.job.title') }}
-                <span v-if="job" class="font-mono text-sm font-normal text-gray-500">#{{ job.id }}</span>
+                <span v-if="job" class="font-mono text-sm font-normal zt-ink-3">#{{ job.id }}</span>
               </h2>
               <span v-if="job" class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold" :class="jobStatusClass(job.status)">
                 {{ jobStatusLabel(job.status) }}
               </span>
             </div>
-            <p v-if="job" class="mt-1 break-all text-xs text-gray-500 dark:text-gray-400">
+            <p v-if="job" class="mt-1 break-all text-xs zt-ink-3">
               {{ t('admin.vipReconcile.job.requestId') }}:
               <span class="font-mono">{{ job.request_id }}</span>
             </p>
@@ -282,7 +282,7 @@
         </div>
 
         <div class="space-y-5 p-4 sm:p-6" aria-live="polite">
-          <div v-if="restoringJob && !job" class="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+          <div v-if="restoringJob && !job" class="py-8 text-center text-sm zt-ink-3">
             {{ t('admin.vipReconcile.job.restoring') }}
           </div>
 
@@ -312,64 +312,64 @@
             </div>
 
             <div v-if="jobIsActive" class="space-y-2">
-              <div class="flex items-center justify-between gap-3 text-xs text-gray-500 dark:text-gray-400">
+              <div class="flex items-center justify-between gap-3 text-xs zt-ink-3">
                 <span>{{ t('admin.vipReconcile.job.inProgress') }}</span>
                 <span>{{ t('admin.vipReconcile.job.scanned') }}: {{ formatNumber(job.scanned) }}</span>
               </div>
               <div
-                class="h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-dark-700"
+                class="h-2 overflow-hidden rounded-full zt-surface-3"
                 role="progressbar"
                 :aria-label="t('admin.vipReconcile.job.inProgress')"
                 :aria-valuetext="t('admin.vipReconcile.job.scannedCount', { count: formatNumber(job.scanned) })"
               >
                 <div class="h-full w-1/2 animate-pulse rounded-full bg-primary-500"></div>
               </div>
-              <p class="text-xs text-gray-500 dark:text-gray-400">
+              <p class="text-xs zt-ink-3">
                 {{ t('admin.vipReconcile.job.indeterminateHint') }}
               </p>
             </div>
 
             <dl class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-              <div v-for="metric in jobMetrics" :key="metric.key" class="rounded-lg bg-gray-50 px-4 py-3 dark:bg-dark-900/60">
-                <dt class="text-xs text-gray-500 dark:text-gray-400">{{ metric.label }}</dt>
-                <dd class="mt-1 text-xl font-semibold text-gray-900 dark:text-white">{{ formatNumber(metric.value) }}</dd>
+              <div v-for="metric in jobMetrics" :key="metric.key" class="rounded-lg zt-surface-2 px-4 py-3">
+                <dt class="text-xs zt-ink-3">{{ metric.label }}</dt>
+                <dd class="mt-1 text-xl font-semibold zt-ink">{{ formatNumber(metric.value) }}</dd>
               </div>
             </dl>
 
-            <dl class="grid grid-cols-1 gap-x-6 gap-y-3 rounded-xl border border-gray-200 p-4 text-sm dark:border-dark-700 sm:grid-cols-2 xl:grid-cols-3">
+            <dl class="grid grid-cols-1 gap-x-6 gap-y-3 rounded-xl border zt-border-c p-4 text-sm sm:grid-cols-2 xl:grid-cols-3">
               <div>
-                <dt class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.vipReconcile.job.reason') }}</dt>
-                <dd class="mt-1 whitespace-pre-wrap text-gray-900 dark:text-white">{{ job.reason }}</dd>
+                <dt class="text-xs zt-ink-3">{{ t('admin.vipReconcile.job.reason') }}</dt>
+                <dd class="mt-1 whitespace-pre-wrap zt-ink">{{ job.reason }}</dd>
               </div>
               <div>
-                <dt class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.vipReconcile.job.actor') }}</dt>
-                <dd class="mt-1 break-all text-gray-900 dark:text-white">{{ job.actor_snapshot || `#${job.actor_user_id}` }}</dd>
+                <dt class="text-xs zt-ink-3">{{ t('admin.vipReconcile.job.actor') }}</dt>
+                <dd class="mt-1 break-all zt-ink">{{ job.actor_snapshot || `#${job.actor_user_id}` }}</dd>
               </div>
               <div>
-                <dt class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.vipReconcile.preview.asOf') }}</dt>
-                <dd class="mt-1 text-gray-900 dark:text-white">{{ formatDateTime(job.as_of) }}</dd>
+                <dt class="text-xs zt-ink-3">{{ t('admin.vipReconcile.preview.asOf') }}</dt>
+                <dd class="mt-1 zt-ink">{{ formatDateTime(job.as_of) }}</dd>
               </div>
               <div>
-                <dt class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.vipReconcile.job.cursor') }}</dt>
-                <dd class="mt-1 break-all font-mono text-xs text-gray-900 dark:text-white">
+                <dt class="text-xs zt-ink-3">{{ t('admin.vipReconcile.job.cursor') }}</dt>
+                <dd class="mt-1 break-all font-mono text-xs zt-ink">
                   {{ formatDateTime(job.cursor_completed_at) }} / #{{ job.cursor_order_id }}
                 </dd>
               </div>
               <div>
-                <dt class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.vipReconcile.job.startedAt') }}</dt>
-                <dd class="mt-1 text-gray-900 dark:text-white">{{ formatDateTime(job.started_at) }}</dd>
+                <dt class="text-xs zt-ink-3">{{ t('admin.vipReconcile.job.startedAt') }}</dt>
+                <dd class="mt-1 zt-ink">{{ formatDateTime(job.started_at) }}</dd>
               </div>
               <div>
-                <dt class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.vipReconcile.job.finishedAt') }}</dt>
-                <dd class="mt-1 text-gray-900 dark:text-white">{{ formatDateTime(job.finished_at) }}</dd>
+                <dt class="text-xs zt-ink-3">{{ t('admin.vipReconcile.job.finishedAt') }}</dt>
+                <dd class="mt-1 zt-ink">{{ formatDateTime(job.finished_at) }}</dd>
               </div>
               <div>
-                <dt class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.vipReconcile.job.updatedAt') }}</dt>
-                <dd class="mt-1 text-gray-900 dark:text-white">{{ formatDateTime(job.updated_at) }}</dd>
+                <dt class="text-xs zt-ink-3">{{ t('admin.vipReconcile.job.updatedAt') }}</dt>
+                <dd class="mt-1 zt-ink">{{ formatDateTime(job.updated_at) }}</dd>
               </div>
               <div>
-                <dt class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.vipReconcile.job.attempts') }}</dt>
-                <dd class="mt-1 text-gray-900 dark:text-white">{{ formatNumber(job.attempts) }}</dd>
+                <dt class="text-xs zt-ink-3">{{ t('admin.vipReconcile.job.attempts') }}</dt>
+                <dd class="mt-1 zt-ink">{{ formatNumber(job.attempts) }}</dd>
               </div>
             </dl>
           </template>
@@ -543,7 +543,7 @@ function categoryClass(category: string): string {
     INVALID_ORDER: 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-200',
     DELETED_USER: 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-200'
   }
-  return classes[category] ?? 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-200'
+  return classes[category] ?? 'zt-surface-3 zt-ink-2'
 }
 
 function jobStatusLabel(status: string): string {
@@ -560,7 +560,7 @@ function jobStatusClass(status: string): string {
     succeeded: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200',
     failed: 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-200'
   }
-  return classes[status] ?? 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-200'
+  return classes[status] ?? 'zt-surface-3 zt-ink-2'
 }
 
 async function loadPreview(cursor: string = previewCursor.value): Promise<void> {

@@ -2,7 +2,7 @@
   <AppLayout>
     <div
       data-testid="profile-shell"
-      class="mx-auto max-w-[950px] space-y-6"
+      class="zt-stack"
     >
       <ProfileInfoCard
         :user="user"
@@ -38,19 +38,22 @@
         </div>
       </button>
 
-      <ProfilePasswordForm />
+      <!-- 安全与通知：以 FormSection 版式（左标题、右字段）呈现 -->
+      <div class="zt-fsec-cards">
+        <ProfilePasswordForm />
 
-      <ProfileBalanceNotifyCard
-        v-if="user && balanceLowNotifyEnabled"
-        :enabled="user.balance_notify_enabled ?? true"
-        :threshold="user.balance_notify_threshold"
-        :extra-emails="user.balance_notify_extra_emails ?? []"
-        :system-default-threshold="systemDefaultThreshold"
-        :user-email="user.email"
-      />
+        <ProfileBalanceNotifyCard
+          v-if="user && balanceLowNotifyEnabled"
+          :enabled="user.balance_notify_enabled ?? true"
+          :threshold="user.balance_notify_threshold"
+          :extra-emails="user.balance_notify_extra_emails ?? []"
+          :system-default-threshold="systemDefaultThreshold"
+          :user-email="user.email"
+        />
 
-      <ProfileTotpCard />
-      <ProfilePasskeyCard :enabled="passkeyEnabled" />
+        <ProfileTotpCard />
+        <ProfilePasskeyCard :enabled="passkeyEnabled" />
+      </div>
     </div>
 
     <CustomerSupportDialog

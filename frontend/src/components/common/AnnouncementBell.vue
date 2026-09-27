@@ -38,11 +38,11 @@
                     <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/30">
                       <Icon name="bell" size="sm" />
                     </div>
-                    <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+                    <h2 class="text-lg font-semibold zt-ink">
                       {{ t('announcements.title') }}
                     </h2>
                   </div>
-                  <p v-if="unreadCount > 0" class="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                  <p v-if="unreadCount > 0" class="mt-2 text-sm zt-ink-2">
                     <span class="font-medium text-blue-600 dark:text-blue-400">{{ unreadCount }}</span>
                     {{ t('announcements.unread') }}
                   </p>
@@ -115,11 +115,11 @@
                   <!-- Content -->
                   <div class="flex min-w-0 flex-1 items-center justify-between gap-4">
                     <div class="min-w-0 flex-1">
-                      <h3 class="truncate text-sm font-medium text-gray-900 dark:text-white">
+                      <h3 class="truncate text-sm font-medium zt-ink">
                         {{ item.title }}
                       </h3>
                       <div class="mt-1 flex items-center gap-2">
-                        <time class="text-xs text-gray-500 dark:text-gray-400">
+                        <time class="text-xs zt-ink-3">
                           {{ formatRelativeTime(item.created_at) }}
                         </time>
                         <span
@@ -161,7 +161,7 @@
               <div v-else class="flex flex-col items-center justify-center py-16">
                 <div class="relative mb-4">
                   <div class="flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-gray-100 to-gray-200 dark:from-dark-700 dark:to-dark-600">
-                    <Icon name="inbox" size="xl" class="text-gray-400 dark:text-gray-500" />
+                    <Icon name="inbox" size="xl" class="zt-ink-3" />
                   </div>
                   <div class="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full bg-green-500 text-white">
                     <svg class="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20">
@@ -169,8 +169,8 @@
                     </svg>
                   </div>
                 </div>
-                <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('announcements.empty') }}</p>
-                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('announcements.emptyDescription') }}</p>
+                <p class="text-sm font-medium zt-ink">{{ t('announcements.empty') }}</p>
+                <p class="mt-1 text-xs zt-ink-3">{{ t('announcements.emptyDescription') }}</p>
               </div>
             </div>
           </div>
@@ -224,12 +224,12 @@
                   </div>
 
                   <!-- Title -->
-                  <h2 class="mb-3 text-2xl font-bold leading-tight text-gray-900 dark:text-white">
+                  <h2 class="mb-3 text-2xl font-bold leading-tight zt-ink">
                     {{ selectedAnnouncement.title }}
                   </h2>
 
                   <!-- Meta Info -->
-                  <div class="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
+                  <div class="flex items-center gap-4 text-sm zt-ink-2">
                     <div class="flex items-center gap-1.5">
                       <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -276,7 +276,7 @@
             <!-- Footer with Actions -->
             <div class="border-t border-gray-100 bg-gray-50/50 px-8 py-5 dark:border-dark-700 dark:bg-dark-900/30">
               <div class="flex items-center justify-between">
-                <div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                <div class="flex items-center gap-2 text-xs zt-ink-3">
                   <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>

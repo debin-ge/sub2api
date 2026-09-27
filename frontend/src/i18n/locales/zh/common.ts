@@ -219,6 +219,33 @@ export default {
     contentModeration: '内容审核',
     promptAudit: '提示词审计',
     auditLogs: '操作日志',
+    area: {
+      console: '控制台',
+      admin: '管理后台'
+    },
+    group: {
+      workspace: '工作台',
+      generate: '生成',
+      channels: '渠道',
+      billing: '账单',
+      account: '账户',
+      overview: '总览',
+      operations: '运营',
+      channelsModels: '渠道与模型',
+      monitoring: '监控与审计',
+      finance: '财务',
+      system: '系统',
+      myAccount: '我的账户',
+      more: '更多'
+    },
+    rail: {
+      searchPlaceholder: '搜索页面或密钥…',
+      collapseGroup: '折叠分组',
+      expandGroup: '展开分组',
+      openMenu: '打开菜单',
+      balanceAvailable: '可用余额',
+      frozen: '冻结'
+    }
   },
 
   // Auth

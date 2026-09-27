@@ -14,14 +14,14 @@
         >
           <div class="max-w-md">
             <div
-              class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 dark:bg-dark-700"
+              class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full zt-surface-3"
             >
-              <Icon name="link" size="lg" class="text-gray-400" />
+              <Icon name="link" size="lg" class="zt-ink-3" />
             </div>
-            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+            <h3 class="text-lg font-semibold zt-ink">
               {{ t('customPage.notFoundTitle') }}
             </h3>
-            <p class="mt-2 text-sm text-gray-500 dark:text-dark-400">
+            <p class="mt-2 text-sm zt-ink-3">
               {{ t('customPage.notFoundDesc') }}
             </p>
           </div>
@@ -80,14 +80,14 @@
         <div v-else-if="!isValidUrl" class="flex h-full items-center justify-center p-10 text-center">
           <div class="max-w-md">
             <div
-              class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 dark:bg-dark-700"
+              class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full zt-surface-3"
             >
-              <Icon name="link" size="lg" class="text-gray-400" />
+              <Icon name="link" size="lg" class="zt-ink-3" />
             </div>
-            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+            <h3 class="text-lg font-semibold zt-ink">
               {{ t('customPage.notConfiguredTitle') }}
             </h3>
-            <p class="mt-2 text-sm text-gray-500 dark:text-dark-400">
+            <p class="mt-2 text-sm zt-ink-3">
               {{ t('customPage.notConfiguredDesc') }}
             </p>
           </div>

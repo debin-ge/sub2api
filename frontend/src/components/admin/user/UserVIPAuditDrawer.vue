@@ -16,20 +16,20 @@
           @click="emit('close')"
         ></button>
         <aside
-          class="absolute inset-y-0 right-0 flex w-full max-w-xl flex-col bg-white shadow-2xl dark:bg-dark-800"
+          class="absolute inset-y-0 right-0 flex w-full max-w-xl flex-col zt-surface shadow-2xl"
         >
-          <header class="flex items-start justify-between border-b border-gray-200 px-5 py-4 dark:border-dark-700">
+          <header class="flex items-start justify-between border-b zt-border-c px-5 py-4">
             <div class="min-w-0">
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+              <h2 class="text-lg font-semibold zt-ink">
                 {{ t('admin.users.vip.auditTitle') }}
               </h2>
-              <p v-if="user" class="mt-1 truncate text-sm text-gray-500 dark:text-gray-400">
+              <p v-if="user" class="mt-1 truncate text-sm zt-ink-3">
                 {{ user.email }} · #{{ user.id }}
               </p>
             </div>
             <button
               type="button"
-              class="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-dark-700 dark:hover:text-gray-200"
+              class="rounded-lg p-2 zt-ink-3 zt-hover-2 hover:text-gray-700 dark:hover:text-gray-200"
               :aria-label="t('common.close')"
               @click="emit('close')"
             >
@@ -53,7 +53,7 @@
             </div>
             <div
               v-else-if="events.length === 0"
-              class="rounded-xl border border-dashed border-gray-300 px-4 py-12 text-center text-sm text-gray-500 dark:border-dark-600 dark:text-gray-400"
+              class="rounded-xl border border-dashed zt-border-c2 px-4 py-12 text-center text-sm zt-ink-3"
             >
               {{ t('admin.users.vip.auditEmpty') }}
             </div>
@@ -61,40 +61,40 @@
               <li
                 v-for="event in events"
                 :key="event.id"
-                class="rounded-xl border border-gray-200 p-4 dark:border-dark-600"
+                class="rounded-xl border zt-border-c2 p-4"
                 data-test="vip-audit-event"
               >
                 <div class="flex flex-wrap items-start justify-between gap-2">
                   <div>
-                    <p class="font-medium text-gray-900 dark:text-white">
+                    <p class="font-medium zt-ink">
                       {{ event.action || t('admin.users.vip.auditUnknownAction') }}
                     </p>
-                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    <p class="mt-0.5 text-xs zt-ink-3">
                       {{ formatDateTime(event.created_at) }}
                     </p>
                   </div>
-                  <span class="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600 dark:bg-dark-700 dark:text-gray-300">
+                  <span class="rounded-full zt-surface-3 px-2.5 py-1 text-xs font-medium zt-ink-2">
                     {{ event.source || t('admin.users.vip.unknownValue') }}
                   </span>
                 </div>
 
-                <div class="mt-3 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 rounded-lg bg-gray-50 p-3 text-xs dark:bg-dark-700/60">
+                <div class="mt-3 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 rounded-lg zt-surface-2 p-3 text-xs">
                   <div>
-                    <p class="text-gray-400">{{ t('admin.users.vip.auditBefore') }}</p>
-                    <p class="mt-1 font-medium text-gray-700 dark:text-gray-200">
+                    <p class="zt-ink-3">{{ t('admin.users.vip.auditBefore') }}</p>
+                    <p class="mt-1 font-medium zt-ink-2">
                       {{ effectiveLabel(event.old_is_vip) }}
                     </p>
-                    <p class="mt-0.5 text-gray-500 dark:text-gray-400">
+                    <p class="mt-0.5 zt-ink-3">
                       {{ modeLabel(event.old_manual_override) }}
                     </p>
                   </div>
-                  <Icon name="arrowRight" size="sm" class="text-gray-400" />
+                  <Icon name="arrowRight" size="sm" class="zt-ink-3" />
                   <div>
-                    <p class="text-gray-400">{{ t('admin.users.vip.auditAfter') }}</p>
-                    <p class="mt-1 font-medium text-gray-700 dark:text-gray-200">
+                    <p class="zt-ink-3">{{ t('admin.users.vip.auditAfter') }}</p>
+                    <p class="mt-1 font-medium zt-ink-2">
                       {{ effectiveLabel(event.new_is_vip) }}
                     </p>
-                    <p class="mt-0.5 text-gray-500 dark:text-gray-400">
+                    <p class="mt-0.5 zt-ink-3">
                       {{ modeLabel(event.new_manual_override) }}
                     </p>
                   </div>
@@ -102,24 +102,24 @@
 
                 <dl class="mt-3 space-y-1.5 text-xs">
                   <div class="flex gap-2">
-                    <dt class="shrink-0 text-gray-400">{{ t('admin.users.vip.auditActor') }}</dt>
-                    <dd class="break-all text-gray-700 dark:text-gray-300">
+                    <dt class="shrink-0 zt-ink-3">{{ t('admin.users.vip.auditActor') }}</dt>
+                    <dd class="break-all zt-ink-2">
                       {{ event.actor_snapshot || event.actor_type || t('admin.users.vip.unknownValue') }}
                     </dd>
                   </div>
                   <div class="flex gap-2">
-                    <dt class="shrink-0 text-gray-400">{{ t('admin.users.vip.auditReason') }}</dt>
-                    <dd class="whitespace-pre-wrap text-gray-700 dark:text-gray-300">
+                    <dt class="shrink-0 zt-ink-3">{{ t('admin.users.vip.auditReason') }}</dt>
+                    <dd class="whitespace-pre-wrap zt-ink-2">
                       {{ event.reason || t('admin.users.vip.unknownValue') }}
                     </dd>
                   </div>
                   <div v-if="event.order_id" class="flex gap-2">
-                    <dt class="shrink-0 text-gray-400">{{ t('admin.users.vip.auditOrder') }}</dt>
-                    <dd class="font-mono text-gray-700 dark:text-gray-300">#{{ event.order_id }}</dd>
+                    <dt class="shrink-0 zt-ink-3">{{ t('admin.users.vip.auditOrder') }}</dt>
+                    <dd class="font-mono zt-ink-2">#{{ event.order_id }}</dd>
                   </div>
                   <div v-if="event.request_id" class="flex gap-2">
-                    <dt class="shrink-0 text-gray-400">{{ t('admin.users.vip.auditRequest') }}</dt>
-                    <dd class="break-all font-mono text-gray-700 dark:text-gray-300">
+                    <dt class="shrink-0 zt-ink-3">{{ t('admin.users.vip.auditRequest') }}</dt>
+                    <dd class="break-all font-mono zt-ink-2">
                       {{ event.request_id }}
                     </dd>
                   </div>

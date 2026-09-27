@@ -16,6 +16,7 @@ import './style.css'
 import 'go-captcha-vue/dist/style.css'
 import './assets/styles/docsContent.css'
 import './styles/effects.css'
+import './styles/console.css'
 
 function handleVitePreloadError(event: Event) {
   const preloadEvent = event as Event & { payload?: unknown }

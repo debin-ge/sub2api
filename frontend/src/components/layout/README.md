@@ -6,7 +6,7 @@ Vue 3 layout components for the Sub2API frontend, built with Composition API, Ty
 
 ### 1. AppLayout.vue
 
-Main application layout with sidebar and header.
+Main application layout: dark side rail (navigation) + context bar (breadcrumb, balance, quick links) + page head.
 
 **Usage:**
 
@@ -26,69 +26,41 @@ import { AppLayout } from '@/components/layout'
 
 **Features:**
 
-- Responsive sidebar (collapsible)
-- Fixed header at top
-- Main content area with slot
-- Automatically adjusts margin based on sidebar state
+- 240px side rail, collapsible to 64px (`SideRail.vue`)
+- 48px context bar with breadcrumb / balance / plaza & docs links (`ContextBar.vue`)
+- Page head rendered from route meta (`title` / `description`); pass `:page-head="false"` to opt out, or fill the `#actions` slot for right-side buttons
+- Main content area with slot; onboarding tour anchors are kept on rail items
 
 ---
 
-### 2. AppSidebar.vue
+### 2. SideRail.vue
 
-Navigation sidebar with user and admin sections.
+Dark navigation rail shared by the user console and the admin area.
 
 **Features:**
 
-- Logo/brand at top
-- User navigation links:
-  - Dashboard
-  - API Keys
-  - Usage
-  - Redeem
-  - Profile
-- Admin navigation links (shown only if user is admin):
-  - Admin Dashboard
-  - Users
-  - Groups
-  - Accounts
-  - Proxies
-  - Redeem Codes
-- Collapsible sidebar with toggle button
-- Active route highlighting
-- Icons using HTML entities
-- Responsive (mobile-friendly)
+- Brand block (site logo / name, sanitized via `sanitizeUrl`)
+- Area switch (控制台 / 管理后台) for admins
+- Grouped navigation built from the pure data model in `src/navigation/consoleNav.ts`
+  (feature flags, simple mode, backend mode, custom menu items and tour anchors follow the legacy sidebar semantics)
+- Collapsible groups (persisted in `appStore.navCollapsedGroups`) and expandable parents
+- Footer: user menu (`RailUserMenu.vue`), theme toggle, collapse toggle
+- Rail state / scroll position persisted; mobile drawer with scrim
 
 **Used automatically by AppLayout** - no need to import separately.
 
 ---
 
-### 3. AppHeader.vue
+### 3. ContextBar.vue
 
-Top header with user info and actions.
+Slim top bar above the page content.
 
 **Features:**
 
-- Mobile menu toggle button
-- Page title (from route meta or slot)
-- User balance display (desktop only)
-- User dropdown menu with:
-  - Profile link
-  - Logout button
-- User avatar with initials
-- Click-outside handling for dropdown
-- Responsive design
-
-**Usage with custom title:**
-
-```vue
-<template>
-  <AppLayout>
-    <template #title> Custom Page Title </template>
-
-    <!-- Your content -->
-  </AppLayout>
-</template>
-```
+- Breadcrumb derived from `useConsoleNav()` (area › group › page)
+- Balance pill, subscription progress, announcement bell, locale switcher
+- Model plaza / docs links (doc URL sanitized)
+- Mobile menu toggle for the rail drawer
 
 **Used automatically by AppLayout** - no need to import separately.
 
@@ -211,8 +183,8 @@ You can replace these with your preferred icon library (e.g., Heroicons, Font Aw
 
 All components are fully responsive:
 
-- **AppSidebar**: Fixed positioning on desktop, hidden by default on mobile
-- **AppHeader**: Shows mobile menu toggle on small screens, hides balance display
+- **SideRail**: Fixed on desktop (collapsible), off-canvas drawer with scrim on mobile
+- **ContextBar**: Shows the menu toggle on small screens, hides secondary links
 - **AuthLayout**: Adapts padding and card size for mobile devices
 
 The sidebar uses Tailwind's responsive breakpoints (md:) to adjust behavior.

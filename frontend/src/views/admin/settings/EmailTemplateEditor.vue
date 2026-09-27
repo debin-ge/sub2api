@@ -1,13 +1,13 @@
 <template>
   <div class="card">
     <div
-      class="flex flex-col gap-3 border-b border-gray-100 px-6 py-4 dark:border-dark-700 lg:flex-row lg:items-start lg:justify-between"
+      class="flex flex-col gap-3 border-b zt-border-c px-6 py-4 lg:flex-row lg:items-start lg:justify-between"
     >
       <div>
-        <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+        <h2 class="text-lg font-semibold zt-ink">
           {{ t("admin.settings.emailTemplates.title") }}
         </h2>
-        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+        <p class="mt-1 text-sm zt-ink-3">
           {{ t("admin.settings.emailTemplates.description") }}
         </p>
       </div>
@@ -42,7 +42,7 @@
     <div class="space-y-6 p-6">
       <div
         v-if="loadingList"
-        class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400"
+        class="flex items-center gap-2 text-sm zt-ink-3"
       >
         <span
           class="h-4 w-4 animate-spin rounded-full border-b-2 border-primary-600"
@@ -97,11 +97,11 @@
           class="rounded-lg border border-primary-100 bg-primary-50/70 p-4 dark:border-primary-900/50 dark:bg-primary-950/20"
         >
           <div class="flex flex-wrap items-center gap-2">
-            <div class="text-sm font-semibold text-gray-900 dark:text-white">
+            <div class="text-sm font-semibold zt-ink">
               {{ selectedEventMeta.label }}
             </div>
             <span
-              class="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-gray-600 shadow-sm ring-1 ring-gray-200 dark:bg-dark-800 dark:text-gray-300 dark:ring-dark-600"
+              class="rounded-full zt-surface px-2.5 py-1 text-xs font-medium zt-ink-2 shadow-sm ring-1 ring-gray-200 dark:ring-dark-600"
             >
               {{ selectedEventMeta.categoryLabel }}
             </span>
@@ -116,12 +116,12 @@
               {{ selectedEventMeta.optional ? localText("可退订通知", "Optional") : localText("事务邮件", "Transactional") }}
             </span>
           </div>
-          <p class="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
+          <p class="mt-2 text-sm leading-6 zt-ink-2">
             {{ selectedEventMeta.timing }}
           </p>
           <p
             v-if="selectedEventDescription"
-            class="mt-1 text-xs text-gray-500 dark:text-gray-400"
+            class="mt-1 text-xs zt-ink-3"
           >
             {{ selectedEventDescription }}
           </p>
@@ -165,12 +165,12 @@
             </div>
 
             <div
-              class="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-800/60"
+              class="rounded-lg border zt-border-c zt-surface-2 p-4"
             >
-              <div class="text-sm font-medium text-gray-900 dark:text-white">
+              <div class="text-sm font-medium zt-ink">
                 {{ t("admin.settings.emailTemplates.placeholders") }}
               </div>
-              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              <p class="mt-1 text-xs zt-ink-3">
                 {{ t("admin.settings.emailTemplates.placeholdersHelp") }}
               </p>
               <div class="mt-3 flex flex-wrap gap-2">
@@ -178,7 +178,7 @@
                   v-for="placeholder in placeholderList"
                   :key="placeholder"
                   type="button"
-                  class="rounded-full border border-gray-200 bg-white px-3 py-1 font-mono text-xs text-gray-700 transition-colors hover:border-primary-300 hover:text-primary-600 dark:border-dark-600 dark:bg-dark-700 dark:text-gray-200 dark:hover:border-primary-500 dark:hover:text-primary-300"
+                  class="rounded-full border zt-border-c2 zt-surface px-3 py-1 font-mono text-xs zt-ink-2 transition-colors hover:border-primary-300 hover:text-primary-600 dark:hover:border-primary-500 dark:hover:text-primary-300"
                   @click="copyPlaceholder(placeholder)"
                 >
                   {{ placeholder }}
@@ -189,29 +189,29 @@
 
           <div class="space-y-4">
             <div
-              class="rounded-lg border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-800"
+              class="rounded-lg border zt-border-c zt-surface"
             >
               <div
-                class="flex items-center justify-between border-b border-gray-100 px-4 py-3 dark:border-dark-700"
+                class="flex items-center justify-between border-b zt-border-c px-4 py-3"
               >
                 <div>
-                  <div class="text-sm font-medium text-gray-900 dark:text-white">
+                  <div class="text-sm font-medium zt-ink">
                     {{ t("admin.settings.emailTemplates.livePreview") }}
                   </div>
-                  <div class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                  <div class="mt-0.5 text-xs zt-ink-3">
                     {{ previewSubject || t("admin.settings.emailTemplates.noPreview") }}
                   </div>
                 </div>
                 <span
                   v-if="isCustomTemplate"
-                  class="rounded-full bg-primary-50 px-2.5 py-1 text-xs font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300"
+                  class="rounded-full bg-primary-50 px-2.5 py-1 text-xs font-medium zt-accent-text dark:bg-primary-900/30"
                 >
                   {{ t("admin.settings.emailTemplates.customized") }}
                 </span>
               </div>
-              <div class="bg-gray-100 p-3 dark:bg-dark-900">
+              <div class="zt-surface-3 p-3">
                 <iframe
-                  class="h-[36rem] w-full rounded-md border border-gray-200 bg-white dark:border-dark-700"
+                  class="h-[36rem] w-full rounded-md border zt-border-c bg-white"
                   sandbox=""
                   :srcdoc="previewHtml"
                   :title="t('admin.settings.emailTemplates.livePreview')"
@@ -219,7 +219,7 @@
               </div>
             </div>
 
-            <p class="text-xs text-gray-500 dark:text-gray-400">
+            <p class="text-xs zt-ink-3">
               {{ t("admin.settings.emailTemplates.previewSecurityHint") }}
             </p>
           </div>

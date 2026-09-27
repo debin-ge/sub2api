@@ -8,7 +8,7 @@
     <div class="space-y-4">
       <!-- Header -->
       <div class="flex items-center justify-between">
-        <p class="text-sm text-gray-500 dark:text-gray-400">
+        <p class="text-sm zt-ink-3">
           {{ t('admin.tlsFingerprintProfiles.description') }}
         </p>
         <button @click="showCreateModal = true" class="btn btn-primary btn-sm">
@@ -19,58 +19,58 @@
 
       <!-- Profiles Table -->
       <div v-if="loading" class="flex items-center justify-center py-8">
-        <Icon name="refresh" size="lg" class="animate-spin text-gray-400" />
+        <Icon name="refresh" size="lg" class="animate-spin zt-ink-3" />
       </div>
 
       <div v-else-if="profiles.length === 0" class="py-8 text-center">
-        <div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 dark:bg-dark-700">
-          <Icon name="shield" size="lg" class="text-gray-400" />
+        <div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full zt-surface-3">
+          <Icon name="shield" size="lg" class="zt-ink-3" />
         </div>
-        <h4 class="mb-1 text-sm font-medium text-gray-900 dark:text-white">
+        <h4 class="mb-1 text-sm font-medium zt-ink">
           {{ t('admin.tlsFingerprintProfiles.noProfiles') }}
         </h4>
-        <p class="text-sm text-gray-500 dark:text-gray-400">
+        <p class="text-sm zt-ink-3">
           {{ t('admin.tlsFingerprintProfiles.createFirstProfile') }}
         </p>
       </div>
 
-      <div v-else class="max-h-96 overflow-auto rounded-lg border border-gray-200 dark:border-dark-600">
-        <table class="min-w-full divide-y divide-gray-200 dark:divide-dark-700">
-          <thead class="sticky top-0 bg-gray-50 dark:bg-dark-700">
+      <div v-else class="max-h-96 overflow-auto rounded-lg border zt-border-c2">
+        <table class="min-w-full divide-y zt-divide">
+          <thead class="sticky top-0 zt-surface-2">
             <tr>
-              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
+              <th class="px-3 py-2 text-left text-xs font-medium uppercase zt-ink-3">
                 {{ t('admin.tlsFingerprintProfiles.columns.name') }}
               </th>
-              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
+              <th class="px-3 py-2 text-left text-xs font-medium uppercase zt-ink-3">
                 {{ t('admin.tlsFingerprintProfiles.columns.description') }}
               </th>
-              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
+              <th class="px-3 py-2 text-left text-xs font-medium uppercase zt-ink-3">
                 {{ t('admin.tlsFingerprintProfiles.columns.grease') }}
               </th>
-              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
+              <th class="px-3 py-2 text-left text-xs font-medium uppercase zt-ink-3">
                 {{ t('admin.tlsFingerprintProfiles.columns.alpn') }}
               </th>
-              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
+              <th class="px-3 py-2 text-left text-xs font-medium uppercase zt-ink-3">
                 {{ t('admin.tlsFingerprintProfiles.columns.actions') }}
               </th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-gray-200 bg-white dark:divide-dark-700 dark:bg-dark-800">
-            <tr v-for="profile in profiles" :key="profile.id" class="hover:bg-gray-50 dark:hover:bg-dark-700">
+          <tbody class="divide-y zt-divide zt-surface">
+            <tr v-for="profile in profiles" :key="profile.id" class="zt-hover-2">
               <td class="px-3 py-2">
-                <div class="font-medium text-gray-900 dark:text-white text-sm">{{ profile.name }}</div>
+                <div class="font-medium zt-ink text-sm">{{ profile.name }}</div>
               </td>
               <td class="px-3 py-2">
-                <div v-if="profile.description" class="text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate">
+                <div v-if="profile.description" class="text-sm zt-ink-3 max-w-xs truncate">
                   {{ profile.description }}
                 </div>
-                <div v-else class="text-xs text-gray-400 dark:text-gray-600">—</div>
+                <div v-else class="text-xs zt-ink-3">—</div>
               </td>
               <td class="px-3 py-2">
                 <Icon
                   :name="profile.enable_grease ? 'check' : 'lock'"
                   size="sm"
-                  :class="profile.enable_grease ? 'text-green-500' : 'text-gray-400'"
+                  :class="profile.enable_grease ? 'text-green-500' : 'zt-ink-3'"
                 />
               </td>
               <td class="px-3 py-2">
@@ -82,24 +82,24 @@
                   >
                     {{ proto }}
                   </span>
-                  <span v-if="profile.alpn_protocols.length > 3" class="text-xs text-gray-500">
+                  <span v-if="profile.alpn_protocols.length > 3" class="text-xs zt-ink-3">
                     +{{ profile.alpn_protocols.length - 3 }}
                   </span>
                 </div>
-                <div v-else class="text-xs text-gray-400 dark:text-gray-600">—</div>
+                <div v-else class="text-xs zt-ink-3">—</div>
               </td>
               <td class="px-3 py-2">
                 <div class="flex items-center gap-1">
                   <button
                     @click="handleEdit(profile)"
-                    class="p-1 text-gray-500 hover:text-primary-600 dark:hover:text-primary-400"
+                    class="p-1 zt-ink-3 hover:text-primary-600 dark:hover:text-primary-400"
                     :title="t('common.edit')"
                   >
                     <Icon name="edit" size="sm" />
                   </button>
                   <button
                     @click="handleDelete(profile)"
-                    class="p-1 text-gray-500 hover:text-red-600 dark:hover:text-red-400"
+                    class="p-1 zt-ink-3 hover:text-red-600 dark:hover:text-red-400"
                     :title="t('common.delete')"
                   >
                     <Icon name="trash" size="sm" />
@@ -143,14 +143,14 @@
             <button type="button" @click="parseYamlInput" class="btn btn-secondary btn-sm">
               {{ t('admin.tlsFingerprintProfiles.form.parseYaml') }}
             </button>
-            <p class="text-xs text-gray-500 dark:text-gray-400">
+            <p class="text-xs zt-ink-3">
               {{ t('admin.tlsFingerprintProfiles.form.pasteYamlHint') }}
-              <a href="https://tls.sub2api.org" target="_blank" rel="noopener noreferrer" class="text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 underline">{{ t('admin.tlsFingerprintProfiles.form.openCollector') }}</a>
+              <a href="https://tls.sub2api.org" target="_blank" rel="noopener noreferrer" class="zt-accent-text hover:text-primary-700 dark:hover:text-primary-300 underline">{{ t('admin.tlsFingerprintProfiles.form.openCollector') }}</a>
             </p>
           </div>
         </div>
 
-        <hr class="border-gray-200 dark:border-dark-600" />
+        <hr class="zt-border-c2" />
 
         <!-- Basic Info -->
         <div class="grid grid-cols-2 gap-4">
@@ -182,7 +182,7 @@
             @click="form.enable_grease = !form.enable_grease"
             :class="[
               'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-              form.enable_grease ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+              form.enable_grease ? 'bg-primary-600' : 'zt-surface-3'
             ]"
           >
             <span
@@ -193,10 +193,10 @@
             />
           </button>
           <div>
-            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+            <span class="text-sm font-medium zt-ink-2">
               {{ t('admin.tlsFingerprintProfiles.form.enableGrease') }}
             </span>
-            <p class="text-xs text-gray-500 dark:text-gray-400">
+            <p class="text-xs zt-ink-3">
               {{ t('admin.tlsFingerprintProfiles.form.enableGreaseHint') }}
             </p>
           </div>

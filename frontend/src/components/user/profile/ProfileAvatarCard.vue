@@ -2,12 +2,12 @@
   <div :class="props.embedded ? 'space-y-4' : 'card'">
     <div
       v-if="!props.embedded"
-      class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
+      class="border-b zt-border-c px-6 py-4"
     >
-      <h2 class="text-lg font-medium text-gray-900 dark:text-white">
+      <h2 class="text-lg font-medium zt-ink">
         {{ t('profile.avatar.title') }}
       </h2>
-      <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+      <p class="mt-1 text-sm zt-ink-3">
         {{ t('profile.avatar.description') }}
       </p>
     </div>
@@ -30,13 +30,13 @@
 
       <div :class="props.embedded ? 'space-y-3' : 'min-w-0 flex-1 space-y-4'">
         <div class="space-y-1">
-          <p v-if="props.embedded" class="text-sm font-semibold text-gray-900 dark:text-white">
+          <p v-if="props.embedded" class="text-sm font-semibold zt-ink">
             {{ t('profile.avatar.title') }}
           </p>
-          <p v-else class="text-sm font-medium text-gray-900 dark:text-white">
+          <p v-else class="text-sm font-medium zt-ink">
             {{ displayName }}
           </p>
-          <p class="text-sm text-gray-500 dark:text-gray-400">
+          <p class="text-sm zt-ink-3">
             {{ t('profile.avatar.uploadHint') }}
           </p>
         </div>

@@ -1,12 +1,12 @@
 <template>
   <section class="card" aria-labelledby="radar-settings-title">
-    <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+    <div class="border-b zt-border-c px-6 py-4">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 id="radar-settings-title" class="text-lg font-semibold text-gray-900 dark:text-white">
+          <h2 id="radar-settings-title" class="text-lg font-semibold zt-ink">
             {{ t('admin.settings.features.radar.title') }}
           </h2>
-          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          <p class="mt-1 text-sm zt-ink-3">
             {{ t('admin.settings.features.radar.description') }}
           </p>
         </div>
@@ -28,9 +28,9 @@
     </div>
 
     <div class="space-y-5 p-6">
-      <div v-if="loading" role="status" class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+      <div v-if="loading" role="status" class="flex items-center gap-2 text-sm zt-ink-3">
         <span
-          class="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-primary-600"
+          class="h-4 w-4 animate-spin rounded-full border-2 zt-border-c2 border-t-primary-600"
           aria-hidden="true"
         ></span>
         {{ t('admin.settings.features.radar.loading') }}
@@ -55,10 +55,10 @@
       <template v-else-if="status">
         <div class="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p class="text-sm font-medium text-gray-900 dark:text-white">
+            <p class="text-sm font-medium zt-ink">
               {{ t('admin.settings.features.radar.enabled') }}
             </p>
-            <p id="radar-enabled-hint" class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+            <p id="radar-enabled-hint" class="mt-0.5 text-xs zt-ink-3">
               {{ t('admin.settings.features.radar.enabledHint') }}
             </p>
           </div>
@@ -110,7 +110,7 @@
         </div>
 
         <div>
-          <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+          <h3 class="text-sm font-semibold zt-ink">
             {{ t('admin.settings.features.radar.sourcesTitle') }}
           </h3>
           <div class="mt-3 grid gap-3 xl:grid-cols-2">
@@ -118,10 +118,10 @@
               v-for="source in allSources"
               :key="source.key"
               :data-testid="`radar-source-${source.key}`"
-              class="rounded-lg border border-gray-200 p-4 dark:border-dark-700"
+              class="rounded-lg border zt-border-c p-4"
             >
               <div class="flex flex-wrap items-center justify-between gap-2">
-                <h4 class="text-sm font-semibold text-gray-900 dark:text-white">
+                <h4 class="text-sm font-semibold zt-ink">
                   {{ sourceLabel(source.key) }}
                 </h4>
                 <div class="flex flex-wrap items-center gap-1.5">
@@ -142,10 +142,10 @@
 
               <dl class="mt-3 grid gap-x-4 gap-y-2 text-xs sm:grid-cols-2">
                 <div>
-                  <dt class="text-gray-500 dark:text-gray-400">
+                  <dt class="zt-ink-3">
                     {{ t('admin.settings.features.radar.fields.lastSuccess') }}
                   </dt>
-                  <dd class="mt-0.5 text-gray-800 dark:text-gray-200">
+                  <dd class="mt-0.5 zt-ink">
                     <time
                       v-if="source.last_success_at"
                       data-field="last-success"
@@ -155,10 +155,10 @@
                   </dd>
                 </div>
                 <div>
-                  <dt class="text-gray-500 dark:text-gray-400">
+                  <dt class="zt-ink-3">
                     {{ t('admin.settings.features.radar.fields.lastFailure') }}
                   </dt>
-                  <dd class="mt-0.5 text-gray-800 dark:text-gray-200">
+                  <dd class="mt-0.5 zt-ink">
                     <time
                       v-if="source.last_failure_at"
                       data-field="last-failure"
@@ -168,10 +168,10 @@
                   </dd>
                 </div>
                 <div>
-                  <dt class="text-gray-500 dark:text-gray-400">
+                  <dt class="zt-ink-3">
                     {{ t('admin.settings.features.radar.fields.nextFire') }}
                   </dt>
-                  <dd class="mt-0.5 text-gray-800 dark:text-gray-200">
+                  <dd class="mt-0.5 zt-ink">
                     <time
                       v-if="source.next_fire_at"
                       data-field="next-fire"
@@ -181,10 +181,10 @@
                   </dd>
                 </div>
                 <div>
-                  <dt class="text-gray-500 dark:text-gray-400">
+                  <dt class="zt-ink-3">
                     {{ t('admin.settings.features.radar.fields.error') }}
                   </dt>
-                  <dd class="mt-0.5 text-gray-800 dark:text-gray-200">
+                  <dd class="mt-0.5 zt-ink">
                     <span v-if="source.error">
                       {{ t(`admin.settings.features.radar.errors.${source.error}`) }}
                       <span v-if="source.http_status"> (HTTP {{ source.http_status }})</span>
@@ -253,7 +253,7 @@ function statusClass(value: RadarAdminState): string {
   if (value === 'failed') {
     return 'bg-red-100 text-red-800 dark:bg-red-950/50 dark:text-red-300'
   }
-  return 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-300'
+  return 'zt-surface-3 zt-ink-2'
 }
 
 function isStale(source: RadarAdminSourceStatus): boolean {

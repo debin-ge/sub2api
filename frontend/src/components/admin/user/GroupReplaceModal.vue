@@ -2,20 +2,20 @@
   <BaseDialog :show="show" :title="t('admin.users.replaceGroupTitle')" width="narrow" @close="$emit('close')">
     <div v-if="oldGroup" class="space-y-4">
       <!-- 提示信息 -->
-      <p class="text-sm text-gray-600 dark:text-gray-400">
+      <p class="text-sm zt-ink-2">
         {{ t('admin.users.replaceGroupHint', { old: oldGroup.name }) }}
       </p>
 
       <!-- 当前分组 -->
-      <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-dark-600 dark:bg-dark-800">
+      <div class="rounded-lg border zt-border-c2 zt-surface-2 p-3">
         <div class="flex items-center gap-2">
           <Icon name="shield" size="sm" class="text-purple-500" />
-          <span class="font-medium text-gray-900 dark:text-white">{{ oldGroup.name }}</span>
-          <Icon name="arrowRight" size="sm" class="ml-auto text-gray-400" />
-          <span v-if="selectedGroupId" class="font-medium text-primary-600 dark:text-primary-400">
+          <span class="font-medium zt-ink">{{ oldGroup.name }}</span>
+          <Icon name="arrowRight" size="sm" class="ml-auto zt-ink-3" />
+          <span v-if="selectedGroupId" class="font-medium zt-accent-text">
             {{ availableGroups.find(g => g.id === selectedGroupId)?.name }}
           </span>
-          <span v-else class="text-sm text-gray-400">?</span>
+          <span v-else class="text-sm zt-ink-3">?</span>
         </div>
       </div>
 
@@ -43,7 +43,7 @@
           :class="[
             selectedGroupId === group.id
               ? 'border-primary-400 bg-primary-50/50 dark:border-primary-500 dark:bg-primary-900/20'
-              : 'border-gray-200 dark:border-dark-600',
+              : 'zt-border-c2',
             group.can_bind === true
               ? 'cursor-pointer hover:border-gray-300 dark:hover:border-dark-500'
               : 'cursor-not-allowed opacity-70'
@@ -61,7 +61,7 @@
             class="mt-1 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border-2 transition-all"
             :class="selectedGroupId === group.id
               ? 'border-primary-500 bg-primary-500'
-              : 'border-gray-300 dark:border-dark-500'"
+              : 'zt-border-c2'"
           >
             <div v-if="selectedGroupId === group.id" class="h-2 w-2 rounded-full bg-white"></div>
           </div>
@@ -91,7 +91,7 @@
       </div>
 
       <!-- 无可选分组 -->
-      <div v-else class="py-6 text-center text-sm text-gray-400">
+      <div v-else class="py-6 text-center text-sm zt-ink-3">
         {{ t('admin.users.noOtherGroups') }}
       </div>
     </div>

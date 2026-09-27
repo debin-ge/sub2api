@@ -10,14 +10,14 @@
       aria-hidden="true"
     ></div>
     <div class="min-w-0 flex-1">
-      <span class="stat-label text-[10px] font-bold uppercase tracking-wider text-gray-400">{{ label }}</span>
+      <span class="stat-label text-[10px] font-bold uppercase tracking-wider zt-ink-3">{{ label }}</span>
       <strong
         class="stat-value mt-1 block overflow-visible text-xl tabular-nums leading-tight !text-clip !whitespace-normal"
         :class="stateClass"
       >{{ value }}</strong>
       <div
         v-if="detailParts.length > 1"
-        class="mt-1.5 flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] leading-snug text-gray-400 dark:text-dark-400"
+        class="mt-1.5 flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] leading-snug zt-ink-3"
       >
         <span
           v-for="(part, index) in detailParts"
@@ -27,7 +27,7 @@
       </div>
       <small
         v-else-if="detail"
-        class="mt-1.5 block text-[11px] leading-snug text-gray-400 dark:text-dark-400"
+        class="mt-1.5 block text-[11px] leading-snug zt-ink-3"
       >{{ detail }}</small>
     </div>
   </div>
@@ -64,11 +64,11 @@ const missingValue = computed(() => {
 const resolvedState = computed(() => (missingValue.value ? undefined : props.state))
 
 const stateClass = computed(() => {
-  if (!resolvedState.value) return missingValue.value ? 'text-gray-500 dark:text-dark-400' : 'text-gray-900 dark:text-white'
-  if (resolvedState.value === 'healthy') return 'text-emerald-600 dark:text-emerald-400'
-  if (resolvedState.value === 'warning') return 'text-amber-600 dark:text-amber-400'
-  if (resolvedState.value === 'critical') return 'text-red-600 dark:text-red-400'
-  return 'text-gray-500 dark:text-dark-400'
+  if (!resolvedState.value) return missingValue.value ? 'zt-ink-3' : 'zt-ink'
+  if (resolvedState.value === 'healthy') return 'zt-good-text'
+  if (resolvedState.value === 'warning') return 'zt-warn-text'
+  if (resolvedState.value === 'critical') return 'zt-bad-text'
+  return 'zt-ink-3'
 })
 
 const dotClass = computed(() => {

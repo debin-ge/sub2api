@@ -1,63 +1,36 @@
 <template>
   <AppLayout>
-    <TablePageLayout>
-      <template #filters>
-        <div class="flex flex-col gap-3">
-          <div class="flex flex-wrap items-center gap-3">
-            <SearchInput
-              v-model="filterSearch"
-              :placeholder="t('keys.searchPlaceholder')"
-              class="w-full sm:w-64"
-              @search="onFilterChange"
-            />
-            <Select
-              :model-value="filterGroupId"
-              class="w-40"
-              :options="groupFilterOptions"
-              @update:model-value="onGroupFilterChange"
-            />
-            <Select
-              :model-value="filterStatus"
-              class="w-40"
-              :options="statusFilterOptions"
-              @update:model-value="onStatusFilterChange"
-            />
-          </div>
-          <EndpointPopover
-            v-if="publicSettings?.api_base_url || (publicSettings?.custom_endpoints?.length ?? 0) > 0"
-            :api-base-url="publicSettings?.api_base_url || ''"
-            :custom-endpoints="publicSettings?.custom_endpoints || []"
-          />
-          <div v-if="selectedIds.length" class="flex flex-wrap items-center gap-3 text-sm">
-            <span class="text-gray-600 dark:text-gray-300">
-              {{ t('keys.bulkEdit.selectedCount', { count: selectedIds.length }) }}
-            </span>
-            <button
-              class="btn btn-primary btn-sm"
-              :disabled="loading"
-              data-test="bulk-edit-keys"
-              @click="showBulkEditModal = true"
-            >
-              {{ t('keys.bulkEdit.title') }}
-            </button>
-            <button class="btn btn-secondary btn-sm" @click="selectedIds = []">
-              {{ t('keys.bulkEdit.clearSelection') }}
-            </button>
-          </div>
-        </div>
-      </template>
-
-      <template #actions>
-        <div class="flex justify-end gap-3">
-          <button
-            @click="loadApiKeys"
-            :disabled="loading"
-            class="btn btn-secondary"
-            :title="t('common.refresh')"
-          >
-            <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
-          </button>
-          <div class="relative" ref="columnDropdownRef">
+    <!-- 页头操作：视图切换 / 刷新 / 列设置（表格视图）/ 创建密钥（按钮与功能与改版前一致） -->
+    <template #actions>
+      <div class="chips" role="group" :aria-label="t('keys.viewMode')">
+        <button
+          type="button"
+          class="chip"
+          :class="{ on: viewMode === 'split' }"
+          data-test="view-split"
+          @click="setViewMode('split')"
+        >
+          {{ t('keys.viewSplit') }}
+        </button>
+        <button
+          type="button"
+          class="chip"
+          :class="{ on: viewMode === 'table' }"
+          data-test="view-table"
+          @click="setViewMode('table')"
+        >
+          {{ t('keys.viewTable') }}
+        </button>
+      </div>
+      <button
+        @click="loadApiKeys"
+        :disabled="loading"
+        class="btn btn-secondary btn-icon"
+        :title="t('common.refresh')"
+      >
+        <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
+      </button>
+      <div v-if="viewMode === 'table'" class="relative" ref="columnDropdownRef">
             <button
               @click="showColumnDropdown = !showColumnDropdown"
               class="btn btn-secondary px-2 md:px-3"
@@ -89,10 +62,133 @@
               </button>
             </div>
           </div>
-          <button @click="showCreateModal = true" class="btn btn-primary" data-tour="keys-create-btn">
-            <Icon name="plus" size="md" class="mr-2" />
-            {{ t('keys.createKey') }}
-          </button>
+      <button @click="showCreateModal = true" class="btn btn-primary" data-tour="keys-create-btn">
+        <Icon name="plus" size="md" class="mr-2" />
+        {{ t('keys.createKey') }}
+      </button>
+    </template>
+
+    <!-- 端点 + 批量编辑条：两种视图共用 -->
+    <div class="zt-keys-top">
+      <EndpointPopover
+        v-if="publicSettings?.api_base_url || (publicSettings?.custom_endpoints?.length ?? 0) > 0"
+        :api-base-url="publicSettings?.api_base_url || ''"
+        :custom-endpoints="publicSettings?.custom_endpoints || []"
+      />
+      <div v-if="selectedIds.length" class="flex flex-wrap items-center gap-3 text-sm">
+        <span class="zt-ink-2">
+          {{ t('keys.bulkEdit.selectedCount', { count: selectedIds.length }) }}
+        </span>
+        <button
+          class="btn btn-primary btn-sm"
+          :disabled="loading"
+          data-test="bulk-edit-keys"
+          @click="showBulkEditModal = true"
+        >
+          {{ t('keys.bulkEdit.title') }}
+        </button>
+        <button class="btn btn-secondary btn-sm" @click="selectedIds = []">
+          {{ t('keys.bulkEdit.clearSelection') }}
+        </button>
+      </div>
+    </div>
+
+    <!-- 分栏视图：同一份数据 / 筛选 / 分页 / 勾选，只换排布 -->
+    <div v-if="viewMode === 'split'" class="zt-split zt-keys-split">
+      <aside class="zt-split-list">
+        <div class="zt-split-list-head">
+          <SearchInput
+            v-model="filterSearch"
+            :placeholder="t('keys.searchPlaceholder')"
+            class="w-full"
+            @search="onFilterChange"
+          />
+          <div class="grid grid-cols-2 gap-2">
+            <Select
+              :model-value="filterGroupId"
+              :options="groupFilterOptions"
+              @update:model-value="onGroupFilterChange"
+            />
+            <Select
+              :model-value="filterStatus"
+              :options="statusFilterOptions"
+              @update:model-value="onStatusFilterChange"
+            />
+          </div>
+        </div>
+        <KeyList
+          :keys="apiKeys"
+          :active-id="detailKey?.id ?? null"
+          :selected-ids="selectedIds"
+          :usage-stats="usageStats"
+          :loading="loading"
+          @select="detailKeyId = $event"
+          @update:selected-ids="handleSelectionChange"
+        >
+          <template #empty>
+            <EmptyState
+              :title="t('keys.noKeysYet')"
+              :description="t('keys.createFirstKey')"
+              :action-text="t('keys.createKey')"
+              @action="showCreateModal = true"
+            />
+          </template>
+        </KeyList>
+        <div v-if="pagination.total > 0" class="zt-keys-pager">
+          <Pagination
+            compact
+            :page="pagination.page"
+            :total="pagination.total"
+            :page-size="pagination.page_size"
+            @update:page="handlePageChange"
+            @update:pageSize="handlePageSizeChange"
+          />
+        </div>
+      </aside>
+      <KeyDetail
+        v-if="detailKey"
+        :api-key="detailKey"
+        :stats="usageStats[detailKey.id]"
+        :user-rate="detailKey.group ? userGroupRates[detailKey.group.id] : undefined"
+        :hide-ccs-import="!!publicSettings?.hide_ccs_import_button"
+        :copied="copiedKeyId === detailKey.id"
+        :format-reset-time="formatResetTime"
+        @use="openUseKeyModal(detailKey)"
+        @import-ccs="importToCcswitch(detailKey)"
+        @toggle-status="toggleKeyStatus(detailKey)"
+        @edit="editKey(detailKey)"
+        @delete="confirmDelete(detailKey)"
+        @copy="copyToClipboard(detailKey.key, detailKey.id)"
+        @open-group="openGroupSelectorFor(detailKey, $event)"
+        @reset-rate-limit="confirmResetRateLimitFromTable(detailKey)"
+      />
+      <div v-else class="zt-split-detail zt-keys-detail-empty">
+        <EmptyState :title="t('keys.noKeysYet')" :description="t('keys.createFirstKey')" />
+      </div>
+    </div>
+
+    <!-- 表格视图：改版前的 DataTable，功能与列设置不变 -->
+    <TablePageLayout v-else>
+      <template #filters>
+        <div class="flex flex-wrap items-center gap-3">
+          <SearchInput
+            v-model="filterSearch"
+            :placeholder="t('keys.searchPlaceholder')"
+            class="w-full sm:w-64"
+            @search="onFilterChange"
+          />
+          <Select
+            :model-value="filterGroupId"
+            class="w-40"
+            :options="groupFilterOptions"
+            @update:model-value="onGroupFilterChange"
+          />
+          <Select
+            :model-value="filterStatus"
+            class="w-40"
+            :options="statusFilterOptions"
+            @update:model-value="onStatusFilterChange"
+          />
         </div>
       </template>
 
@@ -1325,6 +1421,8 @@ import { keysAPI, authAPI, usageAPI, userGroupsAPI } from '@/api'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import BulkEditKeysModal from '@/components/keys/BulkEditKeysModal.vue'
+import KeyList from '@/components/keys/KeyList.vue'
+import KeyDetail from '@/components/keys/KeyDetail.vue'
 	import DataTable from '@/components/common/DataTable.vue'
 	import Pagination from '@/components/common/Pagination.vue'
 	import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -1480,6 +1578,16 @@ const columns = computed<Column[]>(() =>
 )
 
 const apiKeys = ref<ApiKey[]>([])
+// 分栏视图当前查看的密钥；列表刷新后不在当前页时回落到第一条。
+const detailKeyId = ref<number | null>(null)
+const detailKey = computed<ApiKey | null>(
+  () => apiKeys.value.find((key) => key.id === detailKeyId.value) ?? apiKeys.value[0] ?? null
+)
+watch(apiKeys, (list) => {
+  if (!list.some((key) => key.id === detailKeyId.value)) {
+    detailKeyId.value = list[0]?.id ?? null
+  }
+})
 const selectedIds = ref<number[]>([])
 const showBulkEditModal = ref(false)
 const selectedApiKeys = computed(() => apiKeys.value.filter((key) => selectedIds.value.includes(key.id)))
@@ -1529,6 +1637,26 @@ const showResetRateLimitDialog = ref(false)
 const showUseKeyModal = ref(false)
 const showCcsClientSelect = ref(false)
 const showColumnDropdown = ref(false)
+
+// 视图模式：分栏（默认）/ 表格；两种视图共用数据、筛选、分页与勾选，仅排布不同。
+type KeysViewMode = 'split' | 'table'
+const VIEW_MODE_STORAGE_KEY = 'api-keys-view-mode'
+const loadViewMode = (): KeysViewMode => {
+  try {
+    return localStorage.getItem(VIEW_MODE_STORAGE_KEY) === 'table' ? 'table' : 'split'
+  } catch {
+    return 'split'
+  }
+}
+const viewMode = ref<KeysViewMode>(loadViewMode())
+const setViewMode = (mode: KeysViewMode) => {
+  viewMode.value = mode
+  try {
+    localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode)
+  } catch {
+    // ignore storage errors
+  }
+}
 const pendingCcsRow = ref<ApiKey | null>(null)
 const selectedKey = ref<ApiKey | null>(null)
 const copiedKeyId = ref<number | null>(null)
@@ -1985,6 +2113,12 @@ const openGroupSelector = (key: ApiKey) => {
     groupSelectorKeyId.value = key.id
     groupSearchQuery.value = ''
   }
+}
+
+// 分栏详情里的分组按钮复用表格的定位与下拉逻辑。
+const openGroupSelectorFor = (key: ApiKey, el: HTMLElement | null) => {
+  setGroupButtonRef(key.id, el)
+  openGroupSelector(key)
 }
 
 const changeGroup = async (key: ApiKey, newGroupId: number | null) => {

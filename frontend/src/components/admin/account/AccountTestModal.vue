@@ -9,7 +9,7 @@
       <!-- Account Info Card -->
       <div
         v-if="account"
-        class="flex items-center justify-between rounded-xl border border-gray-200 bg-gradient-to-r from-gray-50 to-gray-100 p-3 dark:border-dark-500 dark:from-dark-700 dark:to-dark-600"
+        class="flex items-center justify-between rounded-xl border zt-border-c bg-gradient-to-r from-gray-50 to-gray-100 p-3 dark:from-dark-700 dark:to-dark-600"
       >
         <div class="flex items-center gap-3">
           <div
@@ -18,10 +18,10 @@
             <Icon name="play" size="md" class="text-white" :stroke-width="2" />
           </div>
           <div>
-            <div class="font-semibold text-gray-900 dark:text-gray-100">{{ account.name }}</div>
-            <div class="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+            <div class="font-semibold zt-ink">{{ account.name }}</div>
+            <div class="flex items-center gap-1.5 text-xs zt-ink-3">
               <span
-                class="rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-medium uppercase dark:bg-dark-500"
+                class="rounded zt-surface-3 px-1.5 py-0.5 text-[10px] font-medium uppercase"
               >
                 {{ account.type }}
               </span>
@@ -34,7 +34,7 @@
             'rounded-full px-2.5 py-1 text-xs font-semibold',
             account.status === 'active'
               ? 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400'
-              : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+              : 'zt-surface-3 zt-ink-2 dark:bg-gray-700'
           ]"
         >
           {{ account.status }}
@@ -43,7 +43,7 @@
 
       <!-- Grok: mode first, then optional model / mode params -->
       <div v-if="isGrokAccount" class="space-y-1.5">
-        <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+        <label class="text-sm font-medium zt-ink-2">
           {{ t('admin.accounts.grok.testMode') }}
         </label>
         <Select
@@ -51,13 +51,13 @@
           :options="grokTestModeOptions"
           :disabled="status === 'connecting'"
         />
-        <p class="text-xs text-gray-500 dark:text-gray-400">
+        <p class="text-xs zt-ink-3">
           {{ t('admin.accounts.grok.testModeHint') }}
         </p>
       </div>
 
       <div v-if="showModelSelect" class="space-y-1.5">
-        <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+        <label class="text-sm font-medium zt-ink-2">
           {{ t('admin.accounts.selectTestModel') }}
         </label>
         <Select
@@ -71,7 +71,7 @@
       </div>
 
       <div v-if="isOpenAIAccount" class="space-y-1.5">
-        <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+        <label class="text-sm font-medium zt-ink-2">
           {{ t('admin.accounts.openai.testMode') }}
         </label>
         <Select
@@ -93,14 +93,14 @@
       </div>
       <p
         v-else-if="isGrokAccount && promptInputHint"
-        class="text-xs text-gray-500 dark:text-gray-400"
+        class="text-xs zt-ink-3"
       >
         {{ promptInputHint }}
       </p>
 
       <!-- Optional media uploads for real generation / transcription -->
       <div v-if="supportsImageUpload" class="space-y-1.5">
-        <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+        <label class="text-sm font-medium zt-ink-2">
           {{ imageUploadLabel }}
         </label>
         <div class="flex items-center gap-3">
@@ -112,7 +112,7 @@
           >
             {{ t('admin.accounts.grok.chooseImageFile') }}
           </button>
-          <span class="min-w-0 truncate text-xs text-gray-500 dark:text-gray-400">
+          <span class="min-w-0 truncate text-xs zt-ink-3">
             {{
               uploadImageName
                 ? t('common.selectedFile', { name: uploadImageName })
@@ -128,18 +128,18 @@
             @change="onImageFileChange"
           />
         </div>
-        <p class="text-xs text-gray-500 dark:text-gray-400">{{ imageUploadHint }}</p>
-        <div v-if="uploadImagePreview" class="overflow-hidden rounded-lg border border-gray-200 dark:border-dark-500">
+        <p class="text-xs zt-ink-3">{{ imageUploadHint }}</p>
+        <div v-if="uploadImagePreview" class="overflow-hidden rounded-lg border zt-border-c">
           <img
             :src="uploadImagePreview"
             :alt="t('admin.accounts.grok.uploadPreviewAlt')"
-            class="max-h-40 w-full object-contain bg-gray-50 dark:bg-dark-700"
+            class="max-h-40 w-full object-contain zt-surface-2"
           />
         </div>
       </div>
 
       <div v-if="supportsAudioUpload" class="space-y-1.5">
-        <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+        <label class="text-sm font-medium zt-ink-2">
           {{ t('admin.accounts.grok.audioUploadLabel') }}
         </label>
         <div class="flex items-center gap-3">
@@ -151,7 +151,7 @@
           >
             {{ t('admin.accounts.grok.chooseAudioFile') }}
           </button>
-          <span class="min-w-0 truncate text-xs text-gray-500 dark:text-gray-400">
+          <span class="min-w-0 truncate text-xs zt-ink-3">
             {{
               uploadAudioName
                 ? t('common.selectedFile', { name: uploadAudioName })
@@ -167,7 +167,7 @@
             @change="onAudioFileChange"
           />
         </div>
-        <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.grok.audioUploadHint') }}</p>
+        <p class="text-xs zt-ink-3">{{ t('admin.accounts.grok.audioUploadHint') }}</p>
       </div>
 
       <!-- Terminal Output -->
@@ -177,7 +177,7 @@
           class="max-h-[240px] min-h-[120px] overflow-y-auto rounded-xl border border-gray-700 bg-gray-900 p-4 font-mono text-sm dark:border-gray-800 dark:bg-black"
         >
           <!-- Status Line -->
-          <div v-if="status === 'idle'" class="flex items-center gap-2 text-gray-500">
+          <div v-if="status === 'idle'" class="flex items-center gap-2 zt-ink-3">
             <Icon name="play" size="sm" :stroke-width="2" />
             <span>{{ t('admin.accounts.readyToTest') }}</span>
           </div>
@@ -217,7 +217,7 @@
         <button
           v-if="outputLines.length > 0"
           @click="copyOutput"
-          class="absolute right-2 top-2 rounded-lg bg-gray-800/80 p-1.5 text-gray-400 opacity-0 transition-all hover:bg-gray-700 hover:text-white group-hover:opacity-100"
+          class="absolute right-2 top-2 rounded-lg bg-gray-800/80 p-1.5 zt-ink-3 opacity-0 transition-all hover:bg-gray-700 hover:text-white group-hover:opacity-100"
           :title="t('admin.accounts.copyOutput')"
         >
           <Icon name="link" size="sm" :stroke-width="2" />
@@ -225,14 +225,14 @@
       </div>
 
       <div v-if="generatedImages.length > 0" class="space-y-2">
-        <div class="text-xs font-medium text-gray-600 dark:text-gray-300">
+        <div class="text-xs font-medium zt-ink-2">
           {{ t('admin.accounts.imagePreview') }}
         </div>
         <div class="flex flex-wrap justify-center gap-3">
           <div
             v-for="(image, index) in generatedImages"
             :key="`${image.url}-${index}`"
-            class="group/img relative cursor-pointer overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition hover:border-primary-300 hover:shadow-md dark:border-dark-500 dark:bg-dark-700"
+            class="group/img relative cursor-pointer overflow-hidden rounded-xl border zt-border-c zt-surface shadow-sm transition hover:border-primary-300 hover:shadow-md"
             @click="previewImageUrl = image.url"
           >
             <img
@@ -243,7 +243,7 @@
             <div class="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover/img:bg-black/20">
               <Icon name="eye" size="lg" class="text-white opacity-0 drop-shadow-lg transition-opacity group-hover/img:opacity-100" :stroke-width="2" />
             </div>
-            <div class="border-t border-gray-100 px-3 py-1.5 text-xs text-gray-500 dark:border-dark-500 dark:text-gray-300">
+            <div class="border-t zt-border-c px-3 py-1.5 text-xs zt-ink-3">
               {{ image.mimeType || 'image/*' }}
             </div>
           </div>
@@ -251,30 +251,30 @@
       </div>
 
       <div v-if="generatedAudios.length > 0" class="space-y-2">
-        <div class="text-xs font-medium text-gray-600 dark:text-gray-300">
+        <div class="text-xs font-medium zt-ink-2">
           {{ t('admin.accounts.audioPreview') }}
         </div>
         <div
           v-for="(audio, index) in generatedAudios"
           :key="`audio-${index}`"
-          class="rounded-xl border border-gray-200 bg-white p-3 dark:border-dark-500 dark:bg-dark-700"
+          class="rounded-xl border zt-border-c zt-surface p-3"
         >
           <audio :src="audio.url" controls class="w-full" :type="audio.mimeType" />
-          <div class="mt-1 text-xs text-gray-500 dark:text-gray-300">{{ audio.mimeType || 'audio/*' }}</div>
+          <div class="mt-1 text-xs zt-ink-3">{{ audio.mimeType || 'audio/*' }}</div>
         </div>
       </div>
 
       <div v-if="generatedVideos.length > 0" class="space-y-2">
-        <div class="text-xs font-medium text-gray-600 dark:text-gray-300">
+        <div class="text-xs font-medium zt-ink-2">
           {{ t('admin.accounts.videoPreview') }}
         </div>
         <div
           v-for="(video, index) in generatedVideos"
           :key="`video-${index}`"
-          class="overflow-hidden rounded-xl border border-gray-200 bg-black dark:border-dark-500"
+          class="overflow-hidden rounded-xl border zt-border-c bg-black"
         >
           <video :src="video.url" controls class="max-h-[360px] w-full" :type="video.mimeType" />
-          <div class="border-t border-gray-100 bg-white px-3 py-1.5 text-xs text-gray-500 dark:border-dark-500 dark:bg-dark-700 dark:text-gray-300">
+          <div class="border-t zt-border-c zt-surface px-3 py-1.5 text-xs zt-ink-3">
             {{ video.mimeType || 'video/*' }}
           </div>
         </div>
@@ -304,7 +304,7 @@
       </Teleport>
 
       <!-- Test Info -->
-      <div class="flex items-center justify-between px-1 text-xs text-gray-500 dark:text-gray-400">
+      <div class="flex items-center justify-between px-1 text-xs zt-ink-3">
         <div class="flex items-center gap-3">
           <span class="flex items-center gap-1">
             <Icon name="grid" size="sm" :stroke-width="2" />
@@ -322,7 +322,7 @@
       <div class="flex justify-end gap-3">
         <button
           @click="handleClose"
-          class="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-300 dark:hover:bg-dark-500"
+          class="rounded-lg zt-surface-3 px-4 py-2 text-sm font-medium zt-ink-2 transition-colors hover:bg-gray-200 dark:hover:bg-dark-500"
         >
           {{ t('common.close') }}
         </button>
@@ -813,7 +813,7 @@ const abortStream = () => {
   }
 }
 
-const addLine = (text: string, className: string = 'text-gray-300') => {
+const addLine = (text: string, className: string = 'zt-ink-3') => {
   outputLines.value.push({ text, class: className })
   scrollToBottom()
 }
@@ -831,13 +831,13 @@ const startTest = async () => {
   resetState()
   status.value = 'connecting'
   addLine(t('admin.accounts.startingTestForAccount', { name: props.account.name }), 'text-blue-400')
-  addLine(t('admin.accounts.testAccountTypeLabel', { type: props.account.type }), 'text-gray-400')
+  addLine(t('admin.accounts.testAccountTypeLabel', { type: props.account.type }), 'zt-ink-3')
   if (isGrokAccount.value) {
     const modeLabel =
       grokTestModeOptions.value.find((o) => o.value === grokTestMode.value)?.label || grokTestMode.value
-    addLine(t('admin.accounts.grok.selectedTestMode', { mode: modeLabel }), 'text-gray-400')
+    addLine(t('admin.accounts.grok.selectedTestMode', { mode: modeLabel }), 'zt-ink-3')
   }
-  addLine('', 'text-gray-300')
+  addLine('', 'zt-ink-3')
 
   abortStream()
 
@@ -973,9 +973,9 @@ const handleEvent = (event: {
           : supportsImageTest.value
             ? t('admin.accounts.sendingImageRequest')
             : t('admin.accounts.sendingTestMessage'),
-        'text-gray-400'
+        'zt-ink-3'
       )
-      addLine('', 'text-gray-300')
+      addLine('', 'zt-ink-3')
       addLine(t('admin.accounts.response'), 'text-yellow-400')
       break
 

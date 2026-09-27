@@ -4,6 +4,7 @@
  */
 
 export { default as AppLayout } from './AppLayout.vue'
-export { default as AppSidebar } from './AppSidebar.vue'
-export { default as AppHeader } from './AppHeader.vue'
+export { default as SideRail } from './SideRail.vue'
+export { default as ContextBar } from './ContextBar.vue'
+export { default as RailUserMenu } from './RailUserMenu.vue'
 export { default as AuthLayout } from './AuthLayout.vue'

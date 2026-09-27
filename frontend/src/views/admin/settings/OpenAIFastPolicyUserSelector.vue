@@ -4,21 +4,21 @@
       <span
         v-for="userId in selectedUserIds"
         :key="userId"
-        class="inline-flex max-w-full items-center gap-1.5 rounded-md bg-gray-100 px-2.5 py-1.5 text-xs text-gray-700 dark:bg-dark-600 dark:text-gray-200"
+        class="inline-flex max-w-full items-center gap-1.5 rounded-md zt-surface-3 px-2.5 py-1.5 text-xs zt-ink-2"
       >
         <span class="max-w-64 truncate font-medium" :title="selectedUserLabel(userId)">
           {{ selectedUserLabel(userId) }}
         </span>
-        <span class="shrink-0 text-gray-400">#{{ userId }}</span>
+        <span class="shrink-0 zt-ink-3">#{{ userId }}</span>
         <span
           v-if="selectedUsers[userId]?.deleted"
-          class="shrink-0 text-gray-400"
+          class="shrink-0 zt-ink-3"
         >
           {{ t("admin.settings.openaiFastPolicy.userDeleted") }}
         </span>
         <button
           type="button"
-          class="shrink-0 rounded text-gray-400 hover:text-red-600 dark:hover:text-red-400"
+          class="shrink-0 rounded zt-ink-3 hover:text-red-600 dark:hover:text-red-400"
           :aria-label="t('admin.settings.openaiFastPolicy.removeUser')"
           :title="t('admin.settings.openaiFastPolicy.removeUser')"
           @click="removeUser(userId)"
@@ -32,7 +32,7 @@
       <Icon
         name="search"
         size="sm"
-        class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+        class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 zt-ink-3"
       />
       <input
         v-model="searchQuery"
@@ -47,14 +47,14 @@
 
     <div
       v-if="showDropdown && searchQuery.trim()"
-      class="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-dark-600 dark:bg-dark-700"
+      class="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-lg border zt-border-c2 zt-surface shadow-lg"
     >
-      <div v-if="searchLoading" class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
+      <div v-if="searchLoading" class="px-4 py-3 text-sm zt-ink-3">
         {{ t("common.loading") }}
       </div>
       <div
         v-else-if="availableResults.length === 0"
-        class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400"
+        class="px-4 py-3 text-sm zt-ink-3"
       >
         {{ t("admin.settings.openaiFastPolicy.userSearchEmpty") }}
       </div>
@@ -66,13 +66,13 @@
           class="flex w-full items-center justify-between gap-3 px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-dark-600"
           @click="selectUser(user)"
         >
-          <span class="min-w-0 truncate font-medium text-gray-900 dark:text-white">
+          <span class="min-w-0 truncate font-medium zt-ink">
             {{ user.email }}
-            <span v-if="user.deleted" class="ml-1 text-xs font-normal text-gray-400">
+            <span v-if="user.deleted" class="ml-1 text-xs font-normal zt-ink-3">
               {{ t("admin.settings.openaiFastPolicy.userDeleted") }}
             </span>
           </span>
-          <span class="shrink-0 text-xs text-gray-400">#{{ user.id }}</span>
+          <span class="shrink-0 text-xs zt-ink-3">#{{ user.id }}</span>
         </button>
       </template>
     </div>

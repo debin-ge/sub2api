@@ -22,13 +22,13 @@
     <!-- 生成这一侧：视频/等待/失败靠左 -->
     <div class="flex justify-start">
       <article
-        class="w-full max-w-[85%] rounded-2xl rounded-bl-sm border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800"
+        class="w-full max-w-[85%] rounded-2xl rounded-bl-sm border zt-border-c bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800"
       >
         <header class="mb-2 flex items-center justify-between gap-2">
           <span :class="['rounded-full px-2.5 py-1 text-xs font-medium', statusClass]">
             {{ statusLabel }}
           </span>
-          <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs zt-ink-3">
             <span class="inline-flex items-center gap-1">
               <Icon name="clock" size="sm" />
               {{ elapsedLabel }}
@@ -61,9 +61,9 @@
           <span
             class="flex h-16 w-16 items-center justify-center rounded-full bg-white/90 shadow-lg transition group-hover:scale-105 group-hover:bg-white"
           >
-            <Icon name="play" size="lg" class="ml-0.5 text-gray-900" />
+            <Icon name="play" size="lg" class="ml-0.5 zt-ink" />
           </span>
-          <span class="absolute bottom-2 text-xs text-gray-300">{{ t('videoPlayground.card.play') }}</span>
+          <span class="absolute bottom-2 text-xs zt-ink-3">{{ t('videoPlayground.card.play') }}</span>
         </button>
         <div v-else-if="playableUrl">
           <video
@@ -79,7 +79,7 @@
           />
           <p
             v-if="notice"
-            class="mt-1 flex flex-wrap items-center gap-2 text-xs text-amber-600 dark:text-amber-400"
+            class="mt-1 flex flex-wrap items-center gap-2 text-xs zt-warn-text"
           >
             {{ notice }}
             <button type="button" class="underline" :disabled="preparing" @click="retry">
@@ -94,19 +94,19 @@
         -->
         <div
           v-else-if="expired"
-          class="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm dark:border-gray-700 dark:bg-gray-900/40"
+          class="rounded-lg border zt-border-c zt-surface-2 p-3 text-sm dark:border-gray-700 dark:bg-gray-900/40"
         >
-          <p class="flex items-center gap-1.5 font-medium text-gray-700 dark:text-gray-300">
+          <p class="flex items-center gap-1.5 font-medium zt-ink-2">
             <Icon name="clock" size="sm" />
             {{ t('videoPlayground.card.contentExpired') }}
           </p>
-          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          <p class="mt-1 text-xs zt-ink-3">
             {{ t('videoPlayground.card.contentExpiredHint') }}
           </p>
         </div>
         <div
           v-else-if="preparing"
-          class="flex items-center gap-2 rounded-lg border border-dashed border-gray-300 p-6 text-sm text-gray-500 dark:border-gray-600 dark:text-gray-400"
+          class="flex items-center gap-2 rounded-lg border border-dashed zt-border-c2 p-6 text-sm zt-ink-3 dark:border-gray-600"
         >
           <Icon name="refresh" size="md" class="animate-spin" />
           <span>{{ t('videoPlayground.card.preparingPlayback') }}</span>
@@ -146,19 +146,19 @@
         -->
         <div
           v-else
-          class="space-y-3 rounded-lg border border-dashed border-gray-300 p-5 dark:border-gray-600"
+          class="space-y-3 rounded-lg border border-dashed zt-border-c2 p-5 dark:border-gray-600"
         >
-          <div class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+          <div class="flex items-center gap-2 text-sm zt-ink-2">
             <span class="relative flex h-2.5 w-2.5 shrink-0">
               <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75" />
               <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-blue-500" />
             </span>
             <span class="font-medium">{{ progressLabel }}</span>
-            <span class="ml-auto shrink-0 tabular-nums text-xs text-gray-400 dark:text-gray-500">
+            <span class="ml-auto shrink-0 tabular-nums text-xs zt-ink-3">
               {{ elapsedLabel }}
             </span>
           </div>
-          <div class="h-1.5 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+          <div class="h-1.5 w-full overflow-hidden rounded-full zt-surface-3 dark:bg-gray-700">
             <div
               v-if="progressPercent !== null"
               class="h-full rounded-full bg-blue-500 transition-[width] duration-700 ease-out"
@@ -166,7 +166,7 @@
             />
             <div v-else class="progress-drift h-full w-1/3 rounded-full bg-blue-500" />
           </div>
-          <p class="text-xs text-gray-400 dark:text-gray-500">{{ waitingHint }}</p>
+          <p class="text-xs zt-ink-3">{{ waitingHint }}</p>
         </div>
 
         <!--
@@ -295,7 +295,7 @@ const statusClass = computed(() => {
     case 'in_progress':
       return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
     default:
-      return 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+      return 'zt-surface-3 zt-ink-2 dark:bg-gray-700'
   }
 })
 

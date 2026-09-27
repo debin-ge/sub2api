@@ -10,17 +10,17 @@
             <p class="mt-1">{{ t('admin.modelPrices.noticeDeepSeekTime') }}</p>
           </div>
           <div class="flex flex-wrap items-center gap-3">
-            <div class="text-sm text-gray-600 dark:text-gray-300">
+            <div class="text-sm zt-ink-2">
               {{ t('admin.modelPrices.catalogCount') }}:
-              <span class="font-medium text-gray-900 dark:text-white">{{ status.catalog_model_count ?? 0 }}</span>
+              <span class="font-medium zt-ink">{{ status.catalog_model_count ?? 0 }}</span>
             </div>
-            <div class="text-sm text-gray-600 dark:text-gray-300">
+            <div class="text-sm zt-ink-2">
               {{ t('admin.modelPrices.overrideCount') }}:
-              <span class="font-medium text-gray-900 dark:text-white">{{ status.override_count ?? 0 }}</span>
+              <span class="font-medium zt-ink">{{ status.override_count ?? 0 }}</span>
             </div>
-            <div class="text-sm text-gray-600 dark:text-gray-300">
+            <div class="text-sm zt-ink-2">
               {{ t('admin.modelPrices.lastUpdated') }}:
-              <span class="font-medium text-gray-900 dark:text-white">{{ lastUpdatedLabel }}</span>
+              <span class="font-medium zt-ink">{{ lastUpdatedLabel }}</span>
             </div>
           </div>
           <div class="flex flex-wrap items-center gap-3">
@@ -53,7 +53,7 @@
         <DataTable :columns="columns" :data="items" :loading="loading">
           <template #cell-model="{ row }">
             <div class="flex flex-col gap-1">
-              <span class="font-medium text-gray-900 dark:text-white">{{ row.model }}</span>
+              <span class="font-medium zt-ink">{{ row.model }}</span>
               <div class="flex flex-wrap gap-1">
                 <span v-if="row.token_pricing_absent && !row.has_image_pricing && !row.has_video_pricing" class="badge-warn">{{ t('admin.modelPrices.missing') }}</span>
                 <span v-if="row.billing_mode === 'image'" class="badge-info">{{ t('admin.modelPrices.billingMode.label') }}: {{ t('admin.modelPrices.tabs.image') }}</span>
@@ -70,13 +70,13 @@
           <template #cell-source="{ row }">
             <div class="flex flex-col items-start gap-1">
               <span class="badge-muted">{{ sourceLabel(row.source) }}</span>
-              <span class="text-[11px] text-gray-500 dark:text-gray-400">{{ row.currency }}</span>
+              <span class="text-[11px] zt-ink-3">{{ row.currency }}</span>
             </div>
           </template>
           <template #cell-input="{ row }">
             <div class="flex flex-col gap-0.5 text-xs">
               <span>{{ scheduledPriceLabel(row.effective?.input_cost_per_token, row.time_schedule, 'peak', row.currency) }}</span>
-              <span v-if="row.time_schedule" class="text-gray-500 dark:text-gray-400">
+              <span v-if="row.time_schedule" class="zt-ink-3">
                 {{ scheduledPriceLabel(row.effective?.input_cost_per_token, row.time_schedule, 'offPeak', row.currency) }}
               </span>
             </div>
@@ -84,10 +84,10 @@
           <template #cell-output="{ row }">
             <div class="flex flex-col gap-0.5 text-xs">
               <span>{{ scheduledPriceLabel(row.effective?.output_cost_per_token, row.time_schedule, 'peak', row.currency) }}</span>
-              <span v-if="row.time_schedule" class="text-gray-500 dark:text-gray-400">
+              <span v-if="row.time_schedule" class="zt-ink-3">
                 {{ scheduledPriceLabel(row.effective?.output_cost_per_token, row.time_schedule, 'offPeak', row.currency) }}
               </span>
-              <span v-if="row.has_video_pricing" class="text-gray-500 dark:text-gray-400">
+              <span v-if="row.has_video_pricing" class="zt-ink-3">
                 {{ row.video_billing_units?.join(' / ') }} · {{ row.video_resolutions?.join(', ') }}
               </span>
             </div>
@@ -130,37 +130,37 @@
       <div class="space-y-4">
         <div class="grid gap-3 sm:grid-cols-2">
           <label class="block text-sm">
-            <span class="mb-1 block text-gray-600 dark:text-gray-300">{{ t('admin.modelPrices.modelName') }}</span>
+            <span class="mb-1 block zt-ink-2">{{ t('admin.modelPrices.modelName') }}</span>
             <input v-model="form.model" class="input" :disabled="!creating" />
           </label>
           <label class="block text-sm">
-            <span class="mb-1 block text-gray-600 dark:text-gray-300">{{ t('admin.modelPrices.platform') }}</span>
+            <span class="mb-1 block zt-ink-2">{{ t('admin.modelPrices.platform') }}</span>
             <Select v-model="form.platform" :options="writePlatformOptions" :disabled="!creating" />
           </label>
         </div>
         <label class="block text-sm">
-          <span class="mb-1 block text-gray-600 dark:text-gray-300">{{ t('admin.modelPrices.currency') }}</span>
+          <span class="mb-1 block zt-ink-2">{{ t('admin.modelPrices.currency') }}</span>
           <Select v-model="form.currency" :options="currencyOptions" />
         </label>
-        <p v-if="form.videoPricing !== null" class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.modelPrices.video.usdOnly') }}</p>
+        <p v-if="form.videoPricing !== null" class="text-xs zt-ink-3">{{ t('admin.modelPrices.video.usdOnly') }}</p>
         <p
           v-if="detail?.catalog_currency && detail.catalog_currency !== form.currency"
           class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200"
         >
           {{ t('admin.modelPrices.crossCurrencyWarning', { catalog: detail.catalog_currency, currency: form.currency }) }}
         </p>
-        <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
-          <input v-model="form.enabled" type="checkbox" class="rounded border-gray-300" />
+        <label class="flex items-center gap-2 text-sm zt-ink-2">
+          <input v-model="form.enabled" type="checkbox" class="rounded zt-border-c2" />
           {{ t('admin.modelPrices.enabled') }}
         </label>
         <div>
-          <span class="mb-1 block text-sm text-gray-600 dark:text-gray-300">{{ t('admin.modelPrices.billingMode.label') }}</span>
-          <div class="flex border-b border-gray-200 dark:border-dark-600" role="tablist">
+          <span class="mb-1 block text-sm zt-ink-2">{{ t('admin.modelPrices.billingMode.label') }}</span>
+          <div class="flex border-b zt-border-c2" role="tablist">
             <button v-for="tab in editorTabs" :key="tab.value" type="button" class="editor-tab" :class="billingMode === tab.value ? 'editor-tab-active' : ''" @click="billingMode = tab.value">
               {{ tab.label }}
             </button>
           </div>
-          <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">{{ t(`admin.modelPrices.billingMode.hint.${billingMode}`) }}</p>
+          <p class="mt-2 text-xs zt-ink-3">{{ t(`admin.modelPrices.billingMode.hint.${billingMode}`) }}</p>
           <p
             v-if="discardedFieldCount > 0"
             class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200"
@@ -170,8 +170,8 @@
         </div>
         <div v-if="billingMode !== 'video'" class="space-y-3">
           <div v-for="field in activePriceFields" :key="field" class="grid items-end gap-2 sm:grid-cols-[1fr,1fr,1fr,auto]">
-            <div class="text-xs text-gray-500 dark:text-gray-400">
-              <div class="font-medium text-gray-800 dark:text-gray-200">{{ fieldLabel(field) }}</div>
+            <div class="text-xs zt-ink-3">
+              <div class="font-medium zt-ink">{{ fieldLabel(field) }}</div>
               <div>{{ t('admin.modelPrices.catalogValue') }}: {{ formatFieldPrice(detail?.catalog?.[field], field, detail?.catalog_currency) }}</div>
             </div>
             <input
@@ -179,7 +179,7 @@
               class="input"
               :placeholder="fieldPlaceholder(field)"
             />
-            <div class="text-xs text-gray-500 dark:text-gray-400">
+            <div class="text-xs zt-ink-3">
               {{ t('admin.modelPrices.effectiveValue') }}:
               {{ formatFieldPrice(detail?.effective?.[field], field, detail?.currency) }}
               <span v-if="detail?.time_schedule && !isUnscaledField(field)" class="ml-1">
@@ -207,7 +207,7 @@
           @validation-change="videoPricingErrors = $event"
         />
         <label class="block text-sm">
-          <span class="mb-1 block text-gray-600 dark:text-gray-300">{{ t('admin.modelPrices.note') }}</span>
+          <span class="mb-1 block zt-ink-2">{{ t('admin.modelPrices.note') }}</span>
           <textarea v-model="form.note" class="input min-h-20" />
         </label>
       </div>

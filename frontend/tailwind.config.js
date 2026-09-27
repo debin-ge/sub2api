@@ -5,6 +5,8 @@ export default {
   theme: {
     extend: {
       colors: {
+        // 控制台浅色底：略带靛蓝偏色，替代纯灰 gray-50
+        ground: '#f5f6fb',
         // 主色调 - Indigo 靛蓝系
         primary: {
           50: '#eef2ff',
@@ -78,9 +80,7 @@ export default {
         'gradient-primary': 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
         'gradient-dark': 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
         'gradient-glass':
-          'linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%)',
-        'mesh-gradient':
-          'radial-gradient(at 40% 20%, rgba(20, 184, 166, 0.12) 0px, transparent 50%), radial-gradient(at 80% 0%, rgba(6, 182, 212, 0.08) 0px, transparent 50%), radial-gradient(at 0% 50%, rgba(20, 184, 166, 0.08) 0px, transparent 50%)'
+          'linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%)'
       },
       animation: {
         'fade-in': 'fadeIn 0.3s ease-out',

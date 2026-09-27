@@ -163,7 +163,7 @@ const createApiKey = (): ApiKey => ({
 })
 
 const AppLayoutStub = {
-  template: '<div><slot /></div>',
+  template: '<div><slot name="actions" /><slot /></div>',
 }
 
 const TablePageLayoutStub = {
@@ -296,6 +296,8 @@ const getButtonByText = (wrapper: VueWrapper, text: string) => {
 describe('user KeysView column settings', () => {
   beforeEach(() => {
     localStorage.clear()
+    // 这些断言覆盖表格视图；分栏视图的列表 / 详情由 KeyList / KeyDetail 承载，功能与表格列一一对应。
+    localStorage.setItem('api-keys-view-mode', 'table')
 
     listKeys.mockReset()
     updateKey.mockReset()

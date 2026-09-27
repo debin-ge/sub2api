@@ -251,152 +251,25 @@ Replace HTML entity icons with your preferred icon library:
 <ChartBarIcon class="h-5 w-5" />
 ```
 
-### Sidebar Customization
+### Navigation Customization
 
-Modify navigation items in `AppSidebar.vue`:
+Navigation is pure data in `src/navigation/consoleNav.ts` (groups, items, feature flags, tour anchors).
+Add or move an entry there; `useConsoleNav()` wires stores/flags and both `SideRail.vue` and
+`ContextBar.vue` read from it. `src/navigation/__tests__/consoleNav.spec.ts` asserts parity with the
+legacy path set, so update the spec when you intentionally add a route.
 
-```typescript
-// Add/remove/modify navigation items
-const userNavItems = [
-  { path: '/dashboard', label: 'Dashboard', icon: '&#128200;' },
-  { path: '/new-page', label: 'New Page', icon: '&#128196;' } // Add new item
-  // ...
-]
-```
+### User Menu Customization
 
-### Header Customization
-
-Modify user dropdown in `AppHeader.vue`:
-
-```vue
-<!-- Add new dropdown items -->
-<router-link
-  to="/settings"
-  @click="closeDropdown"
-  class="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
->
-  <span class="mr-2">&#9881;</span>
-  Settings
-</router-link>
-```
+The user dropdown lives in `RailUserMenu.vue` (rail footer). Add entries there; keep the
+`dropdown` / `dropdown-item` global classes so it matches the rest of the console.
 
 ---
 
 ## Mobile Responsive Behavior
 
-### Sidebar
-
-- **Desktop (md+)**: Always visible, can be collapsed to icon-only view
-- **Mobile**: Hidden by default, shown via menu toggle in header
-
-### Header
-
-- **Desktop**: Shows full user info and balance
-- **Mobile**: Shows compact view with hamburger menu
-
-To improve mobile experience, you can add overlay and transitions:
-
-```vue
-<!-- AppSidebar.vue enhancement for mobile -->
-<aside
-  class="fixed left-0 top-0 z-40 h-screen transition-transform duration-300"
-  :class="[
-    sidebarCollapsed ? 'w-16' : 'w-64',
-    // Hide on mobile when collapsed
-    'md:translate-x-0',
-    sidebarCollapsed ? '-translate-x-full md:translate-x-0' : 'translate-x-0'
-  ]"
->
-  <!-- ... -->
-</aside>
-
-<!-- Add overlay for mobile -->
-<div
-  v-if="!sidebarCollapsed"
-  @click="toggleSidebar"
-  class="fixed inset-0 z-30 bg-black bg-opacity-50 md:hidden"
-></div>
-```
-
----
-
-## State Management Integration
-
-### Auth Store Usage
-
-```typescript
-import { useAuthStore } from '@/stores'
-
-const authStore = useAuthStore()
-
-// Check if user is authenticated
-if (authStore.isAuthenticated) {
-  // User is logged in
-}
-
-// Check if user is admin
-if (authStore.isAdmin) {
-  // User has admin role
-}
-
-// Get current user
-const user = authStore.user
-```
-
-### App Store Usage
-
-```typescript
-import { useAppStore } from '@/stores'
-
-const appStore = useAppStore()
-
-// Toggle sidebar
-appStore.toggleSidebar()
-
-// Show notifications
-appStore.showSuccess('Operation completed!')
-appStore.showError('Something went wrong')
-appStore.showInfo('Did you know...')
-appStore.showWarning('Be careful!')
-
-// Loading state
-appStore.setLoading(true)
-// ... perform operation
-appStore.setLoading(false)
-
-// Or use helper
-await appStore.withLoading(async () => {
-  // Your async operation
-})
-```
-
----
-
-## Accessibility Features
-
-All layout components include:
-
-- **Semantic HTML**: Proper use of `<nav>`, `<header>`, `<main>`, `<aside>`
-- **ARIA labels**: Buttons have descriptive labels
-- **Keyboard navigation**: All interactive elements are keyboard accessible
-- **Focus management**: Proper focus states with Tailwind's `focus:` utilities
-- **Color contrast**: WCAG AA compliant color combinations
-
-To enhance further:
-
-```vue
-<!-- Add skip to main content link -->
-<a
-  href="#main-content"
-  class="sr-only rounded bg-white px-4 py-2 focus:not-sr-only focus:absolute focus:left-4 focus:top-4"
->
-  Skip to main content
-</a>
-
-<main id="main-content">
-  <!-- Content -->
-</main>
-```
+- **Desktop (lg+)**: rail always visible, can be collapsed to icon-only view
+- **Mobile**: rail hidden by default, opened as a drawer from the context bar toggle (with scrim)
+- Breakpoints live in `src/styles/console.css` (1180 / 1023 / 640)
 
 ---
 
@@ -405,28 +278,9 @@ To enhance further:
 ### Unit Testing Layout Components
 
 ```typescript
-// AppHeader.test.ts
-import { describe, it, expect, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
-import { createPinia, setActivePinia } from 'pinia'
-import AppHeader from '@/components/layout/AppHeader.vue'
-
-describe('AppHeader', () => {
-  beforeEach(() => {
-    setActivePinia(createPinia())
-  })
-
-  it('renders user info when authenticated', () => {
-    const wrapper = mount(AppHeader)
-    // Add assertions
-  })
-
-  it('shows dropdown when clicked', async () => {
-    const wrapper = mount(AppHeader)
-    await wrapper.find('button').trigger('click')
-    expect(wrapper.find('.dropdown').exists()).toBe(true)
-  })
-})
+// SideRail / ContextBar specs live in src/components/layout/__tests__/
+// (SideRail.spec.ts, ContextBar.spec.ts, AppLayout.spec.ts). Mount with a Pinia
+// instance and a router stub; the nav model itself is covered by consoleNav.spec.ts.
 ```
 
 ---

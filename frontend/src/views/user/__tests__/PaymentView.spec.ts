@@ -335,6 +335,8 @@ async function mountSubscriptionPlanList(planCount: number) {
         AppLayout: {
           template: '<div><slot /></div>',
         },
+        // 页签由 TabStrip 渲染；shallowMount 下需真实渲染才能找到页签按钮
+        TabStrip: false,
         Teleport: true,
         Transition: false,
       },

@@ -17,7 +17,7 @@ describe('MetricCell', () => {
     expect(wrapper.text()).toContain('请求')
     expect(wrapper.text()).toContain('1,234')
     expect(wrapper.text()).toContain('12.5 RPM')
-    expect(wrapper.find('strong').classes().join(' ')).toMatch(/emerald/)
+    expect(wrapper.find('strong').classes().join(' ')).toMatch(/zt-good-text/)
   })
 
   it('does not paint missing first-token dash as critical red', () => {
@@ -29,20 +29,20 @@ describe('MetricCell', () => {
         state: 'critical',
       },
     })
-    expect(wrapper.find('strong').classes().join(' ')).not.toMatch(/red/)
-    expect(wrapper.find('strong').classes().join(' ')).toMatch(/gray|dark/)
+    expect(wrapper.find('strong').classes().join(' ')).not.toMatch(/red|zt-bad-text/)
+    expect(wrapper.find('strong').classes().join(' ')).toMatch(/zt-ink/)
   })
 
   it('maps warning and critical health states to distinct colors', () => {
     const warning = mount(MetricCell, {
       props: { label: '错误', value: '10%', detail: '1 次', state: 'warning' },
     })
-    expect(warning.find('strong').classes().join(' ')).toMatch(/amber/)
+    expect(warning.find('strong').classes().join(' ')).toMatch(/zt-warn-text/)
 
     const critical = mount(MetricCell, {
       props: { label: '错误', value: '50%', detail: '5 次', state: 'critical' },
     })
-    expect(critical.find('strong').classes().join(' ')).toMatch(/red/)
+    expect(critical.find('strong').classes().join(' ')).toMatch(/zt-bad-text/)
   })
 
   it('renders multi-part detail as non-truncated chips (AVG · P90 fully visible)', () => {

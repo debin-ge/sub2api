@@ -50,7 +50,7 @@
       </button>
     </div>
 
-    <div v-if="error" class="truncate text-[10px] text-red-600 dark:text-red-400" :title="error">
+    <div v-if="error" class="truncate text-[10px] zt-bad-text" :title="error">
       {{ truncatedError }}
     </div>
   </div>

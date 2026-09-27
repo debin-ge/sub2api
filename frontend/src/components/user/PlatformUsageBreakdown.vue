@@ -1,18 +1,18 @@
 <template>
   <div class="group/usage relative text-sm">
     <div class="flex items-center gap-1.5">
-      <span class="text-gray-500 dark:text-gray-400">{{ t('admin.users.today') }}:</span>
-      <span class="font-medium text-gray-900 dark:text-white">${{ today.toFixed(4) }}</span>
+      <span class="zt-ink-3">{{ t('admin.users.today') }}:</span>
+      <span class="font-medium zt-ink">${{ today.toFixed(4) }}</span>
       <Icon
         v-if="hasBreakdown"
         name="infoCircle"
         size="xs"
-        class="text-gray-400 dark:text-gray-500"
+        class="zt-ink-3"
       />
     </div>
     <div class="mt-0.5 flex items-center gap-1.5">
-      <span class="text-gray-500 dark:text-gray-400">{{ t('admin.users.total') }}:</span>
-      <span class="font-medium text-gray-900 dark:text-white">${{ total.toFixed(4) }}</span>
+      <span class="zt-ink-3">{{ t('admin.users.total') }}:</span>
+      <span class="font-medium zt-ink">${{ total.toFixed(4) }}</span>
     </div>
 
     <div

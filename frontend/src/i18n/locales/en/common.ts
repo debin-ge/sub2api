@@ -219,6 +219,33 @@ export default {
     contentModeration: 'Content Moderation',
     promptAudit: 'Prompt Audit',
     auditLogs: 'Audit Logs',
+    area: {
+      console: 'Console',
+      admin: 'Admin'
+    },
+    group: {
+      workspace: 'Workspace',
+      generate: 'Generate',
+      channels: 'Channels',
+      billing: 'Billing',
+      account: 'Account',
+      overview: 'Overview',
+      operations: 'Operations',
+      channelsModels: 'Channels & Models',
+      monitoring: 'Monitoring & Audit',
+      finance: 'Finance',
+      system: 'System',
+      myAccount: 'My Account',
+      more: 'More'
+    },
+    rail: {
+      searchPlaceholder: 'Search pages or keys…',
+      collapseGroup: 'Collapse group',
+      expandGroup: 'Expand group',
+      openMenu: 'Open menu',
+      balanceAvailable: 'Available balance',
+      frozen: 'Frozen'
+    }
   },
 
   // Auth

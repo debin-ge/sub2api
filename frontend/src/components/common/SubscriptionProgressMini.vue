@@ -30,10 +30,10 @@
         class="absolute right-0 z-50 mt-2 w-[340px] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-dark-700 dark:bg-dark-800"
       >
         <div class="border-b border-gray-100 p-3 dark:border-dark-700">
-          <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+          <h3 class="text-sm font-semibold zt-ink">
             {{ t('subscriptionProgress.title') }}
           </h3>
-          <p class="mt-0.5 text-xs text-gray-500 dark:text-dark-400">
+          <p class="mt-0.5 text-xs zt-ink-3">
             {{ t('subscriptionProgress.activeCount', { count: activeSubscriptions.length }) }}
           </p>
         </div>
@@ -45,7 +45,7 @@
             class="border-b border-gray-50 p-3 last:border-b-0 dark:border-dark-700/50"
           >
             <div class="mb-2 flex items-center justify-between">
-              <span class="text-sm font-medium text-gray-900 dark:text-white">
+              <span class="text-sm font-medium zt-ink">
                 {{ subscription.group?.name || `Group #${subscription.group_id}` }}
               </span>
               <span
@@ -76,7 +76,7 @@
                   <span class="w-8 flex-shrink-0 text-[10px] text-gray-500">{{
                     t('subscriptionProgress.daily')
                   }}</span>
-                  <div class="h-1.5 min-w-0 flex-1 rounded-full bg-gray-200 dark:bg-dark-600">
+                  <div class="h-1.5 min-w-0 flex-1 rounded-full zt-surface-3">
                     <div
                       class="h-1.5 rounded-full transition-all"
                       :class="
@@ -104,7 +104,7 @@
                   <span class="w-8 flex-shrink-0 text-[10px] text-gray-500">{{
                     t('subscriptionProgress.weekly')
                   }}</span>
-                  <div class="h-1.5 min-w-0 flex-1 rounded-full bg-gray-200 dark:bg-dark-600">
+                  <div class="h-1.5 min-w-0 flex-1 rounded-full zt-surface-3">
                     <div
                       class="h-1.5 rounded-full transition-all"
                       :class="
@@ -132,7 +132,7 @@
                   <span class="w-8 flex-shrink-0 text-[10px] text-gray-500">{{
                     t('subscriptionProgress.monthly')
                   }}</span>
-                  <div class="h-1.5 min-w-0 flex-1 rounded-full bg-gray-200 dark:bg-dark-600">
+                  <div class="h-1.5 min-w-0 flex-1 rounded-full zt-surface-3">
                     <div
                       class="h-1.5 rounded-full transition-all"
                       :class="
@@ -278,7 +278,7 @@ function getDaysRemainingClass(expiresAt: string): string {
   const days = Math.ceil(diff / (1000 * 60 * 60 * 24))
   if (days <= 3) return 'text-red-600 dark:text-red-400'
   if (days <= 7) return 'text-orange-600 dark:text-orange-400'
-  return 'text-gray-500 dark:text-dark-400'
+  return 'zt-ink-3'
 }
 
 function toggleTooltip() {

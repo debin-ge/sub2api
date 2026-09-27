@@ -51,7 +51,7 @@
 
     <div
       v-if="error"
-      class="truncate text-[10px] leading-4 text-red-600 dark:text-red-400"
+      class="truncate text-[10px] leading-4 zt-bad-text"
       :title="error"
     >
       {{ truncatedError }}

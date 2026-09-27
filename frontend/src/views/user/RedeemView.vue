@@ -1,6 +1,7 @@
 <template>
   <AppLayout>
-    <div class="mx-auto max-w-2xl space-y-6">
+    <div class="zt-redeem">
+      <div class="zt-redeem-main">
       <!-- Current Balance Card -->
       <div class="card overflow-hidden">
         <div class="bg-gradient-to-br from-primary-500 to-primary-600 px-6 py-8 text-center">
@@ -29,7 +30,7 @@
               </label>
               <div class="relative mt-1">
                 <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
-                  <Icon name="gift" size="md" class="text-gray-400 dark:text-dark-500" />
+                  <Icon name="gift" size="md" class="zt-ink-3" />
                 </div>
                 <input
                   id="code"
@@ -89,7 +90,7 @@
               <div
                 class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-900/30"
               >
-                <Icon name="checkCircle" size="md" class="text-emerald-600 dark:text-emerald-400" />
+                <Icon name="checkCircle" size="md" class="zt-good-text" />
               </div>
               <div class="flex-1">
                 <h3 class="text-sm font-semibold text-emerald-800 dark:text-emerald-300">
@@ -146,7 +147,7 @@
                 <Icon
                   name="exclamationCircle"
                   size="md"
-                  class="text-red-600 dark:text-red-400"
+                  class="zt-bad-text"
                 />
               </div>
               <div class="flex-1">
@@ -161,7 +162,9 @@
           </div>
         </div>
       </transition>
+      </div>
 
+      <div class="zt-redeem-side">
       <!-- Information Card -->
       <div
         class="card border-primary-200 bg-primary-50 dark:border-primary-800/50 dark:bg-primary-900/20"
@@ -171,7 +174,7 @@
             <div
               class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-primary-100 dark:bg-primary-900/30"
             >
-              <Icon name="infoCircle" size="md" class="text-primary-600 dark:text-primary-400" />
+              <Icon name="infoCircle" size="md" class="zt-accent-text" />
             </div>
             <div class="flex-1">
               <h3 class="text-sm font-semibold text-primary-800 dark:text-primary-300">
@@ -205,11 +208,12 @@
           </div>
         </div>
       </div>
+      </div>
 
       <!-- Recent Activity -->
-      <div class="card">
-        <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
-          <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+      <div class="card zt-redeem-full">
+        <div class="border-b zt-border-c px-6 py-4">
+          <h2 class="text-lg font-semibold zt-ink">
             {{ t('redeem.recentActivity') }}
           </h2>
         </div>
@@ -238,7 +242,7 @@
             <div
               v-for="item in history"
               :key="item.id"
-              class="flex items-center justify-between rounded-xl bg-gray-50 p-4 dark:bg-dark-800"
+              class="flex items-center justify-between rounded-xl zt-surface-2 p-4"
             >
               <div class="flex items-center gap-4">
                 <div
@@ -262,8 +266,8 @@
                     size="md"
                     :class="
                       item.value >= 0
-                        ? 'text-emerald-600 dark:text-emerald-400'
-                        : 'text-red-600 dark:text-red-400'
+                        ? 'zt-good-text'
+                        : 'zt-bad-text'
                     "
                   />
                   <!-- 订阅类型图标 -->
@@ -286,10 +290,10 @@
                   />
                 </div>
                 <div>
-                  <p class="text-sm font-medium text-gray-900 dark:text-white">
+                  <p class="text-sm font-medium zt-ink">
                     {{ getHistoryItemTitle(item) }}
                   </p>
-                  <p class="text-xs text-gray-500 dark:text-dark-400">
+                  <p class="text-xs zt-ink-3">
                     {{ formatDateTime(item.used_at) }}
                   </p>
                 </div>
@@ -300,8 +304,8 @@
                     'text-sm font-semibold',
                     isBalanceType(item.type)
                       ? item.value >= 0
-                        ? 'text-emerald-600 dark:text-emerald-400'
-                        : 'text-red-600 dark:text-red-400'
+                        ? 'zt-good-text'
+                        : 'zt-bad-text'
                       : isSubscriptionType(item.type)
                         ? 'text-purple-600 dark:text-purple-400'
                         : item.value >= 0
@@ -313,17 +317,17 @@
                 </p>
                 <p
                   v-if="!isAdminAdjustment(item.type)"
-                  class="font-mono text-xs text-gray-400 dark:text-dark-500"
+                  class="font-mono text-xs zt-ink-3"
                 >
                   {{ item.code.slice(0, 8) }}...
                 </p>
-                <p v-else class="text-xs text-gray-400 dark:text-dark-500">
+                <p v-else class="text-xs zt-ink-3">
                   {{ t('redeem.adminAdjustment') }}
                 </p>
                 <!-- Display notes for admin adjustments -->
                 <p
                   v-if="item.notes"
-                  class="mt-1 text-xs text-gray-500 dark:text-dark-400 italic max-w-[200px] truncate"
+                  class="mt-1 text-xs zt-ink-3 italic max-w-[200px] truncate"
                   :title="item.notes"
                 >
                   {{ item.notes }}
@@ -335,11 +339,11 @@
           <!-- Empty State -->
           <div v-else class="empty-state py-8">
             <div
-              class="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-100 dark:bg-dark-800"
+              class="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl zt-surface-3"
             >
-              <Icon name="clock" size="xl" class="text-gray-400 dark:text-dark-500" />
+              <Icon name="clock" size="xl" class="zt-ink-3" />
             </div>
-            <p class="text-sm text-gray-500 dark:text-dark-400">
+            <p class="text-sm zt-ink-3">
               {{ t('redeem.historyWillAppear') }}
             </p>
           </div>
