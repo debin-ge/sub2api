@@ -189,11 +189,11 @@ func (r *usageLogRepository) GetModelStatsAggregated(ctx context.Context, modelN
 
 // GetDailyStatsAggregated 使用 SQL 聚合统计用户的每日使用数据
 // 性能优化：使用 GROUP BY 在数据库层按日期分组聚合，避免应用层循环分组统计
-func (r *usageLogRepository) GetDailyStatsAggregated(ctx context.Context, userID int64, startTime, endTime time.Time) (result []map[string]any, err error) {
-	tzName := resolveUsageStatsTimezone()
+func (r *usageLogRepository) GetDailyStatsAggregated(ctx context.Context, userID int64, startTime, endTime time.Time, tz string) (result []map[string]any, err error) {
+	tzName := resolveStatsBucketTimezone(tz)
 	query := `
 		SELECT
-			-- 使用应用时区分组，避免数据库会话时区导致日边界偏移。
+			-- 按调用方（浏览器）时区分组，避免数据库会话时区导致日边界偏移。
 			TO_CHAR(created_at AT TIME ZONE $4, 'YYYY-MM-DD') as date,
 			COUNT(*) as total_requests,
 			COALESCE(SUM(input_tokens), 0) as total_input_tokens,
@@ -275,6 +275,17 @@ func resolveUsageStatsTimezone() string {
 		return envTZ
 	}
 	return "UTC"
+}
+
+// resolveStatsBucketTimezone picks the zone trend buckets are labelled in: the
+// caller's (browser) zone when it is valid, otherwise the server zone. Window
+// bounds are already resolved in the caller's zone, so bucketing in any other
+// zone would split the first and last day of the window across two labels.
+func resolveStatsBucketTimezone(userTZ string) string {
+	if name := timezone.ResolveName(userTZ); name != "" {
+		return name
+	}
+	return resolveUsageStatsTimezone()
 }
 
 // GetAccountTodayStats 获取账号今日统计
@@ -933,7 +944,7 @@ func (r *usageLogRepository) GetUpstreamEndpointStatsWithFilters(ctx context.Con
 }
 
 // GetAccountUsageStats returns comprehensive usage statistics for an account over a time range
-func (r *usageLogRepository) GetAccountUsageStats(ctx context.Context, accountID int64, startTime, endTime time.Time) (resp *AccountUsageStatsResponse, err error) {
+func (r *usageLogRepository) GetAccountUsageStats(ctx context.Context, accountID int64, startTime, endTime time.Time, tz string) (resp *AccountUsageStatsResponse, err error) {
 	daysCount := int(endTime.Sub(startTime).Hours()/24) + 1
 	if daysCount <= 0 {
 		daysCount = 30
@@ -941,7 +952,7 @@ func (r *usageLogRepository) GetAccountUsageStats(ctx context.Context, accountID
 
 	query := `
 		SELECT
-			TO_CHAR(created_at, 'YYYY-MM-DD') as date,
+			` + bucketLabelExpr("created_at", 4, "day") + ` as date,
 			COUNT(*) as requests,
 			COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) as tokens,
 			COALESCE(SUM(total_cost), 0) as cost,
@@ -954,7 +965,7 @@ func (r *usageLogRepository) GetAccountUsageStats(ctx context.Context, accountID
 		ORDER BY date ASC
 	`
 
-	rows, err := r.sql.QueryContext(ctx, query, accountID, startTime, endTime)
+	rows, err := r.sql.QueryContext(ctx, query, accountID, startTime, endTime, resolveStatsBucketTimezone(tz))
 	if err != nil {
 		return nil, err
 	}
@@ -1039,7 +1050,7 @@ func (r *usageLogRepository) GetAccountUsageStats(ctx context.Context, accountID
 		AvgDurationMs:     avgDuration,
 	}
 
-	todayStr := timezone.Now().Format("2006-01-02")
+	todayStr := timezone.NowInUserLocation(tz).Format("2006-01-02")
 	for i := range history {
 		if history[i].Date == todayStr {
 			summary.Today = &struct {

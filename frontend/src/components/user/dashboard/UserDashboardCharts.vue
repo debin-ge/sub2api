@@ -3,7 +3,7 @@
     <!-- Date Range Filter（控件与改版前一致，仅去掉卡片容器） -->
     <div class="zt-filters">
       <span class="zt-filters-label">{{ t('dashboard.timeRange') }}:</span>
-      <DateRangePicker :start-date="startDate" :end-date="endDate" @update:startDate="$emit('update:startDate', $event)" @update:endDate="$emit('update:endDate', $event)" @change="$emit('dateRangeChange', $event)" />
+      <DateRangePicker :start-date="startDate" :end-date="endDate" :start-time="startTime" :end-time="endTime" @update:startDate="$emit('update:startDate', $event)" @update:endDate="$emit('update:endDate', $event)" @change="$emit('dateRangeChange', $event)" />
       <button @click="$emit('refresh')" :disabled="loading" class="btn btn-secondary btn-sm">
         {{ t('common.refresh') }}
       </button>
@@ -75,7 +75,7 @@ import { formatCostFixed as formatCost, formatNumberLocaleString as formatNumber
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Title, Tooltip, Legend, Filler } from 'chart.js'
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Title, Tooltip, Legend, Filler)
 
-const props = defineProps<{ loading: boolean, startDate: string, endDate: string, granularity: string, trend: TrendDataPoint[], models: ModelStat[] }>()
+const props = defineProps<{ loading: boolean, startDate: string, endDate: string, startTime?: string, endTime?: string, granularity: string, trend: TrendDataPoint[], models: ModelStat[] }>()
 defineEmits(['update:startDate', 'update:endDate', 'update:granularity', 'dateRangeChange', 'granularityChange', 'refresh'])
 const { t } = useI18n()
 const { theme: chartTheme, palette: chartPalette } = useChartTheme()

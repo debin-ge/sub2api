@@ -223,16 +223,20 @@ export async function getStatsByDateRange(
  * @param startDate - Start date (YYYY-MM-DD format)
  * @param endDate - End date (YYYY-MM-DD format)
  * @param apiKeyId - Optional API key ID filter
+ * @param instants - Optional exact RFC3339 bounds for a rolling window; preferred over the dates
  * @returns Usage logs within date range
  */
 export async function getByDateRange(
   startDate: string,
   endDate: string,
-  apiKeyId?: number
+  apiKeyId?: number,
+  instants?: { startTime?: string; endTime?: string }
 ): Promise<PaginatedResponse<UsageLog>> {
   const params: UsageQueryParams = {
     start_date: startDate,
     end_date: endDate,
+    start_time: instants?.startTime,
+    end_time: instants?.endTime,
     page: 1,
     page_size: 100
   }

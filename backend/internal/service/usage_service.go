@@ -268,12 +268,12 @@ func (s *UsageService) GetStatsByModel(ctx context.Context, modelName string, st
 	}, nil
 }
 
-// GetDailyStats 获取每日使用统计（最近N天）
-func (s *UsageService) GetDailyStats(ctx context.Context, userID int64, days int) ([]map[string]any, error) {
+// GetDailyStats 获取每日使用统计（最近N天），按 tz 分日（空则服务器时区）
+func (s *UsageService) GetDailyStats(ctx context.Context, userID int64, days int, tz string) ([]map[string]any, error) {
 	endTime := time.Now()
 	startTime := endTime.AddDate(0, 0, -days)
 
-	stats, err := s.usageRepo.GetDailyStatsAggregated(ctx, userID, startTime, endTime)
+	stats, err := s.usageRepo.GetDailyStatsAggregated(ctx, userID, startTime, endTime, tz)
 	if err != nil {
 		return nil, fmt.Errorf("get daily stats: %w", err)
 	}
@@ -308,8 +308,8 @@ func (s *UsageService) GetAPIKeyDashboardStats(ctx context.Context, apiKeyID int
 }
 
 // GetUserUsageTrendByUserID returns per-user usage trend.
-func (s *UsageService) GetUserUsageTrendByUserID(ctx context.Context, userID int64, startTime, endTime time.Time, granularity string) ([]usagestats.TrendDataPoint, error) {
-	trend, err := s.usageRepo.GetUserUsageTrendByUserID(ctx, userID, startTime, endTime, granularity)
+func (s *UsageService) GetUserUsageTrendByUserID(ctx context.Context, userID int64, startTime, endTime time.Time, granularity, tz string) ([]usagestats.TrendDataPoint, error) {
+	trend, err := s.usageRepo.GetUserUsageTrendByUserID(ctx, userID, startTime, endTime, granularity, tz)
 	if err != nil {
 		return nil, fmt.Errorf("get user usage trend: %w", err)
 	}
@@ -411,9 +411,10 @@ func (s *UsageService) GetAPIKeyModelStats(ctx context.Context, apiKeyID int64, 
 	return stats, nil
 }
 
-// GetAPIKeyDailyUsage returns daily usage stats for a user's API key.
-func (s *UsageService) GetAPIKeyDailyUsage(ctx context.Context, userID, apiKeyID int64, startTime, endTime time.Time) ([]usagestats.APIKeyDailyUsagePoint, error) {
-	trend, err := s.usageRepo.GetUsageTrendWithFilters(ctx, startTime, endTime, "day", userID, apiKeyID, 0, 0, "", nil, nil, nil)
+// GetAPIKeyDailyUsage returns daily usage stats for a user's API key, with days
+// cut in tz (empty falls back to the server timezone).
+func (s *UsageService) GetAPIKeyDailyUsage(ctx context.Context, userID, apiKeyID int64, startTime, endTime time.Time, tz string) ([]usagestats.APIKeyDailyUsagePoint, error) {
+	trend, err := s.GetUsageTrendWithFilters(ctx, startTime, endTime, "day", usagestats.UsageLogFilters{UserID: userID, APIKeyID: apiKeyID, Timezone: tz})
 	if err != nil {
 		return nil, fmt.Errorf("get api key daily usage: %w", err)
 	}

@@ -2696,11 +2696,11 @@ func (r *stubUsageLogRepo) GetAPIKeyBreakdownStats(ctx context.Context, startTim
 	return nil, errors.New("not implemented")
 }
 
-func (r *stubUsageLogRepo) GetAPIKeyUsageTrend(ctx context.Context, startTime, endTime time.Time, granularity string, limit int) ([]usagestats.APIKeyUsageTrendPoint, error) {
+func (r *stubUsageLogRepo) GetAPIKeyUsageTrend(ctx context.Context, startTime, endTime time.Time, granularity, tz string, limit int) ([]usagestats.APIKeyUsageTrendPoint, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (r *stubUsageLogRepo) GetUserUsageTrend(ctx context.Context, startTime, endTime time.Time, granularity string, limit int) ([]usagestats.UserUsageTrendPoint, error) {
+func (r *stubUsageLogRepo) GetUserUsageTrend(ctx context.Context, startTime, endTime time.Time, granularity, tz string, limit int) ([]usagestats.UserUsageTrendPoint, error) {
 	return nil, errors.New("not implemented")
 }
 
@@ -2771,7 +2771,7 @@ func (r *stubUsageLogRepo) GetModelStatsAggregated(ctx context.Context, modelNam
 	return nil, errors.New("not implemented")
 }
 
-func (r *stubUsageLogRepo) GetDailyStatsAggregated(ctx context.Context, userID int64, startTime, endTime time.Time) ([]map[string]any, error) {
+func (r *stubUsageLogRepo) GetDailyStatsAggregated(ctx context.Context, userID int64, startTime, endTime time.Time, tz string) ([]map[string]any, error) {
 	return nil, errors.New("not implemented")
 }
 
@@ -2795,7 +2795,7 @@ func (r *stubUsageLogRepo) GetAPIKeyDashboardStats(ctx context.Context, apiKeyID
 	return nil, errors.New("not implemented")
 }
 
-func (r *stubUsageLogRepo) GetUserUsageTrendByUserID(ctx context.Context, userID int64, startTime, endTime time.Time, granularity string) ([]usagestats.TrendDataPoint, error) {
+func (r *stubUsageLogRepo) GetUserUsageTrendByUserID(ctx context.Context, userID int64, startTime, endTime time.Time, granularity, tz string) ([]usagestats.TrendDataPoint, error) {
 	return nil, errors.New("not implemented")
 }
 
@@ -2851,7 +2851,7 @@ func (r *stubUsageLogRepo) GetGlobalStats(ctx context.Context, startTime, endTim
 	return nil, errors.New("not implemented")
 }
 
-func (r *stubUsageLogRepo) GetAccountUsageStats(ctx context.Context, accountID int64, startTime, endTime time.Time) (*usagestats.AccountUsageStatsResponse, error) {
+func (r *stubUsageLogRepo) GetAccountUsageStats(ctx context.Context, accountID int64, startTime, endTime time.Time, tz string) (*usagestats.AccountUsageStatsResponse, error) {
 	return nil, errors.New("not implemented")
 }
 

@@ -1322,7 +1322,7 @@ func (s *UsageLogRepoSuite) TestGetUserUsageTrendByUserID() {
 
 	startTime := base.Add(-1 * time.Hour)
 	endTime := base.Add(48 * time.Hour)
-	trend, err := s.repo.GetUserUsageTrendByUserID(s.ctx, user.ID, startTime, endTime, "day")
+	trend, err := s.repo.GetUserUsageTrendByUserID(s.ctx, user.ID, startTime, endTime, "day", "")
 	s.Require().NoError(err, "GetUserUsageTrendByUserID")
 	s.Require().Len(trend, 2) // 2 different days
 }
@@ -1339,7 +1339,7 @@ func (s *UsageLogRepoSuite) TestGetUserUsageTrendByUserID_HourlyGranularity() {
 
 	startTime := base.Add(-1 * time.Hour)
 	endTime := base.Add(3 * time.Hour)
-	trend, err := s.repo.GetUserUsageTrendByUserID(s.ctx, user.ID, startTime, endTime, "hour")
+	trend, err := s.repo.GetUserUsageTrendByUserID(s.ctx, user.ID, startTime, endTime, "hour", "")
 	s.Require().NoError(err, "GetUserUsageTrendByUserID hourly")
 	s.Require().Len(trend, 3) // 3 different hours
 }
@@ -1537,7 +1537,7 @@ func (s *UsageLogRepoSuite) TestGetAccountUsageStats() {
 	startTime := base
 	endTime := base.Add(72 * time.Hour)
 
-	resp, err := s.repo.GetAccountUsageStats(s.ctx, account.ID, startTime, endTime)
+	resp, err := s.repo.GetAccountUsageStats(s.ctx, account.ID, startTime, endTime, "")
 	s.Require().NoError(err, "GetAccountUsageStats")
 
 	s.Require().Len(resp.History, 2, "expected 2 days of history")
@@ -1553,7 +1553,7 @@ func (s *UsageLogRepoSuite) TestGetAccountUsageStats_EmptyRange() {
 	startTime := base
 	endTime := base.Add(72 * time.Hour)
 
-	resp, err := s.repo.GetAccountUsageStats(s.ctx, account.ID, startTime, endTime)
+	resp, err := s.repo.GetAccountUsageStats(s.ctx, account.ID, startTime, endTime, "")
 	s.Require().NoError(err, "GetAccountUsageStats empty")
 
 	s.Require().Len(resp.History, 0)
@@ -1577,7 +1577,7 @@ func (s *UsageLogRepoSuite) TestGetUserUsageTrend() {
 	startTime := base.Add(-1 * time.Hour)
 	endTime := base.Add(48 * time.Hour)
 
-	trend, err := s.repo.GetUserUsageTrend(s.ctx, startTime, endTime, "day", 10)
+	trend, err := s.repo.GetUserUsageTrend(s.ctx, startTime, endTime, "day", "", 10)
 	s.Require().NoError(err, "GetUserUsageTrend")
 	s.Require().GreaterOrEqual(len(trend), 2)
 }
@@ -1598,7 +1598,7 @@ func (s *UsageLogRepoSuite) TestGetAPIKeyUsageTrend() {
 	startTime := base.Add(-1 * time.Hour)
 	endTime := base.Add(48 * time.Hour)
 
-	trend, err := s.repo.GetAPIKeyUsageTrend(s.ctx, startTime, endTime, "day", 10)
+	trend, err := s.repo.GetAPIKeyUsageTrend(s.ctx, startTime, endTime, "day", "", 10)
 	s.Require().NoError(err, "GetAPIKeyUsageTrend")
 	s.Require().GreaterOrEqual(len(trend), 2)
 }
@@ -1615,7 +1615,7 @@ func (s *UsageLogRepoSuite) TestGetAPIKeyUsageTrend_HourlyGranularity() {
 	startTime := base.Add(-1 * time.Hour)
 	endTime := base.Add(3 * time.Hour)
 
-	trend, err := s.repo.GetAPIKeyUsageTrend(s.ctx, startTime, endTime, "hour", 10)
+	trend, err := s.repo.GetAPIKeyUsageTrend(s.ctx, startTime, endTime, "hour", "", 10)
 	s.Require().NoError(err, "GetAPIKeyUsageTrend hourly")
 	s.Require().Len(trend, 2)
 }

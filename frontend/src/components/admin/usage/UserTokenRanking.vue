@@ -91,6 +91,9 @@ import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 const props = defineProps<{
   startDate: string
   endDate: string
+  // Exact window for rolling presets; the backend prefers it over the dates.
+  startTime?: string
+  endTime?: string
   filters: Record<string, unknown>
   model?: string
 }>()
@@ -146,6 +149,8 @@ const load = async () => {
       ...props.filters,
       start_date: props.startDate,
       end_date: props.endDate,
+      start_time: props.startTime,
+      end_time: props.endTime,
       sort_by: sortBy.value,
       limit: limit.value,
     }
@@ -163,7 +168,7 @@ const load = async () => {
 
 // Reload when the shared filters / date range / model change.
 watch(
-  () => [props.startDate, props.endDate, props.model, JSON.stringify(props.filters)],
+  () => [props.startDate, props.endDate, props.startTime, props.endTime, props.model, JSON.stringify(props.filters)],
   () => load(),
   { immediate: true }
 )

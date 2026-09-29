@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -50,6 +51,7 @@ func (r *dashboardUsageRepoCacheProbe) GetUserUsageTrend(
 	ctx context.Context,
 	startTime, endTime time.Time,
 	granularity string,
+	_ string,
 	limit int,
 ) ([]usagestats.UserUsageTrendPoint, error) {
 	r.usersTrendCalls.Add(1)
@@ -156,4 +158,63 @@ func TestDashboardHandler_GetSnapshotV2_StatsCacheScopedByTimezone(t *testing.T)
 	// Different today-window: recomputed for that caller.
 	require.Equal(t, "miss", get("UTC").Header().Get("X-Snapshot-Cache"))
 	require.Equal(t, int32(2), repo.statsCalls.Load())
+}
+
+// Trend labels follow the caller's timezone, so identical UTC bounds requested
+// from different zones must not share a cache entry.
+func TestDashboardHandler_GetUserUsageTrend_CacheScopedByTimezone(t *testing.T) {
+	t.Cleanup(resetDashboardReadCachesForTest)
+	resetDashboardReadCachesForTest()
+
+	gin.SetMode(gin.TestMode)
+	repo := &dashboardUsageRepoCacheProbe{}
+	dashboardSvc := service.NewDashboardService(repo, nil, nil, nil)
+	handler := NewDashboardHandler(dashboardSvc, nil)
+	router := gin.New()
+	router.GET("/admin/dashboard/users-trend", handler.GetUserUsageTrend)
+
+	get := func(tz string) string {
+		req := httptest.NewRequest(http.MethodGet,
+			"/admin/dashboard/users-trend?start_time=2026-03-01T00:00:00Z&end_time=2026-03-08T00:00:00Z&granularity=day&timezone="+tz, nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code)
+		return rec.Header().Get("X-Snapshot-Cache")
+	}
+
+	require.Equal(t, "miss", get("Asia/Shanghai"))
+	require.Equal(t, "hit", get("Asia/Shanghai"))
+	require.Equal(t, "miss", get("America/Los_Angeles"))
+	require.Equal(t, int32(2), repo.usersTrendCalls.Load())
+}
+
+// The snapshot echoes the window as calendar dates in the caller's timezone,
+// naming the last day the exclusive end still covers.
+func TestDashboardHandler_GetSnapshotV2_EchoesDatesInCallerTimezone(t *testing.T) {
+	t.Cleanup(resetDashboardReadCachesForTest)
+	resetDashboardReadCachesForTest()
+
+	gin.SetMode(gin.TestMode)
+	repo := &dashboardUsageRepoCacheProbe{}
+	dashboardSvc := service.NewDashboardService(repo, nil, nil, nil)
+	handler := NewDashboardHandler(dashboardSvc, nil)
+	router := gin.New()
+	router.GET("/admin/dashboard/snapshot-v2", handler.GetSnapshotV2)
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/admin/dashboard/snapshot-v2?start_time=2026-03-01T03:00:00Z&end_time=2026-03-08T03:00:00Z&include_stats=false&include_trend=false&include_model_stats=false&timezone=America/Los_Angeles", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var body struct {
+		Data struct {
+			StartDate string `json:"start_date"`
+			EndDate   string `json:"end_date"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	// 03:00Z is still the previous evening in Los Angeles.
+	require.Equal(t, "2026-02-28", body.Data.StartDate)
+	require.Equal(t, "2026-03-07", body.Data.EndDate)
 }

@@ -21,6 +21,7 @@ type dashboardTrendCacheKey struct {
 	StartTime             string `json:"start_time"`
 	EndTime               string `json:"end_time"`
 	Granularity           string `json:"granularity"`
+	Timezone              string `json:"timezone"`
 	UserID                int64  `json:"user_id"`
 	APIKeyID              int64  `json:"api_key_id"`
 	AccountID             int64  `json:"account_id"`
@@ -52,6 +53,7 @@ type dashboardEntityTrendCacheKey struct {
 	StartTime   string `json:"start_time"`
 	EndTime     string `json:"end_time"`
 	Granularity string `json:"granularity"`
+	Timezone    string `json:"timezone"`
 	Limit       int    `json:"limit"`
 }
 
@@ -83,6 +85,7 @@ func (h *DashboardHandler) getUsageTrendCached(
 	ctx context.Context,
 	startTime, endTime time.Time,
 	granularity string,
+	tz string,
 	userID, apiKeyID, accountID, groupID int64,
 	model string,
 	requestType *int16,
@@ -95,6 +98,7 @@ func (h *DashboardHandler) getUsageTrendCached(
 		StartTime:             startTime.UTC().Format(time.RFC3339),
 		EndTime:               endTime.UTC().Format(time.RFC3339),
 		Granularity:           granularity,
+		Timezone:              tz,
 		UserID:                userID,
 		APIKeyID:              apiKeyID,
 		AccountID:             accountID,
@@ -111,6 +115,7 @@ func (h *DashboardHandler) getUsageTrendCached(
 			UserID: userID, APIKeyID: apiKeyID, AccountID: accountID, GroupID: groupID,
 			Model: model, RequestType: requestType, Stream: stream, NativeCompactionV2: nativeCompactionV2, BillingType: billingType,
 			UpstreamModelMismatch: upstreamModelMismatch,
+			Timezone:              tz,
 		})
 	})
 	if err != nil {
@@ -196,15 +201,16 @@ func (h *DashboardHandler) getGroupStatsCached(
 	return stats, hit, err
 }
 
-func (h *DashboardHandler) getAPIKeyUsageTrendCached(ctx context.Context, startTime, endTime time.Time, granularity string, limit int) ([]usagestats.APIKeyUsageTrendPoint, bool, error) {
+func (h *DashboardHandler) getAPIKeyUsageTrendCached(ctx context.Context, startTime, endTime time.Time, granularity, tz string, limit int) ([]usagestats.APIKeyUsageTrendPoint, bool, error) {
 	key := mustMarshalDashboardCacheKey(dashboardEntityTrendCacheKey{
 		StartTime:   startTime.UTC().Format(time.RFC3339),
 		EndTime:     endTime.UTC().Format(time.RFC3339),
 		Granularity: granularity,
+		Timezone:    tz,
 		Limit:       limit,
 	})
 	entry, hit, err := dashboardAPIKeysTrendCache.GetOrLoad(key, func() (any, error) {
-		return h.dashboardService.GetAPIKeyUsageTrend(ctx, startTime, endTime, granularity, limit)
+		return h.dashboardService.GetAPIKeyUsageTrend(ctx, startTime, endTime, granularity, tz, limit)
 	})
 	if err != nil {
 		return nil, hit, err
@@ -213,15 +219,16 @@ func (h *DashboardHandler) getAPIKeyUsageTrendCached(ctx context.Context, startT
 	return trend, hit, err
 }
 
-func (h *DashboardHandler) getUserUsageTrendCached(ctx context.Context, startTime, endTime time.Time, granularity string, limit int) ([]usagestats.UserUsageTrendPoint, bool, error) {
+func (h *DashboardHandler) getUserUsageTrendCached(ctx context.Context, startTime, endTime time.Time, granularity, tz string, limit int) ([]usagestats.UserUsageTrendPoint, bool, error) {
 	key := mustMarshalDashboardCacheKey(dashboardEntityTrendCacheKey{
 		StartTime:   startTime.UTC().Format(time.RFC3339),
 		EndTime:     endTime.UTC().Format(time.RFC3339),
 		Granularity: granularity,
+		Timezone:    tz,
 		Limit:       limit,
 	})
 	entry, hit, err := dashboardUsersTrendCache.GetOrLoad(key, func() (any, error) {
-		return h.dashboardService.GetUserUsageTrend(ctx, startTime, endTime, granularity, limit)
+		return h.dashboardService.GetUserUsageTrend(ctx, startTime, endTime, granularity, tz, limit)
 	})
 	if err != nil {
 		return nil, hit, err

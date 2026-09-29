@@ -185,7 +185,7 @@ const load = async () => {
 
 // Reload when the shared filters / date range / model change.
 watch(
-  () => [props.startDate, props.endDate, props.model, JSON.stringify(props.filters)],
+  () => [props.startDate, props.endDate, props.startTime, props.endTime, props.model, JSON.stringify(props.filters)],
   () => load(),
   { immediate: true }
 )

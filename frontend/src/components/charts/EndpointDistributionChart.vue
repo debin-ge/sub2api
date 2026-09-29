@@ -164,6 +164,9 @@ const props = withDefaults(
     enableBreakdown?: boolean
     startDate?: string
     endDate?: string
+    // Exact window for rolling presets; forwarded to the drill-down query.
+    startTime?: string
+    endTime?: string
     filters?: Record<string, any>
   }>(),
   {
@@ -201,6 +204,8 @@ const toggleBreakdown = async (endpoint: string) => {
       ...props.filters,
       start_date: props.startDate,
       end_date: props.endDate,
+      start_time: props.startTime,
+      end_time: props.endTime,
       endpoint,
       endpoint_type: props.source,
     })

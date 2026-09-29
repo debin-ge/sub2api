@@ -30,7 +30,7 @@ func useServerTimezone(t *testing.T, name string) {
 // `bucket_start >= $1`, so a window starting mid-bucket would silently lose its
 // first partial bucket. Rolling windows (start_time/end_time) must therefore
 // fall back to the raw usage_logs query.
-func TestShouldUsePreaggregatedTrend_RequiresBucketAlignedWindow(t *testing.T) {
+func TestPreaggregatedTrendSource_RequiresBucketAlignedWindow(t *testing.T) {
 	useServerTimezone(t, "Asia/Shanghai")
 	loc := timezone.Location()
 
@@ -45,25 +45,71 @@ func TestShouldUsePreaggregatedTrend_RequiresBucketAlignedWindow(t *testing.T) {
 		name        string
 		start, end  time.Time
 		granularity string
-		want        bool
+		want        trendSource
 	}{
-		{"day granularity, midnight aligned", dayStart, dayEnd, "day", true},
-		{"hour granularity, hour aligned", hourStart, hourEnd, "hour", true},
-		{"hour granularity, rolling window", rollingStart, rollingEnd, "hour", false},
-		{"hour granularity, rolling start only", rollingStart, hourEnd, "hour", false},
-		{"hour granularity, rolling end only", hourStart, rollingEnd, "hour", false},
-		// An hour-aligned window is not day-aligned: the daily rollup keys on
-		// whole dates, so 14:00 bounds cannot be served from it.
-		{"day granularity, hour aligned only", hourStart, hourEnd, "day", false},
-		{"unsupported granularity", dayStart, dayEnd, "minute", false},
-		{"zero bounds", time.Time{}, time.Time{}, "day", false},
+		{"day granularity, midnight aligned", dayStart, dayEnd, "day", trendSourceDaily},
+		{"hour granularity, hour aligned", hourStart, hourEnd, "hour", trendSourceHourly},
+		{"hour granularity, rolling window", rollingStart, rollingEnd, "hour", trendSourceRaw},
+		{"hour granularity, rolling start only", rollingStart, hourEnd, "hour", trendSourceRaw},
+		{"hour granularity, rolling end only", hourStart, rollingEnd, "hour", trendSourceRaw},
+		// The daily rollup keys on whole server dates, so 14:00 bounds are
+		// regrouped from the hourly rollup instead.
+		{"day granularity, hour aligned only", hourStart, hourEnd, "day", trendSourceHourly},
+		{"day granularity, rolling window", rollingStart, rollingEnd, "day", trendSourceRaw},
+		{"unsupported granularity", dayStart, dayEnd, "minute", trendSourceRaw},
+		{"zero bounds", time.Time{}, time.Time{}, "day", trendSourceRaw},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := shouldUsePreaggregatedTrend(tc.start, tc.end, tc.granularity, 0, 0, 0, 0, "", nil, nil, nil, "", nil, nil)
+			got := preaggregatedTrendSource(tc.start, tc.end, tc.granularity, "Asia/Shanghai")
 			if got != tc.want {
-				t.Errorf("shouldUsePreaggregatedTrend = %v, want %v", got, tc.want)
+				t.Errorf("preaggregatedTrendSource = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// Day buckets are labelled in the caller's timezone. The daily rollup is keyed
+// on server dates, so it only serves callers in the server timezone; any other
+// caller whose window lands on server hour boundaries is regrouped from the
+// hourly rollup, and a half-hour-offset caller falls back to raw logs.
+func TestPreaggregatedTrendSource_CallerTimezone(t *testing.T) {
+	useServerTimezone(t, "Asia/Shanghai")
+
+	mustLoad := func(name string) *time.Location {
+		loc, err := time.LoadLocation(name)
+		if err != nil {
+			t.Fatalf("LoadLocation(%q): %v", name, err)
+		}
+		return loc
+	}
+	shanghai := timezone.Location()
+	la := mustLoad("America/Los_Angeles")
+	kolkata := mustLoad("Asia/Kolkata")
+
+	cases := []struct {
+		name        string
+		start, end  time.Time
+		granularity string
+		tz          string
+		want        trendSource
+	}{
+		{"server tz, day", time.Date(2026, 8, 27, 0, 0, 0, 0, shanghai), time.Date(2026, 8, 28, 0, 0, 0, 0, shanghai), "day", "Asia/Shanghai", trendSourceDaily},
+		{"whole-hour offset tz, day", time.Date(2026, 8, 27, 0, 0, 0, 0, la), time.Date(2026, 8, 28, 0, 0, 0, 0, la), "day", "America/Los_Angeles", trendSourceHourly},
+		{"whole-hour offset tz, hour", time.Date(2026, 8, 27, 0, 0, 0, 0, la), time.Date(2026, 8, 28, 0, 0, 0, 0, la), "hour", "America/Los_Angeles", trendSourceHourly},
+		{"half-hour offset tz, day", time.Date(2026, 8, 27, 0, 0, 0, 0, kolkata), time.Date(2026, 8, 28, 0, 0, 0, 0, kolkata), "day", "Asia/Kolkata", trendSourceRaw},
+		{"half-hour offset tz, hour", time.Date(2026, 8, 27, 0, 0, 0, 0, kolkata), time.Date(2026, 8, 28, 0, 0, 0, 0, kolkata), "hour", "Asia/Kolkata", trendSourceRaw},
+		// Server-midnight bounds requested from another zone still must not use
+		// the daily rollup: its dates are the server's, not the caller's.
+		{"server-aligned bounds, other tz, day", time.Date(2026, 8, 27, 0, 0, 0, 0, shanghai), time.Date(2026, 8, 28, 0, 0, 0, 0, shanghai), "day", "America/Los_Angeles", trendSourceHourly},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := preaggregatedTrendSource(tc.start, tc.end, tc.granularity, tc.tz)
+			if got != tc.want {
+				t.Errorf("preaggregatedTrendSource = %v, want %v", got, tc.want)
 			}
 		})
 	}

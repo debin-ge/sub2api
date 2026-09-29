@@ -8,6 +8,8 @@
         <DateRangePicker
           v-model:start-date="startDate"
           v-model:end-date="endDate"
+          :start-time="filters.start_time"
+          :end-time="filters.end_time"
           @change="onDateRangeChange"
         />
         <span class="zt-filters-spacer"></span>
@@ -29,6 +31,8 @@
           :show-metric-toggle="true"
           :start-date="startDate"
           :end-date="endDate"
+          :start-time="filters.start_time"
+          :end-time="filters.end_time"
           :filters="breakdownFilters"
         />
         <GroupDistributionChart
@@ -38,6 +42,8 @@
           :show-metric-toggle="true"
           :start-date="startDate"
           :end-date="endDate"
+          :start-time="filters.start_time"
+          :end-time="filters.end_time"
           :filters="breakdownFilters"
         />
       </div>
@@ -54,6 +60,8 @@
           :title="t('usage.endpointDistribution')"
           :start-date="startDate"
           :end-date="endDate"
+          :start-time="filters.start_time"
+          :end-time="filters.end_time"
           :filters="breakdownFilters"
         />
         <TokenUsageTrend :trend-data="trendData" :loading="chartsLoading" />
@@ -137,6 +145,8 @@
             ref="rankingRef"
             :start-date="startDate"
             :end-date="endDate"
+            :start-time="filters.start_time"
+            :end-time="filters.end_time"
             :filters="breakdownFilters"
             :model="filters.model"
             @select-user="handleRankingSelectUser"
@@ -201,7 +211,7 @@ import ModelDistributionChart from '@/components/charts/ModelDistributionChart.v
 import EndpointDistributionChart from '@/components/charts/EndpointDistributionChart.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { TabStrip, type TabStripItem } from '@/components/console'
-import { getTodayRange } from '@/utils/dateRange'
+import { getLast24HoursRange, getTodayRange } from '@/utils/dateRange'
 import type { AdminUsageLog, TrendDataPoint, ModelStat, GroupStat, EndpointStat, AdminUser } from '@/types'; import type { AdminUsageStatsResponse, AdminUsageQueryParams } from '@/api/admin/usage'
 
 const { t } = useI18n()
@@ -316,6 +326,8 @@ const getNumericQueryValue = (value: string | null | Array<string | null> | unde
 const applyRouteQueryFilters = () => {
   const queryStartDate = getSingleQueryValue(route.query.start_date)
   const queryEndDate = getSingleQueryValue(route.query.end_date)
+  const queryStartTime = getSingleQueryValue(route.query.start_time)
+  const queryEndTime = getSingleQueryValue(route.query.end_time)
   const queryUserId = getNumericQueryValue(route.query.user_id)
 
   if (queryStartDate) {
@@ -330,10 +342,16 @@ const applyRouteQueryFilters = () => {
     user_id: queryUserId,
     start_date: startDate.value,
     end_date: endDate.value,
-    // The route carries calendar dates only, so drop any rolling window the
-    // default range set up — otherwise the link's dates would be ignored.
-    start_time: queryStartDate || queryEndDate ? undefined : filters.value.start_time,
-    end_time: queryStartDate || queryEndDate ? undefined : filters.value.end_time
+    // A link from a rolling window (e.g. the dashboard's last 24 hours) carries
+    // exact instants alongside the dates; keep them so both pages query the
+    // same window. A dates-only link drops the default range's instants —
+    // otherwise the link's dates would be ignored.
+    start_time: queryStartTime && queryEndTime
+      ? queryStartTime
+      : queryStartDate || queryEndDate ? undefined : filters.value.start_time,
+    end_time: queryStartTime && queryEndTime
+      ? queryEndTime
+      : queryStartDate || queryEndDate ? undefined : filters.value.end_time
   }
   granularity.value = getGranularityForRange(startDate.value, endDate.value)
 }
@@ -367,6 +385,7 @@ const onDateRangeChange = (range: {
 }) => {
   startDate.value = range.startDate
   endDate.value = range.endDate
+  activePreset.value = range.preset
   filters.value = {
     ...filters.value,
     start_date: range.startDate,
@@ -545,7 +564,15 @@ const applyFilters = () => {
     errRows.value = []
   }
 }
+const activePreset = ref<string | null>(null)
 const refreshData = () => {
+  // A rolling window moves with the clock, so refresh re-anchors it to now.
+  if (activePreset.value === 'last24Hours') {
+    const range = getLast24HoursRange()
+    startDate.value = range.start
+    endDate.value = range.end
+    filters.value = { ...filters.value, start_date: range.start, end_date: range.end, start_time: range.startTime, end_time: range.endTime }
+  }
   invalidateModelStatsCache()
   loadLogs()
   loadStats(true)
@@ -557,6 +584,7 @@ const refreshData = () => {
 }
 const resetFilters = () => {
   const range = getTodayRange()
+  activePreset.value = null
   startDate.value = range.start
   endDate.value = range.end
   filters.value = { start_date: startDate.value, end_date: endDate.value, start_time: range.startTime, end_time: range.endTime, request_type: undefined, native_compaction_v2: null, billing_type: null, billing_mode: undefined }
@@ -855,8 +883,13 @@ const showErrorModal = ref(false)
 const selectedErrorId = ref<number | null>(null)
 
 // 注意：'YYYY-MM-DDT00:00:00' 无时区后缀，按本地时区解析后再转 UTC——与页面其它日期处理语义一致，刻意如此，勿改成 'T00:00:00Z'
-const toRFC3339 = (d: string | undefined, endOfDay = false): string | undefined =>
-  d ? new Date(d + (endOfDay ? 'T23:59:59.999' : 'T00:00:00')).toISOString() : undefined
+// 结束日取「次日本地 00:00」：ops 列表按 created_at < end 半开区间查询，与统计口径 [start, end) 一致
+const toRFC3339 = (d: string | undefined, exclusiveEnd = false): string | undefined => {
+  if (!d) return undefined
+  const t = new Date(d + 'T00:00:00')
+  if (exclusiveEnd) t.setDate(t.getDate() + 1)
+  return t.toISOString()
+}
 
 const loadAdminErrors = async () => {
   errLoading.value = true

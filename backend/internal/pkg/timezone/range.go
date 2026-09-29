@@ -28,6 +28,22 @@ func locationFor(userTZ string) *time.Location {
 	return Location()
 }
 
+// ResolveName returns userTZ when it names a loadable IANA zone and "" otherwise,
+// so callers can fall back to the server timezone. The result is safe to hand
+// to PostgreSQL's AT TIME ZONE as a bind parameter. "" and "Local" are rejected
+// because time.LoadLocation maps them to UTC and the process zone respectively,
+// neither of which is a name the database understands the same way.
+func ResolveName(userTZ string) string {
+	userTZ = strings.TrimSpace(userTZ)
+	if userTZ == "" || userTZ == "Local" {
+		return ""
+	}
+	if _, err := time.LoadLocation(userTZ); err != nil {
+		return ""
+	}
+	return userTZ
+}
+
 // ResolveRangeStart resolves the inclusive lower bound of a query window from
 // an RFC3339 instant or a calendar date. Returns nil when neither is supplied.
 func ResolveRangeStart(instant, date, userTZ string) (*time.Time, error) {

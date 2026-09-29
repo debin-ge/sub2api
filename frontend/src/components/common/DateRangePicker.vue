@@ -79,7 +79,12 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
-import { formatLocalDate, getLast24HoursRange, type DateRangeSelection } from '@/utils/dateRange'
+import {
+  formatInstantRange,
+  formatLocalDate,
+  getLast24HoursRange,
+  type DateRangeSelection
+} from '@/utils/dateRange'
 
 interface DatePreset {
   labelKey: string
@@ -90,6 +95,11 @@ interface DatePreset {
 interface Props {
   startDate: string
   endDate: string
+  // Exact window the parent is querying with (rolling presets, or a window
+  // carried over from another page). When set, the picker adopts it verbatim
+  // instead of re-deriving instants from the dates.
+  startTime?: string
+  endTime?: string
 }
 
 interface Emits {
@@ -217,6 +227,12 @@ const presets: DatePreset[] = [
 ]
 
 const displayValue = computed(() => {
+  // An exact window is shown to the minute so "last 24 hours" says which 24.
+  if (localStartTime.value && localEndTime.value) {
+    const range = formatInstantRange(localStartTime.value, localEndTime.value)
+    if (range) return range
+  }
+
   if (activePreset.value) {
     const preset = presets.find((p) => p.value === activePreset.value)
     if (preset) return t(preset.labelKey)
@@ -327,9 +343,36 @@ watch(
   }
 )
 
+// Instants from the parent win over those detectPreset() derives from the
+// dates: the parent is what actually queries with them. Declared after the date
+// watchers so that, when both change in one tick, this runs last.
+const adoptExternalInstants = () => {
+  if (props.startTime && props.endTime) {
+    localStartTime.value = props.startTime
+    localEndTime.value = props.endTime
+  }
+}
+
+watch(
+  () => [props.startTime, props.endTime] as const,
+  ([start, end]) => {
+    if (start && end) {
+      adoptExternalInstants()
+      return
+    }
+    // The parent dropped back to whole days; forget our instants too.
+    if (localStartTime.value || localEndTime.value) {
+      localStartTime.value = undefined
+      localEndTime.value = undefined
+      detectPreset(false)
+    }
+  }
+)
+
 // Label the initial dates before the first render rather than in onMounted, so
 // the trigger shows the right preset from the very first paint.
 detectPreset(true)
+adoptExternalInstants()
 
 onMounted(() => {
   document.addEventListener('click', handleClickOutside)

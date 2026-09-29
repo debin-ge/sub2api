@@ -12,7 +12,6 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
@@ -507,8 +506,8 @@ func TestUsageLogRepositoryGetUsageTrendWithFiltersRequestTypePriority(t *testin
 	requestType := int16(service.RequestTypeStream)
 	stream := true
 
-	mock.ExpectQuery("AND \\(request_type = \\$3 OR \\(request_type = 0 AND stream = TRUE AND openai_ws_mode = FALSE\\)\\)").
-		WithArgs(start, end, requestType).
+	mock.ExpectQuery("AND \\(request_type = \\$4 OR \\(request_type = 0 AND stream = TRUE AND openai_ws_mode = FALSE\\)\\)").
+		WithArgs(start, end, resolveUsageStatsTimezone(), requestType).
 		WillReturnRows(sqlmock.NewRows([]string{"date", "requests", "input_tokens", "output_tokens", "cache_creation_tokens", "cache_read_tokens", "total_tokens", "cost", "actual_cost"}))
 
 	trend, err := repo.GetUsageTrendWithFilters(context.Background(), start, end, "day", 0, 0, 0, 0, "", &requestType, &stream, nil)
@@ -528,8 +527,8 @@ func TestUsageLogRepositoryGetUsageTrendWithUsageFiltersRequestedModelSource(t *
 		ModelFilterSource: usagestats.ModelSourceRequested,
 	}
 
-	mock.ExpectQuery("AND COALESCE\\(NULLIF\\(TRIM\\(requested_model\\), ''\\), model\\) = \\$3").
-		WithArgs(start, end, "gpt-5").
+	mock.ExpectQuery("AND COALESCE\\(NULLIF\\(TRIM\\(requested_model\\), ''\\), model\\) = \\$4").
+		WithArgs(start, end, resolveUsageStatsTimezone(), "gpt-5").
 		WillReturnRows(sqlmock.NewRows([]string{"date", "requests", "input_tokens", "output_tokens", "cache_creation_tokens", "cache_read_tokens", "total_tokens", "cost", "actual_cost"}))
 
 	trend, err := repo.GetUsageTrendWithUsageFilters(context.Background(), start, end, "day", filters)
@@ -563,8 +562,8 @@ func TestUsageLogRepositoryUsageAggregatesFilterNativeCompactionV2(t *testing.T)
 	t.Run("trend bypasses preaggregate", func(t *testing.T) {
 		db, mock := newSQLMock(t)
 		repo := &usageLogRepository{sql: db}
-		mock.ExpectQuery("(?s)FROM usage_logs.*AND native_compaction_v2 = \\$3").
-			WithArgs(start, end, true).
+		mock.ExpectQuery("(?s)FROM usage_logs.*AND native_compaction_v2 = \\$4").
+			WithArgs(start, end, resolveUsageStatsTimezone(), true).
 			WillReturnRows(sqlmock.NewRows([]string{"date", "requests", "input_tokens", "output_tokens", "cache_creation_tokens", "cache_read_tokens", "total_tokens", "cost", "actual_cost"}))
 
 		_, err := repo.GetUsageTrendWithUsageFilters(context.Background(), start, end, "day", filters)
@@ -600,14 +599,6 @@ func TestUsageLogRepositoryUsageAggregatesFilterNativeCompactionV2(t *testing.T)
 	})
 }
 
-func TestShouldUsePreaggregatedTrendRejectsNativeCompactionV2Filter(t *testing.T) {
-	nativeCompactionV2 := true
-	start := time.Date(2026, 9, 1, 0, 0, 0, 0, timezone.Location())
-	end := start.Add(24 * time.Hour)
-	require.True(t, shouldUsePreaggregatedTrend(start, end, "day", 0, 0, 0, 0, "", nil, nil, nil, "", nil, nil))
-	require.False(t, shouldUsePreaggregatedTrend(start, end, "day", 0, 0, 0, 0, "", nil, nil, nil, "", nil, &nativeCompactionV2))
-}
-
 func TestUsageLogRepositoryGetModelStatsWithFiltersRequestTypePriority(t *testing.T) {
 	db, mock := newSQLMock(t)
 	repo := &usageLogRepository{sql: db}
@@ -634,7 +625,7 @@ func TestUsageLogRepositoryGetUserModelStatsUsesRequestedModel(t *testing.T) {
 	start := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 	end := start.Add(24 * time.Hour)
 
-	mock.ExpectQuery("(?s)SELECT\\s+COALESCE\\(NULLIF\\(TRIM\\(requested_model\\), ''\\), model\\) as model,.*WHERE created_at >= \\$1 AND created_at < \\$2\\s+AND user_id = \\$3.*GROUP BY COALESCE\\(NULLIF\\(TRIM\\(requested_model\\), ''\\), model\\) ORDER BY total_tokens DESC").
+	mock.ExpectQuery("(?s)SELECT\\s+COALESCE\\(NULLIF\\(TRIM\\(requested_model\\), ''\\), model\\) as model,.*WHERE created_at >= \\$1 AND created_at < \\$2\\s+AND \\(request_id IS NULL OR request_id NOT LIKE 'internal-relay:%'\\)\\s+AND user_id = \\$3.*GROUP BY COALESCE\\(NULLIF\\(TRIM\\(requested_model\\), ''\\), model\\) ORDER BY total_tokens DESC").
 		WithArgs(start, end, int64(7)).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"model", "requests", "input_tokens", "output_tokens",
@@ -1221,4 +1212,52 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 		require.Equal(t, "priority", *log.ServiceTier)
 	})
 
+}
+
+// Trend buckets are labelled in the caller's timezone, passed as a bind
+// parameter rather than spliced into the SQL.
+func TestUsageLogRepositoryTrendBucketsInCallerTimezone(t *testing.T) {
+	useServerTimezone(t, "Asia/Shanghai")
+	la, err := time.LoadLocation("America/Los_Angeles")
+	require.NoError(t, err)
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, la)
+	end := start.AddDate(0, 0, 7)
+	trendCols := []string{"date", "requests", "input_tokens", "output_tokens", "cache_creation_tokens", "cache_read_tokens", "total_tokens", "cost", "actual_cost"}
+
+	t.Run("raw logs", func(t *testing.T) {
+		db, mock := newSQLMock(t)
+		repo := &usageLogRepository{sql: db}
+		mock.ExpectQuery("(?s)TO_CHAR\\(created_at AT TIME ZONE \\$3::text, 'YYYY-MM-DD'\\) as date.*FROM usage_logs.*AND user_id = \\$4").
+			WithArgs(start, end, "America/Los_Angeles", int64(9)).
+			WillReturnRows(sqlmock.NewRows(trendCols))
+
+		_, err := repo.GetUsageTrendWithUsageFilters(context.Background(), start, end, "day", usagestats.UsageLogFilters{UserID: 9, Timezone: "America/Los_Angeles"})
+		require.NoError(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("regrouped from hourly rollup", func(t *testing.T) {
+		db, mock := newSQLMock(t)
+		repo := &usageLogRepository{sql: db}
+		mock.ExpectQuery("(?s)TO_CHAR\\(bucket_start AT TIME ZONE \\$3::text, 'YYYY-MM-DD'\\) as date.*FROM usage_dashboard_hourly").
+			WithArgs(start, end, "America/Los_Angeles").
+			WillReturnRows(sqlmock.NewRows(trendCols).AddRow("2026-09-01", int64(3), int64(1), int64(1), int64(0), int64(0), int64(2), 0.1, 0.1))
+
+		trend, err := repo.GetUsageTrendWithUsageFilters(context.Background(), start, end, "day", usagestats.UsageLogFilters{Timezone: "America/Los_Angeles"})
+		require.NoError(t, err)
+		require.Len(t, trend, 1)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("invalid timezone falls back to server", func(t *testing.T) {
+		db, mock := newSQLMock(t)
+		repo := &usageLogRepository{sql: db}
+		mock.ExpectQuery("(?s)AT TIME ZONE \\$3::text.*FROM usage_logs").
+			WithArgs(start, end, resolveUsageStatsTimezone(), int64(9)).
+			WillReturnRows(sqlmock.NewRows(trendCols))
+
+		_, err := repo.GetUsageTrendWithUsageFilters(context.Background(), start, end, "day", usagestats.UsageLogFilters{UserID: 9, Timezone: "Mars/Olympus"})
+		require.NoError(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
 }

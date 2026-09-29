@@ -50,7 +50,9 @@ describe('DateRangePicker', () => {
       }
     })
 
-    expect(wrapper.text()).toContain('Last 24 Hours')
+    // A rolling window is shown as its exact minute-aligned bounds rather
+    // than the preset label.
+    expect(wrapper.text()).toMatch(/\d{2}-\d{2} \d{2}:\d{2} ~ \d{2}-\d{2} \d{2}:\d{2}/)
   })
 
   it('emits range updates with last24Hours preset when applied', async () => {
@@ -103,9 +105,11 @@ describe('DateRangePicker', () => {
     expect(payload.endTime).toBeDefined()
     const spanMs = new Date(payload.endTime!).getTime() - new Date(payload.startTime!).getTime()
     expect(spanMs).toBe(24 * 60 * 60 * 1000)
-    expect(Math.abs(new Date(payload.endTime!).getTime() - nowAfterClick.getTime())).toBeLessThan(
-      5000
-    )
+    // The end is the next whole minute, so it sits at most one minute ahead.
+    const endMs = new Date(payload.endTime!).getTime()
+    expect(endMs % 60000).toBe(0)
+    expect(endMs - nowAfterClick.getTime()).toBeGreaterThan(-5000)
+    expect(endMs - nowAfterClick.getTime()).toBeLessThanOrEqual(60000)
   })
 
   it('drops the exact window when the dates are edited by hand', async () => {

@@ -57,8 +57,8 @@ type UsageLogRepository interface {
 	GetUserBreakdownStats(ctx context.Context, startTime, endTime time.Time, dim usagestats.UserBreakdownDimension, limit int) ([]usagestats.UserBreakdownItem, error)
 	GetAPIKeyBreakdownStats(ctx context.Context, startTime, endTime time.Time, dim usagestats.UserBreakdownDimension, limit int) ([]usagestats.APIKeyBreakdownItem, error)
 	GetAllGroupUsageSummary(ctx context.Context, todayStart time.Time) ([]usagestats.GroupUsageSummary, error)
-	GetAPIKeyUsageTrend(ctx context.Context, startTime, endTime time.Time, granularity string, limit int) ([]usagestats.APIKeyUsageTrendPoint, error)
-	GetUserUsageTrend(ctx context.Context, startTime, endTime time.Time, granularity string, limit int) ([]usagestats.UserUsageTrendPoint, error)
+	GetAPIKeyUsageTrend(ctx context.Context, startTime, endTime time.Time, granularity, tz string, limit int) ([]usagestats.APIKeyUsageTrendPoint, error)
+	GetUserUsageTrend(ctx context.Context, startTime, endTime time.Time, granularity, tz string, limit int) ([]usagestats.UserUsageTrendPoint, error)
 	GetUserSpendingRanking(ctx context.Context, startTime, endTime time.Time, limit int) (*usagestats.UserSpendingRankingResponse, error)
 	GetBatchUserUsageStats(ctx context.Context, userIDs []int64, startTime, endTime time.Time) (map[int64]*usagestats.BatchUserUsageStats, error)
 	GetBatchAPIKeyUsageStats(ctx context.Context, apiKeyIDs []int64, startTime, endTime time.Time) (map[int64]*usagestats.BatchAPIKeyUsageStats, error)
@@ -66,7 +66,7 @@ type UsageLogRepository interface {
 	// User dashboard stats
 	GetUserDashboardStats(ctx context.Context, userID int64, userTZ string) (*usagestats.UserDashboardStats, error)
 	GetAPIKeyDashboardStats(ctx context.Context, apiKeyID int64, userTZ string) (*usagestats.UserDashboardStats, error)
-	GetUserUsageTrendByUserID(ctx context.Context, userID int64, startTime, endTime time.Time, granularity string) ([]usagestats.TrendDataPoint, error)
+	GetUserUsageTrendByUserID(ctx context.Context, userID int64, startTime, endTime time.Time, granularity, tz string) ([]usagestats.TrendDataPoint, error)
 	GetUserModelStats(ctx context.Context, userID int64, startTime, endTime time.Time) ([]usagestats.ModelStat, error)
 
 	// Admin usage listing/stats
@@ -75,14 +75,14 @@ type UsageLogRepository interface {
 	GetStatsWithFilters(ctx context.Context, filters usagestats.UsageLogFilters) (*usagestats.UsageStats, error)
 
 	// Account stats
-	GetAccountUsageStats(ctx context.Context, accountID int64, startTime, endTime time.Time) (*usagestats.AccountUsageStatsResponse, error)
+	GetAccountUsageStats(ctx context.Context, accountID int64, startTime, endTime time.Time, tz string) (*usagestats.AccountUsageStatsResponse, error)
 
 	// Aggregated stats (optimized)
 	GetUserStatsAggregated(ctx context.Context, userID int64, startTime, endTime time.Time) (*usagestats.UsageStats, error)
 	GetAPIKeyStatsAggregated(ctx context.Context, apiKeyID int64, startTime, endTime time.Time) (*usagestats.UsageStats, error)
 	GetAccountStatsAggregated(ctx context.Context, accountID int64, startTime, endTime time.Time) (*usagestats.UsageStats, error)
 	GetModelStatsAggregated(ctx context.Context, modelName string, startTime, endTime time.Time) (*usagestats.UsageStats, error)
-	GetDailyStatsAggregated(ctx context.Context, userID int64, startTime, endTime time.Time) ([]map[string]any, error)
+	GetDailyStatsAggregated(ctx context.Context, userID int64, startTime, endTime time.Time, tz string) ([]map[string]any, error)
 
 	// Public plaza stats
 	GetPublicModelRecentCallCounts(ctx context.Context, since time.Time) (map[string]int64, error)
@@ -2044,8 +2044,8 @@ func codexWindowStatsStart(progress *UsageProgress, fallbackWindow time.Duration
 	return now.Add(-fallbackWindow)
 }
 
-func (s *AccountUsageService) GetAccountUsageStats(ctx context.Context, accountID int64, startTime, endTime time.Time) (*usagestats.AccountUsageStatsResponse, error) {
-	stats, err := s.usageLogRepo.GetAccountUsageStats(ctx, accountID, startTime, endTime)
+func (s *AccountUsageService) GetAccountUsageStats(ctx context.Context, accountID int64, startTime, endTime time.Time, tz string) (*usagestats.AccountUsageStatsResponse, error) {
+	stats, err := s.usageLogRepo.GetAccountUsageStats(ctx, accountID, startTime, endTime, tz)
 	if err != nil {
 		return nil, fmt.Errorf("get account usage stats failed: %w", err)
 	}

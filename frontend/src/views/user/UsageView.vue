@@ -8,6 +8,8 @@
         <DateRangePicker
           v-model:start-date="startDate"
           v-model:end-date="endDate"
+          :start-time="startTime"
+          :end-time="endTime"
           @change="onDateRangeChange"
         />
         <span class="zt-filters-spacer"></span>
@@ -28,6 +30,8 @@
           :show-account-cost="false"
           :start-date="startDate"
           :end-date="endDate"
+          :start-time="startTime"
+          :end-time="endTime"
         />
         <GroupDistributionChart
           v-model:metric="groupDistributionMetric"
@@ -38,6 +42,8 @@
           :show-account-cost="false"
           :start-date="startDate"
           :end-date="endDate"
+          :start-time="startTime"
+          :end-time="endTime"
         />
       </div>
 
@@ -55,6 +61,8 @@
           :title="t('usage.endpointDistribution')"
           :start-date="startDate"
           :end-date="endDate"
+          :start-time="startTime"
+          :end-time="endTime"
         />
         <TokenUsageTrend :trend-data="trendData" :loading="chartsLoading" />
       </div>
@@ -349,6 +357,7 @@ const endDate = ref(defaultRange.end)
 // Exact bounds of the default "last 24 hours" window. Without them the two
 // dates above would be read as a 48-hour range.
 const startTime = ref<string | undefined>(defaultRange.startTime)
+const activePreset = ref<string | null>('last24Hours')
 const endTime = ref<string | undefined>(defaultRange.endTime)
 const granularity = ref<'day' | 'hour'>(getGranularityForRange(startDate.value, endDate.value))
 
@@ -570,6 +579,18 @@ const applyFilters = () => {
 }
 
 const refreshData = () => {
+  // A rolling window moves with the clock, so refresh re-anchors it to now.
+  if (activePreset.value === 'last24Hours') {
+    const range = getLast24HoursRange()
+    startDate.value = range.start
+    endDate.value = range.end
+    startTime.value = range.startTime
+    endTime.value = range.endTime
+    filters.value.start_date = range.start
+    filters.value.end_date = range.end
+    filters.value.start_time = range.startTime
+    filters.value.end_time = range.endTime
+  }
   void loadLogs()
   void loadStats()
   void loadModelStats()
@@ -580,6 +601,7 @@ const refreshData = () => {
 
 const resetFilters = () => {
   const range = getLast24HoursRange()
+  activePreset.value = 'last24Hours'
   startDate.value = range.start
   endDate.value = range.end
   startTime.value = range.startTime
@@ -615,6 +637,7 @@ const onDateRangeChange = (range: {
   // what makes the window fall back to whole calendar days.
   startTime.value = range.startTime
   endTime.value = range.endTime
+  activePreset.value = range.preset
   filters.value.start_date = range.startDate
   filters.value.end_date = range.endDate
   filters.value.start_time = range.startTime

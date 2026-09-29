@@ -74,6 +74,13 @@ func safeDateFormat(granularity string) string {
 	return "YYYY-MM-DD"
 }
 
+// bucketLabelExpr renders column as a trend bucket label in the timezone bound
+// to placeholder $tzArg. TO_CHAR on a bare TIMESTAMPTZ would use the DB session
+// zone (the server's), not the caller's.
+func bucketLabelExpr(column string, tzArg int, granularity string) string {
+	return fmt.Sprintf("TO_CHAR(%s AT TIME ZONE $%d::text, '%s')", column, tzArg, safeDateFormat(granularity))
+}
+
 // appendRawUsageLogModelWhereCondition keeps direct model filters on the raw model column for backward
 // compatibility with historical rows. Requested/upstream analytics must use
 // resolveModelDimensionExpression instead.

@@ -133,6 +133,9 @@ const props = withDefaults(defineProps<{
   showAccountCost?: boolean
   startDate?: string
   endDate?: string
+  // Exact window for rolling presets; forwarded to the drill-down query.
+  startTime?: string
+  endTime?: string
   filters?: Record<string, any>
 }>(), {
   loading: false,
@@ -166,6 +169,8 @@ const toggleBreakdown = async (type: string, id: number | string) => {
       ...props.filters,
       start_date: props.startDate,
       end_date: props.endDate,
+      start_time: props.startTime,
+      end_time: props.endTime,
       group_id: Number(id),
     })
     breakdownItems.value = res.users || []

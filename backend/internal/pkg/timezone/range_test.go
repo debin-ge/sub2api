@@ -124,3 +124,22 @@ func TestFormatRangeEndDate(t *testing.T) {
 		t.Errorf("FormatRangeDate(UTC) = %s, want 2026-08-27", got)
 	}
 }
+
+// ResolveName feeds PostgreSQL's AT TIME ZONE, so only names the database
+// resolves the same way Go does may pass; everything else means "use the
+// server timezone".
+func TestResolveName(t *testing.T) {
+	cases := map[string]string{
+		"America/Los_Angeles":   "America/Los_Angeles",
+		"  Asia/Kolkata ":       "Asia/Kolkata",
+		"":                      "",
+		"Local":                 "",
+		"Not/AZone":             "",
+		"UTC'; DROP TABLE x;--": "",
+	}
+	for in, want := range cases {
+		if got := ResolveName(in); got != want {
+			t.Errorf("ResolveName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

@@ -227,6 +227,7 @@ func (h *UsageHandler) parseUserUsageFilters(c *gin.Context, requireRange bool) 
 			StartTime:            startPtr,
 			EndTime:              endPtr,
 			ExcludeInternalRelay: true,
+			Timezone:             timezone.ResolveName(userTZ),
 		},
 		StartTime: derefTime(startPtr),
 		EndTime:   derefTime(endPtr),
@@ -764,7 +765,7 @@ func (h *UsageHandler) GetMyAPIKeyDailyUsage(c *gin.Context) {
 
 	userTZ := c.Query("timezone")
 	startTime, endTime := apiKeyDailyUsageRange(days, userTZ)
-	items, err := h.usageService.GetAPIKeyDailyUsage(c.Request.Context(), subject.UserID, apiKeyID, startTime, endTime)
+	items, err := h.usageService.GetAPIKeyDailyUsage(c.Request.Context(), subject.UserID, apiKeyID, startTime, endTime, userTZ)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -773,7 +774,7 @@ func (h *UsageHandler) GetMyAPIKeyDailyUsage(c *gin.Context) {
 	response.Success(c, gin.H{
 		"items":      items,
 		"days":       days,
-		"start_date": startTime.Format("2006-01-02"),
-		"end_date":   endTime.AddDate(0, 0, -1).Format("2006-01-02"),
+		"start_date": timezone.FormatRangeDate(startTime, userTZ),
+		"end_date":   timezone.FormatRangeEndDate(endTime, userTZ),
 	})
 }

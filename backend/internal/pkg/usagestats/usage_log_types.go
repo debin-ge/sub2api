@@ -304,6 +304,10 @@ type UsageLogFilters struct {
 	BillingState          *int8
 	BillingStateUnsettled bool
 	ExcludeInternalRelay  bool
+	// Timezone is the caller's IANA zone that trend buckets are labelled in.
+	// Empty or invalid falls back to the server timezone. Window bounds are
+	// resolved separately (StartTime/EndTime are absolute instants).
+	Timezone string
 	// ExactTotal requests exact COUNT(*) for pagination. Default false for fast large-table paging.
 	ExactTotal bool
 }

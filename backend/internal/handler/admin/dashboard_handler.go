@@ -276,7 +276,7 @@ func (h *DashboardHandler) GetUsageTrend(c *gin.Context) {
 		return
 	}
 
-	trend, hit, err := h.getUsageTrendCached(c.Request.Context(), startTime, endTime, granularity, userID, apiKeyID, accountID, groupID, model, requestType, stream, nativeCompactionV2, billingType, upstreamModelMismatch)
+	trend, hit, err := h.getUsageTrendCached(c.Request.Context(), startTime, endTime, granularity, timezone.ResolveName(c.Query("timezone")), userID, apiKeyID, accountID, groupID, model, requestType, stream, nativeCompactionV2, billingType, upstreamModelMismatch)
 	if err != nil {
 		response.Error(c, 500, "Failed to get usage trend")
 		return
@@ -489,7 +489,7 @@ func (h *DashboardHandler) GetAPIKeyUsageTrend(c *gin.Context) {
 	granularity := c.DefaultQuery("granularity", "day")
 	limit := parseDashboardTrendLimit(c, 5)
 
-	trend, hit, err := h.getAPIKeyUsageTrendCached(c.Request.Context(), startTime, endTime, granularity, limit)
+	trend, hit, err := h.getAPIKeyUsageTrendCached(c.Request.Context(), startTime, endTime, granularity, timezone.ResolveName(c.Query("timezone")), limit)
 	if err != nil {
 		response.Error(c, 500, "Failed to get API key usage trend")
 		return
@@ -512,7 +512,7 @@ func (h *DashboardHandler) GetUserUsageTrend(c *gin.Context) {
 	granularity := c.DefaultQuery("granularity", "day")
 	limit := parseDashboardTrendLimit(c, 12)
 
-	trend, hit, err := h.getUserUsageTrendCached(c.Request.Context(), startTime, endTime, granularity, limit)
+	trend, hit, err := h.getUserUsageTrendCached(c.Request.Context(), startTime, endTime, granularity, timezone.ResolveName(c.Query("timezone")), limit)
 	if err != nil {
 		response.Error(c, 500, "Failed to get user usage trend")
 		return

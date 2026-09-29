@@ -280,6 +280,9 @@ const props = withDefaults(defineProps<{
   rankingError?: boolean
   startDate?: string
   endDate?: string
+  // Exact window for rolling presets; forwarded to the drill-down query.
+  startTime?: string
+  endTime?: string
   filters?: Record<string, any>
 }>(), {
   upstreamModelStats: () => [],
@@ -318,6 +321,8 @@ const toggleBreakdown = async (type: string, id: string) => {
       ...props.filters,
       start_date: props.startDate,
       end_date: props.endDate,
+      start_time: props.startTime,
+      end_time: props.endTime,
       model: id,
       model_source: props.source,
     })

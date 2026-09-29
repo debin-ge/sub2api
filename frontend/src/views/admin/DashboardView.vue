@@ -63,9 +63,11 @@
             <DateRangePicker
               v-model:start-date="startDate"
               v-model:end-date="endDate"
+              :start-time="startTime"
+              :end-time="endTime"
               @change="onDateRangeChange"
             />
-            <button @click="loadDashboardStats" :disabled="chartsLoading" class="btn btn-secondary">
+            <button @click="refreshDashboard" :disabled="chartsLoading" class="btn btn-secondary">
               {{ t('common.refresh') }}
             </button>
             <span class="zt-filters-spacer"></span>
@@ -93,6 +95,8 @@
               :ranking-error="rankingError"
               :start-date="startDate"
               :end-date="endDate"
+              :start-time="startTime"
+              :end-time="endTime"
               @ranking-click="goToUserUsage"
             />
             <TokenUsageTrend :trend-data="trendData" :loading="chartsLoading" />
@@ -204,6 +208,9 @@ const endDate = ref(defaultRange.end)
 // dates above would be read as a 48-hour range.
 const startTime = ref<string | undefined>(defaultRange.startTime)
 const endTime = ref<string | undefined>(defaultRange.endTime)
+// The picker preset behind the current window; a rolling one is re-anchored
+// to "now" on refresh.
+const activePreset = ref<string | null>('last24Hours')
 
 // Granularity options for Select component
 const granularityOptions = computed(() => [
@@ -411,7 +418,11 @@ const goToUserUsage = (item: UserSpendingRankingItem) => {
     query: {
       user_id: String(item.user_id),
       start_date: startDate.value,
-      end_date: endDate.value
+      end_date: endDate.value,
+      // Carry the exact window so the usage page counts the same rows.
+      ...(startTime.value && endTime.value
+        ? { start_time: startTime.value, end_time: endTime.value }
+        : {})
     }
   })
 }
@@ -428,6 +439,7 @@ const onDateRangeChange = (range: {
   // what makes the window fall back to whole calendar days.
   startTime.value = range.startTime
   endTime.value = range.endTime
+  activePreset.value = range.preset
 
   // Auto-select granularity based on date range
   const start = new Date(range.startDate)
@@ -555,6 +567,17 @@ const loadDashboardStats = async () => {
     loadUserSpendingRanking(),
     loadUpstreamBalance()
   ])
+}
+
+const refreshDashboard = () => {
+  if (activePreset.value === 'last24Hours') {
+    const range = getLast24HoursRange()
+    startDate.value = range.start
+    endDate.value = range.end
+    startTime.value = range.startTime
+    endTime.value = range.endTime
+  }
+  return loadDashboardStats()
 }
 
 const loadChartData = async () => {

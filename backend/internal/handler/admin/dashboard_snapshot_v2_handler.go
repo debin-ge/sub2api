@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -50,9 +51,13 @@ type dashboardSnapshotV2Filters struct {
 }
 
 type dashboardSnapshotV2CacheKey struct {
-	StartTime             string `json:"start_time"`
-	EndTime               string `json:"end_time"`
-	Granularity           string `json:"granularity"`
+	StartTime   string `json:"start_time"`
+	EndTime     string `json:"end_time"`
+	Granularity string `json:"granularity"`
+	// Timezone is the resolved bucket zone, set only when a trend block is
+	// requested: trend / users-trend labels move with it even when the UTC
+	// bounds are identical, while the other blocks depend on the bounds alone.
+	Timezone              string `json:"timezone"`
 	UserID                int64  `json:"user_id"`
 	APIKeyID              int64  `json:"api_key_id"`
 	AccountID             int64  `json:"account_id"`
@@ -109,6 +114,7 @@ func (h *DashboardHandler) GetSnapshotV2(c *gin.Context) {
 		StartTime:             startTime.UTC().Format(time.RFC3339),
 		EndTime:               endTime.UTC().Format(time.RFC3339),
 		Granularity:           granularity,
+		Timezone:              snapshotTrendTimezone(userTZ, includeTrend || includeUsersTrend),
 		UserID:                filters.UserID,
 		APIKeyID:              filters.APIKeyID,
 		AccountID:             filters.AccountID,
@@ -172,8 +178,8 @@ func (h *DashboardHandler) buildSnapshotV2Response(
 ) (*dashboardSnapshotV2Response, error) {
 	resp := &dashboardSnapshotV2Response{
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-		StartDate:   startTime.Format("2006-01-02"),
-		EndDate:     endTime.Add(-24 * time.Hour).Format("2006-01-02"),
+		StartDate:   timezone.FormatRangeDate(startTime, userTZ),
+		EndDate:     timezone.FormatRangeEndDate(endTime, userTZ),
 		Granularity: granularity,
 	}
 
@@ -194,6 +200,7 @@ func (h *DashboardHandler) buildSnapshotV2Response(
 			startTime,
 			endTime,
 			granularity,
+			timezone.ResolveName(userTZ),
 			filters.UserID,
 			filters.APIKeyID,
 			filters.AccountID,
@@ -255,7 +262,7 @@ func (h *DashboardHandler) buildSnapshotV2Response(
 	}
 
 	if includeUsersTrend {
-		usersTrend, _, err := h.getUserUsageTrendCached(ctx, startTime, endTime, granularity, usersTrendLimit)
+		usersTrend, _, err := h.getUserUsageTrendCached(ctx, startTime, endTime, granularity, timezone.ResolveName(userTZ), usersTrendLimit)
 		if err != nil {
 			return nil, errors.New("failed to get user usage trend")
 		}
@@ -340,4 +347,11 @@ func parseDashboardSnapshotV2Filters(c *gin.Context) (*dashboardSnapshotV2Filter
 	}
 
 	return filters, nil
+}
+
+func snapshotTrendTimezone(userTZ string, hasTrend bool) string {
+	if !hasTrend {
+		return ""
+	}
+	return timezone.ResolveName(userTZ)
 }
