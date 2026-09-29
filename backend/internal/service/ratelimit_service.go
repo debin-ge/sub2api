@@ -1354,6 +1354,16 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 		return
 	}
 
+	// Anthropic 聚合 reset 是"当前起约束作用的限制"的重置点，不一定是 5h/7d 窗口：
+	// 月度额度（credits / overage）被拒时它是下月 1 日 00:00 UTC，allowed_warning 时常是
+	// 7d 重置点。只有 5h/7d 窗口被明确拒绝或耗尽时才据此锁整个账号，否则按突发处理。
+	if account.Platform == PlatformAnthropic && !isAnthropicSharedWindowRejected(headers) {
+		slog.Warn("anthropic_429_aggregate_reset_untrusted",
+			append([]any{"account_id", account.ID}, anthropic429LogAttrs(headers, responseBody, requestedModel)...)...)
+		s.applyAnthropicRetryAfterOrFallback(ctx, account, headers, responseBody, "anthropic_aggregate_reset_untrusted")
+		return
+	}
+
 	// 聚合头同样需要与逐窗口头一致的边界校验（毫秒识别 + 上下界），否则一个异常/重放的
 	// reset 值会绕开 selectAnthropicExhaustedWindow 的校验，在这里被无条件信任写入。
 	resetAt, ok := parseAnthropicAggregateReset(headers, time.Now())
@@ -1381,7 +1391,8 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 		slog.Warn("rate_limit_update_session_window_failed", "account_id", account.ID, "error", err)
 	}
 
-	slog.Info("account_rate_limited", "account_id", account.ID, "reset_at", resetAt)
+	slog.Info("account_rate_limited",
+		append([]any{"account_id", account.ID, "reset_at", resetAt}, anthropic429LogAttrs(headers, responseBody, requestedModel)...)...)
 }
 
 // apply429FallbackRateLimit 对无法从上游得到重置时间的 429 施加可配置的秒级兜底冷却。
@@ -1436,7 +1447,8 @@ const (
 //
 //  1. 来自 count_tokens 端点：计数接口是独立限流桶且 RPM 上限低得多，不动账号级状态；
 //  2. 响应体为 HTML：边缘节点限速，不代表账号状态，只记日志（failover 由 Forward 层照常执行）；
-//  3. "Extra usage is required"：权限门而非限流，仅对请求模型做模型级限流；
+//  3. "Extra usage is required" / "Usage credits are required" / credits_required：
+//     权限门而非限流，仅对请求模型做模型级限流；
 //  4. 带 unified 头但窗口未耗尽且 status 非 rejected：突发限制，按 Retry-After 或秒级兜底冷却，
 //     而不是按窗口重置点封数小时。
 func (s *RateLimitService) classifyAndHandleAnthropic429(ctx context.Context, account *Account, headers http.Header, body []byte, requestedModel string) bool {
@@ -1486,12 +1498,18 @@ func (s *RateLimitService) classifyAndHandleAnthropic429(ctx context.Context, ac
 
 // isAnthropicExtraUsageRequired 识别 "Extra usage is required for long context requests" 这类
 // 权限门 429：error.type 同为 rate_limit_error，只能按消息体区分。
+// 上游已把文案改为 "Usage credits are required for long context requests."，并可能附带
+// error.details.error_code=credits_required；三种信号任一命中即视为权限门。漏判的代价很高：
+// 这类 429 携带的 unified-reset 是额度的月度重置点，落到账号级逻辑会把整个账号锁到月初。
 func isAnthropicExtraUsageRequired(body []byte) bool {
+	if strings.EqualFold(strings.TrimSpace(gjson.GetBytes(body, "error.details.error_code").String()), "credits_required") {
+		return true
+	}
 	msg := strings.ToLower(extractUpstreamErrorMessage(body))
 	if msg == "" {
 		msg = strings.ToLower(string(body))
 	}
-	return strings.Contains(msg, "extra usage")
+	return strings.Contains(msg, "extra usage") || strings.Contains(msg, "usage credits are required")
 }
 
 // applyAnthropicExtraUsageModelLimit 只对请求模型做模型级限流：账号对其他模型仍可调度，
@@ -1538,22 +1556,39 @@ func hasAnthropicUnifiedRateLimitHeaders(headers http.Header) bool {
 	return false
 }
 
-// isAnthropicUnifiedStatusRejected 报告 unified 聚合状态或任一窗口状态是否明确为 rejected。
-func isAnthropicUnifiedStatusRejected(headers http.Header) bool {
+// isAnthropicSharedWindowRejected 报告 5h / 7d 共享窗口是否被上游明确判为拒绝或耗尽。
+// 只有 unified-status=rejected 不够：它反映的是"当前起约束作用的限制"，可能是月度额度
+// （credits / overage）或模型专属窗口，其 unified-reset 也随之变成那个限制的重置点。
+// 把它当成 5h/7d 窗口会把整个账号锁到月初（allowed_warning 时甚至锁到 7d 重置点）。
+func isAnthropicSharedWindowRejected(headers http.Header) bool {
 	if headers == nil {
 		return false
 	}
-	for _, key := range []string{
-		"anthropic-ratelimit-unified-status",
-		"anthropic-ratelimit-unified-5h-status",
-		"anthropic-ratelimit-unified-7d-status",
-	} {
-		switch strings.ToLower(strings.TrimSpace(headers.Get(key))) {
+	for _, window := range []string{"5h", "7d"} {
+		switch strings.ToLower(strings.TrimSpace(headers.Get("anthropic-ratelimit-unified-" + window + "-status"))) {
 		case "rejected", "rate_limited":
+			return true
+		}
+		if isAnthropicWindowExceeded(headers, window) {
 			return true
 		}
 	}
 	return false
+}
+
+// anthropic429LogAttrs 汇总判定账号级 429 时需要的上游信号，便于从日志直接看出
+// 是哪个限制触发了封禁（上游 reset 头的语义随 representative-claim 变化）。
+func anthropic429LogAttrs(headers http.Header, body []byte, requestedModel string) []any {
+	return []any{
+		"requested_model", requestedModel,
+		"unified_status", headerValue(headers, "anthropic-ratelimit-unified-status"),
+		"representative_claim", headerValue(headers, "anthropic-ratelimit-unified-representative-claim"),
+		"status_5h", headerValue(headers, "anthropic-ratelimit-unified-5h-status"),
+		"status_7d", headerValue(headers, "anthropic-ratelimit-unified-7d-status"),
+		"unified_reset", headerValue(headers, "anthropic-ratelimit-unified-reset"),
+		"upstream_message", truncateForLog([]byte(sanitizeUpstreamErrorMessage(extractUpstreamErrorMessage(body))), 256),
+		"request_id", headerValue(headers, "x-request-id"),
+	}
 }
 
 // isAnthropicBurst429 识别"unified 状态明确为 allowed、且 5h/7d 窗口都未耗尽"的 429。
@@ -2027,12 +2062,13 @@ func calculateAnthropic429ResetTime(headers http.Header, now time.Time) *anthrop
 			chosen = &reset7d
 		}
 	default:
-		// Neither window is flagged as exceeded. Only when the unified status is
+		// Neither window is flagged as exceeded. Only when a shared window status is
 		// explicitly rejected do we still trust the window reset (pick the sooner
 		// one as best guess). Otherwise this is a burst/concurrency 429 that merely
-		// echoes the account's window headers; parking the account until the 5h
+		// echoes the account's window headers, or an aggregate rejection driven by
+		// some other limit (credits, overage); parking the account until the 5h
 		// window boundary would turn a seconds-long throttle into hours.
-		if !isAnthropicUnifiedStatusRejected(headers) {
+		if !isAnthropicSharedWindowRejected(headers) {
 			return nil
 		}
 		var a, b *time.Time

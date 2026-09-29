@@ -195,7 +195,9 @@ func TestHandleUpstreamError_AnthropicFableCreditsRequiredFallsBackToRequestedMo
 	require.True(t, repo.lastModelRateLimitReset.After(startedAt))
 }
 
-func TestHandleUpstreamError_AnthropicNonFableCreditsRequiredKeepsLegacyBehavior(t *testing.T) {
+// 非 Fable 模型的 credits_required 同样是权限门，只做模型级冷却，
+// 不能按聚合 reset（常为下月 1 日的月度额度重置点）锁整个账号。
+func TestHandleUpstreamError_AnthropicNonFableCreditsRequiredMarksModelLevelOnly(t *testing.T) {
 	resetAt := time.Now().Add(2 * time.Hour).Truncate(time.Second)
 	headers := http.Header{}
 	headers.Set("anthropic-ratelimit-unified-reset", strconv.FormatInt(resetAt.Unix(), 10))
@@ -207,9 +209,11 @@ func TestHandleUpstreamError_AnthropicNonFableCreditsRequiredKeepsLegacyBehavior
 
 	svc.HandleUpstreamError(context.Background(), account, http.StatusTooManyRequests, headers, body, "claude-opus-5")
 
-	require.Zero(t, repo.modelRateLimitCalls)
-	require.Equal(t, 1, repo.rateLimitCalls)
-	require.Equal(t, resetAt, repo.lastRateLimitReset)
+	require.Zero(t, repo.rateLimitCalls, "credits gate must not rate limit the whole account")
+	require.Zero(t, repo.sessionWindowCalls)
+	require.Equal(t, 1, repo.modelRateLimitCalls)
+	require.Equal(t, "claude-opus-5", repo.lastModelRateLimitScope)
+	require.True(t, repo.lastModelRateLimitReset.Before(resetAt), "model cooldown must not follow the aggregate reset")
 }
 
 func TestHandleUpstreamError_AnthropicSharedWindowStillWinsWithFableCreditsRequired(t *testing.T) {
@@ -311,13 +315,14 @@ func TestHandleUpstreamError_Anthropic429Without7dOiBurstUsesShortCooldown(t *te
 }
 
 func TestHandleUpstreamError_Anthropic429Without7dOiRejectedStatusUsesSoonerReset(t *testing.T) {
-	// 5h/7d 利用率头都未到 1.0，但 unified status 明确为 rejected：仍按较早的窗口重置点封禁。
+	// 5h/7d 利用率头都未到 1.0，但 5h 窗口状态明确为 rejected：仍按较早的窗口重置点封禁。
 	now := time.Now()
 	reset5h := now.Add(2 * time.Hour).Truncate(time.Second)
 	reset7d := now.Add(80 * time.Hour).Truncate(time.Second)
 
 	headers := http.Header{}
 	headers.Set("anthropic-ratelimit-unified-status", "rejected")
+	headers.Set("anthropic-ratelimit-unified-5h-status", "rejected")
 	headers.Set("anthropic-ratelimit-unified-5h-reset", strconv.FormatInt(reset5h.Unix(), 10))
 	headers.Set("anthropic-ratelimit-unified-5h-utilization", "0.98")
 	headers.Set("anthropic-ratelimit-unified-7d-reset", strconv.FormatInt(reset7d.Unix(), 10))
@@ -332,5 +337,4 @@ func TestHandleUpstreamError_Anthropic429Without7dOiRejectedStatusUsesSoonerRese
 	require.Zero(t, repo.modelRateLimitCalls)
 	require.Equal(t, 1, repo.rateLimitCalls)
 	require.Equal(t, reset5h, repo.lastRateLimitReset, "rejected status keeps the sooner window reset")
-	require.Equal(t, 1, repo.sessionWindowCalls)
 }

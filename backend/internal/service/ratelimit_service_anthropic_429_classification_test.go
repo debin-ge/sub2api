@@ -209,13 +209,32 @@ func TestHandle429_AnthropicWindowExhaustedStillUsesWindowReset(t *testing.T) {
 	require.True(t, repo.lastReset.Equal(fiveHourReset), "window exhaustion keeps the window reset, got %v want %v", repo.lastReset, fiveHourReset)
 }
 
-func TestCalculateAnthropic429ResetTime_NeitherExceeded_StatusRejected_UsesShorter(t *testing.T) {
+// TestCalculateAnthropic429ResetTime_NeitherExceeded_OnlyUnifiedRejected_ReturnsNil：
+// 仅聚合 unified-status=rejected、5h/7d 都未耗尽也未被判 rejected 时，当前起约束作用的
+// 是别的限制（月度额度 / 模型专属窗口），不能套用 5h/7d 的重置点。
+func TestCalculateAnthropic429ResetTime_NeitherExceeded_OnlyUnifiedRejected_ReturnsNil(t *testing.T) {
+	now := time.Now()
+	reset5h := now.Add(3 * time.Hour).Truncate(time.Second)
+	reset7d := now.Add(5 * 24 * time.Hour).Truncate(time.Second)
+
+	headers := http.Header{}
+	headers.Set("anthropic-ratelimit-unified-status", "rejected")
+	headers.Set("anthropic-ratelimit-unified-5h-utilization", "0.95")
+	headers.Set("anthropic-ratelimit-unified-5h-reset", strconv.FormatInt(reset5h.Unix(), 10))
+	headers.Set("anthropic-ratelimit-unified-7d-utilization", "0.80")
+	headers.Set("anthropic-ratelimit-unified-7d-reset", strconv.FormatInt(reset7d.Unix(), 10))
+
+	require.Nil(t, calculateAnthropic429ResetTime(headers, now))
+}
+
+func TestCalculateAnthropic429ResetTime_NeitherExceeded_WindowStatusRejected_UsesShorter(t *testing.T) {
 	now := time.Now()
 	reset5h := now.Add(3 * time.Hour).Truncate(time.Second)      // sooner
 	reset7d := now.Add(5 * 24 * time.Hour).Truncate(time.Second) // later
 
 	headers := http.Header{}
 	headers.Set("anthropic-ratelimit-unified-status", "rejected")
+	headers.Set("anthropic-ratelimit-unified-5h-status", "rejected")
 	headers.Set("anthropic-ratelimit-unified-5h-utilization", "0.95")
 	headers.Set("anthropic-ratelimit-unified-5h-reset", strconv.FormatInt(reset5h.Unix(), 10))
 	headers.Set("anthropic-ratelimit-unified-7d-utilization", "0.80")
@@ -268,8 +287,8 @@ func TestHandle429_AnthropicAggregateResetOutOfRange_UsesRetryAfterFallback(t *t
 	requireResetWithin(t, repo.lastReset, before, after, 15*time.Second)
 }
 
-// TestHandle429_AnthropicAggregateResetValid_StillPersisted 确认聚合头兜底分支改成调用
-// parseAnthropicAggregateReset 后，合法值仍然正常持久化（非回归）。
+// TestHandle429_AnthropicAggregateResetValid_StillPersisted 确认 5h 窗口被明确 rejected 时，
+// 合法的聚合 reset 仍然正常持久化（非回归）。
 func TestHandle429_AnthropicAggregateResetValid_StillPersisted(t *testing.T) {
 	repo := &anthropic429RepoStub{}
 	svc := newAnthropic429TestService(repo)
@@ -277,12 +296,106 @@ func TestHandle429_AnthropicAggregateResetValid_StillPersisted(t *testing.T) {
 
 	reset := time.Now().Add(2 * time.Hour).Truncate(time.Second)
 	headers := http.Header{}
+	headers.Set("anthropic-ratelimit-unified-5h-status", "rejected")
 	headers.Set("anthropic-ratelimit-unified-reset", strconv.FormatInt(reset.Unix(), 10))
 
 	svc.handle429(context.Background(), account, headers, []byte(`{"error":{"type":"rate_limit_error","message":"rate limited"}}`), "claude-sonnet-4-5")
 
 	require.Equal(t, 1, repo.rateLimitCalls)
 	require.True(t, repo.lastReset.Equal(reset), "expected resetAt=%v, got %v", reset, repo.lastReset)
+}
+
+// TestHandle429_AnthropicAggregateResetOnly_Untrusted 覆盖仅有聚合 reset、没有任何窗口
+// 被判拒绝的 429：聚合 reset 可能是月度额度重置点（下月 1 日），不能据此锁账号。
+func TestHandle429_AnthropicAggregateResetOnly_Untrusted(t *testing.T) {
+	repo := &anthropic429RepoStub{}
+	svc := newAnthropic429TestService(repo)
+	account := &Account{ID: 513, Platform: PlatformAnthropic, Type: AccountTypeOAuth}
+
+	monthly := time.Now().Add(2 * 24 * time.Hour).Truncate(time.Second)
+	headers := http.Header{}
+	headers.Set("anthropic-ratelimit-unified-status", "rejected")
+	headers.Set("anthropic-ratelimit-unified-reset", strconv.FormatInt(monthly.Unix(), 10))
+	headers.Set("Retry-After", "10")
+
+	before := time.Now()
+	svc.handle429(context.Background(), account, headers, []byte(`{"error":{"type":"rate_limit_error","message":"rate limited"}}`), "claude-sonnet-4-5")
+	after := time.Now()
+
+	require.Equal(t, 1, repo.rateLimitCalls)
+	requireResetWithin(t, repo.lastReset, before, after, 10*time.Second)
+}
+
+// TestHandle429_AnthropicAllowedWarning_DoesNotLockTo7dReset 复现 allowed_warning 场景：
+// 5h/7d 均 allowed、聚合 reset 等于 7d 重置点，不能把账号锁到 7d 重置点。
+func TestHandle429_AnthropicAllowedWarning_DoesNotLockTo7dReset(t *testing.T) {
+	repo := &anthropic429RepoStub{}
+	svc := newAnthropic429TestService(repo)
+	account := &Account{ID: 514, Platform: PlatformAnthropic, Type: AccountTypeOAuth}
+
+	now := time.Now()
+	reset5h := now.Add(3 * time.Hour).Truncate(time.Second)
+	reset7d := now.Add(96 * time.Hour).Truncate(time.Second)
+	headers := http.Header{}
+	headers.Set("anthropic-ratelimit-unified-status", "allowed_warning")
+	headers.Set("anthropic-ratelimit-unified-reset", strconv.FormatInt(reset7d.Unix(), 10))
+	headers.Set("anthropic-ratelimit-unified-5h-status", "allowed")
+	headers.Set("anthropic-ratelimit-unified-5h-utilization", "0.30")
+	headers.Set("anthropic-ratelimit-unified-5h-reset", strconv.FormatInt(reset5h.Unix(), 10))
+	headers.Set("anthropic-ratelimit-unified-7d-status", "allowed_warning")
+	headers.Set("anthropic-ratelimit-unified-7d-utilization", "0.82")
+	headers.Set("anthropic-ratelimit-unified-7d-reset", strconv.FormatInt(reset7d.Unix(), 10))
+
+	svc.handle429(context.Background(), account, headers, []byte(`{"error":{"type":"rate_limit_error","message":"Error"}}`), "claude-sonnet-4-5")
+
+	require.Equal(t, 1, repo.rateLimitCalls)
+	require.True(t, repo.lastReset.Before(now.Add(time.Hour)), "allowed_warning must only get a short cooldown, got %v", repo.lastReset)
+}
+
+// TestHandle429_AnthropicUsageCreditsRequired_MarksModelLevelOnly 复现 2026-09-29 生产事故：
+// 长上下文请求返回 "Usage credits are required"，只带月度聚合 reset。修复前整个账号被锁到下月 1 日。
+func TestHandle429_AnthropicUsageCreditsRequired_MarksModelLevelOnly(t *testing.T) {
+	repo := &anthropic429RepoStub{}
+	svc := newAnthropic429TestService(repo)
+	account := &Account{ID: 515, Platform: PlatformAnthropic, Type: AccountTypeOAuth}
+
+	monthly := time.Now().Add(2 * 24 * time.Hour).Truncate(time.Second)
+	headers := http.Header{}
+	headers.Set("anthropic-ratelimit-unified-status", "rejected")
+	headers.Set("anthropic-ratelimit-unified-reset", strconv.FormatInt(monthly.Unix(), 10))
+	body := []byte(`{"type":"error","error":{"type":"rate_limit_error","message":"Usage credits are required for long context requests."}}`)
+
+	before := time.Now()
+	svc.handle429(context.Background(), account, headers, body, "claude-sonnet-4-6")
+	after := time.Now()
+
+	require.Zero(t, repo.rateLimitCalls, "usage credits gate must not park the whole account")
+	require.Equal(t, 1, repo.modelLimitCalls)
+	require.Equal(t, "claude-sonnet-4-6", repo.lastModelScope)
+	requireResetWithin(t, repo.lastModelReset, before, after, anthropicExtraUsageModelCooldown)
+}
+
+func TestIsAnthropicExtraUsageRequired_Variants(t *testing.T) {
+	require.True(t, isAnthropicExtraUsageRequired([]byte(`{"error":{"message":"Extra usage is required for long context requests."}}`)))
+	require.True(t, isAnthropicExtraUsageRequired([]byte(`{"error":{"message":"Usage credits are required for long context requests."}}`)))
+	require.True(t, isAnthropicExtraUsageRequired([]byte(`{"error":{"details":{"error_code":"credits_required"},"message":"x"}}`)))
+	require.False(t, isAnthropicExtraUsageRequired([]byte(`{"error":{"message":"This request would exceed your account's rate limit."}}`)))
+}
+
+func TestIsAnthropicSharedWindowRejected(t *testing.T) {
+	require.False(t, isAnthropicSharedWindowRejected(nil))
+
+	unifiedOnly := http.Header{}
+	unifiedOnly.Set("anthropic-ratelimit-unified-status", "rejected")
+	require.False(t, isAnthropicSharedWindowRejected(unifiedOnly), "aggregate status alone does not identify the binding window")
+
+	fiveHour := http.Header{}
+	fiveHour.Set("anthropic-ratelimit-unified-5h-status", "rejected")
+	require.True(t, isAnthropicSharedWindowRejected(fiveHour))
+
+	sevenDayExhausted := http.Header{}
+	sevenDayExhausted.Set("anthropic-ratelimit-unified-7d-utilization", "1.0")
+	require.True(t, isAnthropicSharedWindowRejected(sevenDayExhausted))
 }
 
 func TestIsAnthropicBurst429(t *testing.T) {
