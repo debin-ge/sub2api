@@ -15,6 +15,12 @@ import (
 const (
 	VideoProviderOpenAI    = "openai"
 	VideoProviderByteDance = "bytedance"
+	// 聚合媒体平台的 provider 名必须与 platform 常量相同（见 video_vendor_platforms.go）。
+	VideoProviderFal       = "fal"
+	VideoProviderWaveSpeed = "wavespeed"
+	VideoProviderRunware   = "runware"
+	// Flova 直接实现 VideoProvider（三步提交），不走 videoVendorAdapter。
+	VideoProviderFlova = "flova"
 
 	VideoOperationGenerate        = "generate"
 	VideoOperationEdit            = "edit"

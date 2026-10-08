@@ -392,6 +392,12 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	if account.IsOpenCodeGo() {
 		return s.testOpenCodeGoAccountConnection(c, account, modelID, prompt)
 	}
+	if account.Platform == PlatformFlova {
+		return s.testFlovaAccountConnection(c, account)
+	}
+	if videoVendorAdapterByName(account.Platform) != nil {
+		return s.testVideoVendorAccountConnection(c, account)
+	}
 
 	return s.testClaudeAccountConnection(c, account, modelID)
 }

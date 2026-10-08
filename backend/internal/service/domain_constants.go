@@ -68,6 +68,10 @@ const (
 	PlatformWindsurf   = domain.PlatformWindsurf
 	PlatformOpenCodeGo = domain.PlatformOpenCodeGo
 	PlatformByteDance  = domain.PlatformByteDance
+	PlatformFal        = domain.PlatformFal
+	PlatformWaveSpeed  = domain.PlatformWaveSpeed
+	PlatformRunware    = domain.PlatformRunware
+	PlatformFlova      = domain.PlatformFlova
 	PlatformComposite  = domain.PlatformComposite
 	// PlatformKiro is retained for unsupported-platform threshold tests and legacy
 	// account rows. Scheduling-threshold evaluation never pauses kiro accounts.
@@ -163,6 +167,10 @@ var AllowedQuotaPlatforms = []string{
 	PlatformMiniMax,
 	PlatformByteDance,
 	PlatformOpenCodeGo,
+	PlatformFal,
+	PlatformWaveSpeed,
+	PlatformRunware,
+	PlatformFlova,
 }
 
 // AllowedSchedulingThresholdPlatforms 是允许设置账号自动停调阈值的平台列表。

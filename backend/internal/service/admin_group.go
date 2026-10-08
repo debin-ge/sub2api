@@ -347,6 +347,8 @@ func defaultModelsListCandidateIDs(platform string) []string {
 		return DefaultWindsurfModelIDs()
 	case PlatformOpenCodeGo:
 		return DefaultOpenCodeGoModelIDs()
+	case PlatformFlova:
+		return flovaVideoModelIDs()
 	case PlatformComposite:
 		return compositeDefaultModelsListCandidateIDs()
 	default:

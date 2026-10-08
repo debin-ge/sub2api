@@ -23,7 +23,11 @@ export const CONCRETE_PLATFORM_OPTIONS = [
   { value: 'deepseek', label: 'DeepSeek' },
   { value: 'windsurf', label: 'Windsurf' },
   { value: 'opencode_go', label: 'OpenCode' },
-  { value: 'bytedance', label: 'ByteDance' }
+  { value: 'bytedance', label: 'ByteDance' },
+  { value: 'fal', label: 'fal.ai' },
+  { value: 'wavespeed', label: 'WaveSpeed' },
+  { value: 'runware', label: 'Runware' },
+  { value: 'flova', label: 'Flova' }
 ] as const satisfies readonly PlatformOption<AccountPlatform>[]
 
 /** Platforms that can own a group. */

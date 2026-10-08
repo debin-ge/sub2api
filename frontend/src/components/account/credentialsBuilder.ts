@@ -1,4 +1,5 @@
 import { openAIPlanTypeLabel } from '@/utils/planType'
+import { FLOVA_DEFAULT_BASE_URL } from './flovaCredentials'
 
 export function applyInterceptWarmup(
   credentials: Record<string, unknown>,
@@ -48,6 +49,10 @@ export function isHeaderOverrideCapable(platform: string, type: string): boolean
     platform === 'deepseek' ||
     platform === 'minimax' ||
     platform === 'bytedance' ||
+    platform === 'fal' ||
+    platform === 'wavespeed' ||
+    platform === 'runware' ||
+    platform === 'flova' ||
     platform === 'opencode_go'
   ) {
     return type === 'apikey'
@@ -577,6 +582,40 @@ export function applyByteDanceProtocolMode(
   } else if (formMode === 'edit') {
     delete credentials[BYTEDANCE_PROTOCOL_MODE_CREDENTIAL_KEY]
   }
+}
+
+// ========== 聚合视频供应商（fal.ai / WaveSpeed / Runware / Flova） ==========
+// 与 bytedance 同类：仅视频、强制 apikey、base_url 可选（留空由后端回落到各家官方地址）。
+// 四家没有 protocol_mode 之类的线格式选项（flova 另有一组运行参数，见 flovaCredentials.ts）。
+// 默认地址必须与后端平台表（video_vendor_platforms.go）保持一致——它们只用于占位符提示，
+// 提交时留空即可。
+
+export type VideoVendorPlatform = 'fal' | 'wavespeed' | 'runware' | 'flova'
+
+export const VIDEO_VENDOR_PLATFORMS: readonly VideoVendorPlatform[] = ['fal', 'wavespeed', 'runware', 'flova']
+
+export const VIDEO_VENDOR_DEFAULT_BASE_URLS: Record<VideoVendorPlatform, string> = {
+  fal: 'https://queue.fal.run',
+  wavespeed: 'https://api.wavespeed.ai/api/v3',
+  runware: 'https://api.runware.ai/v1',
+  flova: FLOVA_DEFAULT_BASE_URL
+}
+
+export function isVideoVendorPlatform(platform: string): platform is VideoVendorPlatform {
+  return platform === 'fal' || platform === 'wavespeed' || platform === 'runware' || platform === 'flova'
+}
+
+/**
+ * 仅视频的 apikey 平台：bytedance 与四家聚合视频供应商共用同一套表单约束
+ * （强制 apikey、白名单模式、无 internal relay、无上游倍率探测、base_url 可空）。
+ */
+export function isVideoOnlyPlatform(platform: string): boolean {
+  return platform === 'bytedance' || isVideoVendorPlatform(platform)
+}
+
+/** 占位符用的默认地址；非聚合视频供应商返回空串，由调用方自行回落。 */
+export function videoVendorDefaultBaseUrl(platform: string): string {
+  return isVideoVendorPlatform(platform) ? VIDEO_VENDOR_DEFAULT_BASE_URLS[platform] : ''
 }
 
 // ===== OpenAI plan_type (ChatGPT 订阅档位) 手动覆盖 =====

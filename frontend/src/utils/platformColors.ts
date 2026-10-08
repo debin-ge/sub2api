@@ -19,6 +19,10 @@ export type Platform =
   | 'windsurf'
   | 'opencode_go'
   | 'bytedance'
+  | 'fal'
+  | 'wavespeed'
+  | 'runware'
+  | 'flova'
   | 'composite'
 
 // ── Badge (bg + text + border, for inline badges with border) ───────
@@ -36,6 +40,10 @@ const BADGE: Record<Platform, string> = {
   windsurf: 'bg-teal-500/10 text-teal-700 border-teal-500/30 dark:text-teal-300',
   opencode_go: 'bg-slate-500/10 text-slate-700 border-slate-500/30 dark:text-slate-300',
   bytedance: 'bg-red-500/10 text-red-700 border-red-500/30 dark:text-red-300',
+  fal: 'bg-fuchsia-500/10 text-fuchsia-700 border-fuchsia-500/30 dark:text-fuchsia-300',
+  wavespeed: 'bg-sky-500/10 text-sky-700 border-sky-500/30 dark:text-sky-300',
+  runware: 'bg-lime-500/10 text-lime-700 border-lime-500/30 dark:text-lime-300',
+  flova: 'bg-violet-500/10 text-violet-700 border-violet-500/30 dark:text-violet-300',
   composite: 'bg-cyan-500/10 text-cyan-700 border-cyan-500/30 dark:text-cyan-300',
 }
 const BADGE_DEFAULT = 'bg-slate-500/10 text-slate-600 border-slate-500/30 dark:text-slate-400'
@@ -55,6 +63,10 @@ const BADGE_LIGHT: Record<Platform, string> = {
   windsurf: 'bg-teal-500/10 text-teal-700 dark:bg-teal-500/10 dark:text-teal-300',
   opencode_go: 'bg-slate-500/10 text-slate-700 dark:bg-slate-500/10 dark:text-slate-300',
   bytedance: 'bg-red-500/10 text-red-700 dark:bg-red-500/10 dark:text-red-300',
+  fal: 'bg-fuchsia-500/10 text-fuchsia-700 dark:bg-fuchsia-500/10 dark:text-fuchsia-300',
+  wavespeed: 'bg-sky-500/10 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300',
+  runware: 'bg-lime-500/10 text-lime-700 dark:bg-lime-500/10 dark:text-lime-300',
+  flova: 'bg-violet-500/10 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300',
   composite: 'bg-cyan-500/10 text-cyan-700 dark:bg-cyan-500/10 dark:text-cyan-300',
 }
 
@@ -73,6 +85,10 @@ const BORDER: Record<Platform, string> = {
   windsurf: 'border-teal-500/20 dark:border-teal-500/20',
   opencode_go: 'border-slate-500/20 dark:border-slate-500/20',
   bytedance: 'border-red-500/20 dark:border-red-500/20',
+  fal: 'border-fuchsia-500/20 dark:border-fuchsia-500/20',
+  wavespeed: 'border-sky-500/20 dark:border-sky-500/20',
+  runware: 'border-lime-500/20 dark:border-lime-500/20',
+  flova: 'border-violet-500/20 dark:border-violet-500/20',
   composite: 'border-cyan-500/20 dark:border-cyan-500/20',
 }
 const BORDER_DEFAULT = 'border-gray-200 dark:border-dark-700'
@@ -92,6 +108,10 @@ const BORDER_STRONG: Record<Platform, string> = {
   windsurf: 'border-teal-500/35 dark:border-teal-500/30',
   opencode_go: 'border-slate-500/35 dark:border-slate-500/30',
   bytedance: 'border-red-500/35 dark:border-red-500/30',
+  fal: 'border-fuchsia-500/35 dark:border-fuchsia-500/30',
+  wavespeed: 'border-sky-500/35 dark:border-sky-500/30',
+  runware: 'border-lime-500/35 dark:border-lime-500/30',
+  flova: 'border-violet-500/35 dark:border-violet-500/30',
   composite: 'border-cyan-500/35 dark:border-cyan-500/30',
 }
 const BORDER_STRONG_DEFAULT = 'border-gray-300 dark:border-dark-600'
@@ -112,6 +132,10 @@ const ACCENT: Record<Platform, string> = {
   windsurf: '#14b8a6', // teal-500
   opencode_go: '#64748b', // slate-500
   bytedance: '#ef4444', // red-500
+  fal: '#d946ef', // fuchsia-500
+  wavespeed: '#0ea5e9', // sky-500
+  runware: '#84cc16', // lime-500
+  flova: '#8b5cf6', // violet-500
   composite: '#06b6d4', // cyan-500
 }
 const ACCENT_DEFAULT = '#14b8a6' // primary-500 (teal)
@@ -131,6 +155,10 @@ const ACCENT_BAR: Record<Platform, string> = {
   windsurf: 'bg-gradient-to-r from-teal-400 to-teal-500',
   opencode_go: 'bg-gradient-to-r from-slate-400 to-slate-500',
   bytedance: 'bg-gradient-to-r from-red-500 to-rose-600',
+  fal: 'bg-gradient-to-r from-fuchsia-400 to-fuchsia-500',
+  wavespeed: 'bg-gradient-to-r from-sky-400 to-sky-500',
+  runware: 'bg-gradient-to-r from-lime-400 to-lime-500',
+  flova: 'bg-gradient-to-r from-violet-400 to-violet-500',
   composite: 'bg-gradient-to-r from-slate-500 to-cyan-500',
 }
 const ACCENT_BAR_DEFAULT = 'bg-gradient-to-r from-primary-400 to-primary-500'
@@ -150,6 +178,10 @@ const TEXT: Record<Platform, string> = {
   windsurf: 'text-teal-700 dark:text-teal-300',
   opencode_go: 'text-slate-700 dark:text-slate-300',
   bytedance: 'text-red-700 dark:text-red-300',
+  fal: 'text-fuchsia-700 dark:text-fuchsia-300',
+  wavespeed: 'text-sky-700 dark:text-sky-300',
+  runware: 'text-lime-700 dark:text-lime-300',
+  flova: 'text-violet-700 dark:text-violet-300',
   composite: 'text-cyan-700 dark:text-cyan-300',
 }
 const TEXT_DEFAULT = 'text-primary-600 dark:text-primary-400'
@@ -169,6 +201,10 @@ const ICON: Record<Platform, string> = {
   windsurf: 'text-teal-500 dark:text-teal-300',
   opencode_go: 'text-slate-500 dark:text-slate-300',
   bytedance: 'text-red-500 dark:text-red-300',
+  fal: 'text-fuchsia-500 dark:text-fuchsia-300',
+  wavespeed: 'text-sky-500 dark:text-sky-300',
+  runware: 'text-lime-500 dark:text-lime-300',
+  flova: 'text-violet-500 dark:text-violet-300',
   composite: 'text-cyan-600 dark:text-cyan-300',
 }
 const ICON_DEFAULT = 'text-primary-500 dark:text-primary-400'
@@ -188,6 +224,10 @@ const BUTTON: Record<Platform, string> = {
   windsurf: 'bg-teal-600 text-white hover:bg-teal-700 active:bg-teal-800 dark:bg-teal-600/80 dark:hover:bg-teal-600',
   opencode_go: 'bg-slate-700 text-white hover:bg-slate-800 active:bg-slate-900 dark:bg-slate-600/80 dark:hover:bg-slate-600',
   bytedance: 'bg-red-600 text-white hover:bg-red-700 active:bg-red-800 dark:bg-red-600/80 dark:hover:bg-red-600',
+  fal: 'bg-fuchsia-600 text-white hover:bg-fuchsia-700 active:bg-fuchsia-800 dark:bg-fuchsia-600/80 dark:hover:bg-fuchsia-600',
+  wavespeed: 'bg-sky-600 text-white hover:bg-sky-700 active:bg-sky-800 dark:bg-sky-600/80 dark:hover:bg-sky-600',
+  runware: 'bg-lime-600 text-white hover:bg-lime-700 active:bg-lime-800 dark:bg-lime-600/80 dark:hover:bg-lime-600',
+  flova: 'bg-violet-600 text-white hover:bg-violet-700 active:bg-violet-800 dark:bg-violet-600/80 dark:hover:bg-violet-600',
   composite: 'bg-cyan-700 text-white hover:bg-cyan-800 active:bg-cyan-900 dark:bg-cyan-600 dark:hover:bg-cyan-500',
 }
 const BUTTON_DEFAULT = 'bg-primary-500 text-white hover:bg-primary-600 dark:bg-primary-600 dark:hover:bg-primary-500'
@@ -207,6 +247,10 @@ const DISCOUNT: Record<Platform, string> = {
   windsurf: 'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300',
   opencode_go: 'bg-slate-100 text-slate-700 dark:bg-slate-800/60 dark:text-slate-300',
   bytedance: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+  fal: 'bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-900/40 dark:text-fuchsia-300',
+  wavespeed: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300',
+  runware: 'bg-lime-100 text-lime-700 dark:bg-lime-900/40 dark:text-lime-300',
+  flova: 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300',
   composite: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-300',
 }
 const DISCOUNT_DEFAULT = 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
@@ -226,6 +270,10 @@ const GRADIENT: Record<Platform, string> = {
   windsurf: 'from-teal-500 to-teal-600',
   opencode_go: 'from-slate-500 to-slate-600',
   bytedance: 'from-red-500 to-rose-600',
+  fal: 'from-fuchsia-500 to-fuchsia-600',
+  wavespeed: 'from-sky-500 to-sky-600',
+  runware: 'from-lime-500 to-lime-600',
+  flova: 'from-violet-500 to-violet-600',
   composite: 'from-slate-600 to-cyan-600',
 }
 const GRADIENT_DEFAULT = 'from-primary-500 to-primary-600'
@@ -245,6 +293,10 @@ const GRADIENT_TEXT: Record<Platform, string> = {
   windsurf: 'text-teal-100',
   opencode_go: 'text-slate-100',
   bytedance: 'text-red-100',
+  fal: 'text-fuchsia-100',
+  wavespeed: 'text-sky-100',
+  runware: 'text-lime-100',
+  flova: 'text-violet-100',
   composite: 'text-cyan-100',
 }
 const GRADIENT_TEXT_DEFAULT = 'text-primary-100'
@@ -263,6 +315,10 @@ const GRADIENT_SUBTEXT: Record<Platform, string> = {
   windsurf: 'text-teal-200',
   opencode_go: 'text-slate-200',
   bytedance: 'text-red-200',
+  fal: 'text-fuchsia-200',
+  wavespeed: 'text-sky-200',
+  runware: 'text-lime-200',
+  flova: 'text-violet-200',
   composite: 'text-cyan-200',
 }
 const GRADIENT_SUBTEXT_DEFAULT = 'text-primary-200'
@@ -284,6 +340,10 @@ function isPlatform(p: string): p is Platform {
     p === 'windsurf' ||
     p === 'opencode_go' ||
     p === 'bytedance' ||
+    p === 'fal' ||
+    p === 'wavespeed' ||
+    p === 'runware' ||
+    p === 'flova' ||
     p === 'composite'
   )
 }
@@ -355,6 +415,10 @@ export function platformLabel(p: string): string {
     case 'windsurf': return 'Windsurf'
     case 'opencode_go': return 'OpenCode'
     case 'bytedance': return 'ByteDance'
+    case 'fal': return 'fal.ai'
+    case 'wavespeed': return 'WaveSpeed'
+    case 'runware': return 'Runware'
+    case 'flova': return 'Flova'
     case 'composite': return 'Composite'
     default: return p || 'API'
   }

@@ -212,6 +212,7 @@ func provideCleanup(
 	tokenRefresh *service.TokenRefreshService,
 	accountExpiry *service.AccountExpiryService,
 	cnProviderBalanceCheck *service.CNProviderBalanceCheckService,
+	flovaCreditsSync *service.FlovaCreditsSyncService,
 	codexVersionSync *service.OpenAICodexVersionSyncService,
 	proxyExpiry *service.ProxyExpiryService,
 	subscriptionExpiry *service.SubscriptionExpiryService,
@@ -274,6 +275,7 @@ func provideCleanup(
 			tokenRefresh,
 			accountExpiry,
 			cnProviderBalanceCheck,
+			flovaCreditsSync,
 			codexVersionSync,
 			proxyExpiry,
 			subscriptionExpiry,
@@ -339,6 +341,7 @@ func provideFinalCleanup(
 	tokenRefresh *service.TokenRefreshService,
 	accountExpiry *service.AccountExpiryService,
 	cnProviderBalanceCheck *service.CNProviderBalanceCheckService,
+	flovaCreditsSync *service.FlovaCreditsSyncService,
 	codexVersionSync *service.OpenAICodexVersionSyncService,
 	proxyExpiry *service.ProxyExpiryService,
 	subscriptionExpiry *service.SubscriptionExpiryService,
@@ -556,6 +559,12 @@ func provideFinalCleanup(
 			{"CNProviderBalanceCheckService", func() error {
 				if cnProviderBalanceCheck != nil {
 					cnProviderBalanceCheck.Stop()
+				}
+				return nil
+			}},
+			{"FlovaCreditsSyncService", func() error {
+				if flovaCreditsSync != nil {
+					flovaCreditsSync.Stop()
 				}
 				return nil
 			}},

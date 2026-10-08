@@ -191,6 +191,8 @@ func (s *VideoTaskService) Submit(ctx context.Context, request VideoSubmitReques
 			return s.replayAfterVideoCreationFailure(ctx, originalRequest, requestHash, err)
 		}
 		owner := VideoOwner{UserID: request.APIKey.UserID, APIKeyID: request.APIKey.ID, GroupID: request.APIKey.GroupID}
+		providerCost := map[string]any{"account_rate_multiplier": resolved.account.BillingRateMultiplier()}
+		s.recordUpstreamQuote(ctx, resolved, providerCost)
 		var created bool
 		task, created, err = s.tasks.CreateHeldVideoTask(ctx, VideoCreateTaskParams{
 			PublicID: publicID, Owner: owner, ChannelID: resolved.channelID,
@@ -203,9 +205,8 @@ func (s *VideoTaskService) Submit(ctx context.Context, request VideoSubmitReques
 			IdempotencyKey: strings.TrimSpace(request.IdempotencyKey), InputManifest: videoInputManifest(request.Inputs),
 			RequestAttributes: videoRequestAttributes(request, resolved), StableClientToken: publicID,
 			BillingUnit: resolved.quote.BillingUnit, EstimatedUnits: resolved.quote.EstimatedUnits,
-			PriceSnapshot: videoPriceSnapshot(resolved.quote), ProviderCostSnapshot: map[string]any{
-				"account_rate_multiplier": resolved.account.BillingRateMultiplier(),
-			}, Currency: "USD", HoldID: VideoTaskHoldRequestID(publicID), HoldAmount: resolved.quote.HoldAmount,
+			PriceSnapshot: videoPriceSnapshot(resolved.quote), ProviderCostSnapshot: providerCost,
+			Currency: "USD", HoldID: VideoTaskHoldRequestID(publicID), HoldAmount: resolved.quote.HoldAmount,
 			CallbackURLEnc: resolved.callbackURLEnc, NextActionAt: &submitRecoveryAt,
 			MaxAccountConcurrency: maxVideoAccountConcurrency(resolved.account),
 		})
@@ -576,22 +577,19 @@ func (s *VideoTaskService) recoverCharacterResource(ctx context.Context, request
 	return nil, createErr
 }
 
-func managedVideoProviderForPlatform(platform string) (string, bool) {
-	switch strings.TrimSpace(platform) {
-	case PlatformOpenAI:
-		return VideoProviderOpenAI, true
-	case PlatformByteDance:
-		return VideoProviderByteDance, true
-	default:
-		return "", false
-	}
-}
-
 // providerRequestResolution reports the output resolution a provider was asked
 // to produce. Ark takes resolution as its own request parameter, so it can only
 // be read back from the request — a model identifier does not encode it.
 // OpenAI expresses the same thing through size and reports no resolution.
 func providerRequestResolution(provider string, request VideoCreateRequest) string {
+	if adapter := videoVendorAdapterByName(provider); adapter != nil {
+		// 聚合媒体平台用尺寸表反查分辨率档位（1920x1080 → 1080p），供定价的
+		// resolutions 条件与执行规格冻结使用。
+		return videoVendorRequestResolution(adapter, request)
+	}
+	if provider == VideoProviderFlova {
+		return flovaRequestResolution(request)
+	}
 	if provider != VideoProviderByteDance {
 		return ""
 	}
@@ -812,6 +810,8 @@ func (s *VideoTaskService) handleSubmissionError(ctx context.Context, task *Vide
 	if err != nil {
 		return nil, errors.Join(providerErr, err)
 	}
+	s.pauseAccountOnInsufficientBalance(ctx, task, providerErr)
+	s.disableAccountOnAuthFailure(ctx, task, providerErr)
 	settled, settleErr := s.releaseConfirmedVideoFailure(ctx, updated)
 	if settleErr != nil {
 		s.enqueueBestEffort(ctx, updated.PublicID)

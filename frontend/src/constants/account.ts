@@ -43,7 +43,8 @@ export const PROVIDER_PASSTHROUGH_PLATFORMS: readonly string[] = [
 /**
  * 固定端点网关平台：无自定义 base_url、只支持 apikey 类型的国产/第三方网关。
  * 必须与后端 requiresAPIKeyAccount（account_handler.go）保持一致——
- * 该函数额外包含 bytedance，但 bytedance 支持自定义 base_url，不属于"固定端点"，故不列入此处。
+ * 该函数额外包含 bytedance 与聚合视频供应商 fal / wavespeed / runware / flova，但这五家都支持自定义
+ * base_url（留空由后端回落到各家官方地址），不属于"固定端点"，故不列入此处。
  */
 export const FIXED_ENDPOINT_GATEWAY_PLATFORMS: readonly string[] = [
   'glm',

@@ -340,6 +340,41 @@ describe('ModelWhitelistSelector', () => {
     expect(wrapper.emitted('update:modelValue')?.[0]?.[0]).toEqual(['doubao-seedance-1-0-pro-250528'])
   })
 
+  it.each(['wavespeed', 'runware'])('shows the upstream sync button for %s create-account credentials', (platform) => {
+    const wrapper = mountSelector({
+      platform,
+      syncCredentials: {
+        platform,
+        type: 'apikey',
+        base_url: '',
+        api_key: 'vendor-key',
+      },
+    })
+    const syncButton = wrapper
+      .findAll('button')
+      .find(button => button.text() === 'admin.accounts.syncUpstreamModels')
+
+    expect(syncButton?.exists()).toBe(true)
+  })
+
+  // fal / flova 没有模型列表接口，只能用内置档案，不能让按钮出现后点下去报错。
+  it.each(['fal', 'flova'])('hides the upstream sync button for %s create-account credentials', (platform) => {
+    const wrapper = mountSelector({
+      platform,
+      syncCredentials: {
+        platform,
+        type: 'apikey',
+        base_url: '',
+        api_key: 'vendor-key',
+      },
+    })
+    const syncButton = wrapper
+      .findAll('button')
+      .find(button => button.text() === 'admin.accounts.syncUpstreamModels')
+
+    expect(syncButton).toBeUndefined()
+  })
+
   it('shows the upstream sync button for OpenCode Go create-account credentials', () => {
     const wrapper = mountSelector({
       platform: 'opencode_go',

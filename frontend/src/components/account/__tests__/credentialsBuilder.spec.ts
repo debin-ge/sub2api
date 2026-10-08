@@ -29,7 +29,12 @@ import {
   BYTEDANCE_PROTOCOL_MODE_CREDENTIAL_KEY,
   applyByteDanceProtocolMode,
   byteDanceProtocolRequiresBaseUrl,
-  readByteDanceProtocolMode
+  readByteDanceProtocolMode,
+  VIDEO_VENDOR_DEFAULT_BASE_URLS,
+  VIDEO_VENDOR_PLATFORMS,
+  isVideoOnlyPlatform,
+  isVideoVendorPlatform,
+  videoVendorDefaultBaseUrl
 } from '../credentialsBuilder'
 
 describe('applyInterceptWarmup', () => {
@@ -165,7 +170,7 @@ describe('isHeaderOverrideCapable', () => {
   })
 
   it('kimi/zhipu/deepseek only support apikey accounts', () => {
-    for (const platform of ['kimi', 'zhipu', 'deepseek', 'minimax', 'opencode_go']) {
+    for (const platform of ['kimi', 'zhipu', 'deepseek', 'minimax', 'opencode_go', 'bytedance', 'fal', 'wavespeed', 'runware', 'flova']) {
       expect(isHeaderOverrideCapable(platform, 'apikey')).toBe(true)
       expect(isHeaderOverrideCapable(platform, 'oauth')).toBe(false)
     }
@@ -581,6 +586,32 @@ describe('plan_type helpers', () => {
       expect(out).toEqual({ email: 'a@b.c' })
       expect('plan_type' in out).toBe(false)
     })
+  })
+})
+
+describe('video vendor platforms (fal / wavespeed / runware / flova)', () => {
+  it('classifies the four vendors and bytedance as video-only, nothing else', () => {
+    expect(VIDEO_VENDOR_PLATFORMS).toEqual(['fal', 'wavespeed', 'runware', 'flova'])
+    for (const platform of VIDEO_VENDOR_PLATFORMS) {
+      expect(isVideoVendorPlatform(platform)).toBe(true)
+      expect(isVideoOnlyPlatform(platform)).toBe(true)
+    }
+    expect(isVideoVendorPlatform('bytedance')).toBe(false)
+    expect(isVideoOnlyPlatform('bytedance')).toBe(true)
+    for (const platform of ['openai', 'anthropic', 'grok', 'minimax', 'composite', '']) {
+      expect(isVideoVendorPlatform(platform)).toBe(false)
+      expect(isVideoOnlyPlatform(platform)).toBe(false)
+    }
+  })
+
+  it('exposes each vendor default base URL for placeholders only', () => {
+    expect(videoVendorDefaultBaseUrl('fal')).toBe('https://queue.fal.run')
+    expect(videoVendorDefaultBaseUrl('wavespeed')).toBe('https://api.wavespeed.ai/api/v3')
+    expect(videoVendorDefaultBaseUrl('runware')).toBe('https://api.runware.ai/v1')
+    expect(videoVendorDefaultBaseUrl('flova')).toBe('https://service.flova.ai/api/agent/v2')
+    expect(videoVendorDefaultBaseUrl('bytedance')).toBe('')
+    expect(videoVendorDefaultBaseUrl('openai')).toBe('')
+    expect(Object.keys(VIDEO_VENDOR_DEFAULT_BASE_URLS).sort()).toEqual(['fal', 'flova', 'runware', 'wavespeed'])
   })
 })
 
