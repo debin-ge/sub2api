@@ -20,6 +20,8 @@ type VideoAdminTaskFilter struct {
 	Query           string
 	CreatedAfter    *time.Time
 	CreatedBefore   *time.Time
+	// SubmissionUnknown 为 true 时只列出曾进入"提交结果未知"对账流程的任务（对账报表）。
+	SubmissionUnknown *bool
 }
 
 type VideoAdminTaskPage struct {

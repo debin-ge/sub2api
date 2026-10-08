@@ -48,8 +48,12 @@ func RegisterGatewayRoutes(
 	compositeTarget := compositeTargetPlatformMiddleware(compositeResolver, h.Video)
 	videoCreateIntent := gin.HandlerFunc(h.Video.CreateIntentMiddleware)
 	compositeGeminiTarget := compositeGeminiTargetPlatformMiddleware(compositeResolver)
+	// byteDanceVideoOnly 拦截"仅视频"平台分组（bytedance 与聚合媒体平台 fal /
+	// wavespeed / runware）的非视频请求。变量名保留 byteDanceVideoOnly：路由契约测试
+	// 按源码文本校验它在四组入口上的挂载位置。
 	byteDanceVideoOnly := func(c *gin.Context) {
-		if getGroupPlatform(c) != service.PlatformByteDance {
+		platform := getGroupPlatform(c)
+		if !service.IsVideoOnlyPlatform(platform) {
 			c.Next()
 			return
 		}
@@ -60,7 +64,7 @@ func RegisterGatewayRoutes(
 			return
 		}
 		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
-		writeByteDanceUnsupported(c)
+		writeVideoOnlyPlatformUnsupported(c, platform)
 		c.Abort()
 	}
 
@@ -141,10 +145,11 @@ func RegisterGatewayRoutes(
 		})
 	}
 	videoCreateHandler := func(c *gin.Context) {
-		switch getGroupPlatform(c) {
-		case service.PlatformGrok:
+		platform := getGroupPlatform(c)
+		switch {
+		case platform == service.PlatformGrok:
 			h.CompatibleGateway.GrokVideoGeneration(c)
-		case service.PlatformOpenAI, service.PlatformByteDance, service.PlatformComposite:
+		case isManagedVideoGroupPlatform(platform):
 			if h.Video == nil {
 				videoUnsupported(c)
 				return
@@ -167,7 +172,7 @@ func RegisterGatewayRoutes(
 			h.CompatibleGateway.GrokVideoStatus(c)
 			return
 		}
-		if platform != service.PlatformOpenAI && platform != service.PlatformByteDance && platform != service.PlatformComposite || h.Video == nil {
+		if !isManagedVideoGroupPlatform(platform) || h.Video == nil {
 			videoUnsupported(c)
 			return
 		}
@@ -179,7 +184,7 @@ func RegisterGatewayRoutes(
 			h.CompatibleGateway.GrokVideoContent(c)
 			return
 		}
-		if platform != service.PlatformOpenAI && platform != service.PlatformByteDance && platform != service.PlatformComposite || h.Video == nil {
+		if !isManagedVideoGroupPlatform(platform) || h.Video == nil {
 			videoUnsupported(c)
 			return
 		}
@@ -200,10 +205,11 @@ func RegisterGatewayRoutes(
 		videoUnsupported(c)
 	}
 	videoEditHandler := func(c *gin.Context) {
-		switch getGroupPlatform(c) {
-		case service.PlatformGrok:
+		platform := getGroupPlatform(c)
+		switch {
+		case platform == service.PlatformGrok:
 			h.CompatibleGateway.GrokVideoEdit(c)
-		case service.PlatformOpenAI, service.PlatformByteDance, service.PlatformComposite:
+		case isManagedVideoGroupPlatform(platform):
 			if h.Video == nil {
 				videoUnsupported(c)
 				return
@@ -214,10 +220,11 @@ func RegisterGatewayRoutes(
 		}
 	}
 	videoExtensionHandler := func(c *gin.Context) {
-		switch getGroupPlatform(c) {
-		case service.PlatformGrok:
+		platform := getGroupPlatform(c)
+		switch {
+		case platform == service.PlatformGrok:
 			h.CompatibleGateway.GrokVideoExtension(c)
-		case service.PlatformOpenAI, service.PlatformByteDance, service.PlatformComposite:
+		case isManagedVideoGroupPlatform(platform):
 			if h.Video == nil {
 				videoUnsupported(c)
 				return
@@ -228,21 +235,21 @@ func RegisterGatewayRoutes(
 		}
 	}
 	videoListHandler := func(c *gin.Context) {
-		if (getGroupPlatform(c) == service.PlatformOpenAI || getGroupPlatform(c) == service.PlatformByteDance || getGroupPlatform(c) == service.PlatformComposite) && h.Video != nil {
+		if isManagedVideoGroupPlatform(getGroupPlatform(c)) && h.Video != nil {
 			h.Video.List(c)
 			return
 		}
 		videoUnsupported(c)
 	}
 	videoModelsHandler := func(c *gin.Context) {
-		if (getGroupPlatform(c) == service.PlatformOpenAI || getGroupPlatform(c) == service.PlatformByteDance || getGroupPlatform(c) == service.PlatformComposite) && h.Video != nil {
+		if isManagedVideoGroupPlatform(getGroupPlatform(c)) && h.Video != nil {
 			h.Video.Models(c)
 			return
 		}
 		videoUnsupported(c)
 	}
 	videoDeleteHandler := func(c *gin.Context) {
-		if (getGroupPlatform(c) == service.PlatformOpenAI || getGroupPlatform(c) == service.PlatformByteDance || getGroupPlatform(c) == service.PlatformComposite) && h.Video != nil {
+		if isManagedVideoGroupPlatform(getGroupPlatform(c)) && h.Video != nil {
 			h.Video.Delete(c)
 			return
 		}
@@ -808,12 +815,18 @@ func writeMiniMaxUnsupported(c *gin.Context, _ *handler.Handlers) {
 	})
 }
 
-func writeByteDanceUnsupported(c *gin.Context) {
+// isManagedVideoGroupPlatform 报告分组平台是否该进通用视频任务平台：托管视频平台
+// 本身，或会被组合路由解析到其一的 composite。
+func isManagedVideoGroupPlatform(platform string) bool {
+	return platform == service.PlatformComposite || service.IsManagedVideoPlatform(platform)
+}
+
+func writeVideoOnlyPlatformUnsupported(c *gin.Context, platform string) {
 	c.JSON(http.StatusNotFound, gin.H{
 		"type": "error",
 		"error": gin.H{
 			"type":    "not_found_error",
-			"message": "ByteDance gateway supports only the Videos API",
+			"message": service.VideoOnlyPlatformLabel(platform) + " gateway supports only the Videos API",
 		},
 	})
 }
@@ -957,8 +970,7 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver,
 			if decision.Matched {
 				c.Request = c.Request.WithContext(service.WithCompositeRouteDecision(c.Request.Context(), decision))
 				_, managedVideo := service.ManagedVideoOperationForPath(c.Request.URL.Path)
-				preserveVideoModel := managedVideo &&
-					(decision.TargetPlatform == service.PlatformOpenAI || decision.TargetPlatform == service.PlatformByteDance)
+				preserveVideoModel := managedVideo && service.IsManagedVideoPlatform(decision.TargetPlatform)
 				if upstreamModel := strings.TrimSpace(decision.UpstreamModel); !preserveVideoModel && upstreamModel != "" && upstreamModel != model && gjson.ValidBytes(body) {
 					if _, modelPath := requestmodel.JSONModelPathForRoute(routePath, body); modelPath != "" {
 						if rewritten, rewriteErr := sjson.SetBytes(body, modelPath, upstreamModel); rewriteErr == nil {

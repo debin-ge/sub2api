@@ -79,6 +79,13 @@ func (r *videoAdminRepository) ListVideoTasksAdmin(ctx context.Context, filter s
 	if filter.CreatedBefore != nil {
 		add("created_at <= $%d", *filter.CreatedBefore)
 	}
+	if filter.SubmissionUnknown != nil {
+		if *filter.SubmissionUnknown {
+			where = append(where, "submission_unknown_at IS NOT NULL")
+		} else {
+			where = append(where, "submission_unknown_at IS NULL")
+		}
+	}
 
 	whereSQL := strings.Join(where, " AND ")
 	var total int

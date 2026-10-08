@@ -6,7 +6,7 @@ export default {
     empty: '还没有生成记录，在下方输入提示词开始',
     noKey: {
       title: '暂无可用于视频生成的密钥',
-      description: '视频生成需要一个隶属 OpenAI / 火山方舟 / 复合分组的按量计费密钥，订阅制分组暂不支持。',
+      description: '视频生成需要一个隶属视频平台分组（或复合分组）的按量计费密钥，订阅制分组暂不支持。',
       action: '前往创建密钥',
     },
     status: {
@@ -43,7 +43,8 @@ export default {
       contentUnavailable: '这次生成已完成，但暂时取不到可播放的内容',
       contentExpired: '视频已过期，无法再播放',
       contentExpiredHint:
-        '生成平台只在完成后的 24 小时内保留成片，超过这个时间链接就会失效。以后如需留存，请在生成完成后尽快用「复制视频地址」取走地址并自行保存。',
+        '上游平台只在完成后的有限时间内保留成片，超过保留期链接就会失效。如需留存，请在生成完成后尽快用「复制视频地址」取走地址并自行下载保存。',
+      contentExpiredAt: '已于 {time} 过期',
       contentNotVideo: '取回的内容不是视频文件，可能是链接已失效。请重新加载试试。',
       retryPlayback: '重新加载',
     },

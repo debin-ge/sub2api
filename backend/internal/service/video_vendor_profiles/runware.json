@@ -1,0 +1,2176 @@
+{
+  "vendor": "runware",
+  "generated_at": "2026-10-03T08:14:30Z",
+  "source": "https://runware.ai/docs/models/index.json",
+  "profiles": [
+    {
+      "model": "alibaba:happyhorse@1.0",
+      "name": "HappyHorse-1.0",
+      "min_seconds": 3,
+      "max_seconds": 15,
+      "default_seconds": 5,
+      "sizes": [
+        "1080x1920",
+        "1088x832",
+        "1248x1632",
+        "1280x720",
+        "1440x1440",
+        "1632x1248",
+        "1920x1080",
+        "720x1280",
+        "832x1088",
+        "960x960"
+      ],
+      "default_size": "1280x720",
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 1,
+      "audio_field": "settings.audio",
+      "options": {
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "alibaba:happyhorse@1.1",
+      "name": "HappyHorse 1.1",
+      "min_seconds": 3,
+      "max_seconds": 15,
+      "default_seconds": 5,
+      "sizes": [
+        "1080x1920",
+        "1088x832",
+        "1248x1632",
+        "1280x720",
+        "1440x1440",
+        "1632x1248",
+        "1920x1080",
+        "720x1280",
+        "832x1088",
+        "960x960"
+      ],
+      "default_size": "1280x720",
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 1,
+      "options": {
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "alibaba:wan@2.6",
+      "name": "Wan2.6",
+      "seconds": [
+        5,
+        10,
+        15
+      ],
+      "default_seconds": 5,
+      "sizes": [
+        "1080x1920",
+        "1088x832",
+        "1248x1632",
+        "1280x720",
+        "1440x1440",
+        "1632x1248",
+        "1920x1080",
+        "720x1280",
+        "832x1088",
+        "960x960"
+      ],
+      "default_size": "1280x720",
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 1,
+      "audio_field": "providerSettings.alibaba.audio",
+      "options": {
+        "negativePrompt": "negativePrompt",
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "alibaba:wan@2.6-flash",
+      "name": "Wan2.6 Flash",
+      "min_seconds": 2,
+      "max_seconds": 15,
+      "default_seconds": 5,
+      "sizes": [
+        "1080x1920",
+        "1088x832",
+        "1248x1632",
+        "1280x720",
+        "1440x1440",
+        "1632x1248",
+        "1920x1080",
+        "720x1280",
+        "832x1088",
+        "960x960"
+      ],
+      "default_size": "1280x720",
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "requires_image": true,
+      "max_images": 1,
+      "audio_field": "providerSettings.alibaba.audio",
+      "options": {
+        "negativePrompt": "negativePrompt",
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "alibaba:wan@2.7",
+      "name": "Wan2.7",
+      "min_seconds": 2,
+      "max_seconds": 15,
+      "default_seconds": 5,
+      "sizes": [
+        "1080x1920",
+        "1088x832",
+        "1248x1632",
+        "1280x720",
+        "1440x1440",
+        "1632x1248",
+        "1920x1080",
+        "720x1280",
+        "832x1088",
+        "960x960"
+      ],
+      "default_size": "1280x720",
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 2,
+      "audio_field": "settings.audio",
+      "options": {
+        "negativePrompt": "negativePrompt",
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "alibaba:wan@3.0",
+      "name": "Wan3.0",
+      "min_seconds": 1,
+      "max_seconds": 1,
+      "sizes": [
+        "1080x1920",
+        "1104x832",
+        "1248x1648",
+        "1280x720",
+        "1440x1440",
+        "1648x1248",
+        "1920x1080",
+        "480x832",
+        "544x720",
+        "624x624",
+        "720x1280",
+        "720x544",
+        "832x1104",
+        "832x480",
+        "960x960"
+      ],
+      "default_size": "1280x720",
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 2,
+      "audio_field": "settings.audio",
+      "options": {
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "alibaba:wan@3.0-prime",
+      "name": "Wan3.0 Prime",
+      "min_seconds": 1,
+      "max_seconds": 1,
+      "sizes": [
+        "1080x1920",
+        "1104x832",
+        "1248x1648",
+        "1280x720",
+        "1440x1440",
+        "1648x1248",
+        "1920x1080",
+        "480x832",
+        "544x720",
+        "624x624",
+        "720x1280",
+        "720x544",
+        "832x1104",
+        "832x480",
+        "960x960"
+      ],
+      "default_size": "1280x720",
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 2,
+      "audio_field": "settings.audio",
+      "options": {
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "bfl:flux@3-video",
+      "name": "FLUX 3 Video",
+      "min_seconds": 1,
+      "max_seconds": 1,
+      "sizes": [
+        "1088x1920",
+        "1088x800",
+        "1216x1632",
+        "1280x704",
+        "1344x672",
+        "1440x1440",
+        "1440x608",
+        "1632x1216",
+        "1920x1088",
+        "2016x1024",
+        "2176x928",
+        "704x1280",
+        "800x1088",
+        "960x960"
+      ],
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 2,
+      "audio_field": "settings.audio"
+    },
+    {
+      "model": "bytedance:2@1",
+      "name": "Seedance 1.0 Pro",
+      "min_seconds": 2,
+      "max_seconds": 12,
+      "default_seconds": 5,
+      "duration_enc": "float",
+      "sizes": [
+        "1088x1920",
+        "1248x1664",
+        "1440x1440",
+        "1664x1248",
+        "1920x1088",
+        "2176x928",
+        "416x960",
+        "480x864",
+        "544x736",
+        "640x640",
+        "736x544",
+        "864x480",
+        "928x2176",
+        "960x416"
+      ],
+      "resolutions": [
+        "480p",
+        "1080p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 2,
+      "options": {
+        "cameraFixed": "providerSettings.bytedance.cameraFixed",
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "bytedance:2@2",
+      "name": "Seedance 1.0 Pro Fast",
+      "min_seconds": 2,
+      "max_seconds": 12,
+      "default_seconds": 5,
+      "duration_enc": "float",
+      "sizes": [
+        "1088x1920",
+        "1120x832",
+        "1248x1664",
+        "1248x704",
+        "1440x1440",
+        "1504x640",
+        "1664x1248",
+        "1920x1088",
+        "2176x928",
+        "480x864",
+        "544x736",
+        "640x640",
+        "704x1248",
+        "736x544",
+        "832x1120",
+        "864x480",
+        "960x416",
+        "960x960"
+      ],
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 1,
+      "options": {
+        "cameraFixed": "providerSettings.bytedance.cameraFixed",
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "bytedance:seedance@2.0",
+      "name": "Seedance 2.0",
+      "min_seconds": 4,
+      "max_seconds": 15,
+      "default_seconds": 5,
+      "sizes": [
+        "1080x1920",
+        "1112x834",
+        "1248x1664",
+        "1280x720",
+        "1440x1440",
+        "1470x630",
+        "1664x1248",
+        "1920x1080",
+        "2160x3840",
+        "2206x946",
+        "2496x3328",
+        "2880x2880",
+        "3326x2494",
+        "3840x2160",
+        "4398x1886",
+        "496x864",
+        "560x752",
+        "640x640",
+        "720x1280",
+        "752x560",
+        "834x1112",
+        "864x496",
+        "960x960",
+        "992x432"
+      ],
+      "default_size": "1280x720",
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p",
+        "4k"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 2,
+      "audio_field": "settings.audio"
+    },
+    {
+      "model": "bytedance:seedance@2.0-fast",
+      "name": "Seedance 2.0 Fast",
+      "min_seconds": 4,
+      "max_seconds": 15,
+      "default_seconds": 5,
+      "sizes": [
+        "1112x834",
+        "1280x720",
+        "1470x630",
+        "496x864",
+        "560x752",
+        "640x640",
+        "720x1280",
+        "752x560",
+        "834x1112",
+        "864x496",
+        "960x960",
+        "992x432"
+      ],
+      "default_size": "1280x720",
+      "resolutions": [
+        "480p",
+        "720p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 2,
+      "audio_field": "settings.audio"
+    },
+    {
+      "model": "bytedance:seedance@2.0-mini",
+      "name": "Seedance 2.0 Mini",
+      "min_seconds": 4,
+      "max_seconds": 15,
+      "default_seconds": 5,
+      "sizes": [
+        "1112x834",
+        "1280x720",
+        "1470x630",
+        "496x864",
+        "560x752",
+        "640x640",
+        "720x1280",
+        "752x560",
+        "834x1112",
+        "864x496",
+        "960x960",
+        "992x432"
+      ],
+      "default_size": "1280x720",
+      "resolutions": [
+        "480p",
+        "720p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 2,
+      "audio_field": "settings.audio"
+    },
+    {
+      "model": "bytedance:seedance@2.5",
+      "name": "Seedance 2.5",
+      "min_seconds": 1,
+      "max_seconds": 1,
+      "default_seconds": 5,
+      "sizes": [
+        "1080x1920",
+        "1112x834",
+        "1248x1664",
+        "1280x720",
+        "1440x1440",
+        "1470x630",
+        "1664x1248",
+        "1920x1080",
+        "2206x946",
+        "480x854",
+        "560x752",
+        "640x640",
+        "720x1280",
+        "752x560",
+        "834x1112",
+        "854x480",
+        "960x960",
+        "992x432"
+      ],
+      "default_size": "1280x720",
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 2,
+      "audio_field": "settings.audio"
+    },
+    {
+      "model": "google:3@2",
+      "name": "Veo 3.1",
+      "seconds": [
+        4,
+        6,
+        7,
+        8
+      ],
+      "default_seconds": 4,
+      "sizes": [
+        "1080x1920",
+        "1280x720",
+        "1920x1080",
+        "2160x3840",
+        "3840x2160",
+        "720x1280"
+      ],
+      "default_size": "1280x720",
+      "resolutions": [
+        "720p",
+        "1080p",
+        "4k"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 2,
+      "audio_field": "providerSettings.google.generateAudio",
+      "options": {
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "google:3@3",
+      "name": "Veo 3.1 Fast",
+      "seconds": [
+        4,
+        6,
+        7,
+        8
+      ],
+      "default_seconds": 4,
+      "sizes": [
+        "1080x1920",
+        "1280x720",
+        "1920x1080",
+        "2160x3840",
+        "3840x2160",
+        "720x1280"
+      ],
+      "default_size": "1280x720",
+      "resolutions": [
+        "720p",
+        "1080p",
+        "4k"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 2,
+      "audio_field": "providerSettings.google.generateAudio",
+      "options": {
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "google:gemini@omni-flash-1.1",
+      "name": "Gemini Omni Flash 1.1",
+      "min_seconds": 3,
+      "max_seconds": 10,
+      "default_seconds": 6,
+      "sizes": [
+        "1080x1920",
+        "1280x720",
+        "1920x1080",
+        "2160x3840",
+        "360x640",
+        "3840x2160",
+        "640x360",
+        "720x1280"
+      ],
+      "default_size": "1280x720",
+      "resolutions": [
+        "360p",
+        "720p",
+        "1080p",
+        "4k"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 2
+    },
+    {
+      "model": "google:veo@3.1-lite",
+      "name": "Veo 3.1 Lite",
+      "seconds": [
+        4,
+        6,
+        8
+      ],
+      "default_seconds": 4,
+      "sizes": [
+        "1080x1920",
+        "1280x720",
+        "1920x1080",
+        "720x1280"
+      ],
+      "default_size": "1280x720",
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 2,
+      "audio_field": "providerSettings.google.generateAudio",
+      "options": {
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "heygen:video-agent@0",
+      "name": "HeyGen Video Agent",
+      "min_seconds": 5,
+      "max_seconds": 300,
+      "sizes": [
+        "1280x720",
+        "720x1280"
+      ],
+      "default_size": "1280x720",
+      "size_enc": "width_height"
+    },
+    {
+      "model": "heygen:video@1.0",
+      "name": "HeyGen Video 1.0",
+      "min_seconds": 5,
+      "max_seconds": 15,
+      "default_seconds": 5,
+      "sizes": [
+        "1024x768",
+        "1344x768",
+        "1536x672",
+        "480x480",
+        "480x640",
+        "480x832",
+        "640x480",
+        "768x1024",
+        "768x1344",
+        "768x768",
+        "832x480",
+        "960x416"
+      ],
+      "resolutions": [
+        "480p",
+        "768p"
+      ],
+      "resolution_labels": {
+        "720p": "768p"
+      },
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 1,
+      "options": {
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "klingai:6@0",
+      "name": "KlingAI 2.5 Turbo Standard",
+      "seconds": [
+        5,
+        10
+      ],
+      "default_seconds": 5,
+      "size_enc": "none",
+      "allows_image": true,
+      "max_images": 1,
+      "options": {
+        "CFGScale": "CFGScale",
+        "negativePrompt": "negativePrompt"
+      }
+    },
+    {
+      "model": "klingai:6@1",
+      "name": "KlingAI 2.5 Turbo Pro",
+      "seconds": [
+        5,
+        10
+      ],
+      "default_seconds": 5,
+      "sizes": [
+        "1280x720",
+        "720x1280",
+        "720x720"
+      ],
+      "default_size": "1280x720",
+      "size_enc": "width_height",
+      "allows_image": true,
+      "max_images": 2,
+      "options": {
+        "CFGScale": "CFGScale",
+        "negativePrompt": "negativePrompt"
+      }
+    },
+    {
+      "model": "klingai:kling-video@2.6-pro",
+      "name": "Kling VIDEO 2.6 Pro",
+      "seconds": [
+        5,
+        10
+      ],
+      "default_seconds": 5,
+      "sizes": [
+        "1080x1920",
+        "1440x1440",
+        "1920x1080"
+      ],
+      "default_size": "1920x1080",
+      "size_enc": "width_height",
+      "allows_image": true,
+      "max_images": 2,
+      "audio_field": "providerSettings.klingai.sound",
+      "options": {
+        "CFGScale": "CFGScale",
+        "negativePrompt": "negativePrompt"
+      }
+    },
+    {
+      "model": "klingai:kling-video@3-4k",
+      "name": "Kling VIDEO 3.0 4K",
+      "min_seconds": 3,
+      "max_seconds": 15,
+      "default_seconds": 5,
+      "sizes": [
+        "2160x3840",
+        "2880x2880",
+        "3840x2160"
+      ],
+      "size_enc": "width_height",
+      "allows_image": true,
+      "max_images": 2,
+      "audio_field": "providerSettings.klingai.sound",
+      "options": {
+        "negativePrompt": "negativePrompt"
+      }
+    },
+    {
+      "model": "klingai:kling-video@3-pro",
+      "name": "Kling VIDEO 3.0 Pro",
+      "min_seconds": 3,
+      "max_seconds": 15,
+      "default_seconds": 5,
+      "sizes": [
+        "1080x1920",
+        "1440x1440",
+        "1920x1080"
+      ],
+      "default_size": "1920x1080",
+      "size_enc": "width_height",
+      "allows_image": true,
+      "max_images": 2,
+      "audio_field": "providerSettings.klingai.sound",
+      "options": {
+        "negativePrompt": "negativePrompt"
+      }
+    },
+    {
+      "model": "klingai:kling-video@3-standard",
+      "name": "Kling VIDEO 3.0 Standard",
+      "min_seconds": 3,
+      "max_seconds": 15,
+      "default_seconds": 5,
+      "sizes": [
+        "1280x720",
+        "720x1280",
+        "960x960"
+      ],
+      "default_size": "1280x720",
+      "size_enc": "width_height",
+      "allows_image": true,
+      "max_images": 2,
+      "audio_field": "providerSettings.klingai.sound",
+      "options": {
+        "negativePrompt": "negativePrompt"
+      }
+    },
+    {
+      "model": "klingai:kling-video@3.0-turbo",
+      "name": "Kling VIDEO 3.0 Turbo",
+      "min_seconds": 3,
+      "max_seconds": 15,
+      "default_seconds": 5,
+      "sizes": [
+        "1080x1920",
+        "1280x720",
+        "1440x1440",
+        "1920x1080",
+        "720x1280",
+        "960x960"
+      ],
+      "default_size": "1280x720",
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 1,
+      "options": {
+        "negativePrompt": "negativePrompt"
+      }
+    },
+    {
+      "model": "klingai:kling-video@o3-4k",
+      "name": "Kling VIDEO 3.0 Omni 4K",
+      "min_seconds": 3,
+      "max_seconds": 15,
+      "default_seconds": 5,
+      "sizes": [
+        "2160x3840",
+        "2880x2880",
+        "3840x2160"
+      ],
+      "resolutions": [
+        "4k"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 2,
+      "audio_field": "providerSettings.klingai.sound"
+    },
+    {
+      "model": "klingai:kling-video@o3-pro",
+      "name": "Kling VIDEO 3.0 Omni Pro",
+      "min_seconds": 3,
+      "max_seconds": 15,
+      "default_seconds": 5,
+      "sizes": [
+        "1080x1920",
+        "1440x1440",
+        "1920x1080"
+      ],
+      "default_size": "1920x1080",
+      "resolutions": [
+        "1080p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 2,
+      "audio_field": "providerSettings.klingai.sound"
+    },
+    {
+      "model": "klingai:kling-video@o3-standard",
+      "name": "Kling VIDEO 3.0 Omni Standard",
+      "min_seconds": 3,
+      "max_seconds": 15,
+      "default_seconds": 5,
+      "sizes": [
+        "1280x720",
+        "720x1280",
+        "960x960"
+      ],
+      "default_size": "1280x720",
+      "resolutions": [
+        "720p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 2,
+      "audio_field": "providerSettings.klingai.sound"
+    },
+    {
+      "model": "klingai:kling@o1",
+      "name": "Kling VIDEO O1 Pro",
+      "min_seconds": 1,
+      "max_seconds": 1,
+      "default_seconds": 5,
+      "sizes": [
+        "1080x1920",
+        "1440x1440",
+        "1920x1080"
+      ],
+      "default_size": "1920x1080",
+      "size_enc": "width_height",
+      "allows_image": true,
+      "max_images": 2
+    },
+    {
+      "model": "klingai:kling@o1-standard",
+      "name": "Kling VIDEO O1 Standard",
+      "min_seconds": 1,
+      "max_seconds": 1,
+      "default_seconds": 5,
+      "sizes": [
+        "1280x720",
+        "720x1280",
+        "960x960"
+      ],
+      "default_size": "1280x720",
+      "size_enc": "width_height",
+      "allows_image": true,
+      "max_images": 2
+    },
+    {
+      "model": "lightricks:ltx@2",
+      "name": "LTX-2",
+      "min_seconds": 1,
+      "max_seconds": 20,
+      "size_enc": "width_height",
+      "allows_image": true,
+      "max_images": 2,
+      "options": {
+        "CFGScale": "CFGScale",
+        "negativePrompt": "negativePrompt",
+        "steps": "steps"
+      }
+    },
+    {
+      "model": "lightricks:ltx@2.3",
+      "name": "LTX-2.3",
+      "min_seconds": 1,
+      "max_seconds": 20,
+      "duration_enc": "float",
+      "size_enc": "width_height",
+      "allows_image": true,
+      "max_images": 2,
+      "options": {
+        "CFGScale": "CFGScale",
+        "negativePrompt": "negativePrompt",
+        "seed": "seed",
+        "steps": "steps"
+      }
+    },
+    {
+      "model": "lightricks:ltx@2.3-fast",
+      "name": "LTX-2.3 Fast",
+      "min_seconds": 1,
+      "max_seconds": 20,
+      "duration_enc": "float",
+      "size_enc": "width_height",
+      "allows_image": true,
+      "max_images": 2,
+      "options": {
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "lightricks:ltx@2.5-fast",
+      "name": "LTX-2.5 Fast",
+      "min_seconds": 1,
+      "max_seconds": 1,
+      "default_seconds": 6,
+      "sizes": [
+        "1080x1920",
+        "1280x720",
+        "1440x2560",
+        "1920x1080",
+        "2160x3840",
+        "2560x1440",
+        "3840x2160",
+        "720x1280"
+      ],
+      "default_size": "1280x720",
+      "size_enc": "width_height",
+      "allows_image": true,
+      "max_images": 2,
+      "audio_field": "settings.audio"
+    },
+    {
+      "model": "lightricks:ltx@2.5-pro",
+      "name": "LTX-2.5 Pro",
+      "min_seconds": 1,
+      "max_seconds": 1,
+      "default_seconds": 6,
+      "sizes": [
+        "1080x1920",
+        "1280x720",
+        "1920x1080",
+        "720x1280"
+      ],
+      "default_size": "1280x720",
+      "size_enc": "width_height",
+      "allows_image": true,
+      "max_images": 2,
+      "audio_field": "settings.audio"
+    },
+    {
+      "model": "luma:ray@3.2",
+      "name": "Ray3.2",
+      "seconds": [
+        5,
+        10
+      ],
+      "default_seconds": 5,
+      "sizes": [
+        "1080x1440",
+        "1080x1920",
+        "1260x540",
+        "1280x720",
+        "1440x1080",
+        "1440x1440",
+        "1680x720",
+        "1920x1080",
+        "2520x1080",
+        "360x480",
+        "360x640",
+        "480x360",
+        "480x480",
+        "540x720",
+        "540x960",
+        "640x360",
+        "720x1280",
+        "720x540",
+        "720x720",
+        "720x960",
+        "840x360",
+        "960x540",
+        "960x720",
+        "960x960"
+      ],
+      "default_size": "1280x720",
+      "resolutions": [
+        "360p",
+        "540p",
+        "720p",
+        "1080p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 2
+    },
+    {
+      "model": "minimax:1@1",
+      "name": "MiniMax 01",
+      "min_seconds": 1,
+      "max_seconds": 1,
+      "sizes": [
+        "1366x768"
+      ],
+      "size_enc": "width_height",
+      "allows_image": true,
+      "max_images": 1
+    },
+    {
+      "model": "minimax:2@1",
+      "name": "MiniMax 01 Director",
+      "min_seconds": 1,
+      "max_seconds": 1,
+      "sizes": [
+        "1366x768"
+      ],
+      "size_enc": "width_height",
+      "allows_image": true,
+      "max_images": 1
+    },
+    {
+      "model": "minimax:2@3",
+      "name": "MiniMax 01 Live",
+      "min_seconds": 1,
+      "max_seconds": 1,
+      "sizes": [
+        "1366x768"
+      ],
+      "size_enc": "width_height",
+      "allows_image": true,
+      "requires_image": true,
+      "max_images": 1
+    },
+    {
+      "model": "minimax:3@1",
+      "name": "MiniMax Hailuo 02",
+      "min_seconds": 1,
+      "max_seconds": 1,
+      "sizes": [
+        "1366x768",
+        "1920x1080"
+      ],
+      "default_size": "1920x1080",
+      "size_enc": "width_height",
+      "allows_image": true,
+      "max_images": 2
+    },
+    {
+      "model": "minimax:4@1",
+      "name": "MiniMax Hailuo 2.3",
+      "min_seconds": 1,
+      "max_seconds": 1,
+      "sizes": [
+        "1366x768",
+        "1920x1080"
+      ],
+      "default_size": "1920x1080",
+      "size_enc": "width_height",
+      "allows_image": true,
+      "max_images": 1
+    },
+    {
+      "model": "minimax:4@2",
+      "name": "MiniMax Hailuo 2.3 Fast",
+      "min_seconds": 1,
+      "max_seconds": 1,
+      "sizes": [
+        "1080x1080",
+        "1080x1920",
+        "1366x768",
+        "1920x1080",
+        "768x1366",
+        "768x768"
+      ],
+      "default_size": "1920x1080",
+      "size_enc": "width_height",
+      "allows_image": true,
+      "requires_image": true,
+      "max_images": 1
+    },
+    {
+      "model": "minimax:h3@0",
+      "name": "MiniMax H3",
+      "min_seconds": 4,
+      "max_seconds": 15,
+      "default_seconds": 5,
+      "sizes": [
+        "1024x768",
+        "1344x768",
+        "1440x1440",
+        "1440x1920",
+        "1440x2560",
+        "1536x672",
+        "1920x1440",
+        "2560x1440",
+        "2944x1248",
+        "768x1024",
+        "768x1344",
+        "768x768"
+      ],
+      "resolutions": [
+        "768p",
+        "1440p"
+      ],
+      "resolution_labels": {
+        "720p": "768p"
+      },
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 2,
+      "options": {
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "minimax:h3@fast",
+      "name": "MiniMax H3 Fast",
+      "min_seconds": 4,
+      "max_seconds": 15,
+      "default_seconds": 5,
+      "sizes": [
+        "1120x480",
+        "480x480",
+        "480x640",
+        "480x864",
+        "640x480",
+        "864x480"
+      ],
+      "size_enc": "width_height",
+      "allows_image": true,
+      "max_images": 2,
+      "options": {
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "minimax:h3@max",
+      "name": "MiniMax H3 Max",
+      "min_seconds": 5,
+      "max_seconds": 15,
+      "default_seconds": 5,
+      "sizes": [
+        "1024x768",
+        "1344x768",
+        "1536x672",
+        "480x480",
+        "480x640",
+        "480x832",
+        "640x480",
+        "768x1024",
+        "768x1344",
+        "768x768",
+        "832x480",
+        "960x416"
+      ],
+      "resolutions": [
+        "480p",
+        "768p"
+      ],
+      "resolution_labels": {
+        "720p": "768p"
+      },
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 2,
+      "options": {
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "minimax:h3@max-turbo",
+      "name": "MiniMax H3 Max Turbo",
+      "min_seconds": 5,
+      "max_seconds": 15,
+      "default_seconds": 5,
+      "sizes": [
+        "1024x768",
+        "1344x768",
+        "1536x672",
+        "480x480",
+        "480x640",
+        "480x832",
+        "640x480",
+        "768x1024",
+        "768x1344",
+        "768x768",
+        "832x480",
+        "960x416"
+      ],
+      "resolutions": [
+        "480p",
+        "768p"
+      ],
+      "resolution_labels": {
+        "720p": "768p"
+      },
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 2,
+      "options": {
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "pixverse:1@1",
+      "name": "PixVerse V3.5",
+      "seconds": [
+        5,
+        8
+      ],
+      "sizes": [
+        "1080x1080",
+        "1080x1440",
+        "1080x1920",
+        "1280x720",
+        "1440x1080",
+        "1920x1080",
+        "360x360",
+        "360x480",
+        "360x640",
+        "480x360",
+        "540x540",
+        "540x720",
+        "540x960",
+        "640x360",
+        "720x1280",
+        "720x540",
+        "720x720",
+        "720x960",
+        "960x540",
+        "960x720"
+      ],
+      "default_size": "1280x720",
+      "resolutions": [
+        "360p",
+        "540p",
+        "720p",
+        "1080p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 2,
+      "options": {
+        "negativePrompt": "negativePrompt",
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "pixverse:1@2",
+      "name": "PixVerse V4",
+      "seconds": [
+        5,
+        8
+      ],
+      "sizes": [
+        "1080x1080",
+        "1080x1440",
+        "1080x1920",
+        "1280x720",
+        "1440x1080",
+        "1920x1080",
+        "360x360",
+        "360x480",
+        "360x640",
+        "480x360",
+        "540x540",
+        "540x720",
+        "540x960",
+        "640x360",
+        "720x1280",
+        "720x540",
+        "720x720",
+        "720x960",
+        "960x540",
+        "960x720"
+      ],
+      "default_size": "1280x720",
+      "resolutions": [
+        "360p",
+        "540p",
+        "720p",
+        "1080p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 2,
+      "options": {
+        "negativePrompt": "negativePrompt",
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "pixverse:1@3",
+      "name": "PixVerse V4.5",
+      "seconds": [
+        5,
+        8
+      ],
+      "sizes": [
+        "1080x1080",
+        "1080x1440",
+        "1080x1920",
+        "1280x720",
+        "1440x1080",
+        "1920x1080",
+        "360x360",
+        "360x480",
+        "360x640",
+        "480x360",
+        "540x540",
+        "540x720",
+        "540x960",
+        "640x360",
+        "720x1280",
+        "720x540",
+        "720x720",
+        "720x960",
+        "960x540",
+        "960x720"
+      ],
+      "default_size": "1280x720",
+      "resolutions": [
+        "360p",
+        "540p",
+        "720p",
+        "1080p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 2,
+      "options": {
+        "negativePrompt": "negativePrompt",
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "pixverse:1@5",
+      "name": "PixVerse V5",
+      "seconds": [
+        5,
+        8
+      ],
+      "sizes": [
+        "1080x1080",
+        "1080x1440",
+        "1080x1920",
+        "1280x720",
+        "1440x1080",
+        "1920x1080",
+        "360x360",
+        "360x480",
+        "360x640",
+        "480x360",
+        "540x540",
+        "540x720",
+        "540x960",
+        "640x360",
+        "720x1280",
+        "720x540",
+        "720x720",
+        "720x960",
+        "960x540",
+        "960x720"
+      ],
+      "default_size": "1280x720",
+      "resolutions": [
+        "360p",
+        "540p",
+        "720p",
+        "1080p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 2,
+      "options": {
+        "negativePrompt": "negativePrompt",
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "pixverse:1@5-fast",
+      "name": "PixVerse V5 Fast",
+      "seconds": [
+        5,
+        8
+      ],
+      "sizes": [
+        "1080x1080",
+        "1080x1440",
+        "1080x1920",
+        "1280x720",
+        "1440x1080",
+        "1920x1080",
+        "360x360",
+        "360x480",
+        "360x640",
+        "480x360",
+        "540x540",
+        "540x720",
+        "540x960",
+        "640x360",
+        "720x1280",
+        "720x540",
+        "720x720",
+        "720x960",
+        "960x540",
+        "960x720"
+      ],
+      "default_size": "1280x720",
+      "resolutions": [
+        "360p",
+        "540p",
+        "720p",
+        "1080p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 1,
+      "options": {
+        "negativePrompt": "negativePrompt",
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "pixverse:1@6",
+      "name": "PixVerse V5.5",
+      "min_seconds": 1,
+      "max_seconds": 1,
+      "sizes": [
+        "1080x1080",
+        "1080x1440",
+        "1080x1920",
+        "1280x720",
+        "1440x1080",
+        "1920x1080",
+        "360x360",
+        "360x480",
+        "360x640",
+        "480x360",
+        "540x540",
+        "540x720",
+        "540x960",
+        "640x360",
+        "720x1280",
+        "720x540",
+        "720x720",
+        "720x960",
+        "960x540",
+        "960x720"
+      ],
+      "default_size": "1280x720",
+      "resolutions": [
+        "360p",
+        "540p",
+        "720p",
+        "1080p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 2,
+      "audio_field": "providerSettings.pixverse.audio",
+      "options": {
+        "negativePrompt": "negativePrompt",
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "pixverse:1@7",
+      "name": "PixVerse V5.6",
+      "min_seconds": 1,
+      "max_seconds": 1,
+      "sizes": [
+        "1080x1080",
+        "1080x1440",
+        "1080x1920",
+        "1280x720",
+        "1440x1080",
+        "1920x1080",
+        "360x360",
+        "360x480",
+        "360x640",
+        "480x360",
+        "540x540",
+        "540x720",
+        "540x960",
+        "640x360",
+        "720x1280",
+        "720x540",
+        "720x720",
+        "720x960",
+        "960x540",
+        "960x720"
+      ],
+      "default_size": "1280x720",
+      "resolutions": [
+        "360p",
+        "540p",
+        "720p",
+        "1080p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 2,
+      "audio_field": "providerSettings.pixverse.audio",
+      "options": {
+        "negativePrompt": "negativePrompt",
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "pixverse:1@8",
+      "name": "PixVerse V6",
+      "min_seconds": 1,
+      "max_seconds": 15,
+      "default_seconds": 5,
+      "sizes": [
+        "1080x1080",
+        "1080x1440",
+        "1080x1920",
+        "1280x720",
+        "1440x1080",
+        "1920x1080",
+        "360x360",
+        "360x480",
+        "360x640",
+        "480x360",
+        "540x540",
+        "540x720",
+        "540x960",
+        "640x360",
+        "720x1280",
+        "720x540",
+        "720x720",
+        "720x960",
+        "960x540",
+        "960x720"
+      ],
+      "default_size": "1280x720",
+      "resolutions": [
+        "360p",
+        "540p",
+        "720p",
+        "1080p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 2,
+      "audio_field": "settings.audio",
+      "options": {
+        "negativePrompt": "negativePrompt",
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "prunaai:p-video@0",
+      "name": "P-Video",
+      "min_seconds": 1,
+      "max_seconds": 10,
+      "default_seconds": 5,
+      "sizes": [
+        "1080x1080",
+        "1080x1440",
+        "1080x1620",
+        "1080x1920",
+        "1080x720",
+        "1280x720",
+        "1440x1080",
+        "1620x1080",
+        "1920x1080",
+        "720x1080",
+        "720x1280",
+        "720x720",
+        "720x960",
+        "960x720"
+      ],
+      "default_size": "1280x720",
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 1,
+      "audio_field": "settings.audio",
+      "options": {
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "prunaai:p-video@2",
+      "name": "P-Video-2",
+      "min_seconds": 1,
+      "max_seconds": 20,
+      "sizes": [
+        "1088x1920",
+        "1088x832",
+        "1152x1792",
+        "1152x768",
+        "1216x1664",
+        "1280x704",
+        "1408x1408",
+        "1664x1216",
+        "1792x1152",
+        "1920x1088",
+        "704x1280",
+        "768x1152",
+        "832x1088",
+        "960x960"
+      ],
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 2,
+      "audio_field": "settings.audio",
+      "options": {
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "prunaai:p-video@2-pro",
+      "name": "P-Video-2-Pro",
+      "min_seconds": 5,
+      "max_seconds": 15,
+      "default_seconds": 5,
+      "sizes": [
+        "1024x768",
+        "1152x768",
+        "1344x768",
+        "480x480",
+        "480x640",
+        "480x704",
+        "480x832",
+        "640x480",
+        "704x480",
+        "768x1024",
+        "768x1152",
+        "768x1344",
+        "768x768",
+        "832x480"
+      ],
+      "resolutions": [
+        "480p",
+        "768p"
+      ],
+      "resolution_labels": {
+        "720p": "768p"
+      },
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 2,
+      "options": {
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "runware:201@1",
+      "name": "Wan2.5-Preview",
+      "seconds": [
+        5,
+        10
+      ],
+      "default_seconds": 5,
+      "sizes": [
+        "1080x1920",
+        "1088x832",
+        "1248x1632",
+        "1280x720",
+        "1440x1440",
+        "1632x1248",
+        "1920x1080",
+        "480x832",
+        "624x624",
+        "720x1280",
+        "832x1088",
+        "832x480",
+        "960x960"
+      ],
+      "default_size": "1280x720",
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 1,
+      "audio_field": "providerSettings.alibaba.audio",
+      "options": {
+        "negativePrompt": "negativePrompt",
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "runway:1@1",
+      "name": "Runway Gen-4 Turbo",
+      "min_seconds": 2,
+      "max_seconds": 10,
+      "default_seconds": 10,
+      "sizes": [
+        "1104x832",
+        "1280x720",
+        "1584x672",
+        "720x1280",
+        "832x1104",
+        "960x960"
+      ],
+      "default_size": "1280x720",
+      "size_enc": "width_height",
+      "allows_image": true,
+      "requires_image": true,
+      "max_images": 1,
+      "options": {
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "runway:1@2",
+      "name": "Runway Gen-4.5",
+      "seconds": [
+        5,
+        8,
+        10
+      ],
+      "default_seconds": 10,
+      "sizes": [
+        "1104x832",
+        "1280x720",
+        "720x1280",
+        "832x1104",
+        "960x960"
+      ],
+      "default_size": "1280x720",
+      "size_enc": "width_height",
+      "allows_image": true,
+      "max_images": 1,
+      "options": {
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "skywork:skyreels@v4",
+      "name": "SkyReels V4",
+      "min_seconds": 3,
+      "max_seconds": 15,
+      "default_seconds": 5,
+      "sizes": [
+        "1088x1920",
+        "1088x832",
+        "1248x1664",
+        "1280x720",
+        "1440x1440",
+        "1664x1248",
+        "1920x1088",
+        "480x848",
+        "560x736",
+        "640x640",
+        "720x1280",
+        "736x560",
+        "832x1088",
+        "848x480",
+        "960x960"
+      ],
+      "default_size": "1280x720",
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 2,
+      "audio_field": "settings.audio"
+    },
+    {
+      "model": "vidu:1@0",
+      "name": "Vidu Q1 Classic",
+      "min_seconds": 1,
+      "max_seconds": 1,
+      "sizes": [
+        "1080x1920",
+        "1440x1440",
+        "1920x1080"
+      ],
+      "default_size": "1920x1080",
+      "resolutions": [
+        "1080p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "requires_image": true,
+      "max_images": 2,
+      "options": {
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "vidu:1@1",
+      "name": "Vidu Q1",
+      "seconds": [
+        5
+      ],
+      "default_seconds": 5,
+      "sizes": [
+        "1080x1080",
+        "1080x1920",
+        "1920x1080"
+      ],
+      "default_size": "1920x1080",
+      "size_enc": "width_height",
+      "allows_image": true,
+      "max_images": 2,
+      "options": {
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "vidu:2@0",
+      "name": "Vidu 2.0",
+      "seconds": [
+        4,
+        8
+      ],
+      "default_seconds": 4,
+      "sizes": [
+        "1080x1080",
+        "1280x720",
+        "640x360"
+      ],
+      "default_size": "1280x720",
+      "size_enc": "width_height",
+      "allows_image": true,
+      "requires_image": true,
+      "max_images": 2,
+      "options": {
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "vidu:3@1",
+      "name": "Vidu Q2 Pro",
+      "min_seconds": 1,
+      "max_seconds": 8,
+      "default_seconds": 5,
+      "sizes": [
+        "1080x1920",
+        "1104x816",
+        "1238x1674",
+        "1280x720",
+        "1440x1440",
+        "1674x1238",
+        "1920x1080",
+        "352x640",
+        "400x544",
+        "480x480",
+        "528x960",
+        "544x400",
+        "608x816",
+        "640x352",
+        "720x1280",
+        "720x720",
+        "816x1104",
+        "816x608",
+        "960x528",
+        "960x960"
+      ],
+      "default_size": "1280x720",
+      "size_enc": "width_height",
+      "allows_image": true,
+      "requires_image": true,
+      "max_images": 2,
+      "options": {
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "vidu:3@2",
+      "name": "Vidu Q2 Turbo",
+      "min_seconds": 1,
+      "max_seconds": 8,
+      "default_seconds": 5,
+      "sizes": [
+        "1080x1920",
+        "1104x816",
+        "1238x1674",
+        "1280x720",
+        "1440x1440",
+        "1674x1238",
+        "1920x1080",
+        "352x640",
+        "400x544",
+        "480x480",
+        "528x960",
+        "544x400",
+        "608x816",
+        "640x352",
+        "720x1280",
+        "720x720",
+        "816x1104",
+        "816x608",
+        "960x528",
+        "960x960"
+      ],
+      "default_size": "1280x720",
+      "size_enc": "width_height",
+      "allows_image": true,
+      "requires_image": true,
+      "max_images": 2,
+      "options": {
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "vidu:4@1",
+      "name": "Vidu Q3",
+      "min_seconds": 1,
+      "max_seconds": 16,
+      "default_seconds": 5,
+      "sizes": [
+        "1080x1080",
+        "1080x1920",
+        "1104x816",
+        "1238x1674",
+        "1280x720",
+        "1440x1440",
+        "1674x1238",
+        "1920x1080",
+        "352x640",
+        "360x360",
+        "360x640",
+        "400x544",
+        "480x480",
+        "528x960",
+        "544x400",
+        "608x816",
+        "640x352",
+        "640x360",
+        "720x1280",
+        "720x720",
+        "816x1104",
+        "816x608",
+        "960x528",
+        "960x960"
+      ],
+      "default_size": "1280x720",
+      "resolutions": [
+        "360p",
+        "540p",
+        "720p",
+        "1080p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 2,
+      "audio_field": "providerSettings.vidu.audio",
+      "options": {
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "vidu:4@2",
+      "name": "Vidu Q3 Turbo",
+      "min_seconds": 1,
+      "max_seconds": 16,
+      "default_seconds": 5,
+      "sizes": [
+        "1080x1080",
+        "1080x1920",
+        "1104x816",
+        "1238x1674",
+        "1280x720",
+        "1440x1440",
+        "1674x1238",
+        "1920x1080",
+        "352x640",
+        "360x360",
+        "360x640",
+        "400x544",
+        "480x480",
+        "528x960",
+        "544x400",
+        "608x816",
+        "640x352",
+        "640x360",
+        "720x1280",
+        "720x720",
+        "816x1104",
+        "816x608",
+        "960x528",
+        "960x960"
+      ],
+      "default_size": "1280x720",
+      "size_enc": "width_height",
+      "allows_image": true,
+      "max_images": 2,
+      "audio_field": "providerSettings.vidu.audio",
+      "options": {
+        "seed": "seed"
+      }
+    },
+    {
+      "model": "xai:grok-imagine@video",
+      "name": "Grok Imagine Video",
+      "min_seconds": 1,
+      "max_seconds": 15,
+      "default_seconds": 6,
+      "sizes": [
+        "1088x720",
+        "1280x720",
+        "480x480",
+        "480x640",
+        "480x720",
+        "480x848",
+        "640x480",
+        "720x1088",
+        "720x1280",
+        "720x480",
+        "720x720",
+        "720x960",
+        "848x480",
+        "960x720"
+      ],
+      "default_size": "1280x720",
+      "resolutions": [
+        "480p",
+        "720p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 1
+    },
+    {
+      "model": "xai:grok-imagine@video-1.5",
+      "name": "Grok Imagine Video 1.5",
+      "min_seconds": 1,
+      "max_seconds": 15,
+      "default_seconds": 6,
+      "sizes": [
+        "1072x1904",
+        "1088x720",
+        "1152x1744",
+        "1232x1648",
+        "1280x720",
+        "1424x1424",
+        "1648x1232",
+        "1744x1152",
+        "1904x1072",
+        "480x480",
+        "480x640",
+        "480x720",
+        "480x848",
+        "640x480",
+        "720x1088",
+        "720x1280",
+        "720x480",
+        "720x720",
+        "720x960",
+        "848x480",
+        "960x720"
+      ],
+      "default_size": "1280x720",
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 1
+    },
+    {
+      "model": "xai:grok-imagine@video-1.5-lite",
+      "name": "Grok Imagine Video 1.5 Lite",
+      "min_seconds": 1,
+      "max_seconds": 15,
+      "default_seconds": 6,
+      "sizes": [
+        "1072x1904",
+        "1088x720",
+        "1152x1744",
+        "1232x1648",
+        "1280x720",
+        "1424x1424",
+        "1648x1232",
+        "1744x1152",
+        "1904x1072",
+        "480x480",
+        "480x640",
+        "480x720",
+        "480x848",
+        "640x480",
+        "720x1088",
+        "720x1280",
+        "720x480",
+        "720x720",
+        "720x960",
+        "848x480",
+        "960x720"
+      ],
+      "default_size": "1280x720",
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "size_enc": "width_height",
+      "image_resolution_field": "resolution",
+      "allows_image": true,
+      "max_images": 1
+    }
+  ]
+}

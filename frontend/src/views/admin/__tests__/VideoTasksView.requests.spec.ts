@@ -172,3 +172,43 @@ describe('video task request ordering', () => {
     expect(app.showError).not.toHaveBeenCalled()
   })
 })
+
+describe('video task reconciliation filter', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    api.overview.mockResolvedValue({})
+    api.listTasks.mockResolvedValue(page(1))
+    api.listResources.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 })
+    api.listCallbacks.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 })
+    api.getTask.mockResolvedValue(task)
+    api.listEvents.mockResolvedValue({ items: [] })
+  })
+
+  it('leaves submission_unknown out of the query until the operator opts in', async () => {
+    const { wrapper } = await mountView()
+    try {
+      expect(api.listTasks).toHaveBeenCalledTimes(1)
+      expect(api.listTasks.mock.calls[0][0].submission_unknown).toBeUndefined()
+    } finally { wrapper.unmount() }
+  })
+
+  it('sends submission_unknown=true when the reconciliation checkbox is applied', async () => {
+    const { wrapper } = await mountView()
+    try {
+      await wrapper.find('[data-test="video-filter-submission-unknown"]').setValue(true)
+      await wrapper.find('[data-test="video-filters-apply"]').trigger('click')
+      await flushPromises()
+      expect(api.listTasks).toHaveBeenLastCalledWith(expect.objectContaining({ submission_unknown: 'true', page: 1 }))
+    } finally { wrapper.unmount() }
+  })
+
+  it('flags rows that went through the submission-unknown reconciliation path', async () => {
+    api.listTasks.mockResolvedValue({ items: [{ ...task, submission_unknown_at: '2026-09-06T00:00:00Z' }, second], total: 2, page: 1, page_size: 20 })
+    const { wrapper } = await mountView()
+    try {
+      const badges = wrapper.findAll('[data-test="video-task-reconciliation-badge"]')
+      expect(badges).toHaveLength(1)
+      expect(badges[0].text()).toBe('admin.videos.reconciliation.badge')
+    } finally { wrapper.unmount() }
+  })
+})
