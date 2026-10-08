@@ -213,6 +213,108 @@ const byteDanceVideoModels = [
   'doubao-seedance-1-0-lite-t2v-250428'
 ]
 
+// 聚合视频供应商的模型 ID 原样照搬各家目录（含 / : @），必须与后端各家 *_video_profiles.go
+// 的档案一致。同 bytedance：白名单写进 model_mapping 即路由白名单，名字对不上就是死账号。
+const falVideoModels = [
+  'fal-ai/bytedance/seedance/v1/lite/text-to-video',
+  'fal-ai/bytedance/seedance/v1/lite/image-to-video',
+  'fal-ai/bytedance/seedance/v1/pro/text-to-video',
+  'fal-ai/bytedance/seedance/v1/pro/image-to-video',
+  'fal-ai/bytedance/seedance/v1/pro/fast/text-to-video',
+  'fal-ai/bytedance/seedance/v1/pro/fast/image-to-video',
+  'fal-ai/bytedance/seedance/v1.5/pro/text-to-video',
+  'fal-ai/bytedance/seedance/v1.5/pro/image-to-video',
+  'bytedance/seedance-2.0/text-to-video',
+  'bytedance/seedance-2.0/image-to-video',
+  'bytedance/seedance-2.0/fast/text-to-video',
+  'bytedance/seedance-2.0/fast/image-to-video',
+  'fal-ai/kling-video/v3/standard/text-to-video',
+  'fal-ai/kling-video/v3/standard/image-to-video',
+  'fal-ai/kling-video/v3/pro/text-to-video',
+  'fal-ai/kling-video/v3/pro/image-to-video',
+  'fal-ai/veo3.1',
+  'fal-ai/veo3.1/image-to-video',
+  'fal-ai/veo3.1/fast',
+  'fal-ai/sora-2/text-to-video',
+  'fal-ai/sora-2/text-to-video/pro',
+  'fal-ai/sora-2/image-to-video'
+]
+
+const waveSpeedVideoModels = [
+  'bytedance/seedance-2.5/text-to-video',
+  'bytedance/seedance-2.5/image-to-video',
+  'bytedance/seedance-2.0/text-to-video',
+  'bytedance/seedance-2.0/image-to-video',
+  'bytedance/seedance-2.0-fast/text-to-video',
+  'bytedance/seedance-2.0-fast/image-to-video',
+  'bytedance/seedance-v1.5-pro/text-to-video',
+  'bytedance/seedance-v1.5-pro/image-to-video',
+  'bytedance/seedance-v1-pro-t2v-720p',
+  'bytedance/seedance-v1-pro-i2v-480p',
+  'bytedance/seedance-v1-pro-i2v-720p',
+  'bytedance/seedance-v1-pro-i2v-1080p',
+  'bytedance/seedance-v1-pro-fast/image-to-video',
+  'bytedance/seedance-v1.5-pro/image-to-video-fast',
+  'bytedance/seedance-2.5/text-to-video-turbo',
+  'kwaivgi/kling-v3.0-pro/text-to-video',
+  'kwaivgi/kling-v3.0-pro/image-to-video',
+  'kwaivgi/kling-v3.0-std/text-to-video',
+  'kwaivgi/kling-v3.0-std/image-to-video',
+  'kwaivgi/kling-video-o3-std/text-to-video',
+  'kwaivgi/kling-video-o3-pro/text-to-video',
+  'kwaivgi/kling-v2.5-turbo-pro/text-to-video',
+  'google/veo3.1/text-to-video',
+  'google/veo3.1/image-to-video',
+  'google/veo3.1-fast/text-to-video',
+  'openai/sora-2/text-to-video',
+  'openai/sora-2/image-to-video',
+  'minimax/hailuo-2.3/i2v-pro',
+  'wavespeed-ai/minimax-h3/image-to-video',
+  'alibaba/wan-2.6/image-to-video'
+]
+
+// 与后端 flova_video_catalog.go 的模型 ID 逐字一致（方案 7.1）。
+const flovaVideoModels = [
+  'flova/seedance-2.5',
+  'flova/seedance-2.0',
+  'flova/seedance-2.0-fast',
+  'flova/veo-3.1-fast',
+  'flova/minimax-h3',
+  'flova/kling-3.0-omni'
+]
+
+const runwareVideoModels = [
+  'bytedance:2@1',
+  'bytedance:2@2',
+  'bytedance:seedance@2.0',
+  'bytedance:seedance@2.0-fast',
+  'bytedance:seedance@2.0-mini',
+  'bytedance:seedance@2.5',
+  'klingai:kling-video@3-standard',
+  'klingai:kling-video@3-pro',
+  'klingai:kling-video@3-4k',
+  'klingai:kling-video@3.0-turbo',
+  'klingai:kling-video@2.6-standard',
+  'klingai:kling-video@2.6-pro',
+  'klingai:6@0',
+  'klingai:6@1',
+  'klingai:kling-video@o3-standard',
+  'klingai:kling-video@o3-pro',
+  'klingai:kling-video@o3-4k',
+  'google:3@2',
+  'google:3@3',
+  'google:veo@3.1-lite',
+  'alibaba:wan@3.0',
+  'alibaba:wan@3.0-prime',
+  'alibaba:wan@2.7',
+  'alibaba:wan@2.6',
+  'minimax:h3@0',
+  'minimax:h3@fast',
+  'minimax:h3@max',
+  'minimax:h3@max-turbo',
+  'minimax:4@1'
+]
+
 // MiniMax
 const minimaxModels = [
   'MiniMax-M3',
@@ -384,6 +486,10 @@ const allModelsList: string[] = [
   ...moonshotModels,
   ...doubaoModels,
   ...byteDanceVideoModels,
+  ...falVideoModels,
+  ...waveSpeedVideoModels,
+  ...runwareVideoModels,
+  ...flovaVideoModels,
   ...minimaxModels,
   ...glmModels,
   ...kimiModels,
@@ -647,6 +753,10 @@ export function getModelsByPlatform(platform: string): string[] {
     ]
     case 'doubao': return doubaoModels
     case 'bytedance': return byteDanceVideoModels
+    case 'fal': return falVideoModels
+    case 'wavespeed': return waveSpeedVideoModels
+    case 'runware': return runwareVideoModels
+    case 'flova': return flovaVideoModels
     case 'minimax': return minimaxModels
     case 'baidu': return baiduModels
     case 'spark': return sparkModels

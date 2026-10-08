@@ -220,7 +220,7 @@ func isConcreteRequestPlatform(platform string) bool {
 	switch CanonicalCNPlatform(strings.TrimSpace(platform)) {
 	case PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok,
 		PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformWindsurf, PlatformOpenCodeGo,
-		PlatformByteDance:
+		PlatformByteDance, PlatformFal, PlatformWaveSpeed, PlatformRunware, PlatformFlova:
 		return true
 	default:
 		return false

@@ -56,6 +56,7 @@ type VideoMetrics struct {
 	contentActive     prometheus.Gauge
 	accessDisclosures *prometheus.CounterVec
 	capabilityProbes  *prometheus.CounterVec
+	flovaOutcomes     *prometheus.CounterVec
 }
 
 type VideoTaskStateMetric struct {
@@ -251,8 +252,13 @@ func NewVideoMetrics(registerer prometheus.Registerer) (*VideoMetrics, error) {
 			Namespace: videoMetricsNamespace, Name: "capability_probes_total",
 			Help: "Video account capability probes by bounded provider and status.",
 		}, []string{"provider", "status"}),
+		flovaOutcomes: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: videoMetricsNamespace, Name: "flova_outcomes_total",
+			Help: "Flova-specific run outcomes: empty completions, membership gates, price drift, auto resumes.",
+		}, []string{"outcome"}),
 	}
 	collectors := []prometheus.Collector{
+		metrics.flovaOutcomes,
 		metrics.submissions, metrics.submitDuration, metrics.providerGets, metrics.pollDuration,
 		metrics.stateTransitions, metrics.taskCurrent, metrics.taskStateAge,
 		metrics.heldAmount,
@@ -367,6 +373,23 @@ func (m *VideoMetrics) RecordSettlement(action, result string, holdAmount, actua
 	if action == "capture" && actualAmount > holdAmount {
 		m.overCaptures.WithLabelValues(result).Inc()
 		m.overCaptureAmount.WithLabelValues(result).Add(actualAmount - holdAmount)
+	}
+}
+
+// RecordFlovaOutcome 记录 Flova 特有的 run 结局（有界 label）。
+func (m *VideoMetrics) RecordFlovaOutcome(outcome string) {
+	if m == nil {
+		return
+	}
+	m.flovaOutcomes.WithLabelValues(flovaOutcomeLabel(outcome)).Inc()
+}
+
+func flovaOutcomeLabel(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "empty_completion", "membership_gate", "insufficient_balance", "auto_resume", "price_drift", "extra_artifacts", "run_timeout", "user_action_required":
+		return strings.ToLower(strings.TrimSpace(value))
+	default:
+		return "other"
 	}
 }
 
@@ -511,7 +534,7 @@ func (m *VideoMetrics) UpdateOperational(snapshot VideoOperationalMetrics, now t
 
 func videoProviderLabel(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "openai", "bytedance":
+	case "openai", "bytedance", "fal", "wavespeed", "runware", "flova":
 		return strings.ToLower(strings.TrimSpace(value))
 	default:
 		return "other"

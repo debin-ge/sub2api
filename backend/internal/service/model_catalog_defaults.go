@@ -31,6 +31,10 @@ func DefaultModelCatalogIDs(platform string) []string {
 		ids = xai.DefaultModelIDs()
 	case PlatformByteDance:
 		ids = []string{ByteDanceVideoModelSeedance10Lite, ByteDanceVideoModelSeedance10Pro}
+	case PlatformFal, PlatformWaveSpeed, PlatformRunware:
+		ids = videoVendorDefaultModelIDs(platform)
+	case PlatformFlova:
+		ids = flovaVideoModelIDs()
 	case PlatformComposite:
 		for _, concretePlatform := range compositeModelCatalogPlatforms {
 			ids = append(ids, DefaultModelCatalogIDs(concretePlatform)...)

@@ -294,6 +294,7 @@ func cleanupWithRadarTestDependencies(rdb *redis.Client, radarRunner *service.Ra
 		tokenRefreshSvc,
 		service.NewAccountExpiryService(nil, time.Second),
 		nil, // cnProviderBalanceCheck
+		nil, // flovaCreditsSync
 		nil, // codexVersionSync
 		service.NewProxyExpiryService(nil, time.Second),
 		service.NewSubscriptionExpiryService(nil, time.Second),
@@ -447,6 +448,7 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		tokenRefreshSvc,
 		accountExpirySvc,
 		nil, // cnProviderBalanceCheck
+		nil, // flovaCreditsSync
 		codexVersionSyncSvc,
 		proxyExpirySvc,
 		subscriptionExpirySvc,

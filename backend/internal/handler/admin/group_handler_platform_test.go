@@ -28,6 +28,7 @@ func TestGroupPlatformBinding_AllowedPlatforms(t *testing.T) {
 	allowed := []string{
 		"anthropic", "openai", "gemini", "antigravity", "grok",
 		"kimi", "zhipu", "deepseek", "minimax", "windsurf", "opencode_go", "composite",
+		"bytedance", "fal", "wavespeed", "runware", "flova",
 	}
 	for _, platform := range allowed {
 		t.Run("create_"+platform, func(t *testing.T) {

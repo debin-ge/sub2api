@@ -78,7 +78,8 @@ func (a *Account) IsHeaderOverrideEligible() bool {
 		return false
 	}
 	switch CanonicalCNPlatform(a.Platform) {
-	case PlatformAnthropic, PlatformOpenAI, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformByteDance, PlatformOpenCodeGo:
+	case PlatformAnthropic, PlatformOpenAI, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformByteDance, PlatformOpenCodeGo,
+		PlatformFal, PlatformWaveSpeed, PlatformRunware, PlatformFlova:
 		return a.Type == AccountTypeAPIKey
 	case PlatformGrok:
 		return a.Type == AccountTypeAPIKey || a.Type == AccountTypeOAuth

@@ -239,7 +239,7 @@ func TestCompositeCatalogPlatformsIncludeAllSupportedProviders(t *testing.T) {
 		[]string{
 			PlatformAnthropic, PlatformGemini, PlatformOpenAI, PlatformAntigravity, PlatformGrok,
 			PlatformKimi, PlatformZhipu, PlatformDeepSeek, PlatformMiniMax, PlatformWindsurf, PlatformOpenCodeGo,
-			PlatformByteDance,
+			PlatformByteDance, PlatformFal, PlatformWaveSpeed, PlatformRunware, PlatformFlova,
 		},
 		compositeModelCatalogPlatforms,
 	)
@@ -249,6 +249,7 @@ func TestCompositeConcretePlatformsIncludeCNAndLocalProviders(t *testing.T) {
 	for _, platform := range []string{
 		PlatformKimi, PlatformZhipu, PlatformGLM, PlatformDeepseek,
 		PlatformMiniMax, PlatformWindsurf, PlatformOpenCodeGo, PlatformByteDance,
+		PlatformFal, PlatformWaveSpeed, PlatformRunware, PlatformFlova,
 	} {
 		require.True(t, isConcreteRequestPlatform(platform))
 		require.True(t, canCopyAccountsFromGroupPlatform(PlatformComposite, platform))

@@ -249,7 +249,7 @@
             OpenCode
           </button>
         </div>
-        <!-- ByteDance row: Ark is a video upstream, not a chat platform, so it keeps its own row -->
+        <!-- Video row: ByteDance Ark and the aggregated video vendors (fal / WaveSpeed / Runware / Flova) are video upstreams, not chat platforms, so they keep their own row -->
         <div class="mt-2 flex rounded-lg zt-surface-3 p-1">
           <button
             type="button"
@@ -264,6 +264,62 @@
           >
             <Icon name="play" size="sm" />
             ByteDance
+          </button>
+          <button
+            type="button"
+            data-testid="create-platform-fal"
+            @click="form.platform = 'fal'"
+            :class="[
+              'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium transition-all',
+              form.platform === 'fal'
+                ? 'bg-white text-fuchsia-700 shadow-sm dark:bg-dark-600 dark:text-fuchsia-300'
+                : 'zt-ink-2 hover:text-gray-900 dark:hover:text-gray-200'
+            ]"
+          >
+            <Icon name="play" size="sm" />
+            fal.ai
+          </button>
+          <button
+            type="button"
+            data-testid="create-platform-wavespeed"
+            @click="form.platform = 'wavespeed'"
+            :class="[
+              'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium transition-all',
+              form.platform === 'wavespeed'
+                ? 'bg-white text-sky-700 shadow-sm dark:bg-dark-600 dark:text-sky-300'
+                : 'zt-ink-2 hover:text-gray-900 dark:hover:text-gray-200'
+            ]"
+          >
+            <Icon name="play" size="sm" />
+            WaveSpeed
+          </button>
+          <button
+            type="button"
+            data-testid="create-platform-runware"
+            @click="form.platform = 'runware'"
+            :class="[
+              'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium transition-all',
+              form.platform === 'runware'
+                ? 'bg-white text-lime-700 shadow-sm dark:bg-dark-600 dark:text-lime-300'
+                : 'zt-ink-2 hover:text-gray-900 dark:hover:text-gray-200'
+            ]"
+          >
+            <Icon name="play" size="sm" />
+            Runware
+          </button>
+          <button
+            type="button"
+            data-testid="create-platform-flova"
+            @click="form.platform = 'flova'"
+            :class="[
+              'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium transition-all',
+              form.platform === 'flova'
+                ? 'bg-white text-violet-700 shadow-sm dark:bg-dark-600 dark:text-violet-300'
+                : 'zt-ink-2 hover:text-gray-900 dark:hover:text-gray-200'
+            ]"
+          >
+            <Icon name="play" size="sm" />
+            Flova
           </button>
         </div>
       </div>
@@ -1541,10 +1597,113 @@
           />
           <p v-if="apiKeyHint" class="input-hint">{{ apiKeyHint }}</p>
         </div>
+        <!-- Flova 专属运行参数（api_key / base_url 沿用上方通用字段） -->
+        <div v-if="form.platform === 'flova'" data-testid="flova-fields" class="space-y-4 border-t zt-border-c2 pt-4">
+          <label class="input-label">{{ t('admin.accounts.flova.sectionTitle') }}</label>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.flova.uploadUrl') }}</label>
+            <input
+              v-model="flovaForm.upload_url"
+              data-testid="flova-upload-url"
+              type="text"
+              class="input font-mono"
+              :placeholder="FLOVA_DEFAULT_UPLOAD_URL"
+            />
+            <p class="input-hint">{{ t('admin.accounts.flova.uploadUrlHint') }}</p>
+          </div>
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label class="input-label">{{ t('admin.accounts.flova.envName') }}</label>
+              <input
+                v-model="flovaForm.env_name"
+                data-testid="flova-env-name"
+                type="text"
+                class="input font-mono"
+              />
+              <p class="input-hint">{{ t('admin.accounts.flova.envNameHint') }}</p>
+            </div>
+            <div>
+              <label class="input-label">{{ t('admin.accounts.flova.skillId') }}</label>
+              <input
+                v-model="flovaForm.skill_id"
+                data-testid="flova-skill-id"
+                type="text"
+                class="input font-mono"
+              />
+              <p class="input-hint">{{ t('admin.accounts.flova.skillIdHint') }}</p>
+            </div>
+            <div>
+              <label class="input-label">{{ t('admin.accounts.flova.maxRunMinutes') }}</label>
+              <input
+                v-model.number="flovaForm.max_run_minutes"
+                data-testid="flova-max-run-minutes"
+                type="number"
+                class="input"
+                min="1" step="1"
+              />
+              <p class="input-hint">{{ t('admin.accounts.flova.maxRunMinutesHint') }}</p>
+            </div>
+            <div>
+              <label class="input-label">{{ t('admin.accounts.flova.priceDriftTolerance') }}</label>
+              <input
+                v-model.number="flovaForm.price_drift_tolerance"
+                data-testid="flova-price-drift-tolerance"
+                type="number"
+                class="input"
+                min="0" max="1" step="0.01"
+              />
+              <p class="input-hint">{{ t('admin.accounts.flova.priceDriftToleranceHint') }}</p>
+            </div>
+            <div>
+              <label class="input-label">{{ t('admin.accounts.flova.autoConfirmCreditsMax') }}</label>
+              <input
+                v-model.number="flovaForm.auto_confirm_credits_max"
+                data-testid="flova-auto-confirm-credits-max"
+                type="number"
+                class="input"
+                min="0" step="1"
+              />
+              <p class="input-hint">{{ t('admin.accounts.flova.autoConfirmCreditsMaxHint') }}</p>
+            </div>
+            <div>
+              <label class="input-label">{{ t('admin.accounts.flova.roundFeeCredits') }}</label>
+              <input
+                v-model.number="flovaForm.round_fee_credits"
+                data-testid="flova-round-fee-credits"
+                type="number"
+                class="input"
+                min="0" step="1"
+              />
+              <p class="input-hint">{{ t('admin.accounts.flova.roundFeeCreditsHint') }}</p>
+            </div>
+            <div>
+              <label class="input-label">{{ t('admin.accounts.flova.minCreditsReserve') }}</label>
+              <input
+                v-model.number="flovaForm.min_credits_reserve"
+                data-testid="flova-min-credits-reserve"
+                type="number"
+                class="input"
+                min="0" step="1"
+              />
+              <p class="input-hint">{{ t('admin.accounts.flova.minCreditsReserveHint') }}</p>
+            </div>
+          </div>
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <label class="input-label mb-0">{{ t('admin.accounts.flova.autoConfirmHighCost') }}</label>
+              <p class="mt-1 text-xs zt-ink-3">{{ t('admin.accounts.flova.autoConfirmHighCostHint') }}</p>
+            </div>
+            <Toggle
+              v-model="flovaForm.auto_confirm_high_cost"
+              data-testid="flova-auto-confirm-high-cost"
+              :aria-label="t('admin.accounts.flova.autoConfirmHighCost')"
+            />
+          </div>
+        </div>
         </template>
 
         <div
-          v-if="form.platform !== 'bytedance'"
+          v-if="!isVideoOnlyPlatform(form.platform)"
           class="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800/60 dark:bg-amber-900/20"
         >
           <div class="flex items-center justify-between gap-4">
@@ -1564,7 +1723,7 @@
 
         <!-- 上游倍率自动探测：全部 API-key 平台可用（所在区块已限定 apikey 类型） -->
         <div
-          v-if="form.platform !== 'bytedance'"
+          v-if="!isVideoOnlyPlatform(form.platform)"
           class="flex items-center justify-between gap-4 border-t zt-border-c2 pt-4"
         >
           <div>
@@ -4206,8 +4365,17 @@ import OpenCodeGoProtocolRulesEditor from '@/components/account/OpenCodeGoProtoc
 import HeaderOverrideEditor from '@/components/account/HeaderOverrideEditor.vue'
 import { allSelectedGroupsEnableLongContextPricing } from '@/components/account/longContextBilling'
 import {
+  FLOVA_DEFAULT_UPLOAD_URL,
+  buildFlovaCredentials,
+  defaultFlovaCredentialForm,
+  validateFlovaCredentials,
+  type FlovaCredentialForm
+} from '@/components/account/flovaCredentials'
+import {
   applyAntigravityProjectID,
   applyByteDanceProtocolMode,
+  isVideoOnlyPlatform,
+  videoVendorDefaultBaseUrl,
   applyHeaderOverride,
   applyInterceptWarmup,
   applyOpenCodeGoProtocolRules,
@@ -4295,6 +4463,7 @@ const baseUrlHint = computed(() => {
   if (form.platform === 'openai') return t('admin.accounts.openai.baseUrlHint')
   if (form.platform === 'gemini') return t('admin.accounts.gemini.baseUrlHint')
   if (form.platform === 'grok') return ''
+  if (form.platform === 'flova') return t('admin.accounts.flova.baseUrlHint')
   return t('admin.accounts.baseUrlHint')
 })
 
@@ -4307,6 +4476,7 @@ const apiKeyHint = computed(() => {
   if (form.platform === 'windsurf') return t('admin.accounts.windsurf.apiKeyHint')
   if (form.platform === 'opencode_go') return t('admin.accounts.opencode.apiKeyHint')
   if (form.platform === 'grok') return t('admin.accounts.grok.apiKeyHint')
+  if (form.platform === 'flova') return t('admin.accounts.flova.apiKeyHint')
   return t('admin.accounts.apiKeyHint')
 })
 
@@ -4332,6 +4502,12 @@ const apiKeyBaseUrlPlaceholder = computed(() => {
       return byteDanceProtocolMode.value === 'openai_compatible'
         ? 'https://relay.example.com/v1'
         : 'https://ark.cn-beijing.volces.com/api/v3'
+    case 'fal':
+    case 'wavespeed':
+    case 'runware':
+    case 'flova':
+      // 四家留空即由后端回落到官方地址，占位符只做提示。
+      return videoVendorDefaultBaseUrl(form.platform)
     default:
       return 'https://api.anthropic.com'
   }
@@ -4449,6 +4625,8 @@ const upstreamBillingAutoProbeEnabled = ref(true)
 // ByteDance 上游线格式：native 走 Ark 自身的异步任务协议，openai_compatible
 // 走第三方以 /v1/videos 转发的 Seedance。缺省 native（等同不写凭据）。
 const byteDanceProtocolMode = ref<ByteDanceProtocolMode>('native')
+// Flova 专属运行参数；切离 flova 平台或重置表单时回到默认值。
+const flovaForm = ref<FlovaCredentialForm>(defaultFlovaCredentialForm())
 const byteDanceNeedsBaseUrl = computed(
   () => form.platform === 'bytedance' && byteDanceProtocolRequiresBaseUrl(byteDanceProtocolMode.value)
 )
@@ -5178,7 +5356,7 @@ watch(
       form.type = 'apikey'
       return
     }
-    if (form.platform === 'bytedance') {
+    if (isVideoOnlyPlatform(form.platform)) {
       form.type = 'apikey'
       return
     }
@@ -5226,7 +5404,7 @@ watch(
               ? 'https://api.x.ai/v1'
               : newPlatform === 'windsurf'
                 ? WINDSURF_BASE_URL
-                : newPlatform === 'bytedance'
+                : isVideoOnlyPlatform(newPlatform)
                   ? ''
                   : 'https://api.anthropic.com'
     }
@@ -5275,13 +5453,18 @@ watch(
       accountCategory.value = 'apikey'
       modelRestrictionMode.value = 'whitelist'
     }
-    if (newPlatform === 'bytedance') {
+    if (isVideoOnlyPlatform(newPlatform)) {
       accountCategory.value = 'apikey'
       modelRestrictionMode.value = 'whitelist'
       upstreamBillingAutoProbeEnabled.value = false
     } else {
       upstreamBillingAutoProbeEnabled.value = true
+    }
+    if (newPlatform !== 'bytedance') {
       byteDanceProtocolMode.value = 'native'
+    }
+    if (newPlatform !== 'flova') {
+      flovaForm.value = defaultFlovaCredentialForm()
     }
     if (newPlatform === 'grok') {
       accountCategory.value = 'oauth-based'
@@ -5753,6 +5936,7 @@ const resetForm = () => {
   upstreamRequestIdHeader.value = ''
   upstreamBillingAutoProbeEnabled.value = true
   byteDanceProtocolMode.value = 'native'
+  flovaForm.value = defaultFlovaCredentialForm()
   editQuotaLimit.value = null
   editQuotaDailyLimit.value = null
   editQuotaWeeklyLimit.value = null
@@ -6280,7 +6464,7 @@ const handleSubmit = async () => {
         ? 'https://generativelanguage.googleapis.com'
         : form.platform === 'grok'
           ? 'https://api.x.ai/v1'
-          : form.platform === 'bytedance'
+          : isVideoOnlyPlatform(form.platform)
             ? ''
           : 'https://api.anthropic.com'
 
@@ -6306,6 +6490,16 @@ const handleSubmit = async () => {
   }
   if (form.platform === 'bytedance') {
     applyByteDanceProtocolMode(credentials, byteDanceProtocolMode.value, 'create')
+  }
+  // Flova：运行参数与 base_url 一起校验后合并进凭据（键名见方案 9.1）。
+  if (form.platform === 'flova') {
+    const flovaCredentials = buildFlovaCredentials(flovaForm.value)
+    const flovaError = validateFlovaCredentials({ base_url: credentials.base_url, ...flovaCredentials })
+    if (flovaError) {
+      appStore.showError(t(flovaError))
+      return
+    }
+    Object.assign(credentials, flovaCredentials)
   }
 
   // 国产供应商：账号模式 + 协议 + 对应端点写入凭据；后端按 account_mode 路由

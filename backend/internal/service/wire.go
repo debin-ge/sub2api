@@ -197,8 +197,40 @@ func ProvideBatchImageCleanupService(repo BatchImageRepository, accountRepo Acco
 	return svc
 }
 
-func ProvideVideoProviderRegistry(openAI *OpenAIVideoProvider, byteDance *ByteDanceVideoProvider) *VideoProviderRegistry {
-	return NewVideoProviderRegistry(openAI, byteDance)
+func ProvideVideoProviderRegistry(openAI *OpenAIVideoProvider, byteDance *ByteDanceVideoProvider, flova *FlovaVideoProvider, vendors VideoVendorProviders) *VideoProviderRegistry {
+	providers := make([]VideoProvider, 0, 3+len(vendors.Providers))
+	providers = append(providers, openAI, byteDance, flova)
+	providers = append(providers, vendors.Providers...)
+	return NewVideoProviderRegistry(providers...)
+}
+
+// ProvideFlovaCreditsSyncService 构造并启动 Flova 账号积分周期同步；间隔取
+// gateway.flova.credits_check_interval_minutes，<=0 时不启动。
+func ProvideFlovaCreditsSyncService(accountRepo AccountRepository, provider *FlovaVideoProvider, cfg *config.Config) *FlovaCreditsSyncService {
+	minutes := 0
+	if cfg != nil {
+		minutes = cfg.Gateway.Flova.CreditsCheckIntervalMinutes
+	}
+	svc := NewFlovaCreditsSyncService(accountRepo, provider, time.Duration(minutes)*time.Minute)
+	svc.Start()
+	return svc
+}
+
+// ProvideFlovaVideoProvider 构造 Flova 托管视频 provider（直连 Agent API v2）。
+func ProvideFlovaVideoProvider(httpUpstream HTTPUpstream, tlsProfiles *TLSFingerprintProfileService, catalog *VideoCapabilityCatalog, accountRepo AccountRepository, cfg *config.Config) *FlovaVideoProvider {
+	var flovaCfg config.GatewayFlovaConfig
+	if cfg != nil {
+		flovaCfg = cfg.Gateway.Flova
+	}
+	provider := NewFlovaVideoProvider(httpUpstream, tlsProfiles, flovaCfg)
+	provider.catalog = catalog
+	provider.accounts = accountRepo
+	return provider
+}
+
+// ProvideVideoVendorProviders 构造已落地的聚合媒体平台（Runware 等）视频 provider。
+func ProvideVideoVendorProviders(httpUpstream HTTPUpstream, tlsProfiles *TLSFingerprintProfileService, catalog *VideoCapabilityCatalog) VideoVendorProviders {
+	return NewVideoVendorProviders(httpUpstream, tlsProfiles, catalog)
 }
 
 func ProvideOpenAIVideoProvider(httpUpstream HTTPUpstream, tlsProfiles *TLSFingerprintProfileService, catalog *VideoCapabilityCatalog) *OpenAIVideoProvider {
@@ -1064,6 +1096,9 @@ var ProviderSet = wire.NewSet(
 	ProvideOpenAIVideoProvider,
 	ProvideVideoProviderRegistry,
 	ProvideByteDanceVideoProvider,
+	ProvideFlovaVideoProvider,
+	ProvideFlovaCreditsSyncService,
+	ProvideVideoVendorProviders,
 	NewVideoCapabilityProbeService,
 	ProvideVideoCapabilityProbeRuntime,
 	NewVideoPricingResolver,

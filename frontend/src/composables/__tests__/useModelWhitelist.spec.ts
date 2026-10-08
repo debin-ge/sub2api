@@ -26,6 +26,67 @@ describe('useModelWhitelist', () => {
     expect(models).not.toContain('doubao-pro-256k')
   })
 
+  // 三家聚合视频供应商的模型 ID 原样照搬各家目录（含 / : @），与后端档案逐字一致。
+  it('fal 模型列表只含 fal.ai 的视频端点 ID', () => {
+    const models = getModelsByPlatform('fal')
+
+    expect(models).toHaveLength(22)
+    expect(models).toContain('fal-ai/bytedance/seedance/v1/pro/text-to-video')
+    expect(models).toContain('bytedance/seedance-2.0/fast/image-to-video')
+    expect(models).toContain('fal-ai/kling-video/v3/pro/image-to-video')
+    expect(models).toContain('fal-ai/veo3.1/fast')
+    expect(models).toContain('fal-ai/sora-2/text-to-video/pro')
+    expect(models).not.toContain('doubao-seedance-1-0-pro-250528')
+    expect(new Set(models).size).toBe(models.length)
+  })
+
+  it('wavespeed 模型列表只含 WaveSpeed 的视频端点 ID', () => {
+    const models = getModelsByPlatform('wavespeed')
+
+    expect(models).toHaveLength(30)
+    expect(models).toContain('bytedance/seedance-2.5/text-to-video')
+    expect(models).toContain('bytedance/seedance-2.5/text-to-video-turbo')
+    expect(models).toContain('kwaivgi/kling-video-o3-pro/text-to-video')
+    expect(models).toContain('bytedance/seedance-v1-pro-i2v-1080p')
+    expect(models).toContain('kwaivgi/kling-v3.0-std/image-to-video')
+    expect(models).toContain('google/veo3.1-fast/text-to-video')
+    expect(models).toContain('wavespeed-ai/minimax-h3/image-to-video')
+    expect(models).toContain('alibaba/wan-2.6/image-to-video')
+    expect(models).not.toContain('fal-ai/veo3.1')
+    expect(new Set(models).size).toBe(models.length)
+  })
+
+  it('runware 模型列表只含 Runware 的 AIR ID', () => {
+    const models = getModelsByPlatform('runware')
+
+    expect(models).toHaveLength(29)
+    expect(models).toContain('bytedance:2@1')
+    expect(models).toContain('bytedance:seedance@2.0-fast')
+    expect(models).toContain('klingai:kling-video@3-4k')
+    expect(models).toContain('klingai:6@1')
+    expect(models).toContain('google:veo@3.1-lite')
+    expect(models).toContain('alibaba:wan@3.0-prime')
+    expect(models).toContain('minimax:h3@max-turbo')
+    expect(models).toContain('minimax:4@1')
+    expect(models.every((model) => /^[a-z]+:[^\s]+@[^\s]+$/.test(model))).toBe(true)
+    expect(new Set(models).size).toBe(models.length)
+  })
+
+  it('flova 模型列表只含方案 7.1 的六个一期模型', () => {
+    const models = getModelsByPlatform('flova')
+
+    expect(models).toEqual([
+      'flova/seedance-2.5',
+      'flova/seedance-2.0',
+      'flova/seedance-2.0-fast',
+      'flova/veo-3.1-fast',
+      'flova/minimax-h3',
+      'flova/kling-3.0-omni'
+    ])
+    expect(models.every((model) => model.startsWith('flova/'))).toBe(true)
+    expect(getModelsByPlatform('runware')).not.toContain('flova/seedance-2.5')
+  })
+
   it('openai 模型列表包含 GPT-5.4 官方快照', () => {
     const models = getModelsByPlatform('openai')
 

@@ -41,6 +41,10 @@ var modelCatalogPlatforms = [...]string{
 	PlatformWindsurf,
 	PlatformOpenCodeGo,
 	PlatformByteDance,
+	PlatformFal,
+	PlatformWaveSpeed,
+	PlatformRunware,
+	PlatformFlova,
 	PlatformComposite,
 	modelCatalogPlatformUnknown,
 }
@@ -58,6 +62,10 @@ var compositeModelCatalogPlatforms = [...]string{
 	PlatformWindsurf,
 	PlatformOpenCodeGo,
 	PlatformByteDance,
+	PlatformFal,
+	PlatformWaveSpeed,
+	PlatformRunware,
+	PlatformFlova,
 }
 
 var modelCatalogFallbackReasons = [...]string{

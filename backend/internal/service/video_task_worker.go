@@ -371,6 +371,7 @@ func (w *VideoTaskWorker) poll(ctx context.Context, task *VideoTask) error {
 	if observed == nil {
 		return w.recordRetryablePollFailure(ctx, task, errors.New("video provider returned no task observation"))
 	}
+	w.trackFlovaObservation(ctx, account, task, observed)
 	_, err = w.service.ReconcileProviderObservation(ctx, task, observed, "provider_polled")
 	return err
 }

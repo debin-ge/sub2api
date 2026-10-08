@@ -267,6 +267,8 @@ gateway:
   # Provider-neutral asynchronous video task platform. Creation stays off
   # until video pricing and at least one capable OpenAI API-key account exist.
   video:
+    # Managed video platforms: openai, bytedance and the aggregator platforms
+    # fal / wavespeed / runware (apikey accounts, Videos API only).
     # Environment: GATEWAY_VIDEO_ENABLED
     enabled: false
     # Environment: GATEWAY_VIDEO_CREATION_ENABLED
@@ -309,6 +311,24 @@ gateway:
       # Required only when callbacks are enabled. Prefer injecting it through
       # GATEWAY_VIDEO_CALLBACK_SIGNING_SECRET instead of storing it in this file.
       signing_secret: ""
+  # Flova（Agent 式视频创作平台，托管视频 provider "flova"）。
+  # 账号凭据：api_key / base_url / upload_url / env_name / skill_id / max_run_minutes /
+  # auto_confirm_high_cost / price_drift_tolerance / auto_confirm_credits_max /
+  # round_fee_credits / min_credits_reserve / client_version（见 docs/Flova 平台接入实施方案.md 9.1）。
+  flova:
+    # 调用 Agent API 与直拉签名内容时的 User-Agent；Flova 的 CDN 会拦截默认 UA。
+    user_agent: "flova-cli/v0.0.10 (linux; amd64)"
+    # 写入 /chat extra_data.client_version，跟随官方 CLI 版本。
+    client_version: "v0.0.10"
+    # 账号积分周期同步间隔（分钟），<=0 关闭；余额低于 min_credits_reserve 时临时移出调度。
+    credits_check_interval_minutes: 10
+    # 账号未配置 min_credits_reserve 时的低水位默认值（积分）。
+    credits_reserve_default: 60
+    # 账号未配置 max_run_minutes 时单次 run 的最长等待（分钟）。
+    max_run_minutes_default: 60
+    # 高成本确认报价相对价格表的容差默认值（0.10 = 10%）。
+    price_drift_tolerance_default: 0.10
+
   # Timeout for waiting upstream response headers (seconds)
   # 等待上游响应头超时时间（秒）
   response_header_timeout: 600

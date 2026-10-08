@@ -45,3 +45,23 @@ Check recent account credential or permission changes and OpenAI service status.
 ## VideoDedicatedCredentialDisclosure
 
 Confirm the task owner, account owner, account type, and all three disclosure-policy levels. Treat any disclosure from a shared account or any response/log containing the value as a credential incident and rotate it immediately.
+
+## FlovaEmptyCompletions
+
+Flova finished three or more runs in 15 minutes without a video artifact. The agent
+ended its round without generating: the account is usually out of credits, the
+requested model is gated for its plan, or the model refuses text-only requests
+(Kling 3.0 Omni needs a reference image). Check the account's `flova_credits`
+snapshot and subscription in the admin account list, run "test connection" to
+refresh them, and read the task error message (it carries the agent's own
+explanation). Three consecutive empty completions pause the account for 15
+minutes automatically.
+
+## FlovaPriceDrift
+
+A `high_cost_model_confirm` quote exceeded the configured credits-per-second for
+that model and resolution by more than the account's `price_drift_tolerance`.
+Flova changed its pricing: compare the quoted `credits_per_second` in the task
+metadata with the price table in `flova_video_catalog.go`, update the group
+`model_pricing` rules, then raise the tolerance or the table. Runs stay failed
+and fully released; nothing is charged upstream until a quote is approved.

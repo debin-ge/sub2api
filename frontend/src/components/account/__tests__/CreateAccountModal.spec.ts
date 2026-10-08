@@ -111,7 +111,7 @@ const ModelWhitelistSelectorStub = defineComponent({
       <button
         type="button"
         data-testid="select-models"
-        @click="$emit('update:modelValue', platform === 'zhipu' || platform === 'glm' ? ['GLM-4.7'] : platform === 'kimi' ? ['kimi-for-coding'] : platform === 'deepseek' ? ['deepseek-v4-pro'] : platform === 'windsurf' ? ['claude-sonnet-4.6'] : platform === 'opencode_go' ? ['opencode/gpt5-nano'] : platform === 'bytedance' ? ['doubao-seedance-1-0-pro-250528'] : ['gpt-5.2'])"
+        @click="$emit('update:modelValue', platform === 'zhipu' || platform === 'glm' ? ['GLM-4.7'] : platform === 'kimi' ? ['kimi-for-coding'] : platform === 'deepseek' ? ['deepseek-v4-pro'] : platform === 'windsurf' ? ['claude-sonnet-4.6'] : platform === 'opencode_go' ? ['opencode/gpt5-nano'] : platform === 'bytedance' ? ['doubao-seedance-1-0-pro-250528'] : platform === 'fal' ? ['fal-ai/veo3.1'] : platform === 'wavespeed' ? ['google/veo3.1/text-to-video'] : platform === 'runware' ? ['google:3@3'] : platform === 'flova' ? ['flova/seedance-2.5'] : ['gpt-5.2'])"
       >
         select
       </button>
@@ -368,6 +368,122 @@ describe('CreateAccountModal', () => {
 
     expect(createAccountMock).not.toHaveBeenCalled()
     expect(showErrorMock).toHaveBeenCalledWith('admin.accounts.bytedance.protocolMode.baseUrlRequired')
+  })
+
+  // 三家聚合视频供应商与 ByteDance 同一套约束：强制 apikey、base_url 可空、
+  // 没有 protocol_mode 下拉，也不暴露 OpenAI 内部转发与上游倍率探测开关。
+  describe.each([
+    { platform: 'fal', label: 'fal.ai', model: 'fal-ai/veo3.1' },
+    { platform: 'wavespeed', label: 'WaveSpeed', model: 'google/veo3.1/text-to-video' },
+    { platform: 'runware', label: 'Runware', model: 'google:3@3' },
+    { platform: 'flova', label: 'Flova', model: 'flova/seedance-2.5' }
+  ])('video vendor $platform', ({ platform, label, model }) => {
+    it(`creates ${label} as an API-key account with an optional base URL and no protocol mode`, async () => {
+      const wrapper = mountModal()
+
+      await wrapper.get(`[data-testid="create-platform-${platform}"]`).trigger('click')
+      await wrapper.get('[data-tour="account-form-name"]').setValue(`${label} account`)
+      expect((wrapper.get('[data-testid="api-key-base-url"]').element as HTMLInputElement).value).toBe('')
+      await wrapper.get('[data-testid="api-key-value"]').setValue('vendor-secret')
+
+      expect(wrapper.find('[data-testid="bytedance-protocol-mode"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="openai-internal-relay-toggle"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="upstream-billing-auto-probe"]').exists()).toBe(false)
+
+      const selector = wrapper.findComponent(ModelWhitelistSelectorStub)
+      expect(selector.props('platform')).toBe(platform)
+      expect(selector.props('syncCredentials')).toEqual(expect.objectContaining({
+        platform,
+        type: 'apikey',
+        base_url: undefined,
+        api_key: 'vendor-secret'
+      }))
+      await wrapper.get('[data-testid="select-models"]').trigger('click')
+
+      await wrapper.get('form#create-account-form').trigger('submit.prevent')
+      await flushPromises()
+
+      expect(createAccountMock).toHaveBeenCalledTimes(1)
+      const payload = createAccountMock.mock.calls[0]?.[0]
+      expect(payload).toEqual(expect.objectContaining({
+        name: `${label} account`,
+        platform,
+        type: 'apikey',
+        upstream_billing_probe_enabled: false,
+        credentials: expect.objectContaining({
+          api_key: 'vendor-secret',
+          base_url: '',
+          model_mapping: { [model]: model }
+        })
+      }))
+      expect(payload.extra?.internal_relay).toBeUndefined()
+      expect(payload.credentials?.protocol_mode).toBeUndefined()
+      expect(probeUpstreamBillingMock).not.toHaveBeenCalled()
+    })
+  })
+
+  // Flova 在通用视频供应商约束之上多一组运行参数：默认值随凭据一并提交，
+  // 非法值（容忍度越界）在提交前拦住。
+  describe('flova runtime settings', () => {
+    it('only renders the flova fields block for flova and submits spec 9.1 defaults', async () => {
+      createAccountMock.mockReset().mockResolvedValue({ id: 1 })
+      const wrapper = mountModal()
+
+      await wrapper.get('[data-testid="create-platform-runware"]').trigger('click')
+      expect(wrapper.find('[data-testid="flova-fields"]').exists()).toBe(false)
+
+      await wrapper.get('[data-testid="create-platform-flova"]').trigger('click')
+      expect(wrapper.find('[data-testid="flova-fields"]').exists()).toBe(true)
+      expect((wrapper.get('[data-testid="flova-max-run-minutes"]').element as HTMLInputElement).value).toBe('60')
+      expect((wrapper.get('[data-testid="flova-price-drift-tolerance"]').element as HTMLInputElement).value).toBe('0.1')
+      expect((wrapper.get('[data-testid="flova-min-credits-reserve"]').element as HTMLInputElement).value).toBe('60')
+      expect(wrapper.get('[data-testid="flova-auto-confirm-high-cost"]').attributes('aria-checked')).toBe('true')
+
+      await wrapper.get('[data-tour="account-form-name"]').setValue('Flova account')
+      await wrapper.get('[data-testid="api-key-value"]').setValue('flova-secret')
+      await wrapper.get('[data-testid="flova-upload-url"]').setValue('https://upload.example.com/v2/upload')
+      await wrapper.get('[data-testid="flova-skill-id"]').setValue('skill_123')
+      await wrapper.get('[data-testid="flova-min-credits-reserve"]').setValue('120')
+      await wrapper.get('[data-testid="select-models"]').trigger('click')
+
+      await wrapper.get('form#create-account-form').trigger('submit.prevent')
+      await flushPromises()
+
+      expect(createAccountMock).toHaveBeenCalledTimes(1)
+      const payload = createAccountMock.mock.calls[0]?.[0]
+      expect(payload.platform).toBe('flova')
+      expect(payload.type).toBe('apikey')
+      expect(payload.credentials).toEqual(expect.objectContaining({
+        api_key: 'flova-secret',
+        base_url: '',
+        upload_url: 'https://upload.example.com/v2/upload',
+        env_name: '',
+        skill_id: 'skill_123',
+        max_run_minutes: 60,
+        auto_confirm_high_cost: true,
+        price_drift_tolerance: 0.1,
+        auto_confirm_credits_max: 0,
+        round_fee_credits: 0,
+        min_credits_reserve: 120,
+        model_mapping: { 'flova/seedance-2.5': 'flova/seedance-2.5' }
+      }))
+      expect(payload.credentials.client_version).toBeUndefined()
+    })
+
+    it('rejects an out-of-range price drift tolerance before calling the API', async () => {
+      createAccountMock.mockReset().mockResolvedValue({ id: 1 })
+      const wrapper = mountModal()
+
+      await wrapper.get('[data-testid="create-platform-flova"]').trigger('click')
+      await wrapper.get('[data-tour="account-form-name"]').setValue('Flova account')
+      await wrapper.get('[data-testid="api-key-value"]').setValue('flova-secret')
+      await wrapper.get('[data-testid="flova-price-drift-tolerance"]').setValue('1.5')
+
+      await wrapper.get('form#create-account-form').trigger('submit.prevent')
+      await flushPromises()
+
+      expect(createAccountMock).not.toHaveBeenCalled()
+    })
   })
 
   it('submits MiniMax Token Plan API key credentials with both upstream base URLs', async () => {

@@ -19,6 +19,10 @@ const PROVIDER_BY_PLATFORM: Record<GroupPlatform, KeyGroupProvider> = {
   opencode_go: 'other',
   glm: 'domestic',
   bytedance: 'domestic',
+  fal: 'other',
+  wavespeed: 'other',
+  runware: 'other',
+  flova: 'other',
   windsurf: 'other'
 }
 

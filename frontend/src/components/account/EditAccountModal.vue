@@ -177,6 +177,8 @@
                         ? editByteDanceNeedsBaseUrl
                           ? 'https://relay.example.com/v1'
                           : 'https://ark.cn-beijing.volces.com/api/v3'
+                        : isVideoVendorPlatform(account.platform)
+                          ? videoVendorDefaultBaseUrl(account.platform)
                   : 'https://api.anthropic.com'
             "
             @input="syncOpenAIVideoCapabilityForBaseURL"
@@ -369,10 +371,113 @@
           />
           <p class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
         </div>
+        <!-- Flova 专属运行参数（api_key / base_url 沿用上方通用字段） -->
+        <div v-if="account.platform === 'flova'" data-testid="edit-flova-fields" class="space-y-4 border-t zt-border-c2 pt-4">
+          <label class="input-label">{{ t('admin.accounts.flova.sectionTitle') }}</label>
+          <div>
+            <label class="input-label">{{ t('admin.accounts.flova.uploadUrl') }}</label>
+            <input
+              v-model="editFlovaForm.upload_url"
+              data-testid="edit-flova-upload-url"
+              type="text"
+              class="input font-mono"
+              :placeholder="FLOVA_DEFAULT_UPLOAD_URL"
+            />
+            <p class="input-hint">{{ t('admin.accounts.flova.uploadUrlHint') }}</p>
+          </div>
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label class="input-label">{{ t('admin.accounts.flova.envName') }}</label>
+              <input
+                v-model="editFlovaForm.env_name"
+                data-testid="edit-flova-env-name"
+                type="text"
+                class="input font-mono"
+              />
+              <p class="input-hint">{{ t('admin.accounts.flova.envNameHint') }}</p>
+            </div>
+            <div>
+              <label class="input-label">{{ t('admin.accounts.flova.skillId') }}</label>
+              <input
+                v-model="editFlovaForm.skill_id"
+                data-testid="edit-flova-skill-id"
+                type="text"
+                class="input font-mono"
+              />
+              <p class="input-hint">{{ t('admin.accounts.flova.skillIdHint') }}</p>
+            </div>
+            <div>
+              <label class="input-label">{{ t('admin.accounts.flova.maxRunMinutes') }}</label>
+              <input
+                v-model.number="editFlovaForm.max_run_minutes"
+                data-testid="edit-flova-max-run-minutes"
+                type="number"
+                class="input"
+                min="1" step="1"
+              />
+              <p class="input-hint">{{ t('admin.accounts.flova.maxRunMinutesHint') }}</p>
+            </div>
+            <div>
+              <label class="input-label">{{ t('admin.accounts.flova.priceDriftTolerance') }}</label>
+              <input
+                v-model.number="editFlovaForm.price_drift_tolerance"
+                data-testid="edit-flova-price-drift-tolerance"
+                type="number"
+                class="input"
+                min="0" max="1" step="0.01"
+              />
+              <p class="input-hint">{{ t('admin.accounts.flova.priceDriftToleranceHint') }}</p>
+            </div>
+            <div>
+              <label class="input-label">{{ t('admin.accounts.flova.autoConfirmCreditsMax') }}</label>
+              <input
+                v-model.number="editFlovaForm.auto_confirm_credits_max"
+                data-testid="edit-flova-auto-confirm-credits-max"
+                type="number"
+                class="input"
+                min="0" step="1"
+              />
+              <p class="input-hint">{{ t('admin.accounts.flova.autoConfirmCreditsMaxHint') }}</p>
+            </div>
+            <div>
+              <label class="input-label">{{ t('admin.accounts.flova.roundFeeCredits') }}</label>
+              <input
+                v-model.number="editFlovaForm.round_fee_credits"
+                data-testid="edit-flova-round-fee-credits"
+                type="number"
+                class="input"
+                min="0" step="1"
+              />
+              <p class="input-hint">{{ t('admin.accounts.flova.roundFeeCreditsHint') }}</p>
+            </div>
+            <div>
+              <label class="input-label">{{ t('admin.accounts.flova.minCreditsReserve') }}</label>
+              <input
+                v-model.number="editFlovaForm.min_credits_reserve"
+                data-testid="edit-flova-min-credits-reserve"
+                type="number"
+                class="input"
+                min="0" step="1"
+              />
+              <p class="input-hint">{{ t('admin.accounts.flova.minCreditsReserveHint') }}</p>
+            </div>
+          </div>
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <label class="input-label mb-0">{{ t('admin.accounts.flova.autoConfirmHighCost') }}</label>
+              <p class="mt-1 text-xs zt-ink-3">{{ t('admin.accounts.flova.autoConfirmHighCostHint') }}</p>
+            </div>
+            <Toggle
+              v-model="editFlovaForm.auto_confirm_high_cost"
+              data-testid="edit-flova-auto-confirm-high-cost"
+              :aria-label="t('admin.accounts.flova.autoConfirmHighCost')"
+            />
+          </div>
+        </div>
         </template>
 
         <div
-          v-if="account.platform !== 'bytedance'"
+          v-if="!isVideoOnlyPlatform(account.platform)"
           class="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800/60 dark:bg-amber-900/20"
         >
           <div class="flex items-center justify-between gap-4">
@@ -1864,7 +1969,7 @@
             }}
           </p>
           <div
-            v-if="account?.type === 'apikey' && account.platform !== 'bytedance'"
+            v-if="account?.type === 'apikey' && !isVideoOnlyPlatform(account.platform)"
             class="mt-3 flex items-center justify-between gap-3"
           >
             <div class="min-w-0">
@@ -2209,7 +2314,7 @@
       </div>
 
       <div
-        v-if="account?.type === 'apikey' && account.platform !== 'bytedance'"
+        v-if="account?.type === 'apikey' && !isVideoOnlyPlatform(account.platform)"
         class="flex items-center justify-between gap-4 border-t zt-border-c2 pt-4"
       >
         <div>
@@ -3395,6 +3500,9 @@ import {
   defaultCNAdaptiveBaseUrls,
   defaultCNBaseUrl,
   applyByteDanceProtocolMode,
+  isVideoOnlyPlatform,
+  isVideoVendorPlatform,
+  videoVendorDefaultBaseUrl,
   byteDanceProtocolRequiresBaseUrl,
   readByteDanceProtocolMode,
   isCNProviderPlatform,
@@ -3407,6 +3515,15 @@ import {
   type OpenCodeAccountMode,
   type OpenCodeGoProtocolRule
 } from '@/components/account/credentialsBuilder'
+import {
+  FLOVA_DEFAULT_UPLOAD_URL,
+  applyFlovaCredentials,
+  buildFlovaCredentials,
+  defaultFlovaCredentialForm,
+  readFlovaCredentialForm,
+  validateFlovaCredentials,
+  type FlovaCredentialForm
+} from '@/components/account/flovaCredentials'
 import {
   formatDateTime,
   formatDateTimeLocalInput,
@@ -3500,6 +3617,7 @@ const baseUrlHint = computed(() => {
   if (props.account.platform === 'openai') return t('admin.accounts.openai.baseUrlHint')
   if (props.account.platform === 'gemini') return t('admin.accounts.gemini.baseUrlHint')
   if (props.account.platform === 'grok') return ''
+  if (props.account.platform === 'flova') return t('admin.accounts.flova.baseUrlHint')
   return t('admin.accounts.baseUrlHint')
 })
 
@@ -3534,6 +3652,8 @@ const editWindsurfBaseUrl = ref(WINDSURF_BASE_URL)
 
 // ByteDance 上游线格式；缺省 native，与后端 byteDanceProtocolMode 的回落一致。
 const editByteDanceProtocolMode = ref<ByteDanceProtocolMode>('native')
+// Flova 专属运行参数：打开弹窗时从凭据回显，保存时整体覆盖同名键。
+const editFlovaForm = ref<FlovaCredentialForm>(defaultFlovaCredentialForm())
 const editByteDanceNeedsBaseUrl = computed(
   () =>
     props.account?.platform === 'bytedance' &&
@@ -3557,6 +3677,10 @@ const editSyncCredentials = computed(() => {
     case 'gemini':
     case 'grok':
     case 'bytedance':
+    case 'fal':
+    case 'wavespeed':
+    case 'runware':
+    case 'flova':
     case 'opencode_go':
       baseUrl = editBaseUrl.value
       break
@@ -4327,7 +4451,7 @@ const defaultBaseUrl = computed(() => {
   if (props.account?.platform === 'minimax') return MINIMAX_ANTHROPIC_BASE_URL
   if (props.account?.platform === 'windsurf') return WINDSURF_BASE_URL
   if (props.account?.platform === 'grok') return 'https://api.x.ai/v1'
-  if (props.account?.platform === 'bytedance') return ''
+  if (props.account && isVideoOnlyPlatform(props.account.platform)) return ''
   // CN 供应商：按当前模式/协议回落到官方预设（清空输入框提交时使用），
   // 不能落到 anthropic 默认值（会被当 CC base 拼出错误端点）。
   // glm 是 zhipu 的历史平台 ID，defaultCNBaseUrl 已有对应 case，直接并入。
@@ -4489,7 +4613,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
 	autoResetCredit7dThreshold.value =
 		typeof extra?.auto_reset_credit_7d_threshold === 'number' ? extra.auto_reset_credit_7d_threshold * 100 : 100
 	upstreamBillingAutoProbeEnabled.value =
-		newAccount.platform !== 'bytedance' && extra?.upstream_billing_probe_enabled === true
+		!isVideoOnlyPlatform(newAccount.platform) && extra?.upstream_billing_probe_enabled === true
   upstreamBillingRateSyncEnabled.value =
     upstreamBillingAutoProbeEnabled.value && extra?.upstream_billing_rate_sync_enabled === true
 
@@ -4712,6 +4836,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     newAccount.extra?.internal_relay === true
   // 缺省即 native，凭据里读到已存模式时再覆盖，避免切换账号时残留上一个账号的选择。
   editByteDanceProtocolMode.value = 'native'
+  editFlovaForm.value = defaultFlovaCredentialForm()
   if (newAccount.type === 'apikey' && newAccount.credentials) {
     const credentials = newAccount.credentials as Record<string, unknown>
     // 国产供应商：读取 account_mode 与 api_protocol 作为可编辑初始值
@@ -4782,7 +4907,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
       }
     }
     const platformDefaultUrl =
-      newAccount.platform === 'bytedance'
+      isVideoOnlyPlatform(newAccount.platform)
         ? ''
         : newAccount.platform === 'openai'
         ? 'https://api.openai.com'
@@ -4824,6 +4949,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
       editWindsurfBaseUrl.value = (credentials.base_url as string) || WINDSURF_BASE_URL
     } else if (newAccount.platform === 'bytedance') {
       editByteDanceProtocolMode.value = readByteDanceProtocolMode(credentials)
+    } else if (newAccount.platform === 'flova') {
+      editFlovaForm.value = readFlovaCredentialForm(credentials)
     }
     editBaseUrl.value = isCNApiKeyAccount.value && editApiProtocol.value === 'adaptive'
       ? editAdaptiveBaseUrls.value.chat_completions
@@ -4890,7 +5017,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     loadModelRestrictionFromMapping(credentials.model_mapping as Record<string, unknown> | undefined)
   } else {
     const platformDefaultUrl =
-      newAccount.platform === 'bytedance'
+      isVideoOnlyPlatform(newAccount.platform)
         ? ''
         : newAccount.platform === 'openai'
         ? 'https://api.openai.com'
@@ -5642,6 +5769,17 @@ const handleSubmit = async () => {
         applyByteDanceProtocolMode(newCredentials, editByteDanceProtocolMode.value, 'edit')
       }
 
+      // Flova：运行参数与 base_url 一起校验后覆盖同名键，其余已存键原样保留。
+      if (props.account.platform === 'flova') {
+        const flovaCredentials = buildFlovaCredentials(editFlovaForm.value)
+        const flovaError = validateFlovaCredentials({ base_url: newCredentials.base_url, ...flovaCredentials })
+        if (flovaError) {
+          appStore.showError(t(flovaError))
+          return
+        }
+        applyFlovaCredentials(newCredentials, editFlovaForm.value)
+      }
+
       // 国产供应商：模式与协议写入凭据（决定额度/余额探测与转发端点/格式）。
       if (isCNApiKeyAccount.value) {
         newCredentials.account_mode = currentOpenCodeOrCNMode()
@@ -6294,7 +6432,7 @@ const handleSubmit = async () => {
       updatePayload.extra = newExtra
     }
 
-    if (props.account.type === 'apikey' && props.account.platform !== 'bytedance') {
+    if (props.account.type === 'apikey' && !isVideoOnlyPlatform(props.account.platform)) {
       const currentExtra = (updatePayload.extra as Record<string, unknown>) ||
         (props.account.extra as Record<string, unknown>) || {}
       const newExtra: Record<string, unknown> = { ...currentExtra }
@@ -6309,7 +6447,7 @@ const handleSubmit = async () => {
       const currentExtra = (updatePayload.extra as Record<string, unknown>) ||
         (props.account.extra as Record<string, unknown>) || {}
       const newExtra: Record<string, unknown> = { ...currentExtra }
-      if (props.account.platform === 'bytedance') {
+      if (isVideoOnlyPlatform(props.account.platform)) {
         delete newExtra.internal_relay
       }
       // 上游倍率自动探测对全部 API-key 平台开放（sub2api 上游即可应答），

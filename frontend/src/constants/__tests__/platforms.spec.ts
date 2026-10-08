@@ -19,7 +19,11 @@ const concretePlatforms = [
   'deepseek',
   'windsurf',
   'opencode_go',
-  'bytedance'
+  'bytedance',
+  'fal',
+  'wavespeed',
+  'runware',
+  'flova'
 ]
 
 describe('platform option catalogs', () => {

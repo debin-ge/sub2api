@@ -183,6 +183,7 @@ func TestGatewayRoutesUsageIsAvailableForAllPlatforms(t *testing.T) {
 		service.PlatformWindsurf,
 		service.PlatformOpenCodeGo,
 		service.PlatformByteDance,
+		service.PlatformFlova,
 	} {
 		router := newGatewayRoutesTestRouterForPlatform(platform)
 
@@ -439,6 +440,41 @@ func TestGatewayRoutesByteDanceRejectsNonVideoProtocols(t *testing.T) {
 		router.ServeHTTP(w, request)
 		require.Equal(t, http.StatusNotFound, w.Code, "path=%s", request.URL.Path)
 		require.Contains(t, w.Body.String(), "ByteDance gateway supports only the Videos API", "path=%s", request.URL.Path)
+	}
+}
+
+// Flova 与 ByteDance 同为仅视频平台：/v1/videos* 进托管视频处理器，其余协议一律 404。
+func TestGatewayRoutesFlovaVideosDispatchToManagedVideoHandler(t *testing.T) {
+	handlers := defaultGatewayRoutesTestHandlers(service.PlatformFlova)
+	handlers.Video = &handler.VideoHandler{}
+	router := newGatewayRoutesTestRouterForPlatformWithHandlers(service.PlatformFlova, handlers)
+	for _, request := range []*http.Request{
+		httptest.NewRequest(http.MethodPost, "/v1/videos", strings.NewReader(`{"model":"flova/seedance-2.5","prompt":"waves","seconds":5}`)),
+		httptest.NewRequest(http.MethodGet, "/v1/videos/models", nil),
+		httptest.NewRequest(http.MethodGet, "/v1/videos/video_0123456789abcdef0123456789abcdef", nil),
+	} {
+		request.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, request)
+		require.NotContains(t, w.Body.String(), "not supported for this platform", "path=%s", request.URL.Path)
+		require.NotContains(t, w.Body.String(), "Flova gateway supports only", "path=%s", request.URL.Path)
+	}
+}
+
+func TestGatewayRoutesFlovaRejectsNonVideoProtocols(t *testing.T) {
+	router := newGatewayRoutesTestRouterForPlatform(service.PlatformFlova)
+	for _, request := range []*http.Request{
+		httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"claude","messages":[]}`)),
+		httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"gpt","input":"hello"}`)),
+		httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt","messages":[]}`)),
+		httptest.NewRequest(http.MethodPost, "/v1/images/generations", strings.NewReader(`{"model":"gpt-image","prompt":"x"}`)),
+		httptest.NewRequest(http.MethodPost, "/backend-api/codex/responses", strings.NewReader(`{"model":"gpt","input":"hello"}`)),
+	} {
+		request.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, request)
+		require.Equal(t, http.StatusNotFound, w.Code, "path=%s", request.URL.Path)
+		require.Contains(t, w.Body.String(), "Flova gateway supports only the Videos API", "path=%s", request.URL.Path)
 	}
 }
 

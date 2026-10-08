@@ -187,7 +187,8 @@ export default {
         codexCli: 'Codex CLI',
         codexCliWs: 'Codex CLI (WebSocket)',
         grokCli: 'Grok CLI',
-        opencode: 'OpenCode'
+        opencode: 'OpenCode',
+        videos: '视频 API'
       },
       antigravity: {
         description: '为 Antigravity 分组配置 API 访问。请根据您使用的客户端选择对应的配置方式。',
@@ -241,6 +242,13 @@ export default {
         codexDescription: '使用 API Key 和当前 Composite 分组的完整模型目录配置 Codex。',
         codexConfigTomlHint: '下载下方模型目录，将两个文件保存到 Codex 配置目录后重启 Codex。',
         codexNote: '启动 Codex 前先导出 SUB2API_API_KEY；分组会根据目录中选中的模型路由请求。'
+      },
+      videos: {
+        description: '该分组仅提供视频生成。先 POST /v1/videos 提交任务，轮询到完成后再下载结果。',
+        note: '把 model 换成该分组允许的模型（见 /v1/videos/models）。任务是异步的：持续轮询直到 status 为 completed 或 failed。',
+        submit: '提交任务',
+        poll: '轮询任务状态',
+        download: '下载视频'
       },
       routedCodex: {
         description: '使用当前路由分组的完整模型目录配置 Codex。',

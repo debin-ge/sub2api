@@ -262,6 +262,7 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { useClipboard } from '@/composables/useClipboard'
 import { fetchCodexModelsManifest } from '@/api/codex'
+import { isVideoOnlyPlatform } from '@/components/account/credentialsBuilder'
 import type { GroupPlatform } from '@/types'
 import {
   findCodexCatalogModel,
@@ -344,7 +345,7 @@ const defaultClientTab = computed(() => {
     case 'opencode_go':
       return 'opencode'
     default:
-      return 'claude'
+      return isVideoOnlyPlatform(props.platform ?? '') ? 'videos' : 'claude'
   }
 })
 
@@ -438,6 +439,10 @@ const SparkleIcon = {
 
 const clientTabs = computed((): TabConfig[] => {
   if (!props.platform) return []
+  // 仅视频平台只有 /v1/videos 一条路，CLI 客户端配置对它们无意义。
+  if (isVideoOnlyPlatform(props.platform)) {
+    return [{ id: 'videos', label: t('keys.useKeyModal.cliTabs.videos'), icon: TerminalIcon }]
+  }
   switch (props.platform) {
     case 'openai': {
       const tabs: TabConfig[] = [
@@ -504,7 +509,7 @@ const openaiTabs: TabConfig[] = [
   { id: 'windows', label: 'Windows', icon: WindowsIcon }
 ]
 
-const showShellTabs = computed(() => activeClientTab.value !== 'opencode')
+const showShellTabs = computed(() => activeClientTab.value !== 'opencode' && activeClientTab.value !== 'videos')
 
 const showCodexAuthMode = computed(() =>
   props.platform === 'openai' &&
@@ -520,6 +525,9 @@ const currentTabs = computed(() => {
 })
 
 const platformDescription = computed(() => {
+  if (activeClientTab.value === 'videos') {
+    return t('keys.useKeyModal.videos.description')
+  }
   if (activeClientTab.value === 'codex' &&
     props.platform !== 'openai' &&
     props.platform !== 'grok' &&
@@ -564,6 +572,9 @@ const platformDescription = computed(() => {
 })
 
 const platformNote = computed(() => {
+  if (activeClientTab.value === 'videos') {
+    return t('keys.useKeyModal.videos.note')
+  }
   if (activeClientTab.value === 'codex' &&
     props.platform !== 'openai' &&
     props.platform !== 'grok' &&
@@ -719,6 +730,10 @@ const currentFiles = computed((): FileConfig[] => {
     return trimmed.endsWith('/v1beta') ? trimmed : `${trimmed}/v1beta`
   })()
 
+  if (activeClientTab.value === 'videos') {
+    return generateVideoApiFiles(apiBase, apiKey)
+  }
+
   if (activeClientTab.value === 'opencode') {
     switch (props.platform) {
       case 'anthropic':
@@ -799,6 +814,38 @@ const currentFiles = computed((): FileConfig[] => {
       return generateAnthropicFiles(baseUrl, apiKey)
   }
 })
+
+/**
+ * 仅视频平台（ByteDance / fal / WaveSpeed / Runware / Flova）的 /v1/videos 调用示例：
+ * 提交 → 轮询 → 下载。模型占位符由用户替换为分组允许的模型。
+ */
+function generateVideoApiFiles(baseUrl: string, apiKey: string): FileConfig[] {
+  return [
+    {
+      path: t('keys.useKeyModal.videos.submit'),
+      content: `curl -X POST "${baseUrl}/videos" \\
+  -H "Authorization: Bearer ${apiKey}" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "<model>",
+    "prompt": "A golden retriever running on a beach at sunset",
+    "seconds": 5,
+    "size": "1280x720"
+  }'`
+    },
+    {
+      path: t('keys.useKeyModal.videos.poll'),
+      content: `curl "${baseUrl}/videos/<video_id>" \\
+  -H "Authorization: Bearer ${apiKey}"`
+    },
+    {
+      path: t('keys.useKeyModal.videos.download'),
+      content: `curl -L "${baseUrl}/videos/<video_id>/content" \\
+  -H "Authorization: Bearer ${apiKey}" \\
+  -o video.mp4`
+    }
+  ]
+}
 
 function generateAnthropicFiles(baseUrl: string, apiKey: string): FileConfig[] {
   let path: string
@@ -1269,6 +1316,10 @@ function generateRoutedCodexFiles(
     windsurf: 'Windsurf',
     opencode_go: 'OpenCode',
     bytedance: 'ByteDance',
+    fal: 'fal.ai',
+    wavespeed: 'WaveSpeed',
+    runware: 'Runware',
+    flova: 'Flova',
     composite: 'Composite'
   }
   const label = labels[platform]
