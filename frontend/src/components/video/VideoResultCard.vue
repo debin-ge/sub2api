@@ -88,9 +88,10 @@
           </p>
         </div>
         <!--
-          内容已过期：上游只在完成后的一段窗口内保留成片（ByteDance 是 24 小时）。
-          窗口一过，直链和鉴权取回一起断，播放、重试、复制链接全是死路——所以这里
-          把它们一并撤掉，只说清楚发生了什么，而不是摆一排点了也没用的按钮。
+          内容已过期：上游只在完成后的一段有限窗口内保留成片（各家保留期不同，以
+          expires_at 为准）。窗口一过，直链和鉴权取回一起断，播放、重试、复制链接全是
+          死路——所以这里把它们一并撤掉，只说清楚发生了什么（有截止时间就一并给出），
+          而不是摆一排点了也没用的按钮。
         -->
         <div
           v-else-if="expired"
@@ -102,6 +103,9 @@
           </p>
           <p class="mt-1 text-xs zt-ink-3">
             {{ t('videoPlayground.card.contentExpiredHint') }}
+          </p>
+          <p v-if="expiresAtLabel" class="mt-1 text-xs zt-ink-3">
+            {{ t('videoPlayground.card.contentExpiredAt', { time: expiresAtLabel }) }}
           </p>
         </div>
         <div
@@ -200,6 +204,7 @@ import { useI18n } from 'vue-i18n'
 import { Icon } from '@/components/icons'
 import { fetchVideoContent, getVideoTask, type VideoTask } from '@/api/video'
 import { useClipboard } from '@/composables/useClipboard'
+import { formatDateTime } from '@/utils/format'
 import {
   classifyContentError,
   isPlayableBlob,
@@ -256,7 +261,7 @@ const playableUrl = computed(() => {
 })
 
 /**
- * 内容已过期：上游只在完成后的一段窗口内保留成片（ByteDance 是 24 小时），窗口一过
+ * 内容已过期：上游只在完成后的一段有限窗口内保留成片（各家保留期不同），窗口一过
  * 直链和鉴权取回一起断，重试救不回来。
  *
  * 两条前提：
@@ -270,6 +275,12 @@ const expired = computed(
     !blobData.value &&
     (contentExpired.value || videoContentExpired(props.card.task, props.now)),
 )
+/** 上游给了保留期截止时间就展示出来：比一句笼统的"保留期有限"更能说明到底过期于何时。 */
+const expiresAtLabel = computed(() => {
+  const expiresAt = props.card.task?.expires_at
+  if (typeof expiresAt !== 'number' || expiresAt <= 0) return ''
+  return formatDateTime(new Date(expiresAt * 1000))
+})
 const canFetchContent = computed(() => !!props.apiKey && !!props.card.task?.id)
 /** 海报（那个大播放按钮）：确实有东西可放、还没被点开，才摆出来。 */
 const showPoster = computed(

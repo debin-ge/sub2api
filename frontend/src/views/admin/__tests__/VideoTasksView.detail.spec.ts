@@ -139,3 +139,48 @@ describe('video overview band', () => {
     } finally { wrapper.unmount() }
   })
 })
+
+describe('video task upstream cost', () => {
+  const vendorTask = {
+    ...task,
+    provider: 'wavespeed',
+    usage_snapshot: { upstream_cost_usd: 0.42, billable_units: 3, inference_ms: 1234, inference_seconds: 1.5 },
+    provider_cost_snapshot: {
+      upstream_quote_usd: 0.5, configured_base_usd: 0.4, upstream_quote_exceeds_price: true,
+      upstream_quote_error: 'quote timeout', account_rate_multiplier: 1.25,
+    },
+  }
+
+  it('renders an upstream cost section from the usage and provider cost snapshots', async () => {
+    const { wrapper, state } = await mountView(overview, vendorTask)
+    try {
+      await state.openTask(vendorTask)
+      const section = state.detailSections.find(item => item.key === 'upstream-cost')
+      expect(section).toBeDefined()
+      const labels = section!.fields.map(field => field.label)
+      for (const label of [
+        'upstreamActualCost', 'billableUnits', 'inferenceMs', 'inferenceSeconds',
+        'upstreamQuote', 'configuredBase', 'upstreamQuoteError', 'accountRateMultiplier',
+      ]) {
+        expect(labels).toContain(`admin.videos.detail.${label}`)
+      }
+      expect(section!.fields.find(field => field.label === 'admin.videos.detail.accountRateMultiplier')?.value).toBe('1.2500x')
+      expect(section!.fields.find(field => field.label === 'admin.videos.detail.upstreamQuoteError')?.value).toBe('quote timeout')
+      expect(wrapper.find('[data-test="video-detail-upstream-cost"]').exists()).toBe(true)
+      // 上游报价高于本地配置单价时，整段顶部挂一条醒目的警示
+      const warning = wrapper.find('[data-test="video-detail-upstream-cost-warning"]')
+      expect(warning.exists()).toBe(true)
+      expect(warning.text()).toContain('admin.videos.detail.upstreamQuoteExceeds')
+    } finally { wrapper.unmount() }
+  })
+
+  it('omits the upstream cost section when no provider reported cost data', async () => {
+    const { wrapper, state } = await mountView()
+    try {
+      await state.openTask(task)
+      expect(state.detailSections.some(section => section.key === 'upstream-cost')).toBe(false)
+      expect(wrapper.find('[data-test="video-detail-upstream-cost"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="video-detail-upstream-cost-warning"]').exists()).toBe(false)
+    } finally { wrapper.unmount() }
+  })
+})

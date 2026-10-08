@@ -59,9 +59,10 @@ func resolveVideoExecutionSpec(request VideoCreateRequest, accountID int64, prov
 	}
 	size := videoSourceOutputSize(source)
 	seconds := videoSourceOutputSeconds(source)
-	// ByteDance offers generate only, so no ByteDance task may serve as the
+	// Only OpenAI exposes edits and extensions. ByteDance and the aggregator
+	// platforms offer generate only, so none of their tasks may serve as the
 	// source of a derived edit or extension specification.
-	if provider == VideoProviderByteDance {
+	if provider != VideoProviderOpenAI {
 		return request, spec, ErrVideoSourceSpecUnavailable
 	}
 	if size == "" {

@@ -248,6 +248,11 @@ export interface VideoTaskQuery {
   q?: string
   created_after?: string
   created_before?: string
+  /**
+   * 只列出曾进入「提交结果未知」对账流程的任务（submission_unknown_at 非空）。
+   * 后端只认 true/false（或 1/0），不传即不过滤。
+   */
+  submission_unknown?: 'true' | 'false'
 }
 
 export interface VideoResourceQuery {

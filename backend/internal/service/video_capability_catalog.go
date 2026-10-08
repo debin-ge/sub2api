@@ -64,13 +64,13 @@ func NewVideoCapabilityCatalog(settings SettingRepository) *VideoCapabilityCatal
 }
 
 func DefaultVideoCapabilityCatalogDocument() VideoCapabilityCatalogDocument {
-	return VideoCapabilityCatalogDocument{
-		Version: VideoCapabilityCatalogVersion,
-		Providers: map[string]VideoCapabilities{
-			VideoProviderOpenAI:    DefaultOpenAIVideoCapabilities(),
-			VideoProviderByteDance: DefaultByteDanceVideoCapabilities(),
-		},
+	providers := make(map[string]VideoCapabilities, len(managedVideoPlatformOrder))
+	for _, name := range ManagedVideoProviderNames() {
+		if capabilities, ok := builtinVideoCapabilitiesForProvider(name); ok {
+			providers[name] = capabilities
+		}
 	}
+	return VideoCapabilityCatalogDocument{Version: VideoCapabilityCatalogVersion, Providers: providers}
 }
 
 func DecodeVideoCapabilityCatalog(raw []byte) (VideoCapabilityCatalogDocument, error) {

@@ -89,7 +89,7 @@ func (s *VideoTaskService) ResolveVideoIngress(ctx context.Context, key *APIKey,
 	if err != nil {
 		return nil, err
 	}
-	if !decision.Matched || (decision.TargetPlatform != PlatformOpenAI && decision.TargetPlatform != PlatformByteDance && decision.TargetPlatform != PlatformGrok) {
+	if !decision.Matched || (!IsManagedVideoPlatform(decision.TargetPlatform) && decision.TargetPlatform != PlatformGrok) {
 		return nil, ErrVideoNoAccountAvailable
 	}
 	if operation == VideoOperationCharacterCreate && decision.TargetPlatform != PlatformOpenAI {

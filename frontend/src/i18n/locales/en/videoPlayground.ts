@@ -7,7 +7,7 @@ export default {
     noKey: {
       title: 'No key available for video generation',
       description:
-        'Video generation needs a pay-as-you-go key in an OpenAI / ByteDance Ark / composite group. Subscription groups are not supported.',
+        'Video generation needs a pay-as-you-go key in a group whose platform supports video (or a composite group). Subscription groups are not supported.',
       action: 'Create a key',
     },
     status: {
@@ -45,7 +45,8 @@ export default {
       contentUnavailable: 'This generation finished, but its content is not retrievable right now',
       contentExpired: 'This video has expired and can no longer be played',
       contentExpiredHint:
-        'The generation platform keeps finished videos for 24 hours; after that the link stops working. Use “Copy video address” to grab the link and save anything you want to keep soon after it finishes.',
+        'The upstream platform keeps finished videos only for a limited retention window; after that the link stops working. Use “Copy video address” to grab the link and download anything you want to keep soon after it finishes.',
+      contentExpiredAt: 'Expired at {time}',
       contentNotVideo: 'What came back was not a video file — the link may have expired. Try reloading.',
       retryPlayback: 'Reload',
     },

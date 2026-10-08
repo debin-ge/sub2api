@@ -646,13 +646,15 @@ func isGrokImageGenerationModel(model string) bool {
 
 func validateOpenAIImagesModel(model string) error {
 	model = strings.TrimSpace(model)
-	if isOpenAIImageGenerationModel(model) {
+	// /images/* is an explicit image-generation contract. The gateway must not
+	// maintain a closed list of provider model families: third-party OpenAI-
+	// compatible channels can expose arbitrary model IDs and map them at the
+	// channel/account layer. Capability and pricing guards remain responsible for
+	// deciding whether the selected route can actually serve the request.
+	if model != "" {
 		return nil
 	}
-	if model == "" {
-		return fmt.Errorf("images endpoint requires an image model")
-	}
-	return fmt.Errorf("images endpoint requires an image model, got %q", model)
+	return fmt.Errorf("images endpoint requires an image model")
 }
 
 func normalizeOpenAIImagesEndpointPath(path string) string {

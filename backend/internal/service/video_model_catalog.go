@@ -194,27 +194,13 @@ func (s *VideoTaskService) ListVideoModels(ctx context.Context, apiKey *APIKey) 
 // composite 分组取并集：用户无从预知请求会落到哪一侧，返回空或报错会让页面直接不可用。
 func videoModelProvidersForPlatform(platform string) ([]string, bool) {
 	if strings.TrimSpace(platform) == PlatformComposite {
-		return []string{VideoProviderOpenAI, VideoProviderByteDance}, true
+		return ManagedVideoProviderNames(), true
 	}
 	provider, ok := managedVideoProviderForPlatform(platform)
 	if !ok {
 		return nil, false
 	}
 	return []string{provider}, true
-}
-
-// videoPricingPlatformForProvider 是 managedVideoProviderForPlatform 的反向映射。
-// 二者的取值目前逐字相同，但定价查表用的是平台维度，写死等号会在其中一侧改名时
-// 静默串味。
-func videoPricingPlatformForProvider(provider string) string {
-	switch provider {
-	case VideoProviderByteDance:
-		return PlatformByteDance
-	case VideoProviderOpenAI:
-		return PlatformOpenAI
-	default:
-		return provider
-	}
 }
 
 // assignVideoModelOwners 决定每个模型 id 由哪个 provider 输出。
@@ -356,9 +342,39 @@ func (s *VideoTaskService) videoModelEntry(scope videoModelCatalogScope, model s
 		ContentVariants: videoContentVariantNames(scope.capabilities.ContentVariants),
 		Seconds:         videoModelSeconds(scope.provider, scope.capabilities, canonical, profile),
 		Sizes:           videoModelSizes(scope.capabilities, canonical, profile),
-		Parameters:      videoModelParametersForProvider(scope.provider, profile),
-		ReferenceInputs: videoModelReferenceInputsForProvider(scope.provider),
+		Parameters:      s.videoModelParameters(scope.provider, model, profile),
+		ReferenceInputs: s.videoModelReferenceInputs(scope.provider, model),
 	}
+}
+
+// videoModelCatalogContributor 让注册表里的 provider 自己描述参数与参考输入槽位，
+// 不再逐家往 switch 里加分支。旧 provider（OpenAI / ByteDance）仍走下面的 switch。
+func (s *VideoTaskService) videoModelCatalogContributor(provider string) VideoModelCatalogContributor {
+	if s != nil && s.providers != nil {
+		if live, ok := s.providers.Get(provider); ok && live != nil {
+			if contributor, ok := live.(VideoModelCatalogContributor); ok {
+				return contributor
+			}
+		}
+	}
+	if adapter := videoVendorAdapterByName(provider); adapter != nil {
+		return newVideoVendorProvider(adapter, nil, nil)
+	}
+	return nil
+}
+
+func (s *VideoTaskService) videoModelParameters(provider, model string, profile *VideoPricingConfig) []VideoModelParameter {
+	if contributor := s.videoModelCatalogContributor(provider); contributor != nil {
+		return contributor.ModelParameters(model, profile)
+	}
+	return videoModelParametersForProvider(provider, profile)
+}
+
+func (s *VideoTaskService) videoModelReferenceInputs(provider, model string) []VideoModelReferenceInput {
+	if contributor := s.videoModelCatalogContributor(provider); contributor != nil {
+		return contributor.ModelReferenceInputs(model)
+	}
+	return videoModelReferenceInputsForProvider(provider)
 }
 
 // videoModelsClaimedElsewhere 列出「被另一个 managed provider 声明为自己的」模型名。
@@ -378,21 +394,17 @@ func (s *VideoTaskService) videoModelsClaimedElsewhere(provider string) map[stri
 			}
 		}
 	}
-	for _, other := range []struct {
-		name    string
-		builtin func() VideoCapabilities
-	}{
-		{VideoProviderOpenAI, DefaultOpenAIVideoCapabilities},
-		{VideoProviderByteDance, DefaultByteDanceVideoCapabilities},
-	} {
-		if other.name == provider {
+	for _, other := range ManagedVideoProviderNames() {
+		if other == provider {
 			continue
 		}
-		absorb(other.builtin())
+		if builtin, ok := builtinVideoCapabilitiesForProvider(other); ok {
+			absorb(builtin)
+		}
 		if s == nil || s.providers == nil {
 			continue
 		}
-		if live, ok := s.providers.Get(other.name); ok && live != nil {
+		if live, ok := s.providers.Get(other); ok && live != nil {
 			absorb(live.Capabilities())
 		}
 	}
@@ -491,6 +503,9 @@ func videoModelSeconds(
 func videoFreeSecondsRange(provider string) (int, int) {
 	if provider == VideoProviderByteDance {
 		return videoFreeSecondsMin, videoByteDanceFreeSecondsMax
+	}
+	if adapter := videoVendorAdapterByName(provider); adapter != nil {
+		return adapter.FreeSecondsRange()
 	}
 	return videoFreeSecondsMin, videoOpenAIFreeSecondsMax
 }

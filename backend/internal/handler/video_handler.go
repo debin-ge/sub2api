@@ -259,7 +259,7 @@ func (h *VideoHandler) routeParsedCompositeMultipart(c *gin.Context, apiKey *ser
 		videoError(c, service.ErrVideoNoAccountAvailable)
 		return true
 	}
-	if platform == service.PlatformOpenAI || platform == service.PlatformByteDance {
+	if service.IsManagedVideoPlatform(platform) {
 		return false
 	}
 	if platform != service.PlatformGrok || request.Operation == service.VideoOperationCharacterCreate || h.grok == nil {

@@ -140,6 +140,38 @@ func TestResolveOpenAIImageBillingPlanUsesProviderOverrideUnderComposite(t *test
 	})
 }
 
+func TestOpenAIMediaPricingGuardAcceptsImageTokenOverride(t *testing.T) {
+	const model = "black-forest-labs/flux.1-schnell"
+	inputPrice := 1.5e-6
+	imageOutputPrice := 2.5e-5
+
+	pricingService := NewPricingService(&config.Config{}, nil)
+	pricingService.SeedCatalogForTest(map[string]*ModelPriceEntry{})
+	pricingService.SeedOverridesForTest([]ModelPriceOverride{{
+		Platform:    PlatformOpenAI,
+		ModelName:   model,
+		Enabled:     true,
+		BillingMode: BillingModeImage,
+		Payload: ModelPriceOverridePayload{
+			InputCostPerToken:       &inputPrice,
+			OutputCostPerImageToken: &imageOutputPrice,
+		},
+	}})
+	billing := NewBillingService(&config.Config{}, pricingService)
+	svc := &OpenAIGatewayService{billingService: billing}
+
+	require.True(t, svc.catalogHasMediaPricingForPlatforms(
+		[]string{PlatformOpenAI}, model, BillingKindImage,
+	), "image-token pricing must pass the scheduler media pricing guard")
+	require.NoError(t, svc.ValidateSelectedOpenAIMediaPricing(
+		context.Background(),
+		nil,
+		&Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey},
+		model,
+		BillingKindImage,
+	), "the request-level guard must use the same image-token override")
+}
+
 func TestResolveOpenAIImageBillingPlanUsesChannelTokenPrices(t *testing.T) {
 	svc := newOpenAIImageBillingPlanTestService(t)
 	groupID := int64(72)
