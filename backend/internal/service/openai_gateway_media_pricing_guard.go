@@ -457,6 +457,15 @@ func (s *OpenAIGatewayService) catalogHasMediaPricingForPlatforms(platforms []st
 		}
 		return true
 	case BillingKindImage:
+		// Image API models may be billed by image tokens instead of a per-image
+		// tier. The final image billing plan already resolves this through
+		// GetImageTokenPricingStrictForPlatforms; the scheduler-level probe must
+		// recognize the same exact pricing source or it will reject the account
+		// before forwarding (especially for third-party models that exist only in
+		// the operator's image-token override catalog).
+		if _, err := s.billingService.GetImageTokenPricingStrictForPlatforms(platforms, model, false); err == nil {
+			return true
+		}
 		// Scheduler selection does not carry the requested image tier. Treat this
 		// as a model-level candidate check: every generation path performs a
 		// second enforceResolvedOpenAIMediaPricing check with the exact tier

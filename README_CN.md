@@ -728,6 +728,8 @@ go generate ./cmd/server
 
 ## OpenAI 图片模型
 
+`/v1/images/generations` 和 `/v1/images/edits` 接受配置渠道提供的任意模型 ID，不限制供应商或模型命名格式；模型会按渠道映射和账号映射原样转发。实际可用性由分组图片权限、账号能力和图片计费配置共同决定。
+
 支持 `gpt-image-2.5-flare`、`gpt-image-2.5-sunburst` 及其 `2026-09-08` 日期快照，可通过 `/v1/images/generations`、`/v1/images/edits` 调用。`quality` 支持 `xhigh`、`max`、`auto`，合法自定义尺寸和图片 usage 明细保持透传。
 
 OAuth / Setup Token 图片请求使用 Responses 主控模型调用 `image_generation` 工具，默认主控为 `gpt-5.6-luna`。可设置 `SUB2API_IMAGES_MAIN_MODEL` 切换为账号支持的文本模型；Docker Compose 用户修改 `.env` 后执行 `docker compose up -d` 重建容器。该配置不会替换所选图片模型，也不会覆盖 `/v1/responses` 请求中已经提供的文本主控模型。
