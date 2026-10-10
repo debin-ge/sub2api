@@ -42,19 +42,19 @@ func flovaRenderInstruction(plan *flovaPlan, prompt string, files []flovaFile) (
 	var b strings.Builder
 	for _, file := range files {
 		marker, _ := json.Marshal(map[string]string{"type": "uploaded", "resource_name": file.Name})
-		b.WriteString("`")
-		b.Write(marker)
-		b.WriteString("` ")
+		_, _ = b.WriteString("`")
+		_, _ = b.Write(marker)
+		_, _ = b.WriteString("` ")
 	}
 	fmt.Fprintf(&b, "Generate exactly one video. Model: %s. Aspect ratio: %s. Resolution: %s. Duration: %d seconds.\n",
 		plan.profile.DisplayName, plan.ratio, plan.resolution, plan.seconds)
 	if len(files) > 0 {
-		b.WriteString("Reference image: use the attached uploaded image as the first frame / visual reference only.\n")
+		_, _ = b.WriteString("Reference image: use the attached uploaded image as the first frame / visual reference only.\n")
 	}
 	fmt.Fprintf(&b, "Prompt (use verbatim, do not rewrite): <<<%s>>>\n", flovaEscapePrompt(prompt))
-	b.WriteString("Rules for this round: produce exactly one video asset and nothing else. Do not write a script, storyboard, voiceover, music, timeline or export. ")
-	b.WriteString("Do not generate images unless strictly required as the first frame of this single video. ")
-	b.WriteString("Use the model, aspect ratio, resolution and duration exactly as given; if the model is unavailable to this account, stop and report the reason instead of substituting another model.")
+	_, _ = b.WriteString("Rules for this round: produce exactly one video asset and nothing else. Do not write a script, storyboard, voiceover, music, timeline or export. ")
+	_, _ = b.WriteString("Do not generate images unless strictly required as the first frame of this single video. ")
+	_, _ = b.WriteString("Use the model, aspect ratio, resolution and duration exactly as given; if the model is unavailable to this account, stop and report the reason instead of substituting another model.")
 	content := b.String()
 	sum := sha256.Sum256([]byte(content))
 	return content, hex.EncodeToString(sum[:])

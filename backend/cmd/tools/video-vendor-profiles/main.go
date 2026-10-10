@@ -68,6 +68,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
+	//nolint:gosec // G703: 输出路径来自命令行 -out 参数，本工具由开发者本地运行生成嵌入档案，非请求输入
 	if err := os.WriteFile(*out, append(encoded, '\n'), 0o644); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)

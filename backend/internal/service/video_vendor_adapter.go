@@ -190,22 +190,6 @@ func (p *videoModelProfile) supportedSecondsList() []int {
 	return nil
 }
 
-func (p *videoModelProfile) supportsSize(size string) bool {
-	if p == nil || p.Fallback || len(p.Sizes) == 0 {
-		return true
-	}
-	normalized, _, _, valid := parseVideoDimensions(size)
-	if !valid {
-		return false
-	}
-	for _, allowed := range p.Sizes {
-		if candidate, _, _, ok := parseVideoDimensions(allowed); ok && candidate == normalized {
-			return true
-		}
-	}
-	return false
-}
-
 // arkFieldOptionKeys 列出历史上通过 provider_options 透传、现已成为 Ark 显式字段的键。
 var arkFieldOptionKeys = map[string]string{
 	"seed": "seed", "camera_fixed": "camera_fixed", "cameraFixed": "camera_fixed", "watermark": "watermark",
@@ -476,28 +460,6 @@ func videoVendorSizesFor(aspects, resolutions []string) []string {
 		}
 	}
 	return sizes
-}
-
-// videoVendorResolutionFor 返回厂商词表下的分辨率档位；档位不在厂商词表里时返回空串。
-func videoVendorResolutionFor(profile *videoModelProfile, size string) string {
-	label := videoVendorResolutionLabel(size)
-	if label == "" {
-		return ""
-	}
-	if profile != nil && profile.ResolutionLabels != nil {
-		if mapped, ok := profile.ResolutionLabels[label]; ok {
-			label = mapped
-		}
-	}
-	if profile != nil && len(profile.Resolutions) > 0 {
-		for _, allowed := range profile.Resolutions {
-			if strings.EqualFold(strings.TrimSpace(allowed), label) {
-				return label
-			}
-		}
-		return ""
-	}
-	return label
 }
 
 // videoVendorAspectRatioLabel 把尺寸归到厂商常用的比例词表。
