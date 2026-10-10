@@ -2265,6 +2265,28 @@ func videoClientRequestHash(request VideoSubmitRequest) (string, error) {
 	return HashVideoRequest(contract)
 }
 
+// videoClientRequestHashV2 复刻契约 2（Ark 维度进入哈希之前）的字段集，只用来匹配升级前
+// 按版本 2 落库的任务：同一请求按 3 算出的哈希与旧任务永远不等，若不按旧契约重算，合法
+// 重放会被误判为 video_idempotency_conflict。新任务一律写 3，此函数不再演进。
+// reference_media 在旧契约里来自 OpenAI 形态字段，这里用同一结构从 Content 派生。
+func videoClientRequestHashV2(request VideoSubmitRequest) (string, error) {
+	contract := map[string]any{
+		"operation": request.Operation, "model": strings.TrimSpace(request.Model),
+		"prompt": request.Prompt, "seconds": request.Seconds, "size": strings.TrimSpace(request.Size),
+		"quality": strings.TrimSpace(request.Quality), "audio_enabled": request.AudioEnabled,
+		"service_tier": strings.TrimSpace(request.ServiceTier), "request_mode": strings.TrimSpace(request.RequestMode),
+		"inference_mode": strings.TrimSpace(request.InferenceMode), "input_reference": request.InputReference,
+		"inputs": videoInputHashManifest(request.Inputs), "characters": request.CharacterIDs,
+		"source_video": strings.TrimSpace(request.SourceVideoID), "provider_options": request.ProviderOptions,
+		"callback_url": strings.TrimSpace(request.CallbackURL),
+	}
+	media := VideoCreateRequest{Content: request.Content, Ratio: request.Ratio, AspectRatio: request.AspectRatio}.ReferenceMedia()
+	if !media.Empty() {
+		contract["reference_media"] = media
+	}
+	return HashVideoRequest(contract)
+}
+
 type videoInputHashEntry struct {
 	Role     VideoInputRole `json:"role"`
 	MIMEType string         `json:"mime_type"`

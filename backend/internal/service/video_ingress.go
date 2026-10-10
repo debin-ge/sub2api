@@ -187,7 +187,22 @@ func videoRequestMatchesTask(request VideoSubmitRequest, hash string, task *Vide
 	}
 	if version, exists := task.RequestAttributes["client_request_contract_version"]; exists {
 		value, ok := numericMapValue(map[string]any{"version": version}, "version")
-		return ok && (value == 2 || value == videoClientRequestContractVersion) && task.RequestHash == hash
+		if !ok {
+			return false
+		}
+		switch value {
+		case videoClientRequestContractVersion:
+			return task.RequestHash == hash
+		case 2:
+			// 升级前落库的任务存的是契约 2 的哈希，必须按旧字段集重算才能认出合法重放。
+			if task.RequestHash == hash {
+				return true
+			}
+			legacyHash, err := videoClientRequestHashV2(request)
+			return err == nil && task.RequestHash == legacyHash
+		default:
+			return false
+		}
 	}
 	if task.RequestedModel != task.PublicModel && strings.TrimSpace(request.Model) != "" && strings.TrimSpace(request.Model) != task.RequestedModel {
 		return false
