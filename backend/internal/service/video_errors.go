@@ -42,4 +42,12 @@ var (
 	ErrVideoQueueInvalidPayload       = infraerrors.New(http.StatusBadRequest, "VIDEO_QUEUE_INVALID_PAYLOAD", "invalid video task queue payload")
 	ErrVideoSpoolLimited              = infraerrors.New(http.StatusTooManyRequests, "VIDEO_SPOOL_LIMITED", "video submission spool capacity is exhausted")
 	ErrVideoSpoolCorrupt              = infraerrors.New(http.StatusInternalServerError, "VIDEO_SPOOL_CORRUPT", "video submission spool is corrupt")
+	// Ark 形态入口的协议错误。
+	ErrVideoUseArkEndpoint             = infraerrors.New(http.StatusNotFound, "USE_CONTENTS_GENERATIONS_TASKS", "this platform serves video tasks at /api/v3/contents/generations/tasks")
+	ErrVideoArkPlatformUnsupported     = infraerrors.New(http.StatusForbidden, "VIDEO_ARK_PLATFORM_UNSUPPORTED", "the video task API is only available to ByteDance, fal, WaveSpeed, Runware and Flova groups")
+	ErrVideoInvalidContent             = infraerrors.New(http.StatusBadRequest, "INVALID_CONTENT", "content must be a non-empty array with at least one text item")
+	ErrVideoInvalidContentRole         = infraerrors.New(http.StatusBadRequest, "INVALID_ROLE", "content item role is not valid for its type")
+	ErrVideoDurationFramesConflict     = infraerrors.New(http.StatusBadRequest, "DURATION_FRAMES_CONFLICT", "duration and frames cannot both be specified")
+	ErrVideoAdaptiveRatioRequiresImage = infraerrors.New(http.StatusBadRequest, "ADAPTIVE_RATIO_REQUIRES_FIRST_FRAME", "ratio adaptive requires a first_frame image")
+	ErrVideoUnsupportedParameter       = infraerrors.New(http.StatusBadRequest, "UNSUPPORTED_PARAMETER", "request parameter is not supported by this model")
 )

@@ -267,12 +267,17 @@ gateway:
   # Provider-neutral asynchronous video task platform. Creation stays off
   # until video pricing and at least one capable OpenAI API-key account exist.
   video:
-    # Managed video platforms: openai, bytedance and the aggregator platforms
-    # fal / wavespeed / runware (apikey accounts, Videos API only).
+    # Managed video platforms: openai (Sora, /v1/videos) and the Ark-protocol
+    # platforms bytedance / fal / wavespeed / runware / flova, which are served
+    # only at /api/v3/contents/generations/tasks (apikey accounts).
     # Environment: GATEWAY_VIDEO_ENABLED
     enabled: false
     # Environment: GATEWAY_VIDEO_CREATION_ENABLED
     creation_enabled: false
+    # JSON body limit for Ark-protocol create requests; inline data: URI images
+    # count against it (each image is also capped by content moderation at 8MB).
+    # Between 1MB and 64MB.
+    task_json_body_max_bytes: 16777216
     submit_timeout_seconds: 180
     # Automatic reconciliation window for an upstream submission whose response was lost.
     submission_reconciliation_minutes: 30

@@ -637,8 +637,22 @@ func (p *FlovaVideoProvider) plan(account *Account, request VideoCreateRequest, 
 	if request.Quality != "" || request.ServiceTier != "" || request.ParentTask != nil || len(request.Characters) != 0 {
 		return nil, rejectedVideoProviderError("validation", "unsupported_option", "quality, service_tier, characters and parent tasks are not supported by Flova", http.StatusBadRequest)
 	}
-	if request.InputReference != nil || flovaHasReferenceMedia(request.ReferenceMedia) {
-		return nil, rejectedVideoProviderError("validation", "unsupported_reference_media", "Flova accepts reference images as uploaded input_reference files only", http.StatusBadRequest)
+	if request.HasOpenAIOnlyFields() {
+		return nil, rejectedVideoProviderError("validation", "unsupported_option", "size, quality, aspect_ratio, input_reference and characters are OpenAI-only fields", http.StatusBadRequest)
+	}
+	if request.SmartDuration || request.Frames > 0 || request.Seed != nil || request.CameraFixed != nil || request.Watermark != nil ||
+		request.ReturnLastFrame != nil || request.ExecutionExpiresAfter != 0 || (request.AudioEnabled != nil && *request.AudioEnabled) {
+		return nil, rejectedVideoProviderError("validation", "unsupported_option", "Flova does not support duration -1, frames, seed, camera_fixed, watermark, generate_audio or return_last_frame", http.StatusBadRequest)
+	}
+	// Flova 的参考图必须先上传到它的存储：content[] 里只接受首帧，且必须是字节（data: URI），
+	// https 引用没有可下载再上传的通道。
+	for _, item := range request.MediaContent() {
+		if item.Role != VideoInputRoleFirstFrame && item.Role != VideoInputRoleReferenceImage {
+			return nil, rejectedVideoProviderError("validation", "unsupported_reference_media", fmt.Sprintf("Flova does not accept content role %q", item.Role), http.StatusBadRequest)
+		}
+		if item.Input == nil {
+			return nil, rejectedVideoProviderError("validation", "unsupported_reference_media", "Flova reference images must be inline data: URIs, not remote URLs", http.StatusBadRequest)
+		}
 	}
 	profile := flovaModelProfileFor(request.Model)
 	if profile == nil {
@@ -648,7 +662,7 @@ func (p *FlovaVideoProvider) plan(account *Account, request VideoCreateRequest, 
 	if capabilities.SupportedModels != nil && !capabilities.SupportedModels[profile.ID] {
 		return nil, rejectedVideoProviderError("validation", "unsupported_model", fmt.Sprintf("model %q is disabled in the Flova catalog", profile.ID), http.StatusBadRequest)
 	}
-	ratio, resolution, err := flovaResolveRendition(profile, request.Size, request.ProviderOptions)
+	ratio, resolution, err := flovaResolveRendition(profile, request.Ratio, request.Resolution)
 	if err != nil {
 		return nil, rejectedVideoProviderError("validation", "unsupported_size", err.Error(), http.StatusBadRequest)
 	}
@@ -674,23 +688,18 @@ func (p *FlovaVideoProvider) plan(account *Account, request VideoCreateRequest, 
 	}
 	for i := range inputs {
 		input := inputs[i]
-		if input.Role != VideoInputRoleReferenceImage {
+		if input.Role != VideoInputRoleReferenceImage && input.Role != VideoInputRoleFirstFrame {
 			return nil, rejectedVideoProviderError("validation", "unsupported_input_role", fmt.Sprintf("input role %q is not supported by Flova", input.Role), http.StatusBadRequest)
 		}
 		mimeType := strings.ToLower(strings.TrimSpace(input.MIMEType))
-		if !capabilities.InputMIMETypes[VideoInputRoleReferenceImage][mimeType] {
+		if !capabilities.InputMIMETypes[VideoInputRoleFirstFrame][mimeType] {
 			return nil, rejectedVideoProviderError("validation", "unsupported_input_type", fmt.Sprintf("reference image type %q is not supported", mimeType), http.StatusBadRequest)
 		}
-		if limit := capabilities.MaxInputBytes[VideoInputRoleReferenceImage]; limit > 0 && input.Size > limit {
+		if limit := capabilities.MaxInputBytes[VideoInputRoleFirstFrame]; limit > 0 && input.Size > limit {
 			return nil, rejectedVideoProviderError("validation", "input_too_large", "reference image exceeds the Flova size limit", http.StatusBadRequest)
 		}
 	}
 	return &flovaPlan{profile: profile, ratio: ratio, resolution: resolution, seconds: seconds}, nil
-}
-
-func flovaHasReferenceMedia(media ProviderVideoReferenceMedia) bool {
-	return strings.TrimSpace(media.ImageURL) != "" || strings.TrimSpace(media.FirstImageURL) != "" || strings.TrimSpace(media.LastImageURL) != "" ||
-		len(media.ReferenceImages) > 0 || len(media.ReferenceVideos) > 0 || len(media.ReferenceAudios) > 0
 }
 
 // ---------------------------------------------------------------------------
@@ -738,7 +747,7 @@ func (p *FlovaVideoProvider) Create(ctx context.Context, account *Account, reque
 		ProviderTaskID: state.encode(), Status: VideoGenerationQueued, RawStatus: "chat_started",
 		ProviderCreatedAt: &now, SuggestedPollInterval: flovaDefaultPollInterval,
 		Metadata: map[string]any{
-			"model": plan.profile.ID, "model_display": plan.profile.DisplayName, "resolution": plan.resolution,
+			"model": plan.profile.ID, "model_display": plan.profile.DisplayName, "resolution": flovaArkResolution(plan.resolution),
 			"ratio": plan.ratio, "seconds": plan.seconds, "project_id": projectID, "stream_chat_id": streamChatID,
 			"submitted_at": now.Format(time.RFC3339), "skill_id": p.skillID(account), "instruction_sha256": instructionSHA,
 			"files": fileIDs,
@@ -1108,7 +1117,7 @@ func (p *FlovaVideoProvider) evaluateRun(ctx context.Context, account *Account, 
 		Access:          &ProviderTaskAccess{Kind: "signed_url", Value: video.ResourceURL, Scope: "video_content", ExpiresAt: &expires},
 		Usage:           map[string]any{"seconds": state.Seconds},
 		Metadata: map[string]any{
-			"model": state.model(), "resolution": state.Resolution, "seconds": state.Seconds,
+			"model": state.model(), "resolution": flovaArkResolution(state.Resolution), "seconds": state.Seconds,
 			"project_id": state.ProjectID, "stream_chat_id": state.StreamChatID, "resource_id": video.ResourceID,
 			"artifact_count": len(videos) + len(images), "image_count": len(images),
 			"assistant_text": flovaLastAssistantText(run, ""),
@@ -1264,7 +1273,7 @@ func (p *FlovaVideoProvider) progressTask(state flovaTaskState, raw, status stri
 	return &ProviderVideoTask{
 		ProviderTaskID: state.encode(), Status: status, RawStatus: raw, SuggestedPollInterval: poll,
 		Metadata: map[string]any{
-			"model": state.model(), "resolution": state.Resolution, "seconds": state.Seconds,
+			"model": state.model(), "resolution": flovaArkResolution(state.Resolution), "seconds": state.Seconds,
 			"project_id": state.ProjectID, "stream_chat_id": state.StreamChatID,
 		},
 	}
@@ -1590,31 +1599,3 @@ func (p *FlovaVideoProvider) Delete(context.Context, *Account, ProviderTaskRef) 
 // ---------------------------------------------------------------------------
 // 目录贡献
 // ---------------------------------------------------------------------------
-
-func (p *FlovaVideoProvider) ModelParameters(model string, _ *VideoPricingConfig) []VideoModelParameter {
-	profile := flovaModelProfileFor(model)
-	if profile == nil {
-		return nil
-	}
-	seconds := profile.supportedSeconds()
-	secondValues := make([]string, 0, len(seconds))
-	for _, s := range seconds {
-		secondValues = append(secondValues, strconv.Itoa(s))
-	}
-	ratios := profile.Ratios
-	if len(ratios) == 0 {
-		ratios = []string{"16:9", "9:16"}
-	}
-	return []VideoModelParameter{
-		{Name: "seconds", In: "body", Values: secondValues},
-		{Name: "size", In: "body", Values: profile.supportedSizes()},
-		{Name: "ratio", In: videoModelParameterInProviderOptions, Values: append([]string(nil), ratios...)},
-		{Name: "resolution", In: videoModelParameterInProviderOptions, Values: append([]string(nil), profile.Resolutions...)},
-	}
-}
-
-// ModelReferenceInputs：Flova 的参考图走 multipart input_reference（能力表里的 input role），
-// 不接受 URL 形式的引用，所以这里没有 URL 槽位。
-func (p *FlovaVideoProvider) ModelReferenceInputs(string) []VideoModelReferenceInput {
-	return nil
-}

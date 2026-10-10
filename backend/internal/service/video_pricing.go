@@ -30,7 +30,10 @@ type VideoPricingAttributes struct {
 	Operation            string
 	Size                 string
 	Resolution           string
+	Ratio                string
 	Seconds              int
+	Frames               int
+	SmartDuration        bool
 	MaximumOutputSeconds int
 	OutputSpecUnverified bool
 	InputType            string

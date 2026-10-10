@@ -65,6 +65,9 @@ func mergeVideoVendorProfiles(tierA map[string]*videoModelProfile, document vend
 			merged[model] = profile
 		}
 	}
+	for _, profile := range merged {
+		profile.finalizeArkDimensions()
+	}
 	return merged
 }
 
@@ -164,12 +167,18 @@ func videoVendorProfileFromEntry(entry vendorprofile.Entry, defaults videoVendor
 	if lastImageField == "" {
 		lastImageField = defaults.LastImageField
 	}
+	ratios := make([]string, 0, len(entry.Aspects))
+	for _, aspect := range entry.Aspects {
+		if aspect = strings.TrimSpace(aspect); IsArkVideoRatio(aspect) && aspect != ArkVideoRatioAdaptive {
+			ratios = append(ratios, aspect)
+		}
+	}
 	return &videoModelProfile{
 		PublicModel: model, Endpoint: endpoint,
 		RequiresImage: entry.AllowsImage && entry.RequiresImage, AllowsImage: entry.AllowsImage, MaxImages: maxImages,
 		Seconds: seconds, MinSeconds: minSeconds, MaxSeconds: maxSeconds, DefaultSeconds: defaultSeconds,
 		DurationEnc: durationEnc, DurationField: "duration",
-		Sizes: sizes, DefaultSize: defaultSize, SizeEnc: sizeEnc,
+		Sizes: sizes, DefaultSize: defaultSize, SizeEnc: sizeEnc, Ratios: ratios,
 		ImageResolutionField: strings.TrimSpace(entry.ImageResolutionField),
 		Resolutions:          resolutions, ResolutionLabels: labels,
 		AudioField: strings.TrimSpace(entry.AudioField), OptionWhitelist: options, OutputPath: defaults.OutputPath,

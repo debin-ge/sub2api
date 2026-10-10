@@ -16,6 +16,14 @@ var videoProviderMetadataKeys = []string{
 	"seconds",
 	"service_tier",
 	"size",
+	// Ark 任务查询回报的观测值：对外投影按这些覆盖请求快照。
+	"resolution",
+	"ratio",
+	"seed",
+	"frames",
+	"framespersecond",
+	"generate_audio",
+	"revised_prompt",
 }
 
 func sanitizeVideoProviderMetadata(values map[string]any) map[string]any {

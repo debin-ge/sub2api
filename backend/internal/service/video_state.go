@@ -150,3 +150,70 @@ func ProjectVideoStatus(task *VideoTask) string {
 		return VideoGenerationQueued
 	}
 }
+
+// Ark 任务协议对外的状态词表。
+const (
+	ArkVideoStatusQueued    = "queued"
+	ArkVideoStatusRunning   = "running"
+	ArkVideoStatusSucceeded = "succeeded"
+	ArkVideoStatusFailed    = "failed"
+	ArkVideoStatusCancelled = "cancelled"
+	ArkVideoStatusExpired   = "expired"
+)
+
+// ProjectArkVideoStatus 把内部状态投影成 Ark 词表。与 ProjectVideoStatus 同一条规则：
+// 生成完成但计费尚未 captured 的任务仍是 running，不能对用户暴露成功态；取消与过期
+// 不再折叠成 failed。
+func ProjectArkVideoStatus(task *VideoTask) string {
+	if task == nil {
+		return ArkVideoStatusFailed
+	}
+	switch task.GenerationState {
+	case VideoGenerationCompleted:
+		if task.BillingState == VideoBillingCaptured {
+			return ArkVideoStatusSucceeded
+		}
+		return ArkVideoStatusRunning
+	case VideoGenerationFailed:
+		return ArkVideoStatusFailed
+	case VideoGenerationCancelled:
+		return ArkVideoStatusCancelled
+	case VideoGenerationExpired:
+		return ArkVideoStatusExpired
+	case VideoGenerationInProgress:
+		return ArkVideoStatusRunning
+	default:
+		return ArkVideoStatusQueued
+	}
+}
+
+// IsArkVideoStatus 报告字符串是否为 Ark 状态词表中的值。
+func IsArkVideoStatus(status string) bool {
+	switch status {
+	case ArkVideoStatusQueued, ArkVideoStatusRunning, ArkVideoStatusSucceeded, ArkVideoStatusFailed, ArkVideoStatusCancelled, ArkVideoStatusExpired:
+		return true
+	default:
+		return false
+	}
+}
+
+// ArkVideoStatusGenerationStates 把 Ark 状态过滤词映射回内部 generation_state 集合，
+// 列表接口按它过滤。succeeded 对应 completed（含未结算者，列表不做计费门控）。
+func ArkVideoStatusGenerationStates(status string) []string {
+	switch status {
+	case ArkVideoStatusQueued:
+		return []string{VideoGenerationPreparing, VideoGenerationHeld, VideoGenerationSubmitting, VideoGenerationQueued}
+	case ArkVideoStatusRunning:
+		return []string{VideoGenerationInProgress}
+	case ArkVideoStatusSucceeded:
+		return []string{VideoGenerationCompleted}
+	case ArkVideoStatusFailed:
+		return []string{VideoGenerationFailed}
+	case ArkVideoStatusCancelled:
+		return []string{VideoGenerationCancelled}
+	case ArkVideoStatusExpired:
+		return []string{VideoGenerationExpired}
+	default:
+		return nil
+	}
+}

@@ -106,3 +106,57 @@ func TestCompositeVideoPostDefersBudgetButRetainsIdentityGates(t *testing.T) {
 		}
 	}
 }
+
+// Ark 任务路径走与 /v1/videos 相同的账务规则：读与删除不要求生成余额，创建延迟到意图阶段计费，
+// 但身份门禁（过期 / 禁用）照常生效。
+func TestArkVideoTaskPathsFollowVideoAuthRules(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	taskID := "video_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	for _, platform := range []string{service.PlatformByteDance, service.PlatformFlova, service.PlatformComposite} {
+		for _, scenario := range []struct {
+			name, keyStatus string
+			expired         bool
+			expected        int
+		}{
+			{"quota_exhausted", service.StatusAPIKeyQuotaExhausted, false, http.StatusOK},
+			{"zero_balance", service.StatusActive, false, http.StatusOK},
+			{"expired", service.StatusActive, true, http.StatusForbidden},
+			{"disabled", "disabled", false, http.StatusUnauthorized},
+		} {
+			for _, request := range []struct {
+				method string
+				path   string
+			}{
+				{http.MethodPost, "/api/v3/contents/generations/tasks"},
+				{http.MethodPost, "/contents/generations/tasks"},
+				{http.MethodGet, "/v1/contents/generations/tasks"},
+				{http.MethodGet, "/api/v3/contents/generations/tasks/" + taskID},
+				{http.MethodDelete, "/v3/contents/generations/tasks/" + taskID},
+				{http.MethodGet, "/api/v3/contents/generations/tasks/" + taskID + "/content"},
+				{http.MethodHead, "/api/v3/contents/generations/tasks/" + taskID + "/content"},
+				{http.MethodGet, "/api/v3/contents/generations/models"},
+			} {
+				t.Run(platform+"/"+scenario.name+"/"+request.method+request.path, func(t *testing.T) {
+					group := &service.Group{ID: 7, Platform: platform, Status: service.StatusActive, Hydrated: true}
+					user := &service.User{ID: 42, Role: service.RoleUser, Status: service.StatusActive, Balance: 0}
+					key := &service.APIKey{ID: 3, UserID: user.ID, Key: "ark-video-auth-test", Status: scenario.keyStatus, User: user, GroupID: &group.ID, Group: group}
+					if scenario.expired {
+						at := time.Now().Add(-time.Hour)
+						key.ExpiresAt = &at
+					}
+					repo := &stubApiKeyRepo{getByKey: func(context.Context, string) (*service.APIKey, error) { return key, nil }}
+					cfg := &config.Config{RunMode: config.RunModeStandard}
+					svc := service.NewAPIKeyService(repo, nil, nil, nil, nil, nil, cfg)
+					router := gin.New()
+					router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(svc, nil, cfg)))
+					router.Handle(request.method, request.path, func(ctx *gin.Context) { ctx.Status(http.StatusOK) })
+					httpRequest := httptest.NewRequest(request.method, request.path, nil)
+					httpRequest.Header.Set("x-api-key", key.Key)
+					recorder := httptest.NewRecorder()
+					router.ServeHTTP(recorder, httpRequest)
+					require.Equal(t, scenario.expected, recorder.Code, recorder.Body.String())
+				})
+			}
+		}
+	}
+}

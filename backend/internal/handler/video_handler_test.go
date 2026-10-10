@@ -62,6 +62,8 @@ type videoTaskAPIFake struct {
 	deleteErr             error
 	models                *service.VideoModelsResponse
 	modelsErr             error
+	arkModels             *service.ArkVideoModelsResponse
+	arkModelsErr          error
 	modelsAPIKey          *service.APIKey
 	characterErr          error
 	submitCalls           int
@@ -228,6 +230,11 @@ func (f *videoTaskAPIFake) DeleteCharacterForOwner(context.Context, int64, strin
 	return f.characterErr
 }
 
+func (f *videoTaskAPIFake) ListArkVideoModels(_ context.Context, apiKey *service.APIKey) (*service.ArkVideoModelsResponse, error) {
+	f.modelsAPIKey = apiKey
+	return f.arkModels, f.arkModelsErr
+}
+
 func (f *videoTaskAPIFake) ListVideoModels(_ context.Context, apiKey *service.APIKey) (*service.VideoModelsResponse, error) {
 	f.modelsAPIKey = apiKey
 	return f.models, f.modelsErr
@@ -343,68 +350,102 @@ func TestVideoHandlerCreateJSONAcceptsStructuredReferenceVideos(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
 	require.Equal(t, 10, fake.submitRequest.Seconds)
-	require.Equal(t, []string{referenceURL}, fake.submitRequest.ReferenceMedia.ReferenceVideos)
+	require.Equal(t, []service.VideoContentItem{
+		{Type: service.VideoContentTypeVideo, Role: service.VideoInputRoleReferenceVideo, URL: referenceURL},
+	}, fake.submitRequest.Content)
 	require.Equal(t, 1, fake.submitCalls)
 }
 
-func TestVideoHandlerCreateJSONNormalizesVolcengineContentReferences(t *testing.T) {
+// /v1/videos（OpenAI 形态）的媒体字段统一翻译成带角色的 Content 项：image_url →
+// input_reference、first_image_url → first_frame、last_image_url → last_frame、
+// reference_images/videos/audios → reference_image/reference_video/reference_audio。
+// ratio → Ratio、aspect_ratio → AspectRatio、audio → AudioEnabled、seconds → Seconds。
+func TestVideoHandlerCreateJSONTranslatesOpenAIShapeIntoContentItems(t *testing.T) {
 	task := videoHandlerTask()
 	task.PublicModel = "doubao-seedance-1-0-pro-250528"
 	fake := &videoTaskAPIFake{submitResult: &service.VideoSubmitResult{Task: task, Created: true}}
 	handler := newVideoHandler(fake, nil, videoHandlerTestConfig(t))
 	ctx, recorder := newVideoHandlerTestContext(http.MethodPost, "/v1/videos", "application/json", strings.NewReader(`{
-		"model":"doubao-seedance-1-0-pro-250528",
-		"seconds":10,
-		"ratio":"16:9",
-		"content":[
-			{"type":"text","text":"A sports car accelerates smoothly"},
-			{"type":"image_url","role":"reference_image","image_url":{"url":"https://media.example.com/car.png"}},
-			{"type":"video_url","role":"reference_video","video_url":"https://media.example.com/motion.mp4"},
-			{"type":"audio_url","role":"reference_audio","audio_url":{"url":"data:audio/mpeg;base64,YXVkaW8="}}
-		]
+		"model":"doubao-seedance-1-0-pro-250528","prompt":"A sports car accelerates smoothly",
+		"seconds":10,"audio":true,
+		"image_url":"https://media.example.com/car.png",
+		"first_image_url":"https://media.example.com/first.png",
+		"last_image_url":"https://media.example.com/last.png",
+		"reference_images":["https://media.example.com/ref-1.png"," https://media.example.com/ref-2.png "],
+		"reference_videos":["https://media.example.com/motion.mp4"],
+		"reference_audios":["https://media.example.com/beat.mp3"]
 	}`))
 
 	handler.Create(ctx)
 
 	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	require.Equal(t, 1, fake.submitCalls)
 	require.Equal(t, "A sports car accelerates smoothly", fake.submitRequest.Prompt)
-	require.Equal(t, []string{"https://media.example.com/car.png"}, fake.submitRequest.ReferenceMedia.ReferenceImages)
-	require.Equal(t, []string{"https://media.example.com/motion.mp4"}, fake.submitRequest.ReferenceMedia.ReferenceVideos)
-	require.Equal(t, []string{"data:audio/mpeg;base64,YXVkaW8="}, fake.submitRequest.ReferenceMedia.ReferenceAudios)
-	require.Empty(t, fake.submitRequest.ReferenceMedia.Ratio, "reference video determines framing")
+	require.Equal(t, 10, fake.submitRequest.Seconds)
+	require.NotNil(t, fake.submitRequest.AudioEnabled)
+	require.True(t, *fake.submitRequest.AudioEnabled)
+	require.Equal(t, []service.VideoContentItem{
+		{Type: service.VideoContentTypeImage, Role: service.VideoInputRoleReferenceImage, URL: "https://media.example.com/car.png"},
+		{Type: service.VideoContentTypeImage, Role: service.VideoInputRoleFirstFrame, URL: "https://media.example.com/first.png"},
+		{Type: service.VideoContentTypeImage, Role: service.VideoInputRoleLastFrame, URL: "https://media.example.com/last.png"},
+		{Type: service.VideoContentTypeImage, Role: service.VideoInputRoleTaggedReferenceImage, URL: "https://media.example.com/ref-1.png"},
+		{Type: service.VideoContentTypeImage, Role: service.VideoInputRoleTaggedReferenceImage, URL: "https://media.example.com/ref-2.png"},
+		{Type: service.VideoContentTypeVideo, Role: service.VideoInputRoleReferenceVideo, URL: "https://media.example.com/motion.mp4"},
+		{Type: service.VideoContentTypeAudio, Role: service.VideoInputRoleReferenceAudio, URL: "https://media.example.com/beat.mp3"},
+	}, fake.submitRequest.Content)
+	require.Empty(t, fake.submitRequest.Inputs, "URL references never touch the spool")
+	require.Equal(t, []string{"https://media.example.com/first.png"}, []string{fake.submitRequest.ContentByRole(service.VideoInputRoleFirstFrame)[0].URL})
 }
 
-func TestVideoHandlerCreateJSONNormalizesVolcengineFirstAndLastFrames(t *testing.T) {
-	fake := &videoTaskAPIFake{submitResult: &service.VideoSubmitResult{Task: videoHandlerTask(), Created: true}}
-	handler := newVideoHandler(fake, nil, videoHandlerTestConfig(t))
-	ctx, recorder := newVideoHandlerTestContext(http.MethodPost, "/v1/videos", "application/json", strings.NewReader(`{
-		"model":"doubao-seedance-1-0-lite-t2v-250428","seconds":"8",
-		"content":[
-			{"type":"text","text":"Transition from day to night"},
-			{"type":"image_url","role":"first_frame","image_url":"https://media.example.com/first.png"},
-			{"type":"image_url","role":"last_frame","image_url":{"url":"https://media.example.com/last.png"}}
-		]
-	}`))
-
-	handler.Create(ctx)
-
-	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
-	require.Equal(t, "https://media.example.com/first.png", fake.submitRequest.ReferenceMedia.FirstImageURL)
-	require.Equal(t, "https://media.example.com/last.png", fake.submitRequest.ReferenceMedia.LastImageURL)
+func TestVideoHandlerCreateJSONRatioFieldsFollowReferenceMedia(t *testing.T) {
+	t.Run("ratio and aspect_ratio pass through without framing media", func(t *testing.T) {
+		fake := &videoTaskAPIFake{submitResult: &service.VideoSubmitResult{Task: videoHandlerTask(), Created: true}}
+		ctx, recorder := newVideoHandlerTestContext(http.MethodPost, "/v1/videos", "application/json", strings.NewReader(`{
+			"model":"doubao-seedance-1-0-lite-t2v-250428","prompt":"waves","ratio":"16:9","aspect_ratio":"9:16",
+			"reference_images":["https://media.example.com/ref.png"]
+		}`))
+		newVideoHandler(fake, nil, videoHandlerTestConfig(t)).Create(ctx)
+		require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+		require.Equal(t, "16:9", fake.submitRequest.Ratio)
+		require.Equal(t, "9:16", fake.submitRequest.AspectRatio)
+	})
+	t.Run("first frame or reference video determines framing", func(t *testing.T) {
+		for _, extra := range []string{
+			`"first_image_url":"https://media.example.com/first.png"`,
+			`"image_url":"https://media.example.com/car.png"`,
+			`"last_image_url":"https://media.example.com/last.png"`,
+			`"reference_videos":["https://media.example.com/motion.mp4"]`,
+		} {
+			fake := &videoTaskAPIFake{submitResult: &service.VideoSubmitResult{Task: videoHandlerTask(), Created: true}}
+			ctx, recorder := newVideoHandlerTestContext(http.MethodPost, "/v1/videos", "application/json", strings.NewReader(`{
+				"model":"doubao-seedance-1-0-lite-t2v-250428","prompt":"waves","ratio":"16:9","aspect_ratio":"9:16",`+extra+`
+			}`))
+			newVideoHandler(fake, nil, videoHandlerTestConfig(t)).Create(ctx)
+			require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+			require.Empty(t, fake.submitRequest.Ratio, extra)
+			require.Empty(t, fake.submitRequest.AspectRatio, extra)
+		}
+	})
 }
 
-func TestVideoHandlerRejectsVolcengineContentConflictsAndUnknownFields(t *testing.T) {
+// Ark 的 content[] 不再是 /v1/videos 的字段：它和其他未知字段一样 400，五家平台的
+// 结构化输入只走 /api/v3/contents/generations/tasks。
+func TestVideoHandlerRejectsArkContentAndUnknownFieldsOnOpenAIShape(t *testing.T) {
 	for _, body := range []string{
 		`{"model":"doubao-seedance-1-0-lite-t2v-250428","prompt":"top-level","seconds":8,"content":[{"type":"text","text":"content"}]}`,
-		`{"model":"doubao-seedance-1-0-lite-t2v-250428","prompt":"top-level","seconds":8,"content":[]}`,
-		`{"model":"doubao-seedance-1-0-lite-t2v-250428","prompt":"top-level","seconds":8,"content":null}`,
-		`{"model":"doubao-seedance-1-0-lite-t2v-250428","seconds":8,"content":[{"type":"text","text":"content","unknown":true}]}`,
-		`{"model":"doubao-seedance-1-0-lite-t2v-250428","seconds":8,"content":[{"type":"video_url","role":"first_frame","video_url":"https://media.example.com/ref.mp4"}]}`,
+		`{"model":"doubao-seedance-1-0-lite-t2v-250428","seconds":8,"content":[{"type":"text","text":"content"}]}`,
+		`{"model":"doubao-seedance-1-0-lite-t2v-250428","prompt":"x","seconds":8,"content":null}`,
+		`{"model":"doubao-seedance-1-0-lite-t2v-250428","prompt":"x","duration":8}`,
+		`{"model":"doubao-seedance-1-0-lite-t2v-250428","prompt":"x","frames":121}`,
+		`{"model":"doubao-seedance-1-0-lite-t2v-250428","prompt":"x","generate_audio":true}`,
+		`{"model":"doubao-seedance-1-0-lite-t2v-250428","prompt":"x","reference_images":[""]}`,
+		`{"model":"doubao-seedance-1-0-lite-t2v-250428","prompt":"x","reference_videos":"https://media.example.com/motion.mp4"}`,
 	} {
 		fake := &videoTaskAPIFake{}
 		ctx, recorder := newVideoHandlerTestContext(http.MethodPost, "/v1/videos", "application/json", strings.NewReader(body))
 		newVideoHandler(fake, nil, videoHandlerTestConfig(t)).Create(ctx)
-		require.Equal(t, http.StatusBadRequest, recorder.Code, recorder.Body.String())
+		require.Equal(t, http.StatusBadRequest, recorder.Code, "%s => %s", body, recorder.Body.String())
+		require.Contains(t, recorder.Body.String(), "video_invalid_request", body)
 		require.Zero(t, fake.submitCalls)
 	}
 }

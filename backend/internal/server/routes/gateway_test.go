@@ -405,7 +405,9 @@ func TestGatewayRoutesVideoModelsDoesNotShadowTaskLookup(t *testing.T) {
 	}
 }
 
-func TestGatewayRoutesByteDanceVideosDispatchToManagedVideoHandler(t *testing.T) {
+// ByteDance 分组只走 Ark 任务协议：/v1/videos* 回 404 use_contents_generations_tasks 并指向新入口，
+// /contents/generations/* 分派到托管视频处理器（零值 handler 只会写出 video_disabled）。
+func TestGatewayRoutesByteDanceVideosRedirectToArkTasks(t *testing.T) {
 	handlers := defaultGatewayRoutesTestHandlers(service.PlatformByteDance)
 	handlers.Video = &handler.VideoHandler{}
 	router := newGatewayRoutesTestRouterForPlatformWithHandlers(service.PlatformByteDance, handlers)
@@ -414,12 +416,30 @@ func TestGatewayRoutesByteDanceVideosDispatchToManagedVideoHandler(t *testing.T)
 		httptest.NewRequest(http.MethodPost, "/v1/videos/edits", strings.NewReader(`{"model":"doubao-seedance-1-0-lite-t2v-250428","prompt":"edit","video":{"id":"video_0123456789abcdef0123456789abcdef"}}`)),
 		httptest.NewRequest(http.MethodPost, "/v1/videos/extensions", strings.NewReader(`{"model":"doubao-seedance-1-0-lite-t2v-250428","prompt":"extend","video":{"id":"video_0123456789abcdef0123456789abcdef"}}`)),
 		httptest.NewRequest(http.MethodGet, "/v1/videos/video_0123456789abcdef0123456789abcdef", nil),
+		httptest.NewRequest(http.MethodGet, "/v1/videos/models", nil),
 	} {
 		request.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, request)
-		require.NotContains(t, w.Body.String(), "not supported for this platform", "path=%s", request.URL.Path)
+		require.Equal(t, http.StatusNotFound, w.Code, "path=%s", request.URL.Path)
+		require.Contains(t, w.Body.String(), `"code":"use_contents_generations_tasks"`, "path=%s", request.URL.Path)
+		require.Contains(t, w.Body.String(), "ByteDance serves video tasks at /api/v3/contents/generations/tasks", "path=%s", request.URL.Path)
+		require.NotContains(t, w.Body.String(), "video_disabled", "path=%s must not reach the OpenAI-shape handler", request.URL.Path)
+	}
+	for _, request := range []*http.Request{
+		httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", strings.NewReader(`{"model":"doubao-seedance-1-0-lite-t2v-250428","content":[{"type":"text","text":"waves"}]}`)),
+		httptest.NewRequest(http.MethodGet, "/api/v3/contents/generations/tasks", nil),
+		httptest.NewRequest(http.MethodGet, "/api/v3/contents/generations/tasks/video_0123456789abcdef0123456789abcdef", nil),
+		httptest.NewRequest(http.MethodDelete, "/v3/contents/generations/tasks/video_0123456789abcdef0123456789abcdef", nil),
+		httptest.NewRequest(http.MethodGet, "/v1/contents/generations/models", nil),
+		httptest.NewRequest(http.MethodGet, "/contents/generations/models", nil),
+	} {
+		request.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, request)
+		require.Contains(t, w.Body.String(), "video_disabled", "path=%s must reach the Ark handler", request.URL.Path)
 		require.NotContains(t, w.Body.String(), "ByteDance gateway supports only", "path=%s", request.URL.Path)
+		require.NotContains(t, w.Body.String(), "use_contents_generations_tasks", "path=%s", request.URL.Path)
 	}
 }
 
@@ -439,12 +459,13 @@ func TestGatewayRoutesByteDanceRejectsNonVideoProtocols(t *testing.T) {
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, request)
 		require.Equal(t, http.StatusNotFound, w.Code, "path=%s", request.URL.Path)
-		require.Contains(t, w.Body.String(), "ByteDance gateway supports only the Videos API", "path=%s", request.URL.Path)
+		require.Contains(t, w.Body.String(), "ByteDance gateway supports only the video task API at /api/v3/contents/generations/tasks", "path=%s", request.URL.Path)
 	}
 }
 
-// Flova 与 ByteDance 同为仅视频平台：/v1/videos* 进托管视频处理器，其余协议一律 404。
-func TestGatewayRoutesFlovaVideosDispatchToManagedVideoHandler(t *testing.T) {
+// Flova 与 ByteDance 同为仅视频平台：/contents/generations/* 进托管视频处理器，/v1/videos* 指向
+// 新入口，其余协议一律 404。
+func TestGatewayRoutesFlovaVideosRedirectToArkTasks(t *testing.T) {
 	handlers := defaultGatewayRoutesTestHandlers(service.PlatformFlova)
 	handlers.Video = &handler.VideoHandler{}
 	router := newGatewayRoutesTestRouterForPlatformWithHandlers(service.PlatformFlova, handlers)
@@ -456,7 +477,19 @@ func TestGatewayRoutesFlovaVideosDispatchToManagedVideoHandler(t *testing.T) {
 		request.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, request)
-		require.NotContains(t, w.Body.String(), "not supported for this platform", "path=%s", request.URL.Path)
+		require.Equal(t, http.StatusNotFound, w.Code, "path=%s", request.URL.Path)
+		require.Contains(t, w.Body.String(), `"code":"use_contents_generations_tasks"`, "path=%s", request.URL.Path)
+		require.Contains(t, w.Body.String(), "Flova serves video tasks at /api/v3/contents/generations/tasks", "path=%s", request.URL.Path)
+	}
+	for _, request := range []*http.Request{
+		httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", strings.NewReader(`{"model":"flova/seedance-2.5","content":[{"type":"text","text":"waves"}]}`)),
+		httptest.NewRequest(http.MethodGet, "/api/v3/contents/generations/models", nil),
+		httptest.NewRequest(http.MethodGet, "/api/v3/contents/generations/tasks/video_0123456789abcdef0123456789abcdef", nil),
+	} {
+		request.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, request)
+		require.Contains(t, w.Body.String(), "video_disabled", "path=%s must reach the Ark handler", request.URL.Path)
 		require.NotContains(t, w.Body.String(), "Flova gateway supports only", "path=%s", request.URL.Path)
 	}
 }
@@ -474,7 +507,7 @@ func TestGatewayRoutesFlovaRejectsNonVideoProtocols(t *testing.T) {
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, request)
 		require.Equal(t, http.StatusNotFound, w.Code, "path=%s", request.URL.Path)
-		require.Contains(t, w.Body.String(), "Flova gateway supports only the Videos API", "path=%s", request.URL.Path)
+		require.Contains(t, w.Body.String(), "Flova gateway supports only the video task API at /api/v3/contents/generations/tasks", "path=%s", request.URL.Path)
 	}
 }
 
@@ -995,7 +1028,7 @@ func TestGatewayRoutesProviderResponsesSubpathsRemainUnsupported(t *testing.T) {
 }
 
 // Scenario: Grok 的语音 / 搜索能力同时挂在 /v1 与根路径两个入口上。ByteDance 网关只
-// 放行 Videos API，若只有 /v1 入口挂了 byteDanceVideoOnly、根路径漏挂，根路径就成了
+// 放行 Ark 视频任务协议，若只有 /v1 入口挂了 byteDanceVideoOnly、根路径漏挂，根路径就成了
 // 绕过口。这里把「两个入口对 ByteDance 表现一致」钉成不变量，而不是只钉某一侧的 404。
 func TestGatewayRoutesByteDanceGatesRootAndV1VoiceSearchPathsIdentically(t *testing.T) {
 	router := newGatewayRoutesTestRouterForPlatform(service.PlatformByteDance)
@@ -1021,7 +1054,7 @@ func TestGatewayRoutesByteDanceGatesRootAndV1VoiceSearchPathsIdentically(t *test
 			w := httptest.NewRecorder()
 			router.ServeHTTP(w, request)
 			require.Equal(t, http.StatusNotFound, w.Code, "%s %s", route.method, path)
-			require.Contains(t, w.Body.String(), "ByteDance gateway supports only the Videos API",
+			require.Contains(t, w.Body.String(), "ByteDance gateway supports only the video task API at /api/v3/contents/generations/tasks",
 				"%s %s 未被 byteDanceVideoOnly 拦下；根路径与 /v1 必须一致，否则根路径是绕过口", route.method, path)
 		}
 	}

@@ -13,7 +13,6 @@ import (
 	"net/http/httptrace"
 	"net/netip"
 	"net/url"
-	"regexp"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -42,12 +41,6 @@ const (
 	byteDanceContentMaxRedirects  = 3
 	byteDanceContentHeaderTimeout = 30 * time.Second
 )
-
-// byteDancePromptFlagPattern matches the Ark "--param value" prompt syntax.
-// Ark honours those flags, so a prompt carrying them would silently override
-// the resolution and duration this gateway quoted, held and billed. Requests
-// must therefore carry generation parameters as fields, never as prompt text.
-var byteDancePromptFlagPattern = regexp.MustCompile(`(^|\s)--[A-Za-z][A-Za-z0-9_-]*`)
 
 type ByteDanceVideoProvider struct {
 	httpUpstream HTTPUpstream
@@ -150,7 +143,7 @@ func (p *ByteDanceVideoProvider) validateAccountAndRequest(account *Account, req
 	if operation := normalizeVideoOperation(request.Operation); operation != VideoOperationGenerate {
 		return rejectedVideoProviderError("validation", "unsupported_operation", "ByteDance videos only support generate", http.StatusBadRequest)
 	}
-	if err := validateByteDanceSeedanceRequest(request); err != nil {
+	if err := validateByteDanceArkRequest(request); err != nil {
 		return rejectedVideoProviderError("validation", "invalid_seedance_request", err.Error(), http.StatusBadRequest)
 	}
 	if err := ValidateVideoCreateCapabilities(p.Capabilities(), request, inputs); err != nil {
@@ -159,118 +152,114 @@ func (p *ByteDanceVideoProvider) validateAccountAndRequest(account *Account, req
 	if strings.TrimSpace(request.Prompt) == "" {
 		return rejectedVideoProviderError("validation", "prompt_required", "video prompt is required", http.StatusBadRequest)
 	}
-	if byteDancePromptFlagPattern.MatchString(request.Prompt) {
-		return rejectedVideoProviderError("validation", "unsupported_prompt_flag",
-			"video prompt must not contain Ark \"--\" generation flags", http.StatusBadRequest)
-	}
-	if request.AudioEnabled != nil || strings.TrimSpace(request.ServiceTier) != "" ||
-		request.Quality != "" || request.ParentTask != nil || request.InputReference != nil {
+	if request.ParentTask != nil {
 		return rejectedVideoProviderError("validation", "unsupported_option", "ByteDance video request contains an unsupported option", http.StatusBadRequest)
 	}
-	if len(request.Characters) > 0 {
-		return rejectedVideoProviderError("validation", "unsupported_characters", "ByteDance videos do not support characters", http.StatusBadRequest)
-	}
-	if _, err := byteDanceGenerationOptions(request); err != nil {
-		return rejectedVideoProviderError("validation", "unsupported_option", err.Error(), http.StatusBadRequest)
+	if len(request.ProviderOptions) > 0 {
+		// Ark 的全部参数都有显式字段；provider_options 没有可映射的目标，静默丢弃会让
+		// 用户以为参数生效，所以直接拒绝。
+		return rejectedVideoProviderError("validation", "unsupported_option", "ByteDance videos do not accept provider_options", http.StatusBadRequest)
 	}
 	if byteDanceProtocolMode(account) == byteDanceProtocolOpenAICompat {
-		if _, err := openAICompatibleVideoReferenceFields(normalizeOpenAICompatibleVideoReferenceFraming(request.ReferenceMedia)); err != nil {
+		if len(inputs) > 0 {
+			return rejectedVideoProviderError("validation", "unsupported_input", "ByteDance openai_compatible mode accepts https media references only", http.StatusBadRequest)
+		}
+		if _, err := openAICompatibleVideoReferenceFields(normalizeOpenAICompatibleVideoReferenceFraming(request.ReferenceMedia())); err != nil {
 			return rejectedVideoProviderError("validation", "invalid_reference_media", "compatible video reference fields are invalid", http.StatusBadRequest)
 		}
-	} else if _, err := byteDanceReferenceImages(request); err != nil {
-		return rejectedVideoProviderError("validation", "unsupported_reference_media", err.Error(), http.StatusBadRequest)
+		return nil
 	}
-	for i := range inputs {
-		if inputs[i].Role != VideoInputRoleReferenceImage {
-			return rejectedVideoProviderError("validation", "unsupported_input", "ByteDance video create accepts image inputs only", http.StatusBadRequest)
-		}
-		if inputs[i].Size > byteDanceMaxInlineImageBytes {
-			return rejectedVideoProviderError("validation", "input_too_large", "ByteDance image input is too large to inline", http.StatusBadRequest)
-		}
+	if _, err := byteDanceContentItems(context.Background(), request, inputs, false); err != nil {
+		return err
 	}
 	return nil
 }
 
-// byteDanceGenerationOptions extracts the generation parameters Ark accepts as
-// request fields. Only an explicitly allowed set is accepted: anything else is
-// rejected so an unpriced knob can never reach the upstream.
-type byteDanceGenerationParams struct {
-	Resolution string
-	Ratio      string
-}
-
-func byteDanceGenerationOptions(request VideoCreateRequest) (byteDanceGenerationParams, error) {
-	options := byteDanceGenerationParams{}
-	for key, value := range request.ProviderOptions {
-		text, ok := value.(string)
-		if !ok {
-			return options, fmt.Errorf("provider option %q must be a string", key)
-		}
-		text = strings.ToLower(strings.TrimSpace(text))
-		switch strings.ToLower(strings.TrimSpace(key)) {
-		case "resolution":
-			if !byteDanceSupportedResolution(text) {
-				return options, errors.New("resolution is not supported")
+// byteDanceContentItems 把规范化请求的 content[] 编码成 Ark 的线格式。文本项原样保留
+// （含用户写的 --flag，入口层已把它们解析进显式字段，与 Ark 自己的解析结果一致）；
+// https 引用原样透传并带角色；spool 字节只接受图片，内联为 data URI。resolve 为假时
+// 只做校验，不读字节。
+func byteDanceContentItems(ctx context.Context, request VideoCreateRequest, inputs []VideoInput, resolve bool) ([]byteDanceNativeContentItem, error) {
+	content := make([]byteDanceNativeContentItem, 0, len(request.Content)+len(inputs))
+	hasText := false
+	for _, item := range request.Content {
+		if !item.IsMedia() {
+			if text := strings.TrimSpace(item.Text); text != "" {
+				content = append(content, byteDanceNativeContentItem{Type: VideoContentTypeText, Text: item.Text})
+				hasText = true
 			}
-			options.Resolution = text
-		case "ratio":
-			if !byteDanceSupportedRatio(text) {
-				return options, errors.New("ratio is not supported")
+			continue
+		}
+		role := item.Role
+		if role == VideoInputRoleReferenceImage {
+			role = VideoInputRoleFirstFrame
+		}
+		wireType := role.ArkContentTypeForRole()
+		if wireType == "" {
+			return nil, rejectedVideoProviderError("validation", "unsupported_reference_media", fmt.Sprintf("content role %q is not supported by ByteDance", item.Role), http.StatusBadRequest)
+		}
+		if item.Input != nil {
+			if wireType != VideoContentTypeImage {
+				return nil, rejectedVideoProviderError("validation", "unsupported_reference_media", "ByteDance reference video and audio must be https URLs", http.StatusBadRequest)
 			}
-			options.Ratio = text
-		default:
-			return options, fmt.Errorf("provider option %q is not supported", key)
+			if item.Input.Size > byteDanceMaxInlineImageBytes {
+				return nil, rejectedVideoProviderError("validation", "input_too_large", "ByteDance image input is too large to inline", http.StatusBadRequest)
+			}
+			value := ""
+			if resolve {
+				dataURI, err := byteDanceInlineImageDataURI(ctx, *item.Input)
+				if err != nil {
+					return nil, err
+				}
+				value = dataURI
+			}
+			content = append(content, byteDanceMediaContentItem(wireType, value, string(role)))
+			continue
 		}
-	}
-	return options, nil
-}
-
-func byteDanceSupportedResolution(value string) bool {
-	switch value {
-	case "480p", "720p", "1080p", "2k", "4k":
-		return true
-	default:
-		return false
-	}
-}
-
-func byteDanceSupportedRatio(value string) bool {
-	switch value {
-	case "adaptive", "16:9", "9:16", "4:3", "3:4", "1:1", "21:9":
-		return true
-	default:
-		return false
-	}
-}
-
-// byteDanceReferenceImages collects the image references carried on the request
-// body. Ark distinguishes a first-frame image from tagged reference images by
-// the role attached to each content item; only shapes this build can map are
-// accepted.
-func byteDanceReferenceImages(request VideoCreateRequest) ([]byteDanceNativeContentItem, error) {
-	media := request.ReferenceMedia
-	if strings.TrimSpace(media.FirstImageURL) != "" || strings.TrimSpace(media.LastImageURL) != "" {
-		return nil, errors.New("first/last frame references are not supported")
-	}
-	if len(media.ReferenceVideos) > 0 || len(media.ReferenceAudios) > 0 {
-		return nil, errors.New("video and audio references are not supported")
-	}
-	items := make([]byteDanceNativeContentItem, 0, 1+len(media.ReferenceImages))
-	if value := strings.TrimSpace(media.ImageURL); value != "" {
-		normalized, err := normalizeProviderVideoURL(value)
+		normalized, err := normalizeProviderVideoURL(strings.TrimSpace(item.URL))
 		if err != nil {
-			return nil, errors.New("image_url is invalid")
+			return nil, rejectedVideoProviderError("validation", "unsupported_reference_media", fmt.Sprintf("content %s url is invalid", wireType), http.StatusBadRequest)
 		}
-		items = append(items, byteDanceImageContentItem(normalized, ""))
+		content = append(content, byteDanceMediaContentItem(wireType, normalized, string(role)))
 	}
-	for _, reference := range media.ReferenceImages {
-		normalized, err := normalizeProviderVideoURL(strings.TrimSpace(reference))
-		if err != nil {
-			return nil, errors.New("reference_images contains an invalid URL")
+	if !hasText {
+		content = append([]byteDanceNativeContentItem{{Type: VideoContentTypeText, Text: request.Prompt}}, content...)
+	}
+	// 没有挂到 content 上的 spool 输入（旧式 multipart input_reference）按首帧处理。
+	for i := range inputs {
+		if byteDanceInputBoundToContent(request.Content, &inputs[i]) {
+			continue
 		}
-		items = append(items, byteDanceImageContentItem(normalized, "reference_image"))
+		if !inputs[i].Role.IsImageContentRole() {
+			return nil, rejectedVideoProviderError("validation", "unsupported_input", "ByteDance video create accepts image inputs only", http.StatusBadRequest)
+		}
+		if inputs[i].Size > byteDanceMaxInlineImageBytes {
+			return nil, rejectedVideoProviderError("validation", "input_too_large", "ByteDance image input is too large to inline", http.StatusBadRequest)
+		}
+		value := ""
+		if resolve {
+			dataURI, err := byteDanceInlineImageDataURI(ctx, inputs[i])
+			if err != nil {
+				return nil, err
+			}
+			value = dataURI
+		}
+		role := inputs[i].Role
+		if role == VideoInputRoleReferenceImage {
+			role = VideoInputRoleFirstFrame
+		}
+		content = append(content, byteDanceMediaContentItem(VideoContentTypeImage, value, string(role)))
 	}
-	return items, nil
+	return content, nil
+}
+
+func byteDanceInputBoundToContent(content []VideoContentItem, input *VideoInput) bool {
+	for _, item := range content {
+		if item.Input != nil && item.Input.SHA256 == input.SHA256 && item.Input.Role == input.Role {
+			return true
+		}
+	}
+	return false
 }
 
 // ---------------------------------------------------------------------------
@@ -286,27 +275,56 @@ type byteDanceNativeContentItem struct {
 	Text     string                   `json:"text,omitempty"`
 	Role     string                   `json:"role,omitempty"`
 	ImageURL *byteDanceNativeMediaURL `json:"image_url,omitempty"`
+	VideoURL *byteDanceNativeMediaURL `json:"video_url,omitempty"`
+	AudioURL *byteDanceNativeMediaURL `json:"audio_url,omitempty"`
 }
 
-func byteDanceImageContentItem(imageURL, role string) byteDanceNativeContentItem {
-	return byteDanceNativeContentItem{Type: "image_url", Role: role, ImageURL: &byteDanceNativeMediaURL{URL: imageURL}}
+func byteDanceMediaContentItem(wireType, mediaURL, role string) byteDanceNativeContentItem {
+	item := byteDanceNativeContentItem{Type: wireType, Role: role}
+	reference := &byteDanceNativeMediaURL{URL: mediaURL}
+	switch wireType {
+	case VideoContentTypeImage:
+		item.ImageURL = reference
+	case VideoContentTypeVideo:
+		item.VideoURL = reference
+	case VideoContentTypeAudio:
+		item.AudioURL = reference
+	}
+	return item
 }
 
 type byteDanceNativeCreateRequest struct {
-	Model      string                       `json:"model"`
-	Content    []byteDanceNativeContentItem `json:"content"`
-	Resolution string                       `json:"resolution,omitempty"`
-	Ratio      string                       `json:"ratio,omitempty"`
-	Duration   int                          `json:"duration,omitempty"`
+	Model                 string                       `json:"model"`
+	Content               []byteDanceNativeContentItem `json:"content"`
+	Resolution            string                       `json:"resolution,omitempty"`
+	Ratio                 string                       `json:"ratio,omitempty"`
+	Duration              *int                         `json:"duration,omitempty"`
+	Frames                int                          `json:"frames,omitempty"`
+	Seed                  *int64                       `json:"seed,omitempty"`
+	CameraFixed           *bool                        `json:"camera_fixed,omitempty"`
+	Watermark             *bool                        `json:"watermark,omitempty"`
+	GenerateAudio         *bool                        `json:"generate_audio,omitempty"`
+	ReturnLastFrame       *bool                        `json:"return_last_frame,omitempty"`
+	ServiceTier           string                       `json:"service_tier,omitempty"`
+	ExecutionExpiresAfter int                          `json:"execution_expires_after,omitempty"`
 }
 
 type byteDanceNativeTaskResponse struct {
-	ID        string `json:"id"`
-	Model     string `json:"model"`
-	Status    string `json:"status"`
-	CreatedAt int64  `json:"created_at"`
-	UpdatedAt int64  `json:"updated_at"`
-	Content   *struct {
+	ID              string `json:"id"`
+	Model           string `json:"model"`
+	Status          string `json:"status"`
+	CreatedAt       int64  `json:"created_at"`
+	UpdatedAt       int64  `json:"updated_at"`
+	Resolution      string `json:"resolution"`
+	Ratio           string `json:"ratio"`
+	Duration        *int64 `json:"duration"`
+	Frames          *int64 `json:"frames"`
+	FramesPerSecond *int64 `json:"framespersecond"`
+	Seed            *int64 `json:"seed"`
+	GenerateAudio   *bool  `json:"generate_audio"`
+	ServiceTier     string `json:"service_tier"`
+	RevisedPrompt   string `json:"revised_prompt"`
+	Content         *struct {
 		VideoURL     string `json:"video_url"`
 		LastFrameURL string `json:"last_frame_url"`
 	} `json:"content"`
@@ -329,6 +347,8 @@ func normalizeByteDanceVideoStatus(status string) string {
 		return VideoGenerationFailed
 	case "cancelled", "canceled":
 		return VideoGenerationCancelled
+	case "expired":
+		return VideoGenerationExpired
 	default:
 		return ""
 	}
@@ -371,6 +391,35 @@ func decodeByteDanceNativeTask(reader io.Reader, submission bool) (*ProviderVide
 	if model := strings.TrimSpace(response.Model); model != "" {
 		task.Metadata["model"] = model
 	}
+	// Ark 回报的观测值：结算读 seconds（返回的 duration 是向下取整的整数秒），对外投影
+	// 用 resolution / ratio / seed / framespersecond 覆盖请求快照。
+	if value := strings.ToLower(strings.TrimSpace(response.Resolution)); value != "" {
+		task.Metadata["resolution"] = value
+	}
+	if value := strings.ToLower(strings.TrimSpace(response.Ratio)); value != "" {
+		task.Metadata["ratio"] = value
+	}
+	if response.Duration != nil && *response.Duration > 0 {
+		task.Metadata["seconds"] = *response.Duration
+	}
+	if response.Frames != nil && *response.Frames > 0 {
+		task.Metadata["frames"] = *response.Frames
+	}
+	if response.FramesPerSecond != nil && *response.FramesPerSecond > 0 {
+		task.Metadata["framespersecond"] = *response.FramesPerSecond
+	}
+	if response.Seed != nil {
+		task.Metadata["seed"] = *response.Seed
+	}
+	if response.GenerateAudio != nil {
+		task.Metadata["generate_audio"] = *response.GenerateAudio
+	}
+	if value := strings.TrimSpace(response.ServiceTier); value != "" {
+		task.Metadata["service_tier"] = value
+	}
+	if value := strings.TrimSpace(response.RevisedPrompt); value != "" {
+		task.Metadata["revised_prompt"] = value
+	}
 	if response.Error != nil {
 		task.ErrorCode = boundedVideoProviderCode(strings.TrimSpace(response.Error.Code))
 		task.ErrorMessage = boundedProviderMessage(strings.TrimSpace(response.Error.Message))
@@ -384,9 +433,20 @@ func decodeByteDanceNativeTask(reader io.Reader, submission bool) (*ProviderVide
 			}
 			task.VideoURL = normalized
 		}
+		if value := strings.TrimSpace(response.Content.LastFrameURL); value != "" {
+			normalized, err := normalizeProviderVideoURL(value)
+			parsed, parseErr := url.Parse(normalized)
+			if err != nil || parseErr != nil || !strings.EqualFold(parsed.Scheme, "https") {
+				return nil, controlVideoProviderError(errors.New("ByteDance last frame url is invalid"))
+			}
+			task.LastFrameURL = normalized
+		}
 	}
 	if task.Status == VideoGenerationCompleted && task.VideoURL != "" {
 		task.ContentVariants = []string{"video"}
+		if task.LastFrameURL != "" {
+			task.ContentVariants = append(task.ContentVariants, "last_frame")
+		}
 		finished := unixTimePointer(response.UpdatedAt)
 		task.ProviderFinishedAt = finished
 		// Ark serves the result from object storage behind a signed URL that
@@ -414,31 +474,27 @@ func (p *ByteDanceVideoProvider) Create(ctx context.Context, account *Account, r
 }
 
 func (p *ByteDanceVideoProvider) createNative(ctx context.Context, account *Account, request VideoCreateRequest, inputs []VideoInput) (*ProviderVideoTask, error) {
-	options, err := byteDanceGenerationOptions(request)
+	content, err := byteDanceContentItems(ctx, request, inputs, true)
 	if err != nil {
-		return nil, rejectedVideoProviderError("validation", "unsupported_option", err.Error(), http.StatusBadRequest)
+		return nil, err
 	}
-	references, err := byteDanceReferenceImages(request)
-	if err != nil {
-		return nil, rejectedVideoProviderError("validation", "unsupported_reference_media", err.Error(), http.StatusBadRequest)
-	}
-	content := make([]byteDanceNativeContentItem, 0, 1+len(references)+len(inputs))
-	content = append(content, byteDanceNativeContentItem{Type: "text", Text: request.Prompt})
-	for i := range inputs {
-		dataURI, err := byteDanceInlineImageDataURI(ctx, inputs[i])
-		if err != nil {
-			return nil, err
-		}
-		content = append(content, byteDanceImageContentItem(dataURI, ""))
-	}
-	content = append(content, references...)
-
 	payload := byteDanceNativeCreateRequest{
-		Model:      strings.TrimSpace(request.Model),
-		Content:    content,
-		Resolution: options.Resolution,
-		Ratio:      options.Ratio,
-		Duration:   request.Seconds,
+		Model:                 strings.TrimSpace(request.Model),
+		Content:               content,
+		Resolution:            strings.TrimSpace(request.Resolution),
+		Ratio:                 strings.TrimSpace(request.Ratio),
+		Frames:                request.Frames,
+		Seed:                  request.Seed,
+		CameraFixed:           request.CameraFixed,
+		Watermark:             request.Watermark,
+		GenerateAudio:         request.AudioEnabled,
+		ReturnLastFrame:       request.ReturnLastFrame,
+		ServiceTier:           strings.TrimSpace(request.ServiceTier),
+		ExecutionExpiresAfter: request.ExecutionExpiresAfter,
+	}
+	if request.Frames <= 0 {
+		duration := videoArkDurationValue(request.Seconds, request.SmartDuration)
+		payload.Duration = &duration
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -456,7 +512,7 @@ func (p *ByteDanceVideoProvider) createNative(ctx context.Context, account *Acco
 	if err != nil {
 		return nil, err
 	}
-	p.applyRequestMetadata(task, request, options)
+	p.applyRequestMetadata(task, request)
 	return task, nil
 }
 
@@ -707,21 +763,31 @@ func (p *ByteDanceVideoProvider) createOpenAICompatible(ctx context.Context, acc
 		return nil, rejectedVideoProviderError("validation", "unsupported_input",
 			"ByteDance openai_compatible mode does not accept uploaded inputs", http.StatusBadRequest)
 	}
-	options, err := byteDanceGenerationOptions(request)
-	if err != nil {
-		return nil, rejectedVideoProviderError("validation", "unsupported_option", err.Error(), http.StatusBadRequest)
+	if request.SmartDuration || request.Frames > 0 {
+		return nil, rejectedVideoProviderError("validation", "unsupported_option",
+			"ByteDance openai_compatible mode requires an explicit duration", http.StatusBadRequest)
+	}
+	// 中继只认 OpenAI 形态的 seconds / resolution / ratio 与参考字段；Ark 独有的 seed、
+	// camera_fixed、watermark、generate_audio 没有对应字段，静默丢弃等于计费与产出不一致，
+	// 直接拒绝。
+	if request.Seed != nil || request.CameraFixed != nil || request.Watermark != nil || request.AudioEnabled != nil ||
+		request.ReturnLastFrame != nil || request.ExecutionExpiresAfter != 0 || strings.TrimSpace(request.ServiceTier) != "" {
+		return nil, rejectedVideoProviderError("validation", "unsupported_option",
+			"ByteDance openai_compatible mode does not support seed, camera_fixed, watermark, generate_audio, return_last_frame, service_tier or execution_expires_after", http.StatusBadRequest)
 	}
 	payload := map[string]any{"model": strings.TrimSpace(request.Model), "prompt": request.Prompt}
 	if request.Seconds > 0 {
 		payload["seconds"] = byteDanceOpenAICompatibleSeconds(request)
 	}
-	if options.Resolution != "" {
-		payload["resolution"] = options.Resolution
+	if resolution := strings.TrimSpace(request.Resolution); resolution != "" {
+		payload["resolution"] = resolution
 	}
-	if options.Ratio != "" {
-		payload["ratio"] = options.Ratio
+	if ratio := strings.TrimSpace(request.Ratio); ratio != "" && ratio != ArkVideoRatioAdaptive {
+		payload["ratio"] = ratio
 	}
-	referenceFields, err := openAICompatibleVideoReferenceFields(normalizeOpenAICompatibleVideoReferenceFraming(request.ReferenceMedia))
+	media := request.ReferenceMedia()
+	media.Ratio = ""
+	referenceFields, err := openAICompatibleVideoReferenceFields(normalizeOpenAICompatibleVideoReferenceFraming(media))
 	if err != nil {
 		return nil, rejectedVideoProviderError("validation", "invalid_reference_media",
 			"compatible video reference fields are invalid", http.StatusBadRequest)
@@ -748,7 +814,7 @@ func (p *ByteDanceVideoProvider) createOpenAICompatible(ctx context.Context, acc
 	if task, err = validateByteDanceCompatibleVideoTask(task, true); err != nil {
 		return nil, err
 	}
-	p.applyRequestMetadata(task, request, options)
+	p.applyRequestMetadata(task, request)
 	return task, nil
 }
 
@@ -807,7 +873,7 @@ func validateByteDanceCompatibleVideoTask(task *ProviderVideoTask, submission bo
 // applyRequestMetadata records what this gateway asked for. The requested
 // values are what the quote, hold and settlement were computed from, so they
 // are recorded without overwriting anything the upstream reported itself.
-func (p *ByteDanceVideoProvider) applyRequestMetadata(task *ProviderVideoTask, request VideoCreateRequest, options byteDanceGenerationParams) {
+func (p *ByteDanceVideoProvider) applyRequestMetadata(task *ProviderVideoTask, request VideoCreateRequest) {
 	if task == nil {
 		return
 	}
@@ -819,14 +885,17 @@ func (p *ByteDanceVideoProvider) applyRequestMetadata(task *ProviderVideoTask, r
 			task.Metadata["model"] = model
 		}
 	}
-	if _, ok := task.Metadata["resolution"]; !ok && options.Resolution != "" {
-		task.Metadata["resolution"] = options.Resolution
+	if _, ok := task.Metadata["resolution"]; !ok && strings.TrimSpace(request.Resolution) != "" {
+		task.Metadata["resolution"] = strings.TrimSpace(request.Resolution)
 	}
-	if _, ok := task.Metadata["ratio"]; !ok && options.Ratio != "" {
-		task.Metadata["ratio"] = options.Ratio
+	if _, ok := task.Metadata["ratio"]; !ok && strings.TrimSpace(request.Ratio) != "" && request.Ratio != ArkVideoRatioAdaptive {
+		task.Metadata["ratio"] = strings.TrimSpace(request.Ratio)
 	}
-	if _, ok := task.Metadata["seconds"]; !ok && request.Seconds > 0 {
+	if _, ok := task.Metadata["seconds"]; !ok && request.Seconds > 0 && !request.SmartDuration && request.Frames <= 0 {
 		task.Metadata["seconds"] = request.Seconds
+	}
+	if _, ok := task.Metadata["seed"]; !ok && request.Seed != nil && *request.Seed >= 0 {
+		task.Metadata["seed"] = *request.Seed
 	}
 }
 

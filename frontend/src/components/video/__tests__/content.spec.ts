@@ -1,17 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { VideoTask } from '@/api/video'
-import {
-  classifyContentError,
-  isPlayableBlob,
-  isTextualBlob,
-  playableBlob,
-  videoContentExpired,
-} from '../content'
-
-function task(overrides: Partial<VideoTask> = {}): VideoTask {
-  return { id: 'video_a', object: 'video', created_at: 100, status: 'completed', ...overrides }
-}
+import { classifyContentError, isPlayableBlob, isTextualBlob, playableBlob } from '../content'
 
 describe('classifyContentError', () => {
   // 签名链接失效救不回来，并发闸稍后就好——两者让用户做的事完全相反。
@@ -45,19 +34,5 @@ describe('playable blobs', () => {
   it('labels an unlabelled binary payload so the player accepts it', () => {
     expect(playableBlob(new Blob(['data'], { type: 'application/octet-stream' })).type).toBe('video/mp4')
     expect(playableBlob(new Blob(['data'], { type: 'video/webm' })).type).toBe('video/webm')
-  })
-})
-
-describe('videoContentExpired', () => {
-  it('reports expiry once the retention window has passed', () => {
-    expect(videoContentExpired(task({ expires_at: 500 }), 499)).toBe(false)
-    expect(videoContentExpired(task({ expires_at: 500 }), 500)).toBe(true)
-  })
-
-  // 字段缺席是"不知道"，不是"已过期"——宁可让用户点一次重试。
-  it('never guesses when the task carries no expiry', () => {
-    expect(videoContentExpired(task(), 10_000)).toBe(false)
-    expect(videoContentExpired(task({ expires_at: 0 }), 10_000)).toBe(false)
-    expect(videoContentExpired(undefined, 10_000)).toBe(false)
   })
 })

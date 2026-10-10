@@ -38,7 +38,11 @@ func TestWaveSpeedAdapterRegisteredAsManagedPlatform(t *testing.T) {
 	require.NoError(t, validateVideoCapabilities(VideoProviderWaveSpeed, capabilities))
 	require.Equal(t, waveSpeedDefaultVideoModel, capabilities.DefaultModel)
 	require.True(t, capabilities.SupportedModels["bytedance/seedance-2.5/image-to-video"])
-	require.Contains(t, capabilities.SupportedSizes["bytedance/seedance-2.0/text-to-video"], "3840x2160")
+	require.Empty(t, capabilities.SupportedSizes)
+	require.Contains(t, capabilities.SupportedResolutions["bytedance/seedance-2.0/text-to-video"], "4k")
+	require.Contains(t, capabilities.SupportedRatios["bytedance/seedance-2.0/text-to-video"], "21:9")
+	require.NotContains(t, capabilities.SupportedRatios["bytedance/seedance-2.0/text-to-video"], ArkVideoRatioAdaptive, "text-to-video has no image to follow")
+	require.Contains(t, capabilities.SupportedRatios["bytedance/seedance-2.5/image-to-video"], ArkVideoRatioAdaptive)
 	require.Equal(t, []int{4, 6, 8}, capabilities.SupportedSeconds["google/veo3.1/text-to-video"])
 	require.False(t, capabilities.Supports(VideoCapabilityCancel))
 	require.NoError(t, ValidateVideoCapabilityCatalog(DefaultVideoCapabilityCatalogDocument()))
@@ -51,8 +55,9 @@ func TestWaveSpeedAdapterRegisteredAsManagedPlatform(t *testing.T) {
 func TestWaveSpeedRequestResolutionReadsModelIDWhenFixed(t *testing.T) {
 	adapter := newWaveSpeedVideoAdapter()
 	require.Equal(t, "1080p", videoVendorRequestResolution(adapter, VideoCreateRequest{Model: "bytedance/seedance-v1-pro-i2v-1080p"}))
-	require.Equal(t, "720p", videoVendorRequestResolution(adapter, VideoCreateRequest{Model: "bytedance/seedance-2.0/text-to-video", Size: "1280x720"}))
-	require.Equal(t, "4k", providerRequestResolution(VideoProviderWaveSpeed, VideoCreateRequest{Model: "bytedance/seedance-2.5/text-to-video", Size: "3840x2160"}))
+	require.Equal(t, "720p", videoVendorRequestResolution(adapter, VideoCreateRequest{Model: "bytedance/seedance-2.0/text-to-video", Resolution: "720p"}))
+	require.Equal(t, "4k", providerRequestResolution(VideoProviderWaveSpeed, VideoCreateRequest{Model: "bytedance/seedance-2.5/text-to-video", Resolution: "4k"}))
+	require.Equal(t, "480p", providerRequestResolution(VideoProviderWaveSpeed, VideoCreateRequest{Model: "bytedance/seedance-2.0/text-to-video"}), "profile default (its first size) fills a missing resolution")
 }
 
 func TestWaveSpeedCreateTextToVideoEncodesAspectResolutionAndAudio(t *testing.T) {
@@ -69,7 +74,7 @@ func TestWaveSpeedCreateTextToVideoEncodesAspectResolutionAndAudio(t *testing.T)
 	audio := false
 	request := VideoCreateRequest{
 		ClientToken: "video_0123456789abcdef0123456789abcdef", Operation: VideoOperationGenerate,
-		Model: "bytedance/seedance-2.0/text-to-video", Prompt: "sunrise over the sea", Seconds: 8, Size: "1470x630", AudioEnabled: &audio,
+		Model: "bytedance/seedance-2.0/text-to-video", Prompt: "sunrise over the sea", Seconds: 8, Resolution: "720p", Ratio: "21:9", AudioEnabled: &audio,
 		ProviderOptions: map[string]any{"enable_web_search": true},
 	}
 	task, err := provider.Create(context.Background(), account, request, nil)
@@ -91,7 +96,8 @@ func TestWaveSpeedCreateTextToVideoEncodesAspectResolutionAndAudio(t *testing.T)
 	require.NotNil(t, task.ProviderCreatedAt)
 	require.Equal(t, "bytedance/seedance-2.0/text-to-video", task.Metadata["model"])
 	require.Equal(t, 8, task.Metadata["seconds"])
-	require.Equal(t, "1470x630", task.Metadata["size"])
+	require.Equal(t, "720p", task.Metadata["resolution"])
+	require.Equal(t, "21:9", task.Metadata["ratio"])
 }
 
 func TestWaveSpeedCreateUploadsSpoolImageBeforeSubmit(t *testing.T) {
@@ -124,8 +130,8 @@ func TestWaveSpeedCreateUploadsSpoolImageBeforeSubmit(t *testing.T) {
 	}
 	request := VideoCreateRequest{
 		ClientToken: "video_0123456789abcdef0123456789abcdef", Operation: VideoOperationGenerate,
-		Model: "bytedance/seedance-2.5/image-to-video", Prompt: "animate", Seconds: 5, Size: "1920x1080",
-		ReferenceMedia: ProviderVideoReferenceMedia{LastImageURL: "https://cdn.example.com/last.png"},
+		Model: "bytedance/seedance-2.5/image-to-video", Prompt: "animate", Seconds: 5, Resolution: "1080p",
+		Content: []VideoContentItem{{Type: VideoContentTypeImage, Role: VideoInputRoleLastFrame, URL: "https://cdn.example.com/last.png"}},
 	}
 	task, err := provider.Create(context.Background(), account, request, []VideoInput{input})
 	require.NoError(t, err)
@@ -133,9 +139,9 @@ func TestWaveSpeedCreateUploadsSpoolImageBeforeSubmit(t *testing.T) {
 	require.Equal(t, "input.png", uploadFilename)
 	require.Equal(t, "abc", uploadBody)
 	require.Equal(t, "pred_i2v", task.ProviderTaskID)
-	// URL 形式的尾帧排在前面（校验阶段先收集 URL 再读 spool），上传得到的首帧紧随其后。
-	require.Equal(t, "https://cdn.example.com/last.png", submit["image"])
-	require.Equal(t, "https://media.wavespeed.ai/u/first.png", submit["last_image"])
+	// spool 字节补首帧并先上传换 URL；content[] 里的 https 尾帧按角色落位。
+	require.Equal(t, "https://media.wavespeed.ai/u/first.png", submit["image"])
+	require.Equal(t, "https://cdn.example.com/last.png", submit["last_image"])
 	require.Equal(t, "1080p", submit["resolution"])
 	_, hasAspect := submit["aspect_ratio"]
 	require.False(t, hasAspect, "image-to-video follows the image aspect ratio")
@@ -167,7 +173,7 @@ func TestWaveSpeedCreateRejectsEnvelopeAndHTTPErrors(t *testing.T) {
 				_, _ = w.Write([]byte(tc.body))
 			})
 			account := newWaveSpeedTestAccount(server.URL + "/api/v3")
-			request := VideoCreateRequest{ClientToken: "video_0123456789abcdef0123456789abcdef", Operation: VideoOperationGenerate, Model: "bytedance/seedance-2.0/text-to-video", Prompt: "p", Seconds: 5, Size: "1280x720"}
+			request := VideoCreateRequest{ClientToken: "video_0123456789abcdef0123456789abcdef", Operation: VideoOperationGenerate, Model: "bytedance/seedance-2.0/text-to-video", Prompt: "p", Seconds: 5, Resolution: "720p", Ratio: "16:9"}
 			_, err := provider.Create(context.Background(), account, request, nil)
 			require.Error(t, err)
 			var providerErr *VideoProviderError
@@ -192,7 +198,7 @@ func TestWaveSpeedUploadFailureIsRejectedNotUnknown(t *testing.T) {
 		VideoInputManifestEntry: VideoInputManifestEntry{Role: VideoInputRoleReferenceImage, MIMEType: "image/jpeg", Size: 3},
 		Open:                    func(context.Context) (io.ReadCloser, error) { return io.NopCloser(strings.NewReader("abc")), nil },
 	}
-	request := VideoCreateRequest{ClientToken: "video_0123456789abcdef0123456789abcdef", Operation: VideoOperationGenerate, Model: "bytedance/seedance-2.0/image-to-video", Prompt: "p", Seconds: 5, Size: "1280x720"}
+	request := VideoCreateRequest{ClientToken: "video_0123456789abcdef0123456789abcdef", Operation: VideoOperationGenerate, Model: "bytedance/seedance-2.0/image-to-video", Prompt: "p", Seconds: 5, Resolution: "720p", Ratio: "16:9"}
 	_, err := provider.Create(context.Background(), account, request, []VideoInput{input})
 	require.Error(t, err)
 	var providerErr *VideoProviderError
@@ -302,7 +308,7 @@ func TestWaveSpeedProfilesEncodeVendorSpecificFields(t *testing.T) {
 	kling := profiles["kwaivgi/kling-v3.0-pro/text-to-video"]
 	require.NotNil(t, kling)
 	audio := true
-	upstream, err := adapter.BuildCreate(VideoCreateRequest{Model: kling.PublicModel, Prompt: "p", Seconds: 10, Size: "1080x1920", AudioEnabled: &audio, ProviderOptions: map[string]any{"cfg_scale": 0.7, "shot_type": "intelligence"}}, kling, nil, "")
+	upstream, err := adapter.BuildCreate(VideoCreateRequest{Model: kling.PublicModel, Prompt: "p", Seconds: 10, Resolution: "1080p", Ratio: "9:16", AudioEnabled: &audio, ProviderOptions: map[string]any{"cfg_scale": 0.7, "shot_type": "intelligence"}}, kling, nil, "")
 	require.NoError(t, err)
 	var body map[string]any
 	body = nil
@@ -316,7 +322,7 @@ func TestWaveSpeedProfilesEncodeVendorSpecificFields(t *testing.T) {
 
 	// Seedance 1.0 Pro：分辨率固化在 ID，只传比例；图生视频什么尺寸字段都不传。
 	v1 := profiles["bytedance/seedance-v1-pro-t2v-720p"]
-	upstream, err = adapter.BuildCreate(VideoCreateRequest{Model: v1.PublicModel, Prompt: "p", Seconds: 5, Size: "1280x720"}, v1, nil, "")
+	upstream, err = adapter.BuildCreate(VideoCreateRequest{Model: v1.PublicModel, Prompt: "p", Seconds: 5, Resolution: "720p", Ratio: "16:9"}, v1, nil, "")
 	require.NoError(t, err)
 	body = nil
 	require.NoError(t, json.Unmarshal(upstream.Body, &body))
@@ -326,7 +332,7 @@ func TestWaveSpeedProfilesEncodeVendorSpecificFields(t *testing.T) {
 
 	// MiniMax H3：720p 档位改写成厂商词表的 768p。
 	h3 := profiles["wavespeed-ai/minimax-h3/image-to-video"]
-	upstream, err = adapter.BuildCreate(VideoCreateRequest{Model: h3.PublicModel, Prompt: "p", Seconds: 5, Size: "1280x720"}, h3, []videoVendorInput{{URL: "https://media.wavespeed.ai/u/a.png"}}, "")
+	upstream, err = adapter.BuildCreate(VideoCreateRequest{Model: h3.PublicModel, Prompt: "p", Seconds: 5, Resolution: "720p", Ratio: "16:9"}, h3, []videoVendorInput{{URL: "https://media.wavespeed.ai/u/a.png"}}, "")
 	require.NoError(t, err)
 	body = nil
 	require.NoError(t, json.Unmarshal(upstream.Body, &body))
@@ -338,8 +344,9 @@ func TestWaveSpeedProfilesEncodeVendorSpecificFields(t *testing.T) {
 	account := newWaveSpeedTestAccount("")
 	err = provider.ValidateSubmission(account, VideoCreateRequest{Operation: VideoOperationGenerate, Model: "bytedance/seedance-2.5/image-to-video", Prompt: "p", Seconds: 5}, nil)
 	require.Error(t, err)
-	err = provider.ValidateSubmission(account, VideoCreateRequest{Operation: VideoOperationGenerate, Model: "bytedance/seedance-2.0/text-to-video", Prompt: "p", Seconds: 5, InputReference: &ProviderInputReference{ImageURL: "https://x/y.png"}}, nil)
+	firstFrame := []VideoContentItem{{Type: VideoContentTypeImage, Role: VideoInputRoleFirstFrame, URL: "https://x/y.png"}}
+	err = provider.ValidateSubmission(account, VideoCreateRequest{Operation: VideoOperationGenerate, Model: "bytedance/seedance-2.0/text-to-video", Prompt: "p", Seconds: 5, Content: firstFrame}, nil)
 	require.Error(t, err)
 	// 带图走兜底档案的未知模型可以提交。
-	require.NoError(t, provider.ValidateSubmission(account, VideoCreateRequest{Operation: VideoOperationGenerate, Model: "vendor/new-model", Prompt: "p", Seconds: 5, InputReference: &ProviderInputReference{ImageURL: "https://x/y.png"}}, nil))
+	require.NoError(t, provider.ValidateSubmission(account, VideoCreateRequest{Operation: VideoOperationGenerate, Model: "vendor/new-model", Prompt: "p", Seconds: 5, Content: firstFrame}, nil))
 }

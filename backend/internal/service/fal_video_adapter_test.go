@@ -79,11 +79,12 @@ func TestFalCreateSubmitsToQueueAndEncodesTaskID(t *testing.T) {
 		_, _ = w.Write([]byte(`{"request_id":"764cabcf-b745-4b3e-ae38-1200304cf45b","response_url":"https://queue.fal.run/fal-ai/bytedance/requests/764cabcf-b745-4b3e-ae38-1200304cf45b","status_url":"https://queue.fal.run/fal-ai/bytedance/requests/764cabcf-b745-4b3e-ae38-1200304cf45b/status","cancel_url":"https://queue.fal.run/fal-ai/bytedance/requests/764cabcf-b745-4b3e-ae38-1200304cf45b/cancel","queue_position":3}`))
 	})
 	account := newFalTestAccount(server.URL)
-	audio := true
+	audio, cameraFixed := true, true
+	seed := int64(7)
 	request := VideoCreateRequest{
 		ClientToken: "video_0123456789abcdef0123456789abcdef", Operation: VideoOperationGenerate,
-		Model: "fal-ai/bytedance/seedance/v1.5/pro/text-to-video", Prompt: "a fox in snow", Seconds: 6, Size: "1080x1920", AudioEnabled: &audio,
-		ProviderOptions: map[string]any{"camera_fixed": true, "seed": float64(7)},
+		Model: "fal-ai/bytedance/seedance/v1.5/pro/text-to-video", Prompt: "a fox in snow", Seconds: 6, Resolution: "1080p", Ratio: "9:16",
+		AudioEnabled: &audio, CameraFixed: &cameraFixed, Seed: &seed,
 	}
 	task, err := provider.Create(context.Background(), account, request, nil)
 	require.NoError(t, err)
@@ -109,7 +110,7 @@ func TestFalCreateEncodesVendorSpecificFields(t *testing.T) {
 
 	// Veo：时长带 s 后缀。
 	veo := profiles["fal-ai/veo3.1"]
-	upstream, err := adapter.BuildCreate(VideoCreateRequest{Model: veo.PublicModel, Prompt: "p", Seconds: 8, Size: "3840x2160"}, veo, nil, "")
+	upstream, err := adapter.BuildCreate(VideoCreateRequest{Model: veo.PublicModel, Prompt: "p", Seconds: 8, Resolution: "4k", Ratio: "16:9"}, veo, nil, "")
 	require.NoError(t, err)
 	var body map[string]any
 	body = nil
@@ -121,7 +122,7 @@ func TestFalCreateEncodesVendorSpecificFields(t *testing.T) {
 	// Kling 图生视频：start_image_url / end_image_url，不传比例，data URI 直接内联。
 	kling := profiles["fal-ai/kling-video/v3/pro/image-to-video"]
 	inputs := []videoVendorInput{{MIMEType: "image/png", Data: []byte("abc")}, {URL: "https://cdn.example.com/last.png"}}
-	upstream, err = adapter.BuildCreate(VideoCreateRequest{Model: kling.PublicModel, Prompt: "p", Seconds: 5, Size: "1920x1080"}, kling, inputs, "")
+	upstream, err = adapter.BuildCreate(VideoCreateRequest{Model: kling.PublicModel, Prompt: "p", Seconds: 5, Resolution: "1080p", Ratio: "16:9"}, kling, inputs, "")
 	require.NoError(t, err)
 	body = nil
 	require.NoError(t, json.Unmarshal(upstream.Body, &body))
@@ -135,7 +136,7 @@ func TestFalCreateEncodesVendorSpecificFields(t *testing.T) {
 
 	// Sora：时长是整数，只接受 4 / 8 / 12 / 16 / 20。
 	sora := profiles["fal-ai/sora-2/text-to-video/pro"]
-	upstream, err = adapter.BuildCreate(VideoCreateRequest{Model: sora.PublicModel, Prompt: "p", Seconds: 12, Size: "1920x1080"}, sora, nil, "")
+	upstream, err = adapter.BuildCreate(VideoCreateRequest{Model: sora.PublicModel, Prompt: "p", Seconds: 12, Resolution: "1080p", Ratio: "16:9"}, sora, nil, "")
 	require.NoError(t, err)
 	body = nil
 	require.NoError(t, json.Unmarshal(upstream.Body, &body))
@@ -146,9 +147,9 @@ func TestFalCreateEncodesVendorSpecificFields(t *testing.T) {
 	// Seedance 2.0 在 fal 只有 480p / 720p。
 	provider := newVideoVendorProvider(adapter, nil, nil)
 	account := newFalTestAccount("")
-	err = provider.ValidateSubmission(account, VideoCreateRequest{Operation: VideoOperationGenerate, Model: "bytedance/seedance-2.0/text-to-video", Prompt: "p", Seconds: 5, Size: "1920x1080"}, nil)
+	err = provider.ValidateSubmission(account, VideoCreateRequest{Operation: VideoOperationGenerate, Model: "bytedance/seedance-2.0/text-to-video", Prompt: "p", Seconds: 5, Resolution: "1080p", Ratio: "16:9"}, nil)
 	require.Error(t, err)
-	require.NoError(t, provider.ValidateSubmission(account, VideoCreateRequest{Operation: VideoOperationGenerate, Model: "bytedance/seedance-2.0/text-to-video", Prompt: "p", Seconds: 5, Size: "1470x630"}, nil))
+	require.NoError(t, provider.ValidateSubmission(account, VideoCreateRequest{Operation: VideoOperationGenerate, Model: "bytedance/seedance-2.0/text-to-video", Prompt: "p", Seconds: 5, Resolution: "720p", Ratio: "21:9"}, nil))
 }
 
 func TestFalCreateClassifiesErrors(t *testing.T) {
@@ -176,7 +177,7 @@ func TestFalCreateClassifiesErrors(t *testing.T) {
 				_, _ = w.Write([]byte(tc.body))
 			})
 			account := newFalTestAccount(server.URL)
-			request := VideoCreateRequest{ClientToken: "video_0123456789abcdef0123456789abcdef", Operation: VideoOperationGenerate, Model: "bytedance/seedance-2.0/text-to-video", Prompt: "p", Seconds: 5, Size: "1280x720"}
+			request := VideoCreateRequest{ClientToken: "video_0123456789abcdef0123456789abcdef", Operation: VideoOperationGenerate, Model: "bytedance/seedance-2.0/text-to-video", Prompt: "p", Seconds: 5, Resolution: "720p", Ratio: "16:9"}
 			_, err := provider.Create(context.Background(), account, request, nil)
 			require.Error(t, err)
 			var providerErr *VideoProviderError

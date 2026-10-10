@@ -148,12 +148,54 @@ type VideoResourceDisclosure struct {
 type VideoInputRole string
 
 const (
+	// VideoInputRoleReferenceImage 是未指明帧位的参考图（OpenAI 的 input_reference /
+	// image_url）；Ark 形态里 image_url 不带 role 默认落 first_frame，不落这里。
 	VideoInputRoleReferenceImage VideoInputRole = "input_reference"
-	VideoInputRoleReferenceVideo VideoInputRole = "reference_video"
-	VideoInputRoleSourceVideo    VideoInputRole = "source_video"
-	VideoInputRoleCharacterClip  VideoInputRole = "character_clip"
-	VideoInputRoleMask           VideoInputRole = "mask"
+	// Ark content[] 的媒体角色。
+	VideoInputRoleFirstFrame           VideoInputRole = "first_frame"
+	VideoInputRoleLastFrame            VideoInputRole = "last_frame"
+	VideoInputRoleTaggedReferenceImage VideoInputRole = "reference_image"
+	VideoInputRoleReferenceVideo       VideoInputRole = "reference_video"
+	VideoInputRoleReferenceAudio       VideoInputRole = "reference_audio"
+	// OpenAI 派生操作的二进制输入角色。
+	VideoInputRoleSourceVideo   VideoInputRole = "source_video"
+	VideoInputRoleCharacterClip VideoInputRole = "character_clip"
+	VideoInputRoleMask          VideoInputRole = "mask"
 )
+
+// IsImageContentRole 报告该角色是否承载图片（审核与计费的 input_type 归类用）。
+func (role VideoInputRole) IsImageContentRole() bool {
+	switch role {
+	case VideoInputRoleReferenceImage, VideoInputRoleFirstFrame, VideoInputRoleLastFrame, VideoInputRoleTaggedReferenceImage:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsVideoContentRole 报告该角色是否承载视频。
+func (role VideoInputRole) IsVideoContentRole() bool {
+	switch role {
+	case VideoInputRoleReferenceVideo, VideoInputRoleSourceVideo, VideoInputRoleCharacterClip:
+		return true
+	default:
+		return false
+	}
+}
+
+// ArkContentTypeForRole 返回该角色在 Ark content[] 里对应的 type。
+func (role VideoInputRole) ArkContentTypeForRole() string {
+	switch {
+	case role.IsImageContentRole():
+		return VideoContentTypeImage
+	case role == VideoInputRoleReferenceAudio:
+		return VideoContentTypeAudio
+	case role.IsVideoContentRole():
+		return VideoContentTypeVideo
+	default:
+		return ""
+	}
+}
 
 func IsValidVideoInputRole(role VideoInputRole) bool {
 	value := string(role)

@@ -174,7 +174,12 @@ func (w *VideoCallbackWorker) deliver(ctx context.Context, delivery *VideoCallba
 		return w.repository.QuarantineVideoCallback(ctx, delivery.ID, owner, "callback retry window expired")
 	}
 	if w.tasks != nil {
-		if data, ok := delivery.Payload["data"].(map[string]any); ok && data["provider"] != nil {
+		// OpenAI 形态的 payload 把任务放在 data 里；Ark 形态的 payload 就是任务对象本身。
+		data, ok := delivery.Payload["data"].(map[string]any)
+		if !ok && delivery.Payload["provider"] != nil {
+			data, ok = delivery.Payload, true
+		}
+		if ok && data["provider"] != nil {
 			if w.tasks.tasks == nil {
 				metricResult = "quarantined"
 				return w.repository.QuarantineVideoCallback(ctx, delivery.ID, owner, "callback task identity could not be verified")
@@ -450,20 +455,30 @@ func BuildVideoCallbackDelivery(task *VideoTask, cfg *config.Config, now time.Ti
 	if task.SettledAt != nil {
 		createdAt = task.SettledAt.UTC()
 	}
-	data := map[string]any{
-		"id": task.PublicID, "object": "video", "status": status,
-		"created_at": task.CreatedAt.Unix(),
-	}
-	if videoDisclosureRank(disclosurePolicy) >= videoDisclosureRank(config.VideoDisclosureIdentity) {
-		data["provider"] = task.Provider
-	}
-	if task.FinishedAt != nil {
-		data["completed_at"] = task.FinishedAt.Unix()
-	}
-	if status == VideoGenerationFailed {
-		data["error"] = map[string]any{
-			"code":    firstNonEmptyString(videoStringValue(task.LastErrorCode), "video_generation_failed"),
-			"message": firstNonEmptyString(videoStringValue(task.LastErrorMessage), "video generation failed"),
+	var data map[string]any
+	if IsArkVideoProvider(task.Provider) {
+		// 五家平台的回调 payload 与 Ark「查询任务」响应同构；内容链接需要对外主机名，
+		// 回调里不带，消费方按 id 查询即可拿到签名链接。
+		data = BuildArkVideoTaskObject(task, nil)
+		if videoDisclosureRank(disclosurePolicy) >= videoDisclosureRank(config.VideoDisclosureIdentity) {
+			data["provider"] = task.Provider
+		}
+	} else {
+		data = map[string]any{
+			"id": task.PublicID, "object": "video", "status": status,
+			"created_at": task.CreatedAt.Unix(),
+		}
+		if videoDisclosureRank(disclosurePolicy) >= videoDisclosureRank(config.VideoDisclosureIdentity) {
+			data["provider"] = task.Provider
+		}
+		if task.FinishedAt != nil {
+			data["completed_at"] = task.FinishedAt.Unix()
+		}
+		if status == VideoGenerationFailed {
+			data["error"] = map[string]any{
+				"code":    firstNonEmptyString(videoStringValue(task.LastErrorCode), "video_generation_failed"),
+				"message": firstNonEmptyString(videoStringValue(task.LastErrorMessage), "video generation failed"),
+			}
 		}
 	}
 	retryHours := cfg.Gateway.Video.Callback.RetryHours
@@ -473,12 +488,17 @@ func BuildVideoCallbackDelivery(task *VideoTask, cfg *config.Config, now time.Ti
 	if retryHours <= 0 {
 		retryHours = 24
 	}
+	payload := map[string]any{
+		"id": eventID, "object": "event", "created_at": createdAt.Unix(),
+		"type": eventType, "data": data,
+	}
+	if IsArkVideoProvider(task.Provider) {
+		// Ark 的回调体就是任务对象本身，不套事件信封。
+		payload = data
+	}
 	return &VideoCallbackDelivery{
 		TaskID: task.ID, EventID: eventID, EventType: eventType, EventFingerprint: fingerprint,
-		Payload: map[string]any{
-			"id": eventID, "object": "event", "created_at": createdAt.Unix(),
-			"type": eventType, "data": data,
-		},
+		Payload:      payload,
 		TargetURLEnc: *task.CallbackURLEnc, Status: "pending",
 		NextAttemptAt: createdAt, ExpiresAt: createdAt.Add(time.Duration(retryHours) * time.Hour), CreatedAt: createdAt,
 	}, true, nil

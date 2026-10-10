@@ -57,14 +57,23 @@ func RegisterGatewayRoutes(
 			c.Next()
 			return
 		}
+		// 仅视频平台只走 Ark 任务协议（/contents/generations/*）与几条只读账务接口；
+		// /v1/videos* 的 OpenAI 形态对它们已下线，给出指向新入口的错误码。
+		if service.IsArkVideoPath(c.Request.URL.Path) {
+			c.Next()
+			return
+		}
 		path := strings.TrimPrefix(c.Request.URL.Path, "/v1")
-		if path == "/models" || path == "/balance" || path == "/usage" || path == "/sub2api/billing" ||
-			path == "/videos" || strings.HasPrefix(path, "/videos/") {
+		if path == "/models" || path == "/balance" || path == "/usage" || path == "/sub2api/billing" {
 			c.Next()
 			return
 		}
 		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
-		writeVideoOnlyPlatformUnsupported(c, platform)
+		if path == "/videos" || strings.HasPrefix(path, "/videos/") {
+			writeVideoUseArkEndpoint(c, platform)
+		} else {
+			writeVideoOnlyPlatformUnsupported(c, platform)
+		}
 		c.Abort()
 	}
 
@@ -136,6 +145,11 @@ func RegisterGatewayRoutes(
 		}
 	}
 	videoUnsupported := func(c *gin.Context) {
+		if platform := getGroupPlatform(c); service.IsArkVideoPlatform(platform) {
+			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
+			writeVideoUseArkEndpoint(c, platform)
+			return
+		}
 		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": gin.H{
@@ -583,10 +597,36 @@ func RegisterGatewayRoutes(
 	rootRoute := func(method, path string, limit gin.HandlerFunc, handler gin.HandlerFunc) {
 		r.Handle(method, path, limit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), groupModelAllowlist, compositeTarget, byteDanceVideoOnly, requireGroupAnthropic, handler)
 	}
+	// Ark 视频任务协议（五家托管视频平台的唯一公开入口）。创建请求的体上限独立配置：
+	// content[] 里的 data: URI 图片会内联在请求体里。
+	arkTaskBodyLimit := bodyLimit
+	if cfg.Gateway.Video.TaskJSONBodyMaxBytes > cfg.Gateway.MaxBodySize {
+		arkTaskBodyLimit = middleware.RequestBodyLimit(cfg.Gateway.Video.TaskJSONBodyMaxBytes)
+	}
+	arkVideo := func(invoke func(*handler.VideoHandler, *gin.Context)) gin.HandlerFunc {
+		return func(c *gin.Context) {
+			if h == nil || h.Video == nil {
+				videoUnsupported(c)
+				return
+			}
+			invoke(h.Video, c)
+		}
+	}
+	arkCreateRoute := func(path string) {
+		r.Handle(http.MethodPost, path, arkTaskBodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth),
+			groupModelAllowlist, compositeTarget, byteDanceVideoOnly, videoCreateIntent, requireGroupAnthropic,
+			arkVideo(func(v *handler.VideoHandler, c *gin.Context) { v.ArkCreate(c) }))
+	}
+	arkSignedContentHandler := arkVideo(func(v *handler.VideoHandler, c *gin.Context) { v.ArkSignedContent(c) })
 	for _, prefix := range []string{"/api/v3", "/v3", "/v1", ""} {
-		rootRoute(http.MethodPost, prefix+"/contents/generations/tasks", bodyLimit, h.OpenAIGateway.SeedanceTasks)
-		rootRoute(http.MethodGet, prefix+"/contents/generations/tasks/:task_id", bodyLimit, h.OpenAIGateway.SeedanceTasks)
-		rootRoute(http.MethodDelete, prefix+"/contents/generations/tasks/:task_id", bodyLimit, h.OpenAIGateway.SeedanceTasks)
+		arkCreateRoute(prefix + service.ArkVideoTasksPathSuffix)
+		rootRoute(http.MethodGet, prefix+service.ArkVideoTasksPathSuffix, bodyLimit, arkVideo(func(v *handler.VideoHandler, c *gin.Context) { v.ArkList(c) }))
+		rootRoute(http.MethodGet, prefix+service.ArkVideoTasksPathSuffix+"/:task_id", bodyLimit, arkVideo(func(v *handler.VideoHandler, c *gin.Context) { v.ArkRetrieve(c) }))
+		rootRoute(http.MethodDelete, prefix+service.ArkVideoTasksPathSuffix+"/:task_id", bodyLimit, arkVideo(func(v *handler.VideoHandler, c *gin.Context) { v.ArkDelete(c) }))
+		rootRoute(http.MethodGet, prefix+service.ArkVideoModelsPathSuffix, bodyLimit, arkVideo(func(v *handler.VideoHandler, c *gin.Context) { v.ArkModels(c) }))
+		// 签名内容链接：URL 自带 HMAC 签名与过期时间，不挂 API Key（与 /v1/videos/:id/content/signed 同理）。
+		r.GET(prefix+service.ArkVideoTasksPathSuffix+"/:task_id/content", bodyLimit, clientRequestID, opsErrorLogger, arkSignedContentHandler)
+		r.HEAD(prefix+service.ArkVideoTasksPathSuffix+"/:task_id/content", bodyLimit, clientRequestID, opsErrorLogger, arkSignedContentHandler)
 	}
 	rootRoute(http.MethodPost, "/responses", bodyLimit, responsesHandler)
 	rootRoute(http.MethodPost, "/responses/*subpath", bodyLimit, guardResponsesSubpath(responsesSubpathHandler))
@@ -817,8 +857,10 @@ func writeMiniMaxUnsupported(c *gin.Context, _ *handler.Handlers) {
 
 // isManagedVideoGroupPlatform 报告分组平台是否该进通用视频任务平台：托管视频平台
 // 本身，或会被组合路由解析到其一的 composite。
+// isManagedVideoGroupPlatform 报告分组是否仍通过 /v1/videos（OpenAI 形态）使用托管视频：
+// composite 与 OpenAI。五家 Ark 形态平台走 /contents/generations/tasks。
 func isManagedVideoGroupPlatform(platform string) bool {
-	return platform == service.PlatformComposite || service.IsManagedVideoPlatform(platform)
+	return platform == service.PlatformComposite || (service.IsManagedVideoPlatform(platform) && !service.IsArkVideoPlatform(platform))
 }
 
 func writeVideoOnlyPlatformUnsupported(c *gin.Context, platform string) {
@@ -826,7 +868,19 @@ func writeVideoOnlyPlatformUnsupported(c *gin.Context, platform string) {
 		"type": "error",
 		"error": gin.H{
 			"type":    "not_found_error",
-			"message": service.VideoOnlyPlatformLabel(platform) + " gateway supports only the Videos API",
+			"message": service.VideoOnlyPlatformLabel(platform) + " gateway supports only the video task API at /api/v3/contents/generations/tasks",
+		},
+	})
+}
+
+// writeVideoUseArkEndpoint 回应仅视频平台分组打 /v1/videos*：OpenAI 形态已下线，给出新入口。
+func writeVideoUseArkEndpoint(c *gin.Context, platform string) {
+	c.JSON(http.StatusNotFound, gin.H{
+		"type": "error",
+		"error": gin.H{
+			"type":    "not_found_error",
+			"code":    "use_contents_generations_tasks",
+			"message": service.VideoOnlyPlatformLabel(platform) + " serves video tasks at /api/v3/contents/generations/tasks; /v1/videos is not available for this group",
 		},
 	})
 }
@@ -905,6 +959,13 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver,
 	if resolver == nil {
 		resolver = service.NewCompositeRouteResolver(nil)
 	}
+	// Ark 创建请求的体上限由视频处理器的配置决定（data: URI 图片内联在请求体里）。
+	arkBodyLimit := compositeVideoJSONBodyLimit
+	if len(videoHandlers) > 0 && videoHandlers[0] != nil {
+		if limit := videoHandlers[0].ArkJSONBodyLimit(); limit > arkBodyLimit {
+			arkBodyLimit = limit
+		}
+	}
 	return func(c *gin.Context) {
 		apiKey, ok := middleware.GetAPIKeyFromContext(c)
 		if !ok || apiKey == nil || apiKey.Group == nil || apiKey.Group.Platform != service.PlatformComposite {
@@ -939,7 +1000,11 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver,
 					return
 				}
 			}
-			c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, compositeVideoJSONBodyLimit)
+			jsonLimit := compositeVideoJSONBodyLimit
+			if service.IsArkVideoTasksPath(c.Request.URL.Path) && arkBodyLimit > jsonLimit {
+				jsonLimit = arkBodyLimit
+			}
+			c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, jsonLimit)
 		}
 
 		body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
@@ -1080,7 +1145,7 @@ func compositeRouteEndpointForPath(path string) string {
 		return service.CompositeRouteEndpointVideoEdits
 	case strings.Contains(path, "/videos/extensions"):
 		return service.CompositeRouteEndpointVideoExtensions
-	case strings.Contains(path, "/videos"):
+	case strings.Contains(path, "/videos"), strings.Contains(path, "/contents/generations"):
 		return service.CompositeRouteEndpointVideos
 	case strings.Contains(path, "/v1beta/"):
 		return service.CompositeRouteEndpointGemini

@@ -119,6 +119,10 @@ func (h *VideoHandler) CreateIntentMiddleware(c *gin.Context) {
 		return
 	}
 	bodyLimit := videoJSONBodyMaxBytes
+	arkPath := service.IsArkVideoTasksPath(c.Request.URL.Path)
+	if arkPath {
+		bodyLimit = h.arkJSONBodyLimit()
+	}
 	body, err := io.ReadAll(io.LimitReader(c.Request.Body, bodyLimit+1))
 	if err != nil {
 		videoError(c, service.ErrVideoInvalidRequest)
@@ -153,6 +157,10 @@ func (h *VideoHandler) CreateIntentMiddleware(c *gin.Context) {
 	h.executeVideoCreateIntentSession(c, session, c.Next, func() {
 		switch operation {
 		case service.VideoOperationGenerate:
+			if arkPath {
+				h.ArkCreate(c)
+				return
+			}
 			h.Create(c)
 		case service.VideoOperationEdit:
 			h.Edit(c)

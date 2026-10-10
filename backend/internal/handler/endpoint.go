@@ -31,8 +31,9 @@ const (
 	EndpointVideosEdits          = "/v1/videos/edits"
 	EndpointVideosExtensions     = "/v1/videos/extensions"
 	EndpointVideos               = "/v1/videos"
-	EndpointSeedanceTasks        = "/api/v3/contents/generations/tasks"
-	EndpointGeminiModels         = "/v1beta/models"
+	// EndpointVideoTasks 是五家托管视频平台的 Ark 任务协议入口（含 /v3、/v1、无前缀别名）。
+	EndpointVideoTasks   = "/api/v3/contents/generations/tasks"
+	EndpointGeminiModels = "/v1beta/models"
 )
 
 const EndpointAntigravityGenerateContent = "/v1internal:streamGenerateContent"
@@ -58,7 +59,7 @@ func NormalizeInboundEndpoint(path string) string {
 	path = strings.TrimSpace(path)
 	switch {
 	case strings.Contains(path, "/contents/generations/tasks"):
-		return EndpointSeedanceTasks
+		return EndpointVideoTasks
 	case strings.Contains(path, EndpointResponsesInputTokens) || isResponsesInputTokensAliasPath(path):
 		return EndpointResponsesInputTokens
 	case strings.Contains(path, EndpointEmbeddings):

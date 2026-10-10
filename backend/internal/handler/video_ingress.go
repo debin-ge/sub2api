@@ -51,13 +51,17 @@ func (h *VideoHandler) PrepareCompositeVideoRoute(c *gin.Context) {
 		c.Abort()
 		return
 	}
-	body, err := io.ReadAll(io.LimitReader(c.Request.Body, videoJSONBodyMaxBytes+1))
+	bodyLimit := videoJSONBodyMaxBytes
+	if service.IsArkVideoTasksPath(c.Request.URL.Path) {
+		bodyLimit = h.arkJSONBodyLimit()
+	}
+	body, err := io.ReadAll(io.LimitReader(c.Request.Body, bodyLimit+1))
 	if err != nil {
 		videoError(c, service.ErrVideoInvalidRequest)
 		c.Abort()
 		return
 	}
-	if int64(len(body)) > videoJSONBodyMaxBytes {
+	if int64(len(body)) > bodyLimit {
 		videoError(c, service.ErrVideoInputTooLarge)
 		c.Abort()
 		return
@@ -85,6 +89,13 @@ func (h *VideoHandler) PrepareCompositeVideoRoute(c *gin.Context) {
 		if err == nil {
 			err = service.ErrVideoNoAccountAvailable
 		}
+		videoError(c, err)
+		c.Abort()
+		return
+	}
+	// 两套公开形态各走各的路径：落到五家 Ark 形态平台的请求必须来自 Ark 路径，
+	// 落到 OpenAI / Grok 的请求必须来自 /v1/videos。
+	if err := validateVideoRoutePlatform(c.Request.URL.Path, route.Decision.TargetPlatform); err != nil {
 		videoError(c, err)
 		c.Abort()
 		return
@@ -136,4 +147,18 @@ func checkGrokMediaCreationKey(key *service.APIKey) error {
 		return service.ErrVideoInvalidRequest
 	}
 	return nil
+}
+
+// validateVideoRoutePlatform 校验请求路径与目标平台的协议形态一致。
+func validateVideoRoutePlatform(path, targetPlatform string) error {
+	arkPath := service.IsArkVideoTasksPath(path)
+	arkPlatform := service.IsArkVideoPlatform(targetPlatform)
+	switch {
+	case arkPath && !arkPlatform:
+		return service.ErrVideoArkPlatformUnsupported
+	case !arkPath && arkPlatform:
+		return service.ErrVideoUseArkEndpoint
+	default:
+		return nil
+	}
 }

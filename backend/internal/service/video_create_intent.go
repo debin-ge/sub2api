@@ -24,7 +24,8 @@ const (
 	VideoCreateIntentJSONContract      = "canonical_json_v1"
 	VideoCreateIntentMultipartContract = "canonical_multipart_v1"
 	VideoCreateIntentNativeContract    = "native_task_v1"
-	VideoCreateJSONMaxBytes            = 1 << 20
+	// VideoCreateJSONMaxBytes 是创建意图哈希能接受的 JSON 体上限，与 Ark 入口的默认体上限一致。
+	VideoCreateJSONMaxBytes = 16 << 20
 )
 
 var (

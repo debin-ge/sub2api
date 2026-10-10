@@ -163,21 +163,33 @@ func (a *runwareVideoAdapter) BuildCreate(request VideoCreateRequest, profile *v
 		}
 		videoVendorSetPath(body, "inputs.frameImages", frames)
 		// 带图时 Runware 禁止 width/height，用 resolution 档位表达尺寸诉求。
-		if profile.ImageResolutionField != "" && strings.TrimSpace(request.Size) != "" {
-			if label := videoVendorResolutionFor(profile, request.Size); label != "" {
+		if profile.ImageResolutionField != "" && strings.TrimSpace(request.Resolution) != "" {
+			if label, ok := profile.vendorResolutionLabel(request.Resolution); ok {
 				videoVendorSetPath(body, profile.ImageResolutionField, label)
 			}
 		}
-	} else if size := strings.TrimSpace(request.Size); size != "" && profile.SizeEnc == videoSizeWidthHeight {
-		_, width, height, ok := parseVideoDimensions(size)
-		if !ok {
-			return nil, videoVendorValidationError("unsupported_size", "size %q must be WIDTHxHEIGHT", request.Size)
+	} else if profile.SizeEnc == videoSizeWidthHeight {
+		// 文生视频：Ark 的 (resolution, ratio) 换成 Runware 要的 width / height。
+		resolution := strings.TrimSpace(request.Resolution)
+		ratio := strings.TrimSpace(request.Ratio)
+		if resolution == "" {
+			resolution = profile.DefaultResolution
 		}
-		body["width"] = width
-		body["height"] = height
+		if ratio == "" {
+			ratio = profile.DefaultRatio
+		}
+		if resolution != "" && ratio != "" {
+			size, ok := profile.sizeForArkDimensions(resolution, ratio)
+			if !ok {
+				return nil, videoVendorValidationError("unsupported_resolution", "model %q has no %s %s frame size", request.Model, resolution, ratio)
+			}
+			_, width, height, _ := parseVideoDimensions(size)
+			body["width"] = width
+			body["height"] = height
+		}
 	}
-	if request.AudioEnabled != nil && profile.AudioField != "" {
-		videoVendorSetPath(body, profile.AudioField, *request.AudioEnabled)
+	if err := videoVendorApplyArkFields(body, profile, request); err != nil {
+		return nil, err
 	}
 	for key, raw := range request.ProviderOptions {
 		path, ok := profile.OptionWhitelist[key]

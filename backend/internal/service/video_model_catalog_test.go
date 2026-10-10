@@ -124,6 +124,29 @@ func videoModelByID(t *testing.T, response *VideoModelsResponse, id string) Vide
 	return VideoModel{}
 }
 
+func arkVideoModelIDs(response *ArkVideoModelsResponse) []string {
+	ids := make([]string, 0, len(response.Data))
+	for _, model := range response.Data {
+		ids = append(ids, model.ID)
+	}
+	return ids
+}
+
+func arkVideoModelByID(t *testing.T, response *ArkVideoModelsResponse, id string) ArkVideoModel {
+	t.Helper()
+	for _, model := range response.Data {
+		if model.ID == id {
+			return model
+		}
+	}
+	require.FailNowf(t, "ark model not listed", "id=%s", id)
+	return ArkVideoModel{}
+}
+
+func byteDanceCatalogProvider() VideoProvider {
+	return &videoProviderStub{name: VideoProviderByteDance, capabilities: videoCapabilitiesPointer(DefaultByteDanceVideoCapabilities())}
+}
+
 // TestListVideoModelsResolvesCanonicalModelSideTables 钉死别名解析：带日期的模型名
 // 是可路由的真实模型，必须各自成条目，且档位要按 canonical 键查表。
 // 一旦退化成"按前缀折叠"或"直接用别名查表"，sora-2-pro-2025-10-06 就会消失，
@@ -170,27 +193,84 @@ func TestListVideoModelsResolvesCanonicalModelSideTables(t *testing.T) {
 	)
 }
 
-// TestListVideoModelsKeepsModelsWithoutSizes 保证 ByteDance 不会因为没有 SupportedSizes
-// 而整组消失——它用 provider_options 里的 resolution/ratio 表达画幅，缺 sizes 是常态。
-func TestListVideoModelsKeepsModelsWithoutSizes(t *testing.T) {
-	service := newVideoModelCatalogService(
-		videoModelCatalogGroup(PlatformByteDance),
-		&videoProviderStub{name: VideoProviderByteDance, capabilities: videoCapabilitiesPointer(DefaultByteDanceVideoCapabilities())},
-	)
+// TestListVideoModelsSkipsArkProviders：五家平台只能按 Ark 形态提交，列进 /v1/videos/models
+// 只会引导用户撞 404；它们的目录在 ListArkVideoModels。
+func TestListVideoModelsSkipsArkProviders(t *testing.T) {
+	service := newVideoModelCatalogService(videoModelCatalogGroup(PlatformByteDance), byteDanceCatalogProvider())
 
 	response, err := service.ListVideoModels(context.Background(), videoModelCatalogAPIKey(42))
 	require.NoError(t, err)
+	require.Empty(t, response.Data)
+
+	ark, err := service.ListArkVideoModels(context.Background(), videoModelCatalogAPIKey(42))
+	require.NoError(t, err)
+	require.Equal(t, "list", ark.Object)
+	require.Equal(t, []string{ByteDanceVideoModelSeedance10Lite, ByteDanceVideoModelSeedance10Pro}, arkVideoModelIDs(ark))
+}
+
+// TestListArkVideoModelsDescribesArkDimensions：Ark 维度的目录用分辨率档位 + 比例表达画幅，
+// 时长允许 -1，frames 走 25+4n，并且把 content[] 角色上限与开关一并交给前端。
+func TestListArkVideoModelsDescribesArkDimensions(t *testing.T) {
+	// 开关、frames 与角色约束来自 provider 的 ArkModelSpec 自描述，所以这里注册真 provider。
+	service := newVideoModelCatalogService(videoModelCatalogGroup(PlatformByteDance), NewByteDanceVideoProvider(&openAIVideoHTTPStub{}, nil))
+
+	response, err := service.ListArkVideoModels(context.Background(), videoModelCatalogAPIKey(42))
+	require.NoError(t, err)
 	require.Len(t, response.Data, 2)
 	for _, model := range response.Data {
-		require.Equal(t, VideoProviderByteDance, model.Provider)
-		require.Nil(t, model.Sizes, "id=%s", model.ID)
-		// 价目没声明 conditions.seconds，档位回落到能力表。
-		require.Equal(t, []int{5, 10}, model.Seconds.Values, "id=%s", model.ID)
-		for _, parameter := range model.Parameters {
-			require.Equal(t, videoModelParameterInProviderOptions, parameter.In, "id=%s", model.ID)
-		}
+		require.Equal(t, VideoProviderByteDance, model.Provider, "id=%s", model.ID)
+		require.Equal(t, videoModelObject, model.Object, "id=%s", model.ID)
+		// 价目没声明 conditions.seconds，档位回落到能力表；智能时长由能力表声明。
+		require.Equal(t, []int{5, 10}, model.Durations.Values, "id=%s", model.ID)
+		require.Equal(t, 5, model.Durations.Default, "id=%s", model.ID)
+		require.True(t, model.Durations.AllowSmart, "id=%s", model.ID)
+		require.Equal(t, &ArkVideoModelFrames{Min: byteDanceMinFrames, Max: byteDanceMaxFrames, Step: 4}, model.Frames, "id=%s", model.ID)
+		require.Equal(t, ArkVideoModelFlags{Seed: true, CameraFixed: true, Watermark: true, GenerateAudio: true, ReturnLastFrame: true}, model.Flags)
+		require.Empty(t, model.ProviderOptions, "Ark has no vendor-specific provider_options")
 	}
-	require.True(t, videoModelByID(t, response, ByteDanceVideoModelSeedance10Pro).IsDefault)
+	pro := arkVideoModelByID(t, response, ByteDanceVideoModelSeedance10Pro)
+	require.True(t, pro.IsDefault)
+	require.False(t, arkVideoModelByID(t, response, ByteDanceVideoModelSeedance10Lite).IsDefault)
+	// seedanceVideoPricing 只配了 480p / 720p：分辨率按价目收窄，默认档取价目 defaults。
+	require.Equal(t, &ArkVideoModelChoices{Values: []string{"480p", "720p"}, Default: "480p"}, pro.Resolutions)
+	require.Equal(t, []string{"16:9", "9:16", "4:3", "3:4", "1:1", "21:9", ArkVideoRatioAdaptive}, pro.Ratios.Values)
+	require.Equal(t, "16:9", pro.Ratios.Default)
+	roles := pro.ContentRoles
+	require.Len(t, roles, 5)
+	require.Equal(t, ArkVideoContentRole{Max: 1, Accepts: []string{videoReferenceAcceptsHTTPS, videoReferenceAcceptsDataURI}}, roles[string(VideoInputRoleFirstFrame)])
+	require.Equal(t, []string{string(VideoInputRoleFirstFrame)}, roles[string(VideoInputRoleLastFrame)].Requires)
+	require.Equal(t, 9, roles[string(VideoInputRoleTaggedReferenceImage)].Max)
+	require.Equal(t, ArkVideoContentRole{Max: 3, Accepts: []string{videoReferenceAcceptsHTTPS}}, roles[string(VideoInputRoleReferenceVideo)])
+	require.Equal(t, ArkVideoContentRole{Max: 3, Accepts: []string{videoReferenceAcceptsHTTPS}}, roles[string(VideoInputRoleReferenceAudio)])
+}
+
+// TestListArkVideoModelsUsesVendorAdapterSpecs：三家聚合平台没有注册 provider 实例时，目录
+// 仍能从静态适配器档案推出开关与角色，不会退化成"只有能力表角色"的保守描述。
+func TestListArkVideoModelsUsesVendorAdapterSpecs(t *testing.T) {
+	const model = "bytedance:seedance@2.0"
+	runware := newVideoVendorProvider(newRunwareVideoAdapter(), nil, nil)
+	service := newVideoModelCatalogServiceWithCatalog(
+		videoModelCatalogGroup(PlatformRunware),
+		map[string]*ModelPriceEntry{model: videoPricedCatalogEntry(seedanceVideoPricing())},
+		runware,
+	)
+
+	response, err := service.ListArkVideoModels(context.Background(), videoModelCatalogAPIKey(42))
+	require.NoError(t, err)
+	entry := arkVideoModelByID(t, response, model)
+	require.Equal(t, VideoProviderRunware, entry.Provider)
+	require.Equal(t, ArkVideoModelFlags{Seed: true, GenerateAudio: true}, entry.Flags)
+	require.Equal(t, []ArkVideoModelOption{{Name: "negativePrompt"}}, entry.ProviderOptions)
+	require.Nil(t, entry.Frames, "frames are Ark-native only")
+	require.False(t, entry.Durations.AllowSmart)
+	// 档案的连续区间在能力表里展开成离散档位。
+	require.Equal(t, 4, entry.Durations.Values[0])
+	require.Equal(t, 15, entry.Durations.Values[len(entry.Durations.Values)-1])
+	require.Equal(t, 5, entry.Durations.Default)
+	require.Equal(t, []string{"480p", "720p"}, entry.Resolutions.Values, "narrowed to the priced tiers")
+	require.Contains(t, entry.Ratios.Values, ArkVideoRatioAdaptive, "image-capable models accept adaptive")
+	require.Equal(t, "16:9", entry.Ratios.Default)
+	require.Len(t, entry.ContentRoles, 2)
 }
 
 // TestListVideoModelsListsOnlyWhatIsPriced 是本组测试的主张：清单由运营在模型价格 /
@@ -292,16 +372,19 @@ func TestListVideoModelsListsOnlyWhatIsPriced(t *testing.T) {
 // 一条 sora-2 的 video_pricing 对火山方舟分组同样可见。没有归属过滤，Ark 的用户会在选择器
 // 里看到 sora-2，选中即必挂。
 func TestListVideoModelsDoesNotLeakAnotherPlatformsModels(t *testing.T) {
-	service := newVideoModelCatalogService(
-		videoModelCatalogGroup(PlatformByteDance),
-		&videoProviderStub{name: VideoProviderByteDance, capabilities: videoCapabilitiesPointer(DefaultByteDanceVideoCapabilities())},
-	)
+	service := newVideoModelCatalogService(videoModelCatalogGroup(PlatformByteDance), byteDanceCatalogProvider())
 
-	response, err := service.ListVideoModels(context.Background(), videoModelCatalogAPIKey(42))
+	response, err := service.ListArkVideoModels(context.Background(), videoModelCatalogAPIKey(42))
 	require.NoError(t, err)
 	require.Equal(t, []string{
 		ByteDanceVideoModelSeedance10Lite, ByteDanceVideoModelSeedance10Pro,
-	}, videoModelIDs(response))
+	}, arkVideoModelIDs(response))
+
+	// 反过来，OpenAI 分组的 Ark 目录是空的：sora 不按 Ark 形态提交。
+	openAI := newVideoModelCatalogService(videoModelCatalogGroup(PlatformOpenAI), &videoProviderStub{})
+	response, err = openAI.ListArkVideoModels(context.Background(), videoModelCatalogAPIKey(42))
+	require.NoError(t, err)
+	require.Empty(t, response.Data)
 }
 
 // TestListVideoModelsKeepsUnclaimedCustomModels：两侧能力表都不认识的模型名要放行。
@@ -313,13 +396,15 @@ func TestListVideoModelsKeepsUnclaimedCustomModels(t *testing.T) {
 	service := newVideoModelCatalogServiceWithCatalog(
 		videoModelCatalogGroup(PlatformByteDance),
 		map[string]*ModelPriceEntry{"custom-video-compat": videoPricedCatalogEntry(profile)},
-		&videoProviderStub{name: VideoProviderByteDance, capabilities: videoCapabilitiesPointer(DefaultByteDanceVideoCapabilities())},
+		byteDanceCatalogProvider(),
 	)
 
-	response, err := service.ListVideoModels(context.Background(), videoModelCatalogAPIKey(42))
+	response, err := service.ListArkVideoModels(context.Background(), videoModelCatalogAPIKey(42))
 	require.NoError(t, err)
-	require.Equal(t, []string{"custom-video-compat"}, videoModelIDs(response))
-	require.Equal(t, []int{6}, response.Data[0].Seconds.Values)
+	require.Equal(t, []string{"custom-video-compat"}, arkVideoModelIDs(response))
+	require.Equal(t, []int{6}, response.Data[0].Durations.Values)
+	require.False(t, response.Data[0].Durations.AllowSmart, "an unknown model is not declared smart-duration capable")
+	require.Nil(t, response.Data[0].Resolutions, "the capability snapshot knows no tiers for it")
 	require.Equal(t, VideoProviderByteDance, response.Data[0].Provider)
 }
 
@@ -333,18 +418,15 @@ func TestListVideoModelsHonorsPricedProviderConditions(t *testing.T) {
 		return map[string]*ModelPriceEntry{"custom-video-compat": videoPricedCatalogEntry(profile)}
 	}
 
-	byteDance := newVideoModelCatalogServiceWithCatalog(
-		videoModelCatalogGroup(PlatformByteDance), catalog(),
-		&videoProviderStub{name: VideoProviderByteDance, capabilities: videoCapabilitiesPointer(DefaultByteDanceVideoCapabilities())},
-	)
-	response, err := byteDance.ListVideoModels(context.Background(), videoModelCatalogAPIKey(42))
+	byteDance := newVideoModelCatalogServiceWithCatalog(videoModelCatalogGroup(PlatformByteDance), catalog(), byteDanceCatalogProvider())
+	arkResponse, err := byteDance.ListArkVideoModels(context.Background(), videoModelCatalogAPIKey(42))
 	require.NoError(t, err)
-	require.Empty(t, response.Data)
+	require.Empty(t, arkResponse.Data)
 
 	openAI := newVideoModelCatalogServiceWithCatalog(
 		videoModelCatalogGroup(PlatformOpenAI), catalog(), &videoProviderStub{},
 	)
-	response, err = openAI.ListVideoModels(context.Background(), videoModelCatalogAPIKey(42))
+	response, err := openAI.ListVideoModels(context.Background(), videoModelCatalogAPIKey(42))
 	require.NoError(t, err)
 	require.Equal(t, []string{"custom-video-compat"}, videoModelIDs(response))
 }
@@ -412,32 +494,29 @@ func TestListVideoModelsKeepsPricedModelsWithoutDeclaredSeconds(t *testing.T) {
 		service := newVideoModelCatalogServiceWithCatalog(
 			videoModelCatalogGroup(PlatformByteDance),
 			map[string]*ModelPriceEntry{arkCustomModel: videoPricedCatalogEntry(profile)},
-			&videoProviderStub{name: VideoProviderByteDance, capabilities: videoCapabilitiesPointer(DefaultByteDanceVideoCapabilities())},
+			byteDanceCatalogProvider(),
 		)
 
-		response, err := service.ListVideoModels(context.Background(), videoModelCatalogAPIKey(42))
+		response, err := service.ListArkVideoModels(context.Background(), videoModelCatalogAPIKey(42))
 		require.NoError(t, err)
-		require.Equal(t, []string{arkCustomModel}, videoModelIDs(response))
-		model := videoModelByID(t, response, arkCustomModel)
-		require.Empty(t, model.Seconds.Values)
-		require.Equal(t, 4, model.Seconds.Min)
-		require.Equal(t, 15, model.Seconds.Max)
-		require.Equal(t, 4, model.Seconds.Default)
+		require.Equal(t, []string{arkCustomModel}, arkVideoModelIDs(response))
+		model := arkVideoModelByID(t, response, arkCustomModel)
+		require.Empty(t, model.Durations.Values)
+		require.Equal(t, 4, model.Durations.Min)
+		require.Equal(t, 15, model.Durations.Max)
+		require.Equal(t, 4, model.Durations.Default)
 	})
 
 	t.Run("declared ladders stay discrete", func(t *testing.T) {
-		service := newVideoModelCatalogService(
-			videoModelCatalogGroup(PlatformByteDance),
-			&videoProviderStub{name: VideoProviderByteDance, capabilities: videoCapabilitiesPointer(DefaultByteDanceVideoCapabilities())},
-		)
+		service := newVideoModelCatalogService(videoModelCatalogGroup(PlatformByteDance), byteDanceCatalogProvider())
 
-		response, err := service.ListVideoModels(context.Background(), videoModelCatalogAPIKey(42))
+		response, err := service.ListArkVideoModels(context.Background(), videoModelCatalogAPIKey(42))
 		require.NoError(t, err)
-		model := videoModelByID(t, response, ByteDanceVideoModelSeedance10Pro)
-		require.Equal(t, []int{5, 10}, model.Seconds.Values)
-		require.Equal(t, 5, model.Seconds.Default)
-		require.Zero(t, model.Seconds.Min)
-		require.Zero(t, model.Seconds.Max)
+		model := arkVideoModelByID(t, response, ByteDanceVideoModelSeedance10Pro)
+		require.Equal(t, []int{5, 10}, model.Durations.Values)
+		require.Equal(t, 5, model.Durations.Default)
+		require.Zero(t, model.Durations.Min)
+		require.Zero(t, model.Durations.Max)
 	})
 
 	t.Run("openai custom model falls back to the sora free range", func(t *testing.T) {
@@ -478,27 +557,24 @@ func TestListVideoModelsKeepsPricedModelsWithoutDeclaredSeconds(t *testing.T) {
 // 无从预知请求落到哪一侧，返回空或报错会让页面直接不可用。同一个模型 id 只能出现一次，
 // 否则前端选择器会拿到重复的 key。
 func TestListVideoModelsCompositeReturnsUnionInFixedOrder(t *testing.T) {
-	service := newVideoModelCatalogService(
-		videoModelCatalogGroup(PlatformComposite),
-		&videoProviderStub{},
-		&videoProviderStub{name: VideoProviderByteDance, capabilities: videoCapabilitiesPointer(DefaultByteDanceVideoCapabilities())},
-	)
+	service := newVideoModelCatalogService(videoModelCatalogGroup(PlatformComposite), &videoProviderStub{}, byteDanceCatalogProvider())
 
+	// OpenAI 形态的目录只剩 sora 系；Ark 形态的目录只有火山方舟。两张表互不混用。
 	response, err := service.ListVideoModels(context.Background(), videoModelCatalogAPIKey(42))
 	require.NoError(t, err)
-
-	providers := make([]string, 0, len(response.Data))
 	for _, model := range response.Data {
-		providers = append(providers, model.Provider)
+		require.Equal(t, VideoProviderOpenAI, model.Provider, "id=%s", model.ID)
 	}
 	require.Equal(t, []string{
-		VideoProviderOpenAI, VideoProviderOpenAI, VideoProviderOpenAI, VideoProviderOpenAI, VideoProviderOpenAI,
-		VideoProviderByteDance, VideoProviderByteDance,
-	}, providers)
-	require.Equal(t, []string{
 		"sora-2", "sora-2-2025-10-06", "sora-2-2025-12-08", "sora-2-pro", "sora-2-pro-2025-10-06",
-		ByteDanceVideoModelSeedance10Lite, ByteDanceVideoModelSeedance10Pro,
 	}, videoModelIDs(response))
+
+	ark, err := service.ListArkVideoModels(context.Background(), videoModelCatalogAPIKey(42))
+	require.NoError(t, err)
+	for _, model := range ark.Data {
+		require.Equal(t, VideoProviderByteDance, model.Provider, "id=%s", model.ID)
+	}
+	require.Equal(t, []string{ByteDanceVideoModelSeedance10Lite, ByteDanceVideoModelSeedance10Pro}, arkVideoModelIDs(ark))
 }
 
 func TestListVideoModelsRejectsIneligibleCallers(t *testing.T) {
@@ -641,70 +717,48 @@ func TestListVideoModelsReferenceSlotsMatchCompatibleReferenceLimits(t *testing.
 	)
 }
 
-// TestListVideoModelsByteDanceSlotsMirrorTheCompatibleSet：Ark 的协议模式是账号级的、
-// 在这一层不可见，所以这里刻意不取"原生 ∩ 兼容"的交集。取交集意味着兼容模式的账号在
-// Playground 里永远看不到首尾帧、参考视频与参考音频——那正是用户报上来的问题。
-// 两种错法的代价不对称：多报换来的是原生模式账号提交时一个明确的 400，会原样贴在卡片上；
-// 少报换来的是能力被静默藏掉，用户既发现不了也诊断不了。
-//
-// 只有 accepts 仍然收窄：原生模式走 normalizeProviderVideoURL，它拒绝 data URI。
-func TestListVideoModelsByteDanceSlotsMirrorTheCompatibleSet(t *testing.T) {
-	service := newVideoModelCatalogService(
-		videoModelCatalogGroup(PlatformByteDance),
-		&videoProviderStub{name: VideoProviderByteDance, capabilities: videoCapabilitiesPointer(DefaultByteDanceVideoCapabilities())},
-	)
+// TestArkVideoModelResolutionsFollowThePricedProfile：运营只配了 480p/720p，就不该让用户
+// 选到 1080p 再在提交时撞 ErrVideoPricingRuleMissing；但价目的分辨率名是自由字符串，透出
+// 一个 Ark 不认的名字换来的是硬 400，所以只保留能力表词表里的名字。
+func TestArkVideoModelResolutionsFollowThePricedProfile(t *testing.T) {
+	caps := DefaultByteDanceVideoCapabilities()
+	const model = ByteDanceVideoModelSeedance10Pro
+	require.Equal(t, &ArkVideoModelChoices{Values: []string{"480p", "720p"}, Default: "480p"}, arkVideoModelResolutions(caps, model, seedanceVideoPricing()))
 
-	response, err := service.ListVideoModels(context.Background(), videoModelCatalogAPIKey(42))
-	require.NoError(t, err)
-
-	fields := make([]string, 0, 6)
-	for _, slot := range videoModelByID(t, response, ByteDanceVideoModelSeedance10Pro).ReferenceInputs {
-		fields = append(fields, slot.Field)
-		require.Equal(t, []string{videoReferenceAcceptsHTTPS}, slot.Accepts, "field=%s", slot.Field)
-	}
-	require.Equal(t, []string{
-		"image_url", "first_image_url", "last_image_url",
-		"reference_images", "reference_videos", "reference_audios",
-	}, fields)
-}
-
-// TestByteDanceVideoResolutionValuesFollowThePricedProfile：运营只配了 480p/720p，
-// 就不该让用户选到 1080p 再在提交时撞 ErrVideoPricingRuleMissing；但价目的分辨率名是
-// 自由字符串，透出一个 Ark 不认的名字换来的是硬 400，所以只保留词表里的名字。
-func TestByteDanceVideoResolutionValuesFollowThePricedProfile(t *testing.T) {
-	require.Equal(t, []string{"480p", "720p"}, byteDanceVideoResolutionValues(seedanceVideoPricing()))
-
-	// 顺序跟词表走，不跟 map 迭代序或字典序走——字典序会把 1080p 排到 480p 前面。
-	require.Equal(t, []string{"480p", "1080p"}, byteDanceVideoResolutionValues(&VideoPricingConfig{
+	// 顺序跟能力表词表走，不跟 map 迭代序或字典序走——字典序会把 1080p 排到 480p 前面。
+	// 价目没给默认档时沿用能力表默认档（720p 不在交集里则退回第一个）。
+	require.Equal(t, &ArkVideoModelChoices{Values: []string{"480p", "1080p"}, Default: "480p"}, arkVideoModelResolutions(caps, model, &VideoPricingConfig{
 		Resolutions: map[string]VideoResolutionSpec{"1080p": {}, "480p": {}},
+	}))
+	require.Equal(t, &ArkVideoModelChoices{Values: []string{"720p", "1080p"}, Default: "720p"}, arkVideoModelResolutions(caps, model, &VideoPricingConfig{
+		Resolutions: map[string]VideoResolutionSpec{"1080p": {}, "720p": {}},
 	}))
 
 	// 价目没说话，或者用的是另一套命名：退回完整词表。收窄到空只会让画幅控件失灵。
-	require.Equal(t, byteDanceVideoResolutionVocabulary, byteDanceVideoResolutionValues(nil))
-	require.Equal(t, byteDanceVideoResolutionVocabulary, byteDanceVideoResolutionValues(&VideoPricingConfig{
+	full := &ArkVideoModelChoices{Values: []string{"480p", "720p", "1080p"}, Default: "720p"}
+	require.Equal(t, full, arkVideoModelResolutions(caps, model, nil))
+	require.Equal(t, full, arkVideoModelResolutions(caps, model, &VideoPricingConfig{
 		Resolutions: map[string]VideoResolutionSpec{"cinema": {}},
 	}))
+	// 价目的默认档不在词表里时不采纳。
+	require.Equal(t, full, arkVideoModelResolutions(caps, model, &VideoPricingConfig{Defaults: VideoPricingDefaults{Resolution: "cinema"}}))
+
+	// 能力表对该模型没有分辨率维度：目录不编造。
+	require.Nil(t, arkVideoModelResolutions(caps, "unknown-model", seedanceVideoPricing()))
+	require.Nil(t, arkVideoModelResolutions(DefaultOpenAIVideoCapabilities(), OpenAIVideoModelSora2, soraVideoPricing()))
 }
 
 // TestListVideoModelsParameterValuesMatchProviderVocabulary 把输出的取值逐个回喂给
 // 各自的校验函数/词表，防止这份静态表与真正的判定逻辑漂移。
 func TestListVideoModelsParameterValuesMatchProviderVocabulary(t *testing.T) {
-	for _, profile := range []*VideoPricingConfig{nil, seedanceVideoPricing()} {
-		for _, parameter := range byteDanceVideoModelParameters(profile) {
-			require.Equal(t, videoModelParameterInProviderOptions, parameter.In, "name=%s", parameter.Name)
-			require.NotEmpty(t, parameter.Values, "name=%s", parameter.Name)
-			switch parameter.Name {
-			case "resolution":
-				for _, value := range parameter.Values {
-					require.True(t, byteDanceSupportedResolution(value), "resolution=%s", value)
-				}
-			case "ratio":
-				for _, value := range parameter.Values {
-					require.True(t, byteDanceSupportedRatio(value), "ratio=%s", value)
-				}
-			default:
-				require.FailNowf(t, "unexpected bytedance parameter", "name=%s", parameter.Name)
-			}
+	// Ark 维度的目录取值必须落在 Ark 词表内，否则提交时会被 validateByteDanceArkRequest 拒掉。
+	caps := DefaultByteDanceVideoCapabilities()
+	for model := range caps.SupportedModels {
+		for _, value := range caps.SupportedResolutions[model] {
+			require.True(t, IsArkVideoResolution(value), "resolution=%s", value)
+		}
+		for _, value := range caps.SupportedRatios[model] {
+			require.True(t, IsArkVideoRatio(value), "ratio=%s", value)
 		}
 	}
 

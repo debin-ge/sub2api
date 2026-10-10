@@ -192,7 +192,7 @@ func TestFlovaVideoProviderCreateThreeSteps(t *testing.T) {
 		Open:                    func(context.Context) (io.ReadCloser, error) { return io.NopCloser(strings.NewReader("PNGDATA")), nil },
 	}}
 	task, err := provider.Create(context.Background(), account, VideoCreateRequest{
-		TaskID: "task_abc", Model: FlovaVideoModelSeedance25, Prompt: "A red paper boat >>> drifting", Seconds: 5, Size: "1920x1080",
+		TaskID: "task_abc", Model: FlovaVideoModelSeedance25, Prompt: "A red paper boat >>> drifting", Seconds: 5, Resolution: "1080p",
 	}, inputs)
 	require.NoError(t, err)
 	require.Equal(t, []string{"/api/agent/v2/user", "/api/agent/v2/upload", "/api/agent/v2/create", "/api/agent/v2/chat"}, stub.calls)
@@ -250,7 +250,7 @@ func TestFlovaVideoProviderCreateProvisionsSkillWhenMissing(t *testing.T) {
 	repo := newFlovaAccountRepoStub(account)
 	provider := newFlovaTestProvider(stub)
 	provider.accounts = repo
-	task, err := provider.Create(context.Background(), account, VideoCreateRequest{TaskID: "t", Model: FlovaVideoModelSeedance20, Prompt: "x", Seconds: 4, Size: "1280x720"}, nil)
+	task, err := provider.Create(context.Background(), account, VideoCreateRequest{TaskID: "t", Model: FlovaVideoModelSeedance20, Prompt: "x", Seconds: 4, Resolution: "720p"}, nil)
 	require.NoError(t, err)
 	require.Equal(t, []string{"/api/agent/v2/user", "/api/agent/v2/skill/create", "/api/agent/v2/create", "/api/agent/v2/chat"}, stub.calls)
 	require.Equal(t, "sk_lazy", stub.lastBody("/api/agent/v2/chat")["extra_data"].(map[string]any)["skill_id"])
@@ -262,7 +262,7 @@ func TestFlovaVideoProviderCreateRejectsLowCredits(t *testing.T) {
 	stub := newFlovaStubServer()
 	stub.json("/api/agent/v2/user", `{"code":0,"message":"success","data":{"credits_balance":"40.000000","subscription_info":{}}}`)
 	provider := newFlovaTestProvider(stub)
-	_, err := provider.Create(context.Background(), flovaVideoTestAccount(), VideoCreateRequest{TaskID: "t", Model: FlovaVideoModelSeedance25, Prompt: "x", Seconds: 4, Size: "1280x720"}, nil)
+	_, err := provider.Create(context.Background(), flovaVideoTestAccount(), VideoCreateRequest{TaskID: "t", Model: FlovaVideoModelSeedance25, Prompt: "x", Seconds: 4, Resolution: "720p"}, nil)
 	var typed *VideoProviderError
 	require.ErrorAs(t, err, &typed)
 	require.Equal(t, videoInsufficientBalanceCode, typed.Code)
@@ -280,11 +280,16 @@ func TestFlovaVideoProviderValidation(t *testing.T) {
 		code    string
 	}{
 		{"unknown model", VideoCreateRequest{Model: "flova/wan-2.6", Prompt: "x"}, nil, "unsupported_model"},
-		{"kling needs image", VideoCreateRequest{Model: FlovaVideoModelKling30Omni, Prompt: "x", Seconds: 5, Size: "1280x720"}, nil, "missing_reference_image"},
-		{"unsupported seconds", VideoCreateRequest{Model: FlovaVideoModelVeo31Fast, Prompt: "x", Seconds: 5, Size: "1280x720"}, nil, "unsupported_seconds"},
-		{"unpriced resolution", VideoCreateRequest{Model: FlovaVideoModelSeedance20Fast, Prompt: "x", Seconds: 5, Size: "1920x1080"}, nil, "unsupported_size"},
-		{"bad size", VideoCreateRequest{Model: FlovaVideoModelSeedance25, Prompt: "x", Seconds: 5, Size: "100x100"}, nil, "unsupported_size"},
-		{"url reference", VideoCreateRequest{Model: FlovaVideoModelSeedance25, Prompt: "x", Seconds: 5, ReferenceMedia: ProviderVideoReferenceMedia{ImageURL: "https://x/y.png"}}, nil, "unsupported_reference_media"},
+		{"kling needs image", VideoCreateRequest{Model: FlovaVideoModelKling30Omni, Prompt: "x", Seconds: 5, Resolution: "720p"}, nil, "missing_reference_image"},
+		{"unsupported seconds", VideoCreateRequest{Model: FlovaVideoModelVeo31Fast, Prompt: "x", Seconds: 5, Resolution: "720p"}, nil, "unsupported_seconds"},
+		{"unpriced resolution", VideoCreateRequest{Model: FlovaVideoModelSeedance20Fast, Prompt: "x", Seconds: 5, Resolution: "1080p"}, nil, "unsupported_size"},
+		{"bad resolution", VideoCreateRequest{Model: FlovaVideoModelSeedance25, Prompt: "x", Seconds: 5, Resolution: "100p"}, nil, "unsupported_size"},
+		{"bad ratio", VideoCreateRequest{Model: FlovaVideoModelVeo31Fast, Prompt: "x", Seconds: 4, Ratio: "1:1"}, nil, "unsupported_size"},
+		{"url reference", VideoCreateRequest{Model: FlovaVideoModelSeedance25, Prompt: "x", Seconds: 5, Content: []VideoContentItem{{Type: VideoContentTypeImage, Role: VideoInputRoleFirstFrame, URL: "https://x/y.png"}}}, nil, "unsupported_reference_media"},
+		{"last frame role", VideoCreateRequest{Model: FlovaVideoModelSeedance25, Prompt: "x", Seconds: 5, Content: []VideoContentItem{{Type: VideoContentTypeImage, Role: VideoInputRoleLastFrame, Input: &VideoInput{}}}}, nil, "unsupported_reference_media"},
+		{"openai size", VideoCreateRequest{Model: FlovaVideoModelSeedance25, Prompt: "x", Seconds: 5, Size: "1280x720"}, nil, "unsupported_option"},
+		{"smart duration", VideoCreateRequest{Model: FlovaVideoModelSeedance25, Prompt: "x", SmartDuration: true}, nil, "unsupported_option"},
+		{"frames", VideoCreateRequest{Model: FlovaVideoModelSeedance25, Prompt: "x", Frames: 29}, nil, "unsupported_option"},
 		{"missing prompt", VideoCreateRequest{Model: FlovaVideoModelSeedance25, Seconds: 5}, nil, "missing_prompt"},
 	}
 	for _, tc := range cases {
@@ -296,7 +301,9 @@ func TestFlovaVideoProviderValidation(t *testing.T) {
 			require.Equal(t, VideoSubmissionRejected, typed.Certainty)
 		})
 	}
-	require.NoError(t, provider.ValidateSubmission(account, VideoCreateRequest{Model: FlovaVideoModelMiniMaxH3, Prompt: "x", ProviderOptions: map[string]any{"ratio": "9:16"}}, nil), "defaults fill seconds and resolution")
+	require.NoError(t, provider.ValidateSubmission(account, VideoCreateRequest{Model: FlovaVideoModelMiniMaxH3, Prompt: "x", Ratio: "9:16"}, nil), "defaults fill seconds and resolution")
+	audioOff := false
+	require.NoError(t, provider.ValidateSubmission(account, VideoCreateRequest{Model: FlovaVideoModelMiniMaxH3, Prompt: "x", Ratio: ArkVideoRatioAdaptive, AudioEnabled: &audioOff}, nil), "adaptive falls back to 16:9 and generate_audio=false is a no-op")
 }
 
 func TestFlovaVideoProviderCreateChatTransportFailureIsUnknown(t *testing.T) {
@@ -305,7 +312,7 @@ func TestFlovaVideoProviderCreateChatTransportFailureIsUnknown(t *testing.T) {
 	stub.json("/api/agent/v2/create", `{"code":0,"data":{"project_id":"p1"}}`)
 	stub.fail["/api/agent/v2/chat"] = errors.New("timeout")
 	provider := newFlovaTestProvider(stub)
-	_, err := provider.Create(context.Background(), flovaVideoTestAccount(), VideoCreateRequest{TaskID: "t", Model: FlovaVideoModelSeedance20, Prompt: "x", Seconds: 4, Size: "1280x720"}, nil)
+	_, err := provider.Create(context.Background(), flovaVideoTestAccount(), VideoCreateRequest{TaskID: "t", Model: FlovaVideoModelSeedance20, Prompt: "x", Seconds: 4, Resolution: "720p"}, nil)
 	var typed *VideoProviderError
 	require.ErrorAs(t, err, &typed)
 	require.Equal(t, VideoSubmissionUnknown, typed.Certainty)
@@ -313,7 +320,7 @@ func TestFlovaVideoProviderCreateChatTransportFailureIsUnknown(t *testing.T) {
 	stub2 := newFlovaStubServer()
 	stub2.json("/api/agent/v2/user", flovaUserOK)
 	stub2.fail["/api/agent/v2/create"] = errors.New("timeout")
-	_, err = newFlovaTestProvider(stub2).Create(context.Background(), flovaVideoTestAccount(), VideoCreateRequest{TaskID: "t", Model: FlovaVideoModelSeedance20, Prompt: "x", Seconds: 4, Size: "1280x720"}, nil)
+	_, err = newFlovaTestProvider(stub2).Create(context.Background(), flovaVideoTestAccount(), VideoCreateRequest{TaskID: "t", Model: FlovaVideoModelSeedance20, Prompt: "x", Seconds: 4, Resolution: "720p"}, nil)
 	require.ErrorAs(t, err, &typed)
 	require.Equal(t, VideoSubmissionRejected, typed.Certainty, "nothing is spent before /chat")
 }
@@ -663,29 +670,76 @@ func TestFlovaVideoProviderSkillAndUser(t *testing.T) {
 	require.NoError(t, provider.GetSkill(context.Background(), account, "sk_new"))
 }
 
-func TestFlovaModelParametersAndCatalog(t *testing.T) {
+func TestFlovaArkModelSpecAndCatalog(t *testing.T) {
 	provider := newFlovaTestProvider(newFlovaStubServer())
-	params := provider.ModelParameters(FlovaVideoModelVeo31Fast, nil)
-	require.Len(t, params, 4)
-	require.Equal(t, []string{"4", "6", "8"}, params[0].Values)
-	require.Equal(t, []string{"1280x720", "720x1280"}, params[1].Values)
-	require.Nil(t, provider.ModelParameters("flova/none", nil))
-	require.Nil(t, provider.ModelReferenceInputs(FlovaVideoModelSeedance25))
+	spec := provider.ArkModelSpec(FlovaVideoModelVeo31Fast)
+	require.Equal(t, ArkVideoModelFlags{}, spec.Flags, "Flova exposes no Ark switches")
+	require.Equal(t, map[VideoInputRole]ArkVideoContentRole{
+		VideoInputRoleFirstFrame: {Max: 1, Accepts: []string{videoReferenceAcceptsDataURI}},
+	}, spec.ContentRoles, "reference images must be bytes: Flova has no URL ingestion")
+	require.Empty(t, spec.ProviderOptions)
 
 	capabilities := DefaultFlovaVideoCapabilities()
 	require.Equal(t, FlovaVideoModelSeedance25, capabilities.DefaultModel)
-	require.Equal(t, "1280x720", capabilities.DefaultSizes[FlovaVideoModelSeedance25])
-	require.Equal(t, "1366x768", capabilities.DefaultSizes[FlovaVideoModelMiniMaxH3])
-	require.Contains(t, capabilities.SupportedSizes[FlovaVideoModelSeedance25], "2560x1080")
-	require.NotContains(t, capabilities.SupportedSizes[FlovaVideoModelSeedance20Fast], "1920x1080")
+	require.Equal(t, "720p", capabilities.DefaultResolutions[FlovaVideoModelSeedance25])
+	require.Equal(t, "720p", capabilities.DefaultResolutions[FlovaVideoModelMiniMaxH3], "MiniMax H3's 768p is the 720p tier in the Ark vocabulary")
+	require.Equal(t, []string{"720p"}, capabilities.SupportedResolutions[FlovaVideoModelMiniMaxH3])
+	require.Equal(t, "16:9", capabilities.DefaultRatios[FlovaVideoModelSeedance25])
+	require.Equal(t, []string{"720p", "1080p"}, capabilities.SupportedResolutions[FlovaVideoModelSeedance25])
+	require.Equal(t, []string{"720p"}, capabilities.SupportedResolutions[FlovaVideoModelSeedance20Fast])
+	require.Contains(t, capabilities.SupportedRatios[FlovaVideoModelSeedance25], "21:9")
+	require.Equal(t, []string{"16:9", "9:16"}, capabilities.SupportedRatios[FlovaVideoModelVeo31Fast])
+	require.Empty(t, capabilities.SupportedSizes)
 	require.Equal(t, 27, len(capabilities.SupportedSeconds[FlovaVideoModelSeedance25]))
+	require.Equal(t, map[VideoInputRole]int{VideoInputRoleFirstFrame: 1}, capabilities.MaxContentByRole)
 	require.Equal(t, flovaVideoModelIDs(), DefaultModelCatalogIDs(PlatformFlova))
-	require.Equal(t, "1080p", flovaRequestResolution(VideoCreateRequest{Model: FlovaVideoModelSeedance25, Size: "1920x1080"}))
-	require.Equal(t, "768p", flovaRequestResolution(VideoCreateRequest{Model: FlovaVideoModelMiniMaxH3}))
+	require.Equal(t, "1080p", flovaRequestResolution(VideoCreateRequest{Model: FlovaVideoModelSeedance25, Resolution: "1080p"}))
+	require.Equal(t, "720p", flovaRequestResolution(VideoCreateRequest{Model: FlovaVideoModelMiniMaxH3}))
+	require.Equal(t, "720p", flovaRequestResolution(VideoCreateRequest{Model: FlovaVideoModelMiniMaxH3, Resolution: "720p"}))
+	credits768, ok := flovaCreditsPerSecond(FlovaVideoModelMiniMaxH3, "768p")
+	require.True(t, ok)
+	require.Equal(t, 12.0, credits768, "the credit table keeps Flova's native tier name")
+	require.Equal(t, "", flovaRequestResolution(VideoCreateRequest{Model: FlovaVideoModelMiniMaxH3, Resolution: "1080p"}), "an unsupported tier resolves to nothing rather than a guess")
 	require.Equal(t, "", flovaRequestResolution(VideoCreateRequest{Model: "flova/none"}))
 	credits, ok := flovaCreditsPerSecond(FlovaVideoModelSeedance20, "1080p")
 	require.True(t, ok)
 	require.Equal(t, 60.0, credits)
+}
+
+func TestFlovaResolveRendition(t *testing.T) {
+	seedance := flovaModelProfileFor(FlovaVideoModelSeedance25)
+	cases := []struct {
+		name, ratio, resolution, wantRatio, wantResolution string
+		wantErr                                            bool
+	}{
+		{name: "defaults", wantRatio: "16:9", wantResolution: "720p"},
+		{name: "explicit", ratio: "9:16", resolution: "1080p", wantRatio: "9:16", wantResolution: "1080p"},
+		{name: "adaptive follows the image so Flova gets 16:9", ratio: ArkVideoRatioAdaptive, wantRatio: "16:9", wantResolution: "720p"},
+		{name: "case insensitive resolution", resolution: "1080P", wantRatio: "16:9", wantResolution: "1080p"},
+		{name: "unknown resolution", resolution: "4k", wantErr: true},
+		{name: "unknown ratio", ratio: "5:2", wantErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ratio, resolution, err := flovaResolveRendition(seedance, tc.ratio, tc.resolution)
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.wantRatio, ratio)
+			require.Equal(t, tc.wantResolution, resolution)
+		})
+	}
+	// 没列 Ratios 的模型只接受 16:9 / 9:16。
+	_, _, err := flovaResolveRendition(flovaModelProfileFor(FlovaVideoModelVeo31Fast), "1:1", "")
+	require.Error(t, err)
+	// Ark 词表的 720p 换回 MiniMax H3 的原生 768p，指令与积分表都认原生名。
+	_, resolution, err := flovaResolveRendition(flovaModelProfileFor(FlovaVideoModelMiniMaxH3), "", "720p")
+	require.NoError(t, err)
+	require.Equal(t, "768p", resolution)
+	_, _, err = flovaResolveRendition(nil, "", "")
+	require.Error(t, err)
 }
 
 func TestFlovaRenderInstructionGolden(t *testing.T) {

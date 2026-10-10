@@ -75,7 +75,13 @@ func TestRunwareAdapterRegisteredAsManagedPlatform(t *testing.T) {
 	require.True(t, capabilities.SupportedModels["bytedance:seedance@2.0"])
 	require.True(t, capabilities.SupportedModels["bytedance:seedance@2.5"])
 	require.Equal(t, 5, capabilities.DefaultSeconds["bytedance:seedance@2.0"])
-	require.Contains(t, capabilities.SupportedSizes["bytedance:seedance@2.0"], "1920x1080")
+	// 画幅按 Ark 维度声明：分辨率档位 + 比例，没有 WxH。
+	require.Empty(t, capabilities.SupportedSizes)
+	require.Equal(t, []string{"480p", "720p", "1080p", "4k"}, capabilities.SupportedResolutions["bytedance:seedance@2.0"])
+	require.Equal(t, "720p", capabilities.DefaultResolutions["bytedance:seedance@2.0"])
+	require.Equal(t, []string{"16:9", "4:3", "1:1", "3:4", "9:16", "21:9", ArkVideoRatioAdaptive}, capabilities.SupportedRatios["bytedance:seedance@2.0"])
+	require.Equal(t, "16:9", capabilities.DefaultRatios["bytedance:seedance@2.0"])
+	require.Equal(t, map[VideoInputRole]int{VideoInputRoleFirstFrame: 1, VideoInputRoleLastFrame: 1}, capabilities.MaxContentByRole)
 
 	document := DefaultVideoCapabilityCatalogDocument()
 	require.NoError(t, ValidateVideoCapabilityCatalog(document))
@@ -96,14 +102,16 @@ func TestVideoVendorResolutionLabel(t *testing.T) {
 	require.Equal(t, "", videoVendorResolutionLabel(""))
 
 	adapter := newRunwareVideoAdapter()
-	require.Equal(t, "1080p", videoVendorRequestResolution(adapter, VideoCreateRequest{Model: "bytedance:seedance@2.0", Size: "1920x1080"}))
-	require.Equal(t, "1080p", providerRequestResolution(VideoProviderRunware, VideoCreateRequest{Model: "bytedance:seedance@2.0", Size: "1920x1080"}))
+	require.Equal(t, "1080p", videoVendorRequestResolution(adapter, VideoCreateRequest{Model: "bytedance:seedance@2.0", Resolution: "1080p"}))
+	require.Equal(t, "1080p", providerRequestResolution(VideoProviderRunware, VideoCreateRequest{Model: "bytedance:seedance@2.0", Resolution: "1080p"}))
+	// 没带分辨率时回落到档案默认档位（Seedance 2.0 默认 1280x720）。
+	require.Equal(t, "720p", providerRequestResolution(VideoProviderRunware, VideoCreateRequest{Model: "bytedance:seedance@2.0"}))
 }
 
 func TestRunwareValidateSubmissionRejectsUnsupportedShapes(t *testing.T) {
 	provider := newVideoVendorProvider(newRunwareVideoAdapter(), nil, nil)
 	account := newRunwareTestAccount("")
-	base := VideoCreateRequest{Operation: VideoOperationGenerate, Model: "bytedance:seedance@2.0", Prompt: "a cat", Seconds: 5, Size: "1280x720"}
+	base := VideoCreateRequest{Operation: VideoOperationGenerate, Model: "bytedance:seedance@2.0", Prompt: "a cat", Seconds: 5, Resolution: "720p", Ratio: "16:9"}
 
 	require.NoError(t, provider.ValidateSubmission(account, base, nil))
 
@@ -113,12 +121,26 @@ func TestRunwareValidateSubmissionRejectsUnsupportedShapes(t *testing.T) {
 		code   string
 	}{
 		{"seconds outside range", func(r *VideoCreateRequest) { r.Seconds = 40 }, "unsupported_seconds"},
-		{"size outside table", func(r *VideoCreateRequest) { r.Size = "1000x1000" }, "unsupported_size"},
+		{"resolution outside table", func(r *VideoCreateRequest) { r.Resolution = "2k" }, "unsupported_resolution"},
+		{"ratio outside table", func(r *VideoCreateRequest) { r.Ratio = "3:2" }, "unsupported_ratio"},
+		{"adaptive ratio without image", func(r *VideoCreateRequest) { r.Ratio = ArkVideoRatioAdaptive }, "unsupported_ratio"},
+		{"openai size", func(r *VideoCreateRequest) { r.Size = "1280x720" }, "unsupported_option"},
+		{"smart duration", func(r *VideoCreateRequest) { r.Seconds, r.SmartDuration = 0, true }, "unsupported_parameter"},
+		{"frames", func(r *VideoCreateRequest) { r.Seconds, r.Frames = 0, 29 }, "unsupported_parameter"},
+		{"return last frame", func(r *VideoCreateRequest) { flag := true; r.ReturnLastFrame = &flag }, "unsupported_parameter"},
+		{"watermark unmapped", func(r *VideoCreateRequest) { flag := true; r.Watermark = &flag }, "unsupported_parameter"},
 		{"unknown option", func(r *VideoCreateRequest) { r.ProviderOptions = map[string]any{"steps": 20} }, "unsupported_option"},
 		{"non scalar option", func(r *VideoCreateRequest) { r.ProviderOptions = map[string]any{"seed": []any{1}} }, "unsupported_option"},
-		{"file id reference", func(r *VideoCreateRequest) { r.InputReference = &ProviderInputReference{FileID: "file_1"} }, "unsupported_reference_media"},
-		{"reference videos", func(r *VideoCreateRequest) { r.ReferenceMedia.ReferenceVideos = []string{"https://x/y.mp4"} }, "unsupported_reference_media"},
-		{"http image url", func(r *VideoCreateRequest) { r.InputReference = &ProviderInputReference{ImageURL: "http://x/y.png"} }, "unsupported_reference_media"},
+		{"file id reference", func(r *VideoCreateRequest) { r.InputReference = &ProviderInputReference{FileID: "file_1"} }, "unsupported_option"},
+		{"reference videos", func(r *VideoCreateRequest) {
+			r.Content = []VideoContentItem{{Type: VideoContentTypeVideo, Role: VideoInputRoleReferenceVideo, URL: "https://x/y.mp4"}}
+		}, "unsupported_reference_media"},
+		{"http image url", func(r *VideoCreateRequest) {
+			r.Content = []VideoContentItem{{Type: VideoContentTypeImage, Role: VideoInputRoleFirstFrame, URL: "http://x/y.png"}}
+		}, "unsupported_reference_media"},
+		{"last frame alone", func(r *VideoCreateRequest) {
+			r.Content = []VideoContentItem{{Type: VideoContentTypeImage, Role: VideoInputRoleLastFrame, URL: "https://x/y.png"}}
+		}, "unsupported_reference_media"},
 		{"edit operation", func(r *VideoCreateRequest) { r.Operation = VideoOperationEdit }, "unsupported_operation"},
 		{"empty prompt", func(r *VideoCreateRequest) { r.Prompt = " " }, "missing_prompt"},
 	}
@@ -139,17 +161,18 @@ func TestRunwareValidateSubmissionRejectsUnsupportedShapes(t *testing.T) {
 	enabled, disabled := true, false
 	seedance10 := base
 	seedance10.Model = "bytedance:2@1"
-	seedance10.Size = "1920x1088"
+	seedance10.Resolution = "1080p"
 	seedance10.AudioEnabled = &enabled
 	err := provider.ValidateSubmission(account, seedance10, nil)
 	require.Error(t, err)
 	seedance10.AudioEnabled = &disabled
 	require.NoError(t, provider.ValidateSubmission(account, seedance10, nil))
 
-	// 未知模型走兜底档案：不校验尺寸与秒数集合，仍校验白名单。
+	// 未知模型走兜底档案：只要在 Ark 词表内就不校验档位与秒数集合，仍校验白名单。
 	fallback := base
 	fallback.Model = "unknown:model@0"
-	fallback.Size = "1234x567"
+	fallback.Resolution = "2k"
+	fallback.Ratio = "21:9"
 	fallback.Seconds = 7
 	require.NoError(t, provider.ValidateSubmission(account, fallback, nil))
 
@@ -172,10 +195,11 @@ func TestRunwareCreateEncodesRequestAndDecodesAcceptance(t *testing.T) {
 	})
 	account := newRunwareTestAccount(server.URL + "/v1")
 	audio := true
+	seed := int64(42)
 	request := VideoCreateRequest{
 		TaskID: "video_task", ClientToken: "video_0123456789abcdef0123456789abcdef", Operation: VideoOperationGenerate,
-		Model: "bytedance:seedance@2.0", Prompt: "a cat on the moon", Seconds: 6, Size: "1920x1080", AudioEnabled: &audio,
-		ProviderOptions: map[string]any{"seed": float64(42)},
+		Model: "bytedance:seedance@2.0", Prompt: "a cat on the moon", Seconds: 6, Resolution: "1080p", Ratio: "16:9", AudioEnabled: &audio,
+		Seed: &seed, ProviderOptions: map[string]any{"negativePrompt": "blurry"},
 	}
 	task, err := provider.Create(context.Background(), account, request, nil)
 	require.NoError(t, err)
@@ -192,6 +216,7 @@ func TestRunwareCreateEncodesRequestAndDecodesAcceptance(t *testing.T) {
 	require.Equal(t, "async", body["deliveryMethod"])
 	require.Equal(t, true, body["includeCost"])
 	require.Equal(t, float64(42), body["seed"])
+	require.Equal(t, "blurry", body["negativePrompt"])
 	require.Equal(t, map[string]any{"audio": true}, body["settings"])
 	_, hasInputs := body["inputs"]
 	require.False(t, hasInputs)
@@ -200,7 +225,9 @@ func TestRunwareCreateEncodesRequestAndDecodesAcceptance(t *testing.T) {
 	require.Equal(t, VideoGenerationQueued, task.Status)
 	require.Equal(t, "bytedance:seedance@2.0", task.Metadata["model"])
 	require.Equal(t, 6, task.Metadata["seconds"])
-	require.Equal(t, "1920x1080", task.Metadata["size"])
+	require.Equal(t, "1080p", task.Metadata["resolution"])
+	require.Equal(t, "16:9", task.Metadata["ratio"])
+	require.Equal(t, int64(42), task.Metadata["seed"])
 }
 
 func TestRunwareCreateInlinesImageAndSendsResolution(t *testing.T) {
@@ -217,7 +244,7 @@ func TestRunwareCreateInlinesImageAndSendsResolution(t *testing.T) {
 	}
 	request := VideoCreateRequest{
 		ClientToken: "video_0123456789abcdef0123456789abcdef", Operation: VideoOperationGenerate,
-		Model: "bytedance:seedance@2.0", Prompt: "animate", Seconds: 5, Size: "1280x720",
+		Model: "bytedance:seedance@2.0", Prompt: "animate", Seconds: 5, Resolution: "720p", Ratio: "16:9",
 	}
 	task, err := provider.Create(context.Background(), account, request, []VideoInput{input})
 	require.NoError(t, err)
@@ -231,15 +258,15 @@ func TestRunwareCreateInlinesImageAndSendsResolution(t *testing.T) {
 	_, hasWidth := body["width"]
 	require.False(t, hasWidth, "frame images must not be combined with width/height")
 
-	// 两张图：首帧 + 尾帧。
+	// 两张图：spool 字节补首帧，content[] 里的 https 尾帧按角色落位。
 	captured = nil
-	request.ReferenceMedia.LastImageURL = "https://cdn.example.com/last.png"
+	request.Content = []VideoContentItem{{Type: VideoContentTypeImage, Role: VideoInputRoleLastFrame, URL: "https://cdn.example.com/last.png"}}
 	_, err = provider.Create(context.Background(), account, request, []VideoInput{input})
 	require.NoError(t, err)
 	frames = captured[0]["inputs"].(map[string]any)["frameImages"].([]any)
 	require.Len(t, frames, 2)
-	require.Equal(t, map[string]any{"image": "https://cdn.example.com/last.png", "frame": "first"}, frames[0])
-	require.Equal(t, "last", frames[1].(map[string]any)["frame"])
+	require.Equal(t, map[string]any{"image": "data:image/png;base64,YWJj", "frame": "first"}, frames[0])
+	require.Equal(t, map[string]any{"image": "https://cdn.example.com/last.png", "frame": "last"}, frames[1])
 }
 
 func TestRunwareCreateClassifiesErrors(t *testing.T) {
@@ -265,7 +292,7 @@ func TestRunwareCreateClassifiesErrors(t *testing.T) {
 				_, _ = w.Write([]byte(tc.body))
 			})
 			account := newRunwareTestAccount(server.URL + "/v1")
-			request := VideoCreateRequest{ClientToken: "video_0123456789abcdef0123456789abcdef", Operation: VideoOperationGenerate, Model: "bytedance:seedance@2.0", Prompt: "p", Seconds: 5, Size: "1280x720"}
+			request := VideoCreateRequest{ClientToken: "video_0123456789abcdef0123456789abcdef", Operation: VideoOperationGenerate, Model: "bytedance:seedance@2.0", Prompt: "p", Seconds: 5, Resolution: "720p", Ratio: "16:9"}
 			_, err := provider.Create(context.Background(), account, request, nil)
 			require.Error(t, err)
 			var providerErr *VideoProviderError
@@ -347,20 +374,22 @@ func TestRunwareSearchAndTerminalOperations(t *testing.T) {
 	require.False(t, provider.Capabilities().Supports(VideoCapabilityCancel))
 }
 
-func TestRunwareCatalogContribution(t *testing.T) {
+func TestRunwareArkModelSpec(t *testing.T) {
 	provider := newVideoVendorProvider(newRunwareVideoAdapter(), nil, nil)
-	parameters := provider.ModelParameters("bytedance:seedance@2.0", nil)
-	names := make([]string, 0, len(parameters))
-	for _, parameter := range parameters {
-		names = append(names, parameter.Name+"@"+parameter.In)
-	}
-	require.Equal(t, []string{"audio@body", "negativePrompt@provider_options", "seed@provider_options"}, names)
+	spec := provider.ArkModelSpec("bytedance:seedance@2.0")
+	// seed 从 provider_options 白名单挪进 Ark 显式字段；negativePrompt 仍是厂商参数。
+	require.Equal(t, ArkVideoModelFlags{Seed: true, GenerateAudio: true}, spec.Flags)
+	require.Equal(t, []ArkVideoModelOption{{Name: "negativePrompt"}}, spec.ProviderOptions)
+	require.False(t, spec.FramesSupported)
+	require.Equal(t, ArkVideoContentRole{Max: 1, Accepts: []string{videoReferenceAcceptsHTTPS, videoReferenceAcceptsDataURI}}, spec.ContentRoles[VideoInputRoleFirstFrame])
+	require.Equal(t, []string{string(VideoInputRoleFirstFrame)}, spec.ContentRoles[VideoInputRoleLastFrame].Requires)
 
-	slots := provider.ModelReferenceInputs("bytedance:seedance@2.0")
-	require.Len(t, slots, 3)
-	require.Equal(t, "image_url", slots[0].Field)
-	require.Equal(t, "last_image_url", slots[2].Field)
-	require.Len(t, provider.ModelReferenceInputs("unknown-model"), 3, "the fallback profile allows first and last frame images")
+	// Seedance 1.0 Pro 没有音频字段，但有 cameraFixed。
+	seedance10 := provider.ArkModelSpec("bytedance:2@1")
+	require.Equal(t, ArkVideoModelFlags{Seed: true, CameraFixed: true}, seedance10.Flags)
+
+	fallback := provider.ArkModelSpec("unknown-model")
+	require.Len(t, fallback.ContentRoles, 2, "the fallback profile allows first and last frame images")
 }
 
 func TestBuildVendorURLJoinsBaseAndPath(t *testing.T) {

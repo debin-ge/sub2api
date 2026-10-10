@@ -53,6 +53,7 @@ type videoTaskAPI interface {
 	GetContentTaskByPublicID(context.Context, string) (*service.VideoTask, error)
 	ListForOwner(context.Context, int64, service.VideoTaskFilter) (*service.VideoTaskPage, error)
 	ListVideoModels(context.Context, *service.APIKey) (*service.VideoModelsResponse, error)
+	ListArkVideoModels(context.Context, *service.APIKey) (*service.ArkVideoModelsResponse, error)
 	GetCharacterForOwner(context.Context, int64, string) (*service.VideoResource, error)
 	DisclosureForOwner(context.Context, int64, string) (*service.VideoTaskDisclosure, error)
 	ResourceDisclosureForOwner(context.Context, int64, string) (*service.VideoResourceDisclosure, error)
@@ -114,6 +115,12 @@ func (h *VideoHandler) CreateCharacter(c *gin.Context) {
 }
 
 func (h *VideoHandler) submit(c *gin.Context, operation string) {
+	h.submitWithShape(c, operation, false)
+}
+
+// submitWithShape 是两种公开形态共用的创建流程：ark 为真时按 Ark 任务协议解析请求并
+// 以 {"id"} 应答，否则按 OpenAI Videos 形态处理。
+func (h *VideoHandler) submitWithShape(c *gin.Context, operation string, ark bool) {
 	apiKey, ok := h.authorizedAPIKey(c)
 	if !ok {
 		return
@@ -132,7 +139,17 @@ func (h *VideoHandler) submit(c *gin.Context, operation string) {
 		videoError(c, service.ErrVideoCreationDisabled)
 		return
 	}
-	request, session, multipartHash, err := h.parseSubmitRequest(c, operation, apiKey.UserID)
+	var (
+		request       service.VideoSubmitRequest
+		session       *service.VideoSpoolSession
+		multipartHash string
+		err           error
+	)
+	if ark {
+		request, session, err = h.parseArkSubmitRequest(c, apiKey.UserID)
+	} else {
+		request, session, multipartHash, err = h.parseSubmitRequest(c, operation, apiKey.UserID)
+	}
 	if session != nil {
 		defer func() {
 			if closeErr := session.Close(); closeErr != nil {
@@ -176,15 +193,15 @@ func (h *VideoHandler) submit(c *gin.Context, operation string) {
 				videoError(c, beginErr)
 				return
 			}
-			runParsed := func() { h.submitParsed(c, apiKey, request, true) }
+			runParsed := func() { h.submitParsed(c, apiKey, request, true, ark) }
 			h.executeVideoCreateIntentSession(c, intentSession, runParsed, runParsed)
 			return
 		}
 	}
-	h.submitParsed(c, apiKey, request, multipartHash != "")
+	h.submitParsed(c, apiKey, request, multipartHash != "", ark)
 }
 
-func (h *VideoHandler) submitParsed(c *gin.Context, apiKey *service.APIKey, request service.VideoSubmitRequest, multipartRequest bool) {
+func (h *VideoHandler) submitParsed(c *gin.Context, apiKey *service.APIKey, request service.VideoSubmitRequest, multipartRequest, ark bool) {
 	if request.Model == "" && request.Operation == service.VideoOperationCharacterCreate {
 		request.Model = service.OpenAIVideoModelSora2
 	}
@@ -209,6 +226,15 @@ func (h *VideoHandler) submitParsed(c *gin.Context, apiKey *service.APIKey, requ
 		return
 	}
 	h.setNoStore(c)
+	if ark {
+		// Ark 的创建响应只有任务 id；其余字段都在查询接口。
+		if result.Task == nil {
+			videoError(c, errors.New("video service returned no task"))
+			return
+		}
+		c.PureJSON(http.StatusOK, gin.H{"id": result.Task.PublicID})
+		return
+	}
 	if result.Resource != nil {
 		response, projectErr := h.projectResource(c.Request.Context(), apiKey.UserID, result.Resource)
 		if projectErr != nil {
@@ -257,6 +283,11 @@ func (h *VideoHandler) routeParsedCompositeMultipart(c *gin.Context, apiKey *ser
 	}
 	if !resolved {
 		videoError(c, service.ErrVideoNoAccountAvailable)
+		return true
+	}
+	if service.IsArkVideoPlatform(platform) {
+		// 五家平台只通过 Ark 任务协议提供视频；/v1/videos 的 multipart 不再为它们服务。
+		videoError(c, service.ErrVideoUseArkEndpoint)
 		return true
 	}
 	if service.IsManagedVideoPlatform(platform) {
@@ -1163,19 +1194,9 @@ func (reference *videoURLReferenceJSON) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-type videoContentItemJSON struct {
-	Type     string                `json:"type"`
-	Text     string                `json:"text,omitempty"`
-	Role     string                `json:"role,omitempty"`
-	ImageURL videoURLReferenceJSON `json:"image_url,omitempty"`
-	VideoURL videoURLReferenceJSON `json:"video_url,omitempty"`
-	AudioURL videoURLReferenceJSON `json:"audio_url,omitempty"`
-}
-
 type videoJSONRequest struct {
 	Model           string                   `json:"model"`
 	Prompt          string                   `json:"prompt"`
-	Content         []videoContentItemJSON   `json:"content,omitempty"`
 	Seconds         videoFlexibleInt         `json:"seconds,omitempty"`
 	Size            string                   `json:"size,omitempty"`
 	Quality         string                   `json:"quality,omitempty"`
@@ -1229,10 +1250,10 @@ func parseVideoJSONRequest(body io.Reader, operation string) (service.VideoSubmi
 	return payload.submitRequest(operation)
 }
 
+// submitRequest 把 OpenAI Videos 形态的请求体翻译成内部 v3 请求：seconds → Seconds、
+// audio → AudioEnabled、ratio → Ratio、aspect_ratio → AspectRatio（OpenAI 兼容上游专用），
+// 各参考媒体字段 → 带角色的 Content 项。
 func (payload videoJSONRequest) submitRequest(operation string) (service.VideoSubmitRequest, error) {
-	if err := payload.normalizeContent(operation); err != nil {
-		return service.VideoSubmitRequest{}, err
-	}
 	referenceImages, err := normalizeVideoReferenceList(payload.ReferenceImages)
 	if err != nil {
 		return service.VideoSubmitRequest{}, err
@@ -1250,17 +1271,29 @@ func (payload videoJSONRequest) submitRequest(operation string) (service.VideoSu
 		strings.TrimSpace(payload.LastImageURL) != "" || len(referenceVideos) > 0 {
 		ratio, aspectRatio = "", ""
 	}
+	content := make([]service.VideoContentItem, 0, 4+len(referenceImages)+len(referenceVideos)+len(referenceAudios))
+	addURL := func(itemType string, role service.VideoInputRole, value string) {
+		if value = strings.TrimSpace(value); value != "" {
+			content = append(content, service.VideoContentItem{Type: itemType, Role: role, URL: value})
+		}
+	}
+	addURL(service.VideoContentTypeImage, service.VideoInputRoleReferenceImage, payload.ImageURL)
+	addURL(service.VideoContentTypeImage, service.VideoInputRoleFirstFrame, payload.FirstImageURL)
+	addURL(service.VideoContentTypeImage, service.VideoInputRoleLastFrame, payload.LastImageURL)
+	for _, value := range referenceImages {
+		addURL(service.VideoContentTypeImage, service.VideoInputRoleTaggedReferenceImage, value)
+	}
+	for _, value := range referenceVideos {
+		addURL(service.VideoContentTypeVideo, service.VideoInputRoleReferenceVideo, value)
+	}
+	for _, value := range referenceAudios {
+		addURL(service.VideoContentTypeAudio, service.VideoInputRoleReferenceAudio, value)
+	}
 	request := service.VideoSubmitRequest{
 		Operation: operation, Model: strings.TrimSpace(payload.Model), Prompt: strings.TrimSpace(payload.Prompt),
-		Seconds: int(payload.Seconds), Size: strings.TrimSpace(payload.Size), Quality: strings.TrimSpace(payload.Quality),
-		AudioEnabled: payload.Audio, ServiceTier: strings.TrimSpace(payload.ServiceTier),
+		Content: content, Seconds: int(payload.Seconds), Size: strings.TrimSpace(payload.Size), Quality: strings.TrimSpace(payload.Quality),
+		AudioEnabled: payload.Audio, ServiceTier: strings.TrimSpace(payload.ServiceTier), Ratio: ratio, AspectRatio: aspectRatio,
 		CallbackURL: strings.TrimSpace(payload.CallbackURL), ProviderOptions: cloneVideoOptions(payload.ProviderOptions),
-		ReferenceMedia: service.ProviderVideoReferenceMedia{
-			Ratio: ratio, AspectRatio: aspectRatio,
-			ImageURL: strings.TrimSpace(payload.ImageURL), FirstImageURL: strings.TrimSpace(payload.FirstImageURL),
-			LastImageURL: strings.TrimSpace(payload.LastImageURL), ReferenceImages: referenceImages,
-			ReferenceVideos: referenceVideos, ReferenceAudios: referenceAudios,
-		},
 	}
 	if payload.InputReference != nil {
 		request.InputReference = &service.ProviderInputReference{
@@ -1287,79 +1320,6 @@ func (payload videoJSONRequest) submitRequest(operation string) (service.VideoSu
 		return service.VideoSubmitRequest{}, err
 	}
 	return request, nil
-}
-
-func (payload *videoJSONRequest) normalizeContent(operation string) error {
-	if !payload.presentFields["content"] {
-		return nil
-	}
-	if operation != service.VideoOperationGenerate || len(payload.Content) == 0 || len(payload.Content) > 32 {
-		return service.ErrVideoInvalidRequest
-	}
-	for _, name := range []string{
-		"prompt", "input_reference", "image_url", "first_image_url", "last_image_url",
-		"reference_images", "reference_videos", "reference_audios",
-	} {
-		if payload.presentFields[name] {
-			return service.ErrVideoInvalidRequest
-		}
-	}
-	texts := make([]string, 0, 1)
-	for _, item := range payload.Content {
-		itemType := strings.ToLower(strings.TrimSpace(item.Type))
-		role := strings.ToLower(strings.TrimSpace(item.Role))
-		text := strings.TrimSpace(item.Text)
-		imageURL := strings.TrimSpace(string(item.ImageURL))
-		videoURL := strings.TrimSpace(string(item.VideoURL))
-		audioURL := strings.TrimSpace(string(item.AudioURL))
-		switch itemType {
-		case "text":
-			if text == "" || role != "" || imageURL != "" || videoURL != "" || audioURL != "" {
-				return service.ErrVideoInvalidRequest
-			}
-			texts = append(texts, text)
-		case "image_url":
-			if text != "" || imageURL == "" || videoURL != "" || audioURL != "" {
-				return service.ErrVideoInvalidRequest
-			}
-			if role == "" {
-				role = "first_frame"
-			}
-			switch role {
-			case "first_frame":
-				if strings.TrimSpace(payload.FirstImageURL) != "" {
-					return service.ErrVideoInvalidRequest
-				}
-				payload.FirstImageURL = imageURL
-			case "last_frame":
-				if strings.TrimSpace(payload.LastImageURL) != "" {
-					return service.ErrVideoInvalidRequest
-				}
-				payload.LastImageURL = imageURL
-			case "reference_image":
-				payload.ReferenceImages = append(payload.ReferenceImages, imageURL)
-			default:
-				return service.ErrVideoInvalidRequest
-			}
-		case "video_url":
-			if text != "" || imageURL != "" || videoURL == "" || audioURL != "" || (role != "" && role != "reference_video") {
-				return service.ErrVideoInvalidRequest
-			}
-			payload.ReferenceVideos = append(payload.ReferenceVideos, videoURL)
-		case "audio_url":
-			if text != "" || imageURL != "" || videoURL != "" || audioURL == "" || (role != "" && role != "reference_audio") {
-				return service.ErrVideoInvalidRequest
-			}
-			payload.ReferenceAudios = append(payload.ReferenceAudios, audioURL)
-		default:
-			return service.ErrVideoInvalidRequest
-		}
-	}
-	if len(texts) == 0 {
-		return service.ErrVideoInvalidRequest
-	}
-	payload.Prompt = strings.Join(texts, "\n\n")
-	return nil
 }
 
 func videoSubmitRequestFromMultipart(values map[string]string, inputs []service.VideoInput, operation string) (service.VideoSubmitRequest, error) {
@@ -1400,6 +1360,10 @@ func videoSubmitRequestFromMultipart(values map[string]string, inputs []service.
 	return request, nil
 }
 
+func hasVideoReferenceFields(request service.VideoSubmitRequest) bool {
+	return len(request.MediaContent()) > 0 || strings.TrimSpace(request.Ratio) != "" || strings.TrimSpace(request.AspectRatio) != ""
+}
+
 func validateVideoPublicShape(request service.VideoSubmitRequest) error {
 	switch request.Operation {
 	case service.VideoOperationGenerate:
@@ -1407,15 +1371,15 @@ func validateVideoPublicShape(request service.VideoSubmitRequest) error {
 			return service.ErrVideoInvalidRequest
 		}
 	case service.VideoOperationEdit:
-		if request.InputReference != nil || !request.ReferenceMedia.Empty() || len(request.CharacterIDs) != 0 {
+		if request.InputReference != nil || hasVideoReferenceFields(request) || len(request.CharacterIDs) != 0 {
 			return service.ErrVideoInvalidRequest
 		}
 	case service.VideoOperationExtend:
-		if request.InputReference != nil || !request.ReferenceMedia.Empty() || len(request.CharacterIDs) != 0 || request.SourceVideoID == "" {
+		if request.InputReference != nil || hasVideoReferenceFields(request) || len(request.CharacterIDs) != 0 || request.SourceVideoID == "" {
 			return service.ErrVideoInvalidRequest
 		}
 	case service.VideoOperationCharacterCreate:
-		if request.InputReference != nil || !request.ReferenceMedia.Empty() || len(request.CharacterIDs) != 0 || request.SourceVideoID != "" {
+		if request.InputReference != nil || hasVideoReferenceFields(request) || len(request.CharacterIDs) != 0 || request.SourceVideoID != "" {
 			return service.ErrVideoInvalidRequest
 		}
 	default:
@@ -1707,8 +1671,13 @@ func newVideoContentURLSigner(cfg *config.Config) *videoContentURLSigner {
 }
 
 func (s *videoContentURLSigner) mac(publicID string, exp int64) []byte {
+	return s.macMessage(videoContentURLPathPrefix + publicID + videoContentURLPathSuffix + "\n" + strconv.FormatInt(exp, 10))
+}
+
+// macMessage 对任意签名消息求 HMAC；Ark 内容路由把路径与变体一并放进消息，链接换路径即失效。
+func (s *videoContentURLSigner) macMessage(message string) []byte {
 	mac := hmac.New(sha256.New, s.key[:])
-	_, _ = io.WriteString(mac, videoContentURLPathPrefix+publicID+videoContentURLPathSuffix+"\n"+strconv.FormatInt(exp, 10))
+	_, _ = io.WriteString(mac, message)
 	return mac.Sum(nil)
 }
 
@@ -1719,6 +1688,21 @@ func (h *VideoHandler) signVideoContentURL(publicID string, exp int64) string {
 		return ""
 	}
 	return hex.EncodeToString(h.contentURLSigner.mac(publicID, exp))
+}
+
+func hexEncode(value []byte) string { return hex.EncodeToString(value) }
+
+// hmacHexEqual 用常量时间比较把十六进制签名与期望 MAC 比对。
+func hmacHexEqual(sig string, expected []byte) bool {
+	sig = strings.TrimSpace(sig)
+	if len(sig) != hex.EncodedLen(len(expected)) {
+		return false
+	}
+	decoded, err := hex.DecodeString(sig)
+	if err != nil || len(decoded) != len(expected) {
+		return false
+	}
+	return hmac.Equal(decoded, expected)
 }
 
 // verifyVideoContentSignature 用常量时间比较校验签名。这里不检查过期时间，
@@ -1877,23 +1861,23 @@ func (h *VideoHandler) checkSecurityAudit(c *gin.Context, apiKey *service.APIKey
 }
 
 func videoModerationBody(ctx context.Context, request service.VideoSubmitRequest) ([]byte, error) {
-	images := make([]map[string]string, 0, 1+len(request.ReferenceMedia.ReferenceImages))
+	images := make([]map[string]string, 0, 1+len(request.Content))
 	if request.InputReference != nil {
 		if imageURL := strings.TrimSpace(request.InputReference.ImageURL); imageURL != "" {
 			images = append(images, map[string]string{"image_url": imageURL})
 		}
 	}
-	for _, imageURL := range append([]string{
-		request.ReferenceMedia.ImageURL,
-		request.ReferenceMedia.FirstImageURL,
-		request.ReferenceMedia.LastImageURL,
-	}, request.ReferenceMedia.ReferenceImages...) {
-		if imageURL = strings.TrimSpace(imageURL); imageURL != "" {
+	// 远端图片引用（任何图片角色）都送审；字节形式的图片在下面随 Inputs 内联。
+	for _, item := range request.Content {
+		if !item.IsMedia() || !item.Role.IsImageContentRole() || item.Input != nil {
+			continue
+		}
+		if imageURL := strings.TrimSpace(item.URL); imageURL != "" {
 			images = append(images, map[string]string{"image_url": imageURL})
 		}
 	}
 	for _, input := range request.Inputs {
-		if input.Role != service.VideoInputRoleReferenceImage {
+		if !input.Role.IsImageContentRole() {
 			continue
 		}
 		if input.Size < 0 || input.Size > service.MaxContentModerationImageBytes || input.Open == nil {
@@ -2085,7 +2069,8 @@ func videoPathID(c *gin.Context) string {
 	if c == nil {
 		return ""
 	}
-	return firstNonEmptyVideoString(c.Param("video_id"), c.Param("character_id"), c.Param("request_id"))
+	// task_id 是 Ark 任务路由（/contents/generations/tasks/:task_id）的参数名。
+	return firstNonEmptyVideoString(c.Param("video_id"), c.Param("character_id"), c.Param("request_id"), c.Param("task_id"))
 }
 
 type videoContentLimiter struct {

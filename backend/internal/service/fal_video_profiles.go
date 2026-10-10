@@ -71,7 +71,7 @@ func falProfile(model string, spec falProfileSpec) *videoModelProfile {
 		RequiresImage: spec.image == "required", AllowsImage: spec.image != "", MaxImages: maxImages,
 		Seconds: spec.seconds, MinSeconds: spec.minSeconds, MaxSeconds: spec.maxSeconds, DefaultSeconds: spec.defSeconds,
 		DurationEnc: duration, DurationField: "duration",
-		Sizes: sizes, DefaultSize: defSize, SizeEnc: spec.sizeEnc,
+		Sizes: sizes, DefaultSize: defSize, SizeEnc: spec.sizeEnc, Ratios: append([]string(nil), spec.aspects...), CanonicalResolutions: append([]string(nil), spec.resolution...),
 		AudioField: spec.audio, OptionWhitelist: options, OutputPath: "video.url",
 		ImageField: imageField, LastImageField: "end_image_url",
 	}
@@ -85,7 +85,7 @@ func falFallbackProfile(model string) *videoModelProfile {
 		options: map[string]string{"seed": "seed", "negative_prompt": "negative_prompt"},
 	})
 	profile.Fallback = true
-	return profile
+	return profile.finalizeArkDimensions()
 }
 
 func falVideoProfiles() map[string]*videoModelProfile {

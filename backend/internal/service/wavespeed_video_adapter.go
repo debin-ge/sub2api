@@ -164,27 +164,9 @@ func (a *waveSpeedVideoAdapter) buildBody(request VideoCreateRequest, profile *v
 	if resolutionField == "" {
 		resolutionField = "resolution"
 	}
-	if size := strings.TrimSpace(request.Size); size != "" {
-		switch profile.SizeEnc {
-		case videoSizeAspectRatioRes:
-			if aspect := videoVendorAspectRatioLabel(size); aspect != "" && len(inputs) == 0 {
-				videoVendorSetPath(body, aspectField, aspect)
-			}
-			if resolution := videoVendorResolutionFor(profile, size); resolution != "" {
-				videoVendorSetPath(body, resolutionField, resolution)
-			}
-		case videoSizeAspectRatio, videoSizeResolutionInID:
-			if aspect := videoVendorAspectRatioLabel(size); aspect != "" && len(inputs) == 0 {
-				videoVendorSetPath(body, aspectField, aspect)
-			}
-		case videoSizeResolutionOnly:
-			if resolution := videoVendorResolutionFor(profile, size); resolution != "" {
-				videoVendorSetPath(body, resolutionField, resolution)
-			}
-		}
-	}
-	if request.AudioEnabled != nil && profile.AudioField != "" {
-		videoVendorSetPath(body, profile.AudioField, *request.AudioEnabled)
+	videoVendorApplyFraming(body, profile, request, len(inputs) > 0, aspectField, resolutionField)
+	if err := videoVendorApplyArkFields(body, profile, request); err != nil {
+		return nil, "", err
 	}
 	for key, raw := range request.ProviderOptions {
 		path, ok := profile.OptionWhitelist[key]
