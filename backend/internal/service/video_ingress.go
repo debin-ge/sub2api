@@ -12,7 +12,40 @@ type VideoIngressRoute struct {
 	ResolveAfterParsing bool
 }
 
+// ArkVideoTasksPathSuffix 是 Ark 视频任务协议的路径（可带 /api/v3、/v3、/v1 或无前缀）。
+const ArkVideoTasksPathSuffix = "/contents/generations/tasks"
+
+// ArkVideoModelsPathSuffix 是 sub2api 扩展的 Ark 维度能力目录路径。
+const ArkVideoModelsPathSuffix = "/contents/generations/models"
+
+// trimArkVideoPathPrefix 去掉 Ark 路径的版本前缀；非 Ark 路径原样返回。
+func trimArkVideoPathPrefix(path string) string {
+	for _, prefix := range []string{"/api/v3", "/v3", "/v1"} {
+		if strings.HasPrefix(path, prefix+"/") {
+			return strings.TrimPrefix(path, prefix)
+		}
+	}
+	return path
+}
+
+// IsArkVideoTasksPath 报告路径是否命中 Ark 任务协议（创建 / 查询 / 删除 / 列表 / 内容）。
+func IsArkVideoTasksPath(path string) bool {
+	trimmed := trimArkVideoPathPrefix(strings.TrimRight(path, "/"))
+	return trimmed == ArkVideoTasksPathSuffix || strings.HasPrefix(trimmed, ArkVideoTasksPathSuffix+"/")
+}
+
+// IsArkVideoModelsPath 报告路径是否命中 Ark 维度能力目录。
+func IsArkVideoModelsPath(path string) bool {
+	return trimArkVideoPathPrefix(strings.TrimRight(path, "/")) == ArkVideoModelsPathSuffix
+}
+
+// IsArkVideoPath 报告路径是否属于 Ark 形态的视频入口（任务或目录）。
+func IsArkVideoPath(path string) bool { return IsArkVideoTasksPath(path) || IsArkVideoModelsPath(path) }
+
 func ManagedVideoOperationForPath(path string) (string, bool) {
+	if trimArkVideoPathPrefix(strings.TrimRight(path, "/")) == ArkVideoTasksPathSuffix {
+		return VideoOperationGenerate, true
+	}
 	if strings.HasPrefix(path, "/v1/") {
 		path = strings.TrimPrefix(path, "/v1")
 	}
@@ -89,7 +122,7 @@ func (s *VideoTaskService) ResolveVideoIngress(ctx context.Context, key *APIKey,
 	if err != nil {
 		return nil, err
 	}
-	if !decision.Matched || (decision.TargetPlatform != PlatformOpenAI && decision.TargetPlatform != PlatformByteDance && decision.TargetPlatform != PlatformGrok) {
+	if !decision.Matched || (!IsManagedVideoPlatform(decision.TargetPlatform) && decision.TargetPlatform != PlatformGrok) {
 		return nil, ErrVideoNoAccountAvailable
 	}
 	if operation == VideoOperationCharacterCreate && decision.TargetPlatform != PlatformOpenAI {
@@ -154,7 +187,7 @@ func videoRequestMatchesTask(request VideoSubmitRequest, hash string, task *Vide
 	}
 	if version, exists := task.RequestAttributes["client_request_contract_version"]; exists {
 		value, ok := numericMapValue(map[string]any{"version": version}, "version")
-		return ok && value == 2 && task.RequestHash == hash
+		return ok && (value == 2 || value == videoClientRequestContractVersion) && task.RequestHash == hash
 	}
 	if task.RequestedModel != task.PublicModel && strings.TrimSpace(request.Model) != "" && strings.TrimSpace(request.Model) != task.RequestedModel {
 		return false

@@ -176,7 +176,7 @@ func TestOpenAIVideoProviderKeepsCompatibleReferencesOffOfficialEndpoint(t *test
 	_, err := provider.Create(context.Background(), openAIVideoTestAccount(), VideoCreateRequest{
 		Operation: VideoOperationGenerate, Model: OpenAIVideoModelSora2,
 		Prompt: "test", Seconds: 8, Size: "1280x720",
-		ReferenceMedia: ProviderVideoReferenceMedia{ReferenceVideos: []string{"https://media.example.com/reference.mp4"}},
+		Content: []VideoContentItem{{Type: VideoContentTypeVideo, Role: VideoInputRoleReferenceVideo, URL: "https://media.example.com/reference.mp4"}},
 	}, nil)
 
 	var providerErr *VideoProviderError

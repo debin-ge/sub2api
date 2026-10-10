@@ -232,7 +232,10 @@ const upstreamSyncPlatforms = new Set([
   'glm',
   'windsurf',
   'opencode_go',
-  'bytedance'
+  'bytedance',
+  // fal 没有模型列表接口，只能用内置档案；runware / wavespeed 后端支持从上游同步。
+  'wavespeed',
+  'runware'
 ])
 const canSyncUpstream = computed(() => {
   if (props.accountId) {

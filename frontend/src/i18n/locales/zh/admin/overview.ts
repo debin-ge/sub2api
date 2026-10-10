@@ -920,6 +920,10 @@ export default {
         minimax: 'MiniMax',
         opencode_go: 'OpenCode',
         bytedance: 'ByteDance',
+        fal: 'fal.ai',
+        wavespeed: 'WaveSpeed',
+        runware: 'Runware',
+        flova: 'Flova',
         composite: 'Composite',
       },
       saving: '保存中...',
@@ -1024,7 +1028,7 @@ export default {
       videoPricing: {
         title: '视频生成计费',
         description:
-          '配置视频生成的每秒单价（USD/秒）。ByteDance Seedance 的分辨率由所选模型确定。',
+          '配置视频生成的每秒单价（USD/秒）。分辨率档位由所选模型或请求参数决定。',
         modelOverridesTitle: '按模型覆盖视频价格',
         modelOverridesDescription: '已填写的单元格会覆盖该模型族的平面分辨率价格。video-1.5 的 preview 与 legacy 别名共用同一模型族；留空则回退到平面分辨率价格。',
         independentMultiplier: '视频倍率独立',

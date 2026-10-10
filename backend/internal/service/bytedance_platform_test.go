@@ -40,7 +40,7 @@ func TestDefaultByteDanceVideoCapabilities(t *testing.T) {
 }
 
 func TestVideoTaskServiceSubmitsByteDanceWithIndependentPricingIdentity(t *testing.T) {
-	provider := &videoProviderStub{name: VideoProviderByteDance, result: &ProviderVideoTask{
+	provider := &videoProviderStub{name: VideoProviderByteDance, capabilities: videoCapabilitiesPointer(DefaultByteDanceVideoCapabilities()), result: &ProviderVideoTask{
 		ProviderTaskID: "video_bytedance_service", Status: VideoGenerationQueued, RawStatus: "queued",
 	}}
 	unit := VideoBillingUnitSecond
@@ -64,10 +64,11 @@ func TestVideoTaskServiceSubmitsByteDanceWithIndependentPricingIdentity(t *testi
 	request.APIKey.Group = group
 	request.Model = ByteDanceVideoModelSeedance10Pro
 	request.Size = ""
-	request.Seconds = 8
+	request.Seconds = 10
 	// Ark takes the output resolution as a request parameter; it is never
 	// encoded in the model identifier, so it can only arrive this way.
-	request.ProviderOptions = map[string]any{"resolution": "720p"}
+	request.Resolution = "720p"
+	request.Ratio = "9:16"
 
 	result, err := svc.Submit(context.Background(), request)
 	require.NoError(t, err)
@@ -76,18 +77,21 @@ func TestVideoTaskServiceSubmitsByteDanceWithIndependentPricingIdentity(t *testi
 	require.Equal(t, PlatformByteDance, tasks.create.PriceSnapshot["pricing_platform"])
 	require.Equal(t, VideoProviderByteDance, tasks.create.RequestAttributes["provider"])
 	require.Equal(t, "720p", tasks.create.RequestAttributes["resolution"])
+	require.Equal(t, "9:16", tasks.create.RequestAttributes["ratio"])
 	require.Empty(t, tasks.create.RequestAttributes["size"])
 	executionSpec, ok := tasks.create.RequestAttributes["execution_spec"].(ResolvedVideoExecutionSpec)
 	require.True(t, ok)
 	require.Empty(t, executionSpec.Size)
 	require.Equal(t, "720p", executionSpec.Resolution)
-	require.InDelta(t, 4.0, tasks.create.HoldAmount, 1e-9)
+	require.Equal(t, "9:16", executionSpec.Ratio)
+	require.InDelta(t, 5.0, tasks.create.HoldAmount, 1e-9)
 }
 
-// A ByteDance submission that names no resolution must not invent one: the
-// quote, hold and settlement all have to describe what was actually requested.
-func TestVideoTaskServiceByteDanceOmitsResolutionWhenUnrequested(t *testing.T) {
-	provider := &videoProviderStub{name: VideoProviderByteDance, result: &ProviderVideoTask{
+// A ByteDance submission that names no resolution gets the capability snapshot's
+// default made explicit before pricing, so the quote, hold, execution spec and
+// the upstream request all describe the same tier (720p / 16:9 for Seedance).
+func TestVideoTaskServiceByteDanceFillsDefaultResolutionWhenUnrequested(t *testing.T) {
+	provider := &videoProviderStub{name: VideoProviderByteDance, capabilities: videoCapabilitiesPointer(DefaultByteDanceVideoCapabilities()), result: &ProviderVideoTask{
 		ProviderTaskID: "video_bytedance_default", Status: VideoGenerationQueued, RawStatus: "queued",
 	}}
 	unit := VideoBillingUnitSecond
@@ -111,16 +115,22 @@ func TestVideoTaskServiceByteDanceOmitsResolutionWhenUnrequested(t *testing.T) {
 	request.APIKey.Group = group
 	request.Model = ByteDanceVideoModelSeedance10Pro
 	request.Size = ""
-	request.Seconds = 8
+	request.Seconds = 10
 
 	result, err := svc.Submit(context.Background(), request)
 	require.NoError(t, err)
 	require.True(t, result.Created)
-	require.Empty(t, tasks.create.RequestAttributes["resolution"])
+	require.Equal(t, "720p", tasks.create.RequestAttributes["resolution"])
+	require.Equal(t, "16:9", tasks.create.RequestAttributes["ratio"])
+	require.Equal(t, 10, tasks.create.RequestAttributes["duration"])
+	require.Equal(t, false, tasks.create.RequestAttributes["smart_duration"])
 	executionSpec, ok := tasks.create.RequestAttributes["execution_spec"].(ResolvedVideoExecutionSpec)
 	require.True(t, ok)
-	require.Empty(t, executionSpec.Resolution)
+	require.Equal(t, "720p", executionSpec.Resolution)
+	require.Equal(t, "16:9", executionSpec.Ratio)
 	require.Empty(t, executionSpec.Size)
+	require.Equal(t, "720p", provider.request.Resolution, "the provider sees the same explicit default")
+	require.Equal(t, "16:9", provider.request.Ratio)
 }
 
 // A ByteDance model with no configured price must not generate for free: the

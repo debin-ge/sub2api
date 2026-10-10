@@ -9,6 +9,40 @@ describe('platformColors', () => {
     expect(platformBadgeClass('bytedance')).not.toBe(platformBadgeClass('openai'))
   })
 
+  it('returns fal.ai labels and a distinct fuchsia visual style', () => {
+    expect(platformLabel('fal')).toBe('fal.ai')
+    expect(platformBadgeClass('fal')).toContain('fuchsia')
+    expect(platformButtonClass('fal')).toContain('fuchsia')
+    expect(platformBadgeClass('fal')).not.toBe(platformBadgeClass('bytedance'))
+    expect(platformBadgeClass('fal')).not.toBe(platformBadgeClass('kimi'))
+  })
+
+  it('returns WaveSpeed labels and a distinct sky visual style', () => {
+    expect(platformLabel('wavespeed')).toBe('WaveSpeed')
+    expect(platformBadgeClass('wavespeed')).toContain('sky')
+    expect(platformButtonClass('wavespeed')).toContain('sky')
+    expect(platformBadgeClass('wavespeed')).not.toBe(platformBadgeClass('bytedance'))
+    expect(platformBadgeClass('wavespeed')).not.toBe(platformBadgeClass('minimax'))
+    expect(platformBadgeClass('wavespeed')).not.toBe(platformBadgeClass('gemini'))
+  })
+
+  it('returns Runware labels and a distinct lime visual style', () => {
+    expect(platformLabel('runware')).toBe('Runware')
+    expect(platformBadgeClass('runware')).toContain('lime')
+    expect(platformButtonClass('runware')).toContain('lime')
+    expect(platformBadgeClass('runware')).not.toBe(platformBadgeClass('bytedance'))
+    expect(platformBadgeClass('runware')).not.toBe(platformBadgeClass('openai'))
+  })
+
+  it('returns Flova labels and a distinct violet visual style', () => {
+    expect(platformLabel('flova')).toBe('Flova')
+    expect(platformBadgeClass('flova')).toContain('violet')
+    expect(platformButtonClass('flova')).toContain('violet')
+    expect(platformBadgeClass('flova')).not.toBe(platformBadgeClass('runware'))
+    expect(platformBadgeClass('flova')).not.toBe(platformBadgeClass('antigravity'))
+    expect(platformBadgeClass('flova')).not.toBe(platformBadgeClass('zhipu'))
+  })
+
   it('returns MiniMax labels and a distinct cyan visual style', () => {
     expect(platformLabel('minimax')).toBe('MiniMax')
     expect(platformBadgeClass('minimax')).toContain('cyan')

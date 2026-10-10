@@ -36,7 +36,15 @@ const (
 	// 值保持 opencode_go 以兼容已落库的分组、配额与 Composite 路由 CHECK。
 	PlatformOpenCodeGo = "opencode_go"
 	PlatformByteDance  = "bytedance"
-	PlatformComposite  = "composite"
+	// 聚合媒体平台（仅视频，API Key 直连）。provider 名与 platform 相同，
+	// 因为视频准入用 provider 名查用户平台配额。
+	PlatformFal       = "fal"
+	PlatformWaveSpeed = "wavespeed"
+	PlatformRunware   = "runware"
+	// Flova：Agent 式视频创作平台，经托管视频平台接入（仅视频、API Key 直连），
+	// provider 名同样与 platform 相同。
+	PlatformFlova     = "flova"
+	PlatformComposite = "composite"
 )
 
 // Account mode constants 区分国产供应商的「按量付费（余额）」与「Coding Plan」两种接入方式。

@@ -82,3 +82,21 @@ groups:
         annotations:
           summary: "A dedicated Provider credential was disclosed through the video API"
           runbook: "deploy/monitoring/video-runbook.md#videodedicatedcredentialdisclosure"
+
+      - alert: FlovaEmptyCompletions
+        expr: sum by (job) (increase(video_platform_flova_outcomes_total{outcome="empty_completion"}[15m])) >= 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Flova runs are finishing without a video artifact (agent refusal, low credits or gated model)"
+          runbook: "deploy/monitoring/video-runbook.md#flovaemptycompletions"
+
+      - alert: FlovaPriceDrift
+        expr: sum by (job) (increase(video_platform_flova_outcomes_total{outcome="price_drift"}[30m])) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Flova quoted more credits than the configured price table allows; update the price table before approving high-cost runs"
+          runbook: "deploy/monitoring/video-runbook.md#flovapricedrift"

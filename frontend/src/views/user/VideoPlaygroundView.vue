@@ -93,18 +93,29 @@
             <VideoSettingsPanel
               :models="models"
               :model-id="form.model"
-              :seconds="form.seconds"
-              :seconds-options="secondsOptions"
-              :seconds-range="secondsRange"
-              :framing="form.framing"
-              :framing-controls="framingControls"
-              :references="form.references"
-              :reference-slots="referenceSlots"
+              :duration="form.duration"
+              :duration-choices="durationChoices"
+              :resolution="form.resolution"
+              :resolution-options="resolutionOptions"
+              :ratio="form.ratio"
+              :ratio-control="ratioControl"
+              :flags="form.flags"
+              :flag-controls="flagControls"
+              :seed="form.seed"
+              :seed-enabled="seedEnabled"
+              :content="form.content"
+              :content-slots="contentSlots"
+              :provider-options="form.providerOptions"
+              :provider-option-controls="providerOptionControls"
               :loading="loadingModels"
               @update:modelId="selectModel"
-              @update:seconds="(value) => (form.seconds = value)"
-              @update:framing="applyFraming"
-              @update:reference="applyReference"
+              @update:duration="(value) => (form.duration = value)"
+              @update:resolution="(value) => (form.resolution = value)"
+              @update:ratio="(value) => (form.ratio = value)"
+              @update:flag="applyFlag"
+              @update:seed="(value) => (form.seed = value)"
+              @update:content="applyContent"
+              @update:providerOption="applyProviderOption"
             />
           </template>
         </VideoComposer>
@@ -126,9 +137,13 @@ import VideoSettingsPanel from '@/components/video/VideoSettingsPanel.vue'
 import { mergeVideoHistoryCards } from '@/components/video/history'
 import type { VideoPlaygroundCard } from '@/components/video/types'
 import { keysAPI } from '@/api/keys'
-import { createVideo, getVideoTask, listVideoTasks, type VideoTask } from '@/api/video'
+import { createVideo, getVideoTask, isVideoTaskPending, listVideoTasks, type VideoTask } from '@/api/video'
 import { keyAllowsVideoPlayground } from '@/composables/useVideoPlaygroundAccess'
-import { useVideoPlaygroundModels, type VideoFormIssue } from '@/composables/useVideoPlaygroundModels'
+import {
+  useVideoPlaygroundModels,
+  type VideoBooleanFlag,
+  type VideoFormIssue,
+} from '@/composables/useVideoPlaygroundModels'
 import { rememberVideoPrompt } from '@/utils/videoPromptMemory'
 import { useAppStore } from '@/stores/app'
 import type { ApiKey } from '@/types'
@@ -149,16 +164,16 @@ const streamRef = ref<HTMLElement | null>(null)
 const now = ref(Math.floor(Date.now() / 1000))
 
 /**
- * 首屏只回放最近 5 条：这是一条对话流，输入框在最下方，历史铺太长会把它顶出视野；
- * 真要往回翻的人会点"加载更多"，那时候一次给 10 条才不至于点个没完。
+ * 历史按页码翻（Ark 的 page_num / page_size）。页大小固定：页码分页下首屏与后续页
+ * 用不同大小会让偏移对不上。一页 8 条，既不至于把最下方的输入框顶出视野，
+ * 往回翻的人也不用点个没完。
  */
-const HISTORY_INITIAL_LIMIT = 5
-const HISTORY_PAGE_LIMIT = 10
+const HISTORY_PAGE_SIZE = 8
 
 const loadingHistory = ref(false)
 const historyLoaded = ref(false)
-/** 下一页游标。后端只在 has_more 为真时才给值，空串即"没有更早的了"。 */
-const historyCursor = ref('')
+/** 已经翻到的页码；0 表示还没取过。 */
+const historyPage = ref(0)
 const historyHasMore = ref(false)
 
 /** 轮询间隔下限 10s；命中 Retry-After 时按其指示退避。 */
@@ -185,10 +200,13 @@ const {
   loading: loadingModels,
   loadError: modelsError,
   form,
-  secondsOptions,
-  secondsRange,
-  framingControls,
-  referenceSlots,
+  durationChoices,
+  resolutionOptions,
+  ratioControl,
+  flagControls,
+  seedEnabled,
+  contentSlots,
+  providerOptionControls,
   loadModels,
   selectModel,
   pruneUnavailableSelections,
@@ -228,59 +246,63 @@ function selectApiKey(id: number): void {
   if (id === selectedApiKeyId.value) return
   selectedApiKeyId.value = id
   // 模型目录不用在这里重取：composable 自己 watch 着密钥，改完这一行它就会去取。
-  // 两边都调的话每次换密钥都发两次 GET /v1/videos/models（结果正确，纯属白跑）。
+  // 两边都调的话每次换密钥都发两次目录请求（结果正确，纯属白跑）。
   // 历史按 user 维度归属，换密钥不必重拉；只补上"挂载时还没有密钥可用"那种情况。
   if (!historyLoaded.value) void loadHistory(true)
 }
 
-function applyFraming(name: string, value: string): void {
-  if (value) form.value.framing[name] = value
-  else delete form.value.framing[name]
-  reportPrunedReferences(pruneUnavailableSelections())
+function applyFlag(name: VideoBooleanFlag, value: boolean): void {
+  if (value) form.value.flags[name] = true
+  else delete form.value.flags[name]
 }
 
-function applyReference(field: string, values: string[]): void {
-  form.value.references[field] = values
-  reportPrunedReferences(pruneUnavailableSelections())
+function applyContent(role: string, values: string[]): void {
+  form.value.content[role] = values
+  reportPrunedContent(pruneUnavailableSelections())
+}
+
+function applyProviderOption(name: string, value: string): void {
+  if (value) form.value.providerOptions[name] = value
+  else delete form.value.providerOptions[name]
 }
 
 /**
  * 刚才这一改把哪几个槽位里手敲的 URL 清掉了，说一句。
  *
- * 典型场景是删掉最后一张参考图——参考音频的前置随之不成立，已经填好的音频地址被
- * 一并清空。不说的话界面上没有任何交代，用户只会觉得输入框自己把内容吃了。
+ * 典型场景是删掉首帧——尾帧的前置随之不成立，已经填好的尾帧地址被一并清空。
+ * 不说的话界面上没有任何交代，用户只会觉得输入框自己把内容吃了。
  */
-function reportPrunedReferences(fields: string[]): void {
-  if (fields.length === 0) return
+function reportPrunedContent(roles: string[]): void {
+  if (roles.length === 0) return
   appStore.showError(
-    t('videoPlayground.errors.referencesCleared', { fields: fields.map(fieldLabel).join(' / ') }),
+    t('videoPlayground.errors.referencesCleared', { fields: roles.map(roleLabel).join(' / ') }),
   )
 }
 
-/** 目录里的字段名对用户没有意义，有对应文案就用文案，没有就原样显示。 */
-function fieldLabel(field: string): string {
-  const key = `videoPlayground.fields.${field}`
+/** 目录里的角色名对用户没有意义，有对应文案就用文案，没有就原样显示。 */
+function roleLabel(role: string): string {
+  const key = `videoPlayground.roles.${role}`
   const label = t(key)
-  return label === key ? field : label
+  return label === key ? role : label
 }
 
 /**
  * 把一条校验问题翻译成人话。
  *
- * detail 的含义随 code 而变：互斥/前置两条装的是**目录里的字段名**，必须先过
- * fieldLabel 才能给用户看，否则提示里会冒出 first_image_url 这种东西；其余几条装的
- * 是数量、字节数、协议名，原样插值即可。
+ * detail 的含义随 code 而变：前置那条装的是**目录里的角色名**，必须先过 roleLabel
+ * 才能给用户看，否则提示里会冒出 first_frame 这种东西；其余几条装的是数量、协议名，
+ * 原样插值即可。
  */
-const FIELD_NAME_DETAIL_ISSUES = new Set(['reference_conflict', 'reference_requires_any'])
+const ROLE_NAME_DETAIL_ISSUES = new Set(['reference_requires'])
 
 function issueMessage(issue: VideoFormIssue): string {
   const detail = issue.detail ?? ''
   return t(`videoPlayground.issues.${issue.code}`, {
-    field: issue.field ? fieldLabel(issue.field) : '',
-    detail: FIELD_NAME_DETAIL_ISSUES.has(issue.code)
+    field: issue.field ? roleLabel(issue.field) : '',
+    detail: ROLE_NAME_DETAIL_ISSUES.has(issue.code)
       ? String(detail)
           .split(',')
-          .map((name) => fieldLabel(name.trim()))
+          .map((name) => roleLabel(name.trim()))
           .filter(Boolean)
           .join(' / ')
       : detail,
@@ -311,7 +333,7 @@ async function refreshAll(): Promise<void> {
   try {
     await loadApiKeys()
     await loadModels()
-    // 只重取最新的一页：游标保持不动，已经翻出来的历史不会被清掉。代价是别处新建的
+    // 只重取最新的一页：页码保持不动，已经翻出来的历史不会被清掉。代价是别处新建的
     // 任务若超过这一页，中间那些要等下次翻页才补得上——刷新按钮不值得为此重置全部状态。
     await loadHistory(true)
     schedulePoll(0)
@@ -334,6 +356,7 @@ async function submit(): Promise<void> {
   }
 
   const payload = buildRequest()
+  const prompt = form.value.prompt.trim()
   // 幂等键每次提交生成一次：它既是创建开关的准入条件（不带该头直接 403），
   // 也是连点不重复扣费的唯一保证。
   const idempotencyKey =
@@ -342,7 +365,7 @@ async function submit(): Promise<void> {
     ...cards.value,
     {
       localId: idempotencyKey,
-      prompt: payload.prompt,
+      prompt,
       model: payload.model,
       status: 'queued',
       submittedAt: Math.floor(Date.now() / 1000),
@@ -355,11 +378,17 @@ async function submit(): Promise<void> {
 
   submitting.value = true
   try {
-    const task = await createVideo(key.key, payload, idempotencyKey)
-    rememberVideoPrompt(task.id, payload.prompt)
-    card.task = task
-    card.status = task.status
-    card.model = task.model || card.model
+    // 创建只应答 {id}；先用一份占位快照把卡片挂上任务，真实状态交给紧随其后的轮询。
+    const created = await createVideo(key.key, payload, idempotencyKey)
+    rememberVideoPrompt(created.id, prompt)
+    card.task = {
+      id: created.id,
+      status: 'queued',
+      created_at: card.submittedAt,
+      model: payload.model,
+      prompt,
+    }
+    card.status = 'queued'
     form.value.prompt = ''
     schedulePoll(0)
   } catch (error: any) {
@@ -374,29 +403,27 @@ async function submit(): Promise<void> {
 }
 
 /**
- * 拉一页历史。newest 为真取最新一页（挂载与刷新走这条），为假顺着游标往更早翻。
+ * 拉一页历史。newest 为真取第一页（挂载与刷新走这条），为假顺着页码往更早翻。
  */
 async function loadHistory(newest: boolean): Promise<void> {
   const key = selectedApiKey.value
   if (!key || loadingHistory.value) return
-  if (!newest && !historyCursor.value) return
+  if (!newest && !historyHasMore.value) return
   const first = !historyLoaded.value
+  const pageNum = newest ? 1 : historyPage.value + 1
   loadingHistory.value = true
   // 往上插内容会把正在看的位置整个推下去。记住"距底部多远"，插完再按这个距离回填，
   // 视口就停在原处；首屏则相反，要落到最下方的最新一条。
   const element = streamRef.value
   const distanceToBottom = element ? element.scrollHeight - element.scrollTop : 0
   try {
-    const response = await listVideoTasks(key.key, {
-      limit: newest ? HISTORY_INITIAL_LIMIT : HISTORY_PAGE_LIMIT,
-      after: newest ? '' : historyCursor.value,
-    })
-    cards.value = mergeVideoHistoryCards(cards.value, response.data || [])
-    // 刷新（已翻过页的 newest 请求）不许动游标：把它退回第一页会让"加载更多"重走
+    const response = await listVideoTasks(key.key, { pageNum, pageSize: HISTORY_PAGE_SIZE })
+    cards.value = mergeVideoHistoryCards(cards.value, response.items || [])
+    // 刷新（已翻过页的 newest 请求）不许动页码：把它退回第一页会让"加载更多"重走
     // 已经展示过的那几页，去重之后一条不增，用户看到的就是"这个按钮坏了"。
     if (first || !newest) {
-      historyCursor.value = response.has_more ? response.after || '' : ''
-      historyHasMore.value = !!historyCursor.value
+      historyPage.value = pageNum
+      historyHasMore.value = !!response.has_more
     }
     historyLoaded.value = true
     await nextTick()
@@ -417,7 +444,7 @@ function loadMoreHistory(): void {
 }
 
 function isPending(card: VideoPlaygroundCard): boolean {
-  return !!card.task && (card.status === 'queued' || card.status === 'in_progress')
+  return !!card.task && isVideoTaskPending(card.status)
 }
 
 function schedulePoll(delayMs: number): void {
@@ -461,7 +488,7 @@ async function pollPending(): Promise<void> {
         if (status === 404) {
           card.status = 'failed'
           card.submitError = {
-            code: 'video_task_not_found',
+            code: 'task_not_found',
             message: videoErrorMessage(error, t('videoPlayground.errors.taskGone')),
           }
         }
@@ -478,7 +505,7 @@ async function pollPending(): Promise<void> {
  * 卡片自己重新拉回来的任务快照。
  *
  * 直链失效时卡片会去换一条新的，拿到的新快照必须写回这里——否则父级手上仍是那条
- * 失效的 url，下一次渲染又把它塞回去，重试等于白做。只更新 task 与 status，
+ * 失效的链接，下一次渲染又把它塞回去，重试等于白做。只更新 task 与 status，
  * prompt 之类的本地字段不动：那是本次会话的东西，服务端快照里没有。
  */
 function applyRefreshedTask(task: VideoTask): void {

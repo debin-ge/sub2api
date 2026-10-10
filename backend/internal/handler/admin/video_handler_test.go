@@ -248,3 +248,36 @@ func TestVideoAdminTaskProjectionOmitsMissingPrompt(t *testing.T) {
 	require.True(t, ok)
 	require.NotContains(t, data, "prompt")
 }
+
+func TestVideoAdminTaskFilterParsesSubmissionUnknown(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, tc := range []struct {
+		raw     string
+		want    *bool
+		invalid bool
+	}{
+		{raw: "", want: nil},
+		{raw: "true", want: videoAdminBoolPtr(true)},
+		{raw: "1", want: videoAdminBoolPtr(true)},
+		{raw: "false", want: videoAdminBoolPtr(false)},
+		{raw: "maybe", invalid: true},
+	} {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		c.Request = httptest.NewRequest(http.MethodGet, "/admin/videos/tasks?submission_unknown="+tc.raw, nil)
+		filter, err := videoAdminTaskFilter(c)
+		if tc.invalid {
+			require.Error(t, err, tc.raw)
+			continue
+		}
+		require.NoError(t, err, tc.raw)
+		if tc.want == nil {
+			require.Nil(t, filter.SubmissionUnknown, tc.raw)
+			continue
+		}
+		require.NotNil(t, filter.SubmissionUnknown, tc.raw)
+		require.Equal(t, *tc.want, *filter.SubmissionUnknown, tc.raw)
+	}
+}
+
+func videoAdminBoolPtr(value bool) *bool { return &value }

@@ -49,7 +49,7 @@ describe('VideoTasksView recovery surface', () => {
   })
 
 	it('separates routing, generation, billing, lifecycle, held amount, and actual charge', () => {
-		for (const section of ['routing', 'generation', 'billing', 'lifecycle']) {
+		for (const section of ['routing', 'generation', 'billing', 'upstream-cost', 'lifecycle']) {
 			expect(source).toContain(`key: '${section}'`)
 		}
 		expect(source).toContain('video-detail-${section.key}')
@@ -63,6 +63,9 @@ describe('VideoTasksView recovery surface', () => {
 			expect(source).toContain(field)
 		}
 		expect(source).toContain('video-task-amounts')
+		expect(source).toContain('video-detail-${section.key}-warning')
+		expect(source).toContain('video-task-reconciliation-badge')
+		expect(source).toContain('video-filter-submission-unknown')
 	})
 
 	it('shows safe spool and queue health without exposing filesystem paths', () => {

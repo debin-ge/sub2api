@@ -1,5 +1,3 @@
-import type { VideoTask } from '@/api/video'
-
 /**
  * 取内容失败的分类。
  *
@@ -52,20 +50,4 @@ export function isPlayableBlob(blob: Blob): boolean {
 export function playableBlob(blob: Blob): Blob {
   if (/^video\//i.test(blob.type)) return blob
   return blob.slice(0, blob.size, 'video/mp4')
-}
-
-/**
- * 按时钟判断内容是否已过期。
- *
- * expires_at 是秒级 Unix 时间戳，等于上游完成时间加上它的保留窗口（ByteDance 是 24
- * 小时）。窗口一过，直链和鉴权取回这两条路一起断，任何重试都救不回来——所以到点就
- * 该改口说"已过期"，而不是让用户对着一个永远失败的播放器点重试。
- *
- * 字段缺席（历史行、上游没给完成时间）意味着"不知道"，一律当作没过期：宁可让用户
- * 点一次重试，也不要凭空把一个还能播的视频宣布成过期。
- */
-export function videoContentExpired(task: VideoTask | null | undefined, nowSeconds: number): boolean {
-  const expiresAt = task?.expires_at
-  if (typeof expiresAt !== 'number' || expiresAt <= 0) return false
-  return nowSeconds >= expiresAt
 }

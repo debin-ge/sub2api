@@ -987,6 +987,10 @@ export default {
         minimax: 'MiniMax',
         opencode_go: 'OpenCode',
         bytedance: 'ByteDance',
+        fal: 'fal.ai',
+        wavespeed: 'WaveSpeed',
+        runware: 'Runware',
+        flova: 'Flova',
         composite: 'Composite',
       },
       deleteConfirm:
@@ -1027,7 +1031,7 @@ export default {
       videoPricing: {
         title: 'Video Generation Pricing',
         description:
-          'Configure video generation prices in USD per second of output video. ByteDance Seedance resolution is derived from the selected model.',
+          'Configure video generation prices in USD per second of output video. The resolution tier is derived from the selected model or request parameters.',
         modelOverridesTitle: 'Per-model video price overrides',
         modelOverridesDescription: 'Each populated cell overrides the flat resolution price for that model family. Preview and legacy aliases for video-1.5 use the same family; empty cells fall back to the flat resolution price.',
         independentMultiplier: 'Use independent video multiplier',

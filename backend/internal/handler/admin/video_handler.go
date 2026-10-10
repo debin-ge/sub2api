@@ -579,6 +579,17 @@ func videoAdminTaskFilter(c *gin.Context) (service.VideoAdminTaskFilter, error) 
 	if filter.CreatedBefore, err = videoAdminOptionalTime(c.Query("created_before")); err != nil {
 		return filter, errors.New("invalid created_before")
 	}
+	switch strings.ToLower(strings.TrimSpace(c.Query("submission_unknown"))) {
+	case "":
+	case "true", "1":
+		value := true
+		filter.SubmissionUnknown = &value
+	case "false", "0":
+		value := false
+		filter.SubmissionUnknown = &value
+	default:
+		return filter, errors.New("invalid submission_unknown")
+	}
 	return filter, nil
 }
 

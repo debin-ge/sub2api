@@ -151,6 +151,18 @@ const labelClass = computed(() => {
   if (props.platform === 'opencode_go') {
     return `${base} bg-slate-200/60 text-slate-800 dark:bg-slate-800/50 dark:text-slate-300`
   }
+  if (props.platform === 'fal') {
+    return `${base} bg-fuchsia-200/60 text-fuchsia-800 dark:bg-fuchsia-800/40 dark:text-fuchsia-300`
+  }
+  if (props.platform === 'wavespeed') {
+    return `${base} bg-sky-200/60 text-sky-800 dark:bg-sky-800/40 dark:text-sky-300`
+  }
+  if (props.platform === 'runware') {
+    return `${base} bg-lime-200/60 text-lime-800 dark:bg-lime-800/40 dark:text-lime-300`
+  }
+  if (props.platform === 'flova') {
+    return `${base} bg-violet-200/60 text-violet-800 dark:bg-violet-800/40 dark:text-violet-300`
+  }
   if (props.platform === 'composite') {
     return `${base} bg-cyan-200/70 text-cyan-900 dark:bg-cyan-900/50 dark:text-cyan-300`
   }
@@ -209,6 +221,26 @@ const badgeClass = computed(() => {
     return isSubscription.value
       ? 'bg-slate-100 text-slate-700 dark:bg-slate-800/60 dark:text-slate-300'
       : 'bg-slate-50 text-slate-700 dark:bg-slate-900/30 dark:text-slate-300'
+  }
+  if (props.platform === 'fal') {
+    return isSubscription.value
+      ? 'bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-900/30 dark:text-fuchsia-300'
+      : 'bg-fuchsia-50 text-fuchsia-700 dark:bg-fuchsia-900/20 dark:text-fuchsia-300'
+  }
+  if (props.platform === 'wavespeed') {
+    return isSubscription.value
+      ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300'
+      : 'bg-sky-50 text-sky-700 dark:bg-sky-900/20 dark:text-sky-300'
+  }
+  if (props.platform === 'runware') {
+    return isSubscription.value
+      ? 'bg-lime-100 text-lime-700 dark:bg-lime-900/30 dark:text-lime-300'
+      : 'bg-lime-50 text-lime-700 dark:bg-lime-900/20 dark:text-lime-300'
+  }
+  if (props.platform === 'flova') {
+    return isSubscription.value
+      ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300'
+      : 'bg-violet-50 text-violet-700 dark:bg-violet-900/20 dark:text-violet-300'
   }
   if (props.platform === 'composite') {
     return isSubscription.value

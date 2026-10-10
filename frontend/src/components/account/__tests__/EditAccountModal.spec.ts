@@ -333,6 +333,25 @@ function buildByteDanceAccount() {
   } as any
 }
 
+function buildVideoVendorAccount(platform: 'fal' | 'wavespeed' | 'runware' | 'flova', model: string) {
+  return {
+    ...buildAccount(),
+    id: 9,
+    name: `${platform} key`,
+    platform,
+    credentials: {
+      base_url: '',
+      model_mapping: { [model]: model }
+    },
+    credentials_status: { has_api_key: true },
+    extra: {
+      internal_relay: true,
+      upstream_billing_probe_enabled: true,
+      custom_setting: 'keep-me'
+    }
+  } as any
+}
+
 function buildOpenAISetupTokenAccount() {
   return {
     ...buildAccount(),
@@ -417,6 +436,112 @@ describe('EditAccountModal', () => {
     expect(payload.extra.internal_relay).toBeUndefined()
     // 缺省 native 不落库；编辑时也不应凭空写出一个键。
     expect('protocol_mode' in payload.credentials).toBe(false)
+  })
+
+  // 三家聚合视频供应商与 ByteDance 同一套约束：无 protocol_mode、base_url 可空、
+  // 不回填也不保存 OpenAI 内部转发与上游倍率探测。
+  describe.each([
+    { platform: 'fal' as const, model: 'fal-ai/veo3.1' },
+    { platform: 'wavespeed' as const, model: 'google/veo3.1/text-to-video' },
+    { platform: 'runware' as const, model: 'google:3@3' },
+    { platform: 'flova' as const, model: 'flova/seedance-2.5' }
+  ])('video vendor $platform', ({ platform, model }) => {
+    it('edits credentials without protocol mode, relay or billing probes', async () => {
+      const account = buildVideoVendorAccount(platform, model)
+      updateAccountMock.mockReset().mockResolvedValue(account)
+      const wrapper = mountModal(account)
+
+      const selector = wrapper.findComponent(ModelWhitelistSelectorStub)
+      expect(selector.props('platform')).toBe(platform)
+      expect(selector.props('syncCredentials')).toEqual({
+        platform,
+        type: 'apikey',
+        base_url: undefined,
+        api_key: undefined
+      })
+      expect((wrapper.get('[data-testid="edit-api-key-base-url"]').element as HTMLInputElement).value).toBe('')
+      expect(wrapper.find('[data-testid="edit-bytedance-protocol-mode"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="openai-internal-relay-toggle"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="upstream-billing-auto-probe"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="upstream-billing-rate-sync"]').exists()).toBe(false)
+
+      await wrapper.get('[data-testid="edit-api-key-value"]').setValue('vendor-secret-rotated')
+      await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+      await vi.waitFor(() => expect(updateAccountMock).toHaveBeenCalledTimes(1))
+
+      const payload = updateAccountMock.mock.calls[0]?.[1]
+      expect(payload.credentials).toEqual(expect.objectContaining({
+        api_key: 'vendor-secret-rotated',
+        base_url: '',
+        model_mapping: { [model]: model }
+      }))
+      expect(payload.extra).toEqual(expect.objectContaining({ custom_setting: 'keep-me' }))
+      expect(payload.extra.internal_relay).toBeUndefined()
+      expect(payload.extra.upstream_billing_probe_enabled).toBeUndefined()
+      expect('protocol_mode' in payload.credentials).toBe(false)
+    })
+  })
+
+  it('回填已存的 Flova 运行参数，保存时覆盖同名键并保留其余凭据', async () => {
+    const account = buildVideoVendorAccount('flova', 'flova/seedance-2.5')
+    account.credentials = {
+      ...account.credentials,
+      upload_url: 'https://upload.example.com/v2/upload',
+      env_name: 'prod',
+      skill_id: 'skill_existing',
+      max_run_minutes: 30,
+      auto_confirm_high_cost: false,
+      price_drift_tolerance: 0.2,
+      auto_confirm_credits_max: 500,
+      round_fee_credits: 2,
+      min_credits_reserve: 90,
+      client_version: 'v0.0.10'
+    }
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    const wrapper = mountModal(account)
+
+    expect(wrapper.find('[data-testid="edit-flova-fields"]').exists()).toBe(true)
+    expect((wrapper.get('[data-testid="edit-flova-upload-url"]').element as HTMLInputElement).value).toBe('https://upload.example.com/v2/upload')
+    expect((wrapper.get('[data-testid="edit-flova-env-name"]').element as HTMLInputElement).value).toBe('prod')
+    expect((wrapper.get('[data-testid="edit-flova-skill-id"]').element as HTMLInputElement).value).toBe('skill_existing')
+    expect((wrapper.get('[data-testid="edit-flova-max-run-minutes"]').element as HTMLInputElement).value).toBe('30')
+    expect((wrapper.get('[data-testid="edit-flova-price-drift-tolerance"]').element as HTMLInputElement).value).toBe('0.2')
+    expect(wrapper.get('[data-testid="edit-flova-auto-confirm-high-cost"]').attributes('aria-checked')).toBe('false')
+
+    await wrapper.get('[data-testid="edit-flova-skill-id"]').setValue('')
+    await wrapper.get('[data-testid="edit-flova-min-credits-reserve"]').setValue('150')
+    await wrapper.get('[data-testid="edit-flova-auto-confirm-high-cost"]').trigger('click')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await vi.waitFor(() => expect(updateAccountMock).toHaveBeenCalledTimes(1))
+
+    const payload = updateAccountMock.mock.calls[0]?.[1]
+    expect(payload.credentials).toEqual(expect.objectContaining({
+      base_url: '',
+      upload_url: 'https://upload.example.com/v2/upload',
+      env_name: 'prod',
+      skill_id: '',
+      max_run_minutes: 30,
+      auto_confirm_high_cost: true,
+      price_drift_tolerance: 0.2,
+      auto_confirm_credits_max: 500,
+      round_fee_credits: 2,
+      min_credits_reserve: 150,
+      client_version: 'v0.0.10',
+      model_mapping: { 'flova/seedance-2.5': 'flova/seedance-2.5' }
+    }))
+  })
+
+  it('Flova 运行参数非法时拒绝保存', async () => {
+    const account = buildVideoVendorAccount('flova', 'flova/seedance-2.5')
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    const wrapper = mountModal(account)
+
+    await wrapper.get('[data-testid="edit-flova-upload-url"]').setValue('not a url')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(updateAccountMock).not.toHaveBeenCalled()
+    expect(showErrorMock).toHaveBeenCalledWith('admin.accounts.flova.errors.invalidUploadUrl')
   })
 
   it('回填已存的 ByteDance 转发模式，改回原生时删除 protocol_mode', async () => {
@@ -1524,19 +1649,6 @@ describe('EditAccountModal', () => {
 	  expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.auto_pause_5h_disabled).toBe(true)
 	  expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.auto_pause_7d_disabled).toBeUndefined()
 	})
-
-  it('preserves Seedance when exactly two endpoint capabilities are selected', async () => {
-    const account = buildAccount()
-    account.credentials.openai_capabilities = ['chat_completions', 'seedance']
-    updateAccountMock.mockReset()
-    checkMixedChannelRiskMock.mockReset()
-    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
-    updateAccountMock.mockResolvedValue(account)
-    const wrapper = mountModal(account)
-    expect(wrapper.get<HTMLInputElement>('[data-testid="openai-endpoint-capability-seedance"]').element.checked).toBe(true)
-    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
-    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials?.openai_capabilities).toEqual(['chat_completions', 'seedance'])
-  })
 
   it('keeps at least one OpenAI APIKey endpoint capability selected', async () => {
     const account = buildAccount()

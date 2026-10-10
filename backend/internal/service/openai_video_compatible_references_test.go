@@ -21,32 +21,55 @@ func TestOpenAICompatibleVideoReferenceFields(t *testing.T) {
 	require.Equal(t, []string{"data:audio/mpeg;base64,YXVkaW8="}, fields["reference_audios"])
 }
 
-func TestByteDanceSeedanceValidation(t *testing.T) {
-	for _, model := range []string{
-		ByteDanceVideoModelSeedance10Lite,
-		ByteDanceVideoModelSeedance10Pro,
+func TestByteDanceArkRequestValidation(t *testing.T) {
+	seed, badSeed, hugeSeed := int64(-1), int64(-2), byteDanceMaxSeed+1
+	for name, request := range map[string]VideoCreateRequest{
+		"lite":  {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Lite, Seconds: 10},
+		"pro":   {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Seconds: 10},
+		"flex":  {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Seconds: 5, ServiceTier: "flex"},
+		"smart": {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, SmartDuration: true},
+		// frames 走 25+4n；duration 留空。
+		"frames":      {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Frames: 121},
+		"random seed": {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Seconds: 5, Seed: &seed},
+		"expiry":      {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Seconds: 5, ExecutionExpiresAfter: 3600},
+		"adaptive":    {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Seconds: 5, Resolution: "1080p", Ratio: ArkVideoRatioAdaptive},
 		// An Ark release this build has never heard of still validates: the
 		// account model_mapping is the routing whitelist, not this snapshot.
-		"doubao-seedance-1-1-pro-260101",
+		"unknown release": {Operation: VideoOperationGenerate, Model: "doubao-seedance-1-1-pro-260101", Seconds: 10},
 	} {
-		require.NoError(t, validateByteDanceSeedanceRequest(VideoCreateRequest{
-			Operation: VideoOperationGenerate, Model: model, Seconds: 10,
-		}))
+		t.Run("accepts "+name, func(t *testing.T) {
+			require.NoError(t, validateByteDanceArkRequest(request))
+		})
 	}
 	for name, request := range map[string]VideoCreateRequest{
-		"uppercase model": {Operation: VideoOperationGenerate, Model: "Doubao-Seedance-1-0-Pro-250528", Seconds: 10},
-		"missing model":   {Operation: VideoOperationGenerate, Seconds: 10},
-		"missing seconds": {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro},
-		"absurd seconds":  {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Seconds: 600},
+		"uppercase model":  {Operation: VideoOperationGenerate, Model: "Doubao-Seedance-1-0-Pro-250528", Seconds: 10},
+		"missing model":    {Operation: VideoOperationGenerate, Seconds: 10},
+		"missing duration": {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro},
+		"absurd duration":  {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Seconds: 600},
 		// Ark derives the frame size from resolution plus ratio, so an OpenAI
 		// "WxH" would have to be guessed at — and a wrong guess bills one
 		// resolution while generating another.
-		"size":   {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Seconds: 10, Size: "1280x720"},
-		"width":  {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Seconds: 10, Width: 1280},
-		"height": {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Seconds: 10, Height: 720},
+		"size":            {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Seconds: 10, Size: "1280x720"},
+		"quality":         {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Seconds: 10, Quality: "high"},
+		"aspect ratio":    {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Seconds: 10, AspectRatio: "16:9"},
+		"input reference": {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Seconds: 10, InputReference: &ProviderInputReference{FileID: "file_1"}},
+		"characters":      {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Seconds: 10, Characters: []ProviderResourceRef{{ProviderResourceID: "c"}}},
+		// duration 与 frames 二选一；frames 必须落在 25+4n 且在 [29, 289] 内。
+		"frames and duration":  {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Seconds: 5, Frames: 29},
+		"frames and smart":     {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, SmartDuration: true, Frames: 29},
+		"frames off grid":      {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Frames: 30},
+		"frames too few":       {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Frames: 25},
+		"frames too many":      {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Frames: 293},
+		"unknown resolution":   {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Seconds: 5, Resolution: "8k"},
+		"unknown ratio":        {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Seconds: 5, Ratio: "5:2"},
+		"seed below -1":        {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Seconds: 5, Seed: &badSeed},
+		"seed above 2^32-1":    {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Seconds: 5, Seed: &hugeSeed},
+		"expiry too short":     {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Seconds: 5, ExecutionExpiresAfter: 60},
+		"expiry too long":      {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Seconds: 5, ExecutionExpiresAfter: 259201},
+		"unknown service tier": {Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Seconds: 5, ServiceTier: "priority"},
 	} {
-		t.Run(name, func(t *testing.T) {
-			require.Error(t, validateByteDanceSeedanceRequest(request))
+		t.Run("rejects "+name, func(t *testing.T) {
+			require.Error(t, validateByteDanceArkRequest(request))
 		})
 	}
 }

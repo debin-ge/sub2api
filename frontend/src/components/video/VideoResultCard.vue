@@ -38,7 +38,7 @@
               <Icon name="dollar" size="sm" />
               {{ costLabel }}
             </span>
-            <span v-else-if="card.status !== 'failed'" class="inline-flex items-center gap-1 opacity-70">
+            <span v-else-if="!isFailure" class="inline-flex items-center gap-1 opacity-70">
               <Icon name="dollar" size="sm" />
               {{ t('videoPlayground.card.costPending') }}
             </span>
@@ -88,9 +88,9 @@
           </p>
         </div>
         <!--
-          内容已过期：上游只在完成后的一段窗口内保留成片（ByteDance 是 24 小时）。
-          窗口一过，直链和鉴权取回一起断，播放、重试、复制链接全是死路——所以这里
-          把它们一并撤掉，只说清楚发生了什么，而不是摆一排点了也没用的按钮。
+          内容已过期：上游只在完成后的一段有限窗口内保留成片（各家保留期不同）。窗口一过，
+          直链和取回一起断，播放、重试、复制链接全是死路——所以这里把它们一并撤掉，只说
+          清楚发生了什么，而不是摆一排点了也没用的按钮。
         -->
         <div
           v-else-if="expired"
@@ -111,8 +111,9 @@
           <Icon name="refresh" size="md" class="animate-spin" />
           <span>{{ t('videoPlayground.card.preparingPlayback') }}</span>
         </div>
+        <!-- 失败 / 取消 / 过期：都已结束且没有成片，但原因不同，兜底文案按状态分开说。 -->
         <div
-          v-else-if="card.status === 'failed'"
+          v-else-if="isFailure"
           class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm dark:border-red-900/50 dark:bg-red-900/20"
         >
           <p class="font-medium text-red-700 dark:text-red-300">{{ errorMessage }}</p>
@@ -123,14 +124,14 @@
           转下去只会让用户一直等一个不会到来的结果。
         -->
         <div
-          v-else-if="card.status === 'completed'"
+          v-else-if="isDone"
           class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm dark:border-amber-900/50 dark:bg-amber-900/20"
         >
           <p class="text-amber-700 dark:text-amber-300">
             {{ notice || t('videoPlayground.card.contentUnavailable') }}
           </p>
           <button
-            v-if="canFetchContent"
+            v-if="canRefresh"
             type="button"
             class="btn btn-ghost btn-sm mt-2"
             :disabled="preparing"
@@ -142,7 +143,7 @@
         <!--
           生成中：视频任务本来就是分钟级的，一个不动的钟会被读成"卡住了"。这里给出
           三样在等待期唯一真实可信的信息——心跳、已等多久、以及一句随时长推进的说明，
-          外加一条进度条（上游给了 progress 就走确定态，没给就让它自己漂）。
+          外加一条漂动的进度条（Ark 任务对象不回报进度，所以永远是不确定态）。
         -->
         <div
           v-else
@@ -153,18 +154,13 @@
               <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75" />
               <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-blue-500" />
             </span>
-            <span class="font-medium">{{ progressLabel }}</span>
+            <span class="font-medium">{{ statusLabel }}</span>
             <span class="ml-auto shrink-0 tabular-nums text-xs zt-ink-3">
               {{ elapsedLabel }}
             </span>
           </div>
           <div class="h-1.5 w-full overflow-hidden rounded-full zt-surface-3 dark:bg-gray-700">
-            <div
-              v-if="progressPercent !== null"
-              class="h-full rounded-full bg-blue-500 transition-[width] duration-700 ease-out"
-              :style="{ width: `${progressPercent}%` }"
-            />
-            <div v-else class="progress-drift h-full w-1/3 rounded-full bg-blue-500" />
+            <div class="progress-drift h-full w-1/3 rounded-full bg-blue-500" />
           </div>
           <p class="text-xs zt-ink-3">{{ waitingHint }}</p>
         </div>
@@ -173,10 +169,10 @@
           只有完成的任务才有东西可拿。进行中就摆出下载/复制，点下去要么是空、要么是
           一段还没生成完的字节，用户会当成功能坏了。
         -->
-        <!-- 复制的是那条公开直链，不是需要 Bearer 头的 /v1/videos/{id}/content——
-             后者贴到别处一律 401，复制出去等于给用户一条死链。 -->
+        <!-- 复制的是 content.video_url 那条带签名的公开直链：不需要 Bearer 头，贴到别处也能下。
+             它会过期，过期后重新 GET 一次任务就有新的。 -->
         <footer
-          v-if="card.status === 'completed' && !expired && directPlayable"
+          v-if="isDone && !expired && directPlayable"
           class="mt-2 flex flex-wrap items-center justify-end gap-2"
         >
           <button
@@ -198,21 +194,16 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@/components/icons'
-import { fetchVideoContent, getVideoTask, type VideoTask } from '@/api/video'
+import { fetchVideoContent, getVideoTask, isVideoTaskFailure, type VideoTask } from '@/api/video'
+import { VIDEO_SMART_DURATION } from '@/composables/useVideoPlaygroundModels'
 import { useClipboard } from '@/composables/useClipboard'
-import {
-  classifyContentError,
-  isPlayableBlob,
-  playableBlob,
-  videoContentExpired,
-  type VideoContentFailure,
-} from './content'
+import { classifyContentError, isPlayableBlob, playableBlob, type VideoContentFailure } from './content'
 import type { VideoPlaygroundCard } from './types'
 
 const props = defineProps<{ card: VideoPlaygroundCard; now: number; apiKey: string }>()
 /**
- * 直连播不出来时本组件会重新拉一次任务拿新的 url，拿到的新快照必须回流给父级——
- * 否则父级手上仍是那条失效的 url，下一次渲染又把它塞回来，重试白做。
+ * 直连播不出来时本组件会重新拉一次任务拿新的签名直链，拿到的新快照必须回流给父级——
+ * 否则父级手上仍是那条失效的链接，下一次渲染又把它塞回来，重试白做。
  */
 const emit = defineEmits<{ (event: 'refresh', task: VideoTask): void }>()
 
@@ -232,17 +223,21 @@ const activated = ref(false)
 const blobPlayback = ref(false)
 /** 已取回的内容本体。重试时直接复用，避免为同一个视频拉两遍。 */
 const blobData = ref<Blob | null>(null)
-/** 服务端明确说过链接已失效（410 / video_content_expired）。 */
+/** 服务端明确说过内容已失效（410 / video_content_expired）。 */
 const contentExpired = ref(false)
 /** 直连失败后只允许刷新一次任务，免得一条坏链把播放器拖进无限重试。 */
 let directRefreshed = false
 
-const directUrl = computed(() => props.card.task?.url || '')
+/** succeeded 即「已结算」：只有它有成片。 */
+const isDone = computed(() => props.card.status === 'succeeded')
+const isFailure = computed(() => isVideoTaskFailure(props.card.status))
+
 /**
- * 只有绝对地址才值得直接喂给 <video>。projectTask 在拿不到公开直链时会退化成相对的
- * /v1/videos/{id}/content，而那条路由挂在 apiKeyAuth 后面——<video src> 发不出
- * Bearer 头，试一次就是白等一个 401。
+ * content.video_url 是带签名的本地代理直链，仅 succeeded 且内容代理开启时出现。
+ * 没有它就没有任何取内容的路——签名就是唯一的授权。
  */
+const directUrl = computed(() => props.card.task?.content?.video_url || '')
+/** 只有绝对地址才值得喂给 <video>；相对地址说明网关没拿到公开 host，直连必失败。 */
 const directPlayable = computed(() => /^https?:\/\//i.test(directUrl.value))
 /**
  * 直连优先，blob 只是降级。一旦反过来（blobUrl 一有值就顶掉直连），点一次"下载"就会把
@@ -256,28 +251,20 @@ const playableUrl = computed(() => {
 })
 
 /**
- * 内容已过期：上游只在完成后的一段窗口内保留成片（ByteDance 是 24 小时），窗口一过
- * 直链和鉴权取回一起断，重试救不回来。
+ * 内容已过期：只认服务端明说的 410 / video_content_expired。签名直链自身的 exp 到点
+ * 不算过期——重新 GET 一次任务就有新链接，走的是「换链接」那条路，不是这里。
  *
  * 两条前提：
  *   · 只对完成的任务成立。失败的任务本来就没有内容，把它说成"已过期"等于用一句
  *     无关的解释盖掉真正的失败原因。
  *   · 手上已经有副本就不算过期——链接死了不影响这一份字节，仍然可以播。
  */
-const expired = computed(
-  () =>
-    props.card.status === 'completed' &&
-    !blobData.value &&
-    (contentExpired.value || videoContentExpired(props.card.task, props.now)),
-)
-const canFetchContent = computed(() => !!props.apiKey && !!props.card.task?.id)
+const expired = computed(() => isDone.value && !blobData.value && contentExpired.value)
+/** 能不能重新拉一次任务（拿新链接）。取内容本体不需要密钥，但查任务需要。 */
+const canRefresh = computed(() => !!props.apiKey && !!props.card.task?.id)
 /** 海报（那个大播放按钮）：确实有东西可放、还没被点开，才摆出来。 */
 const showPoster = computed(
-  () =>
-    !activated.value &&
-    props.card.status === 'completed' &&
-    !expired.value &&
-    (directPlayable.value || canFetchContent.value),
+  () => !activated.value && isDone.value && !expired.value && (directPlayable.value || canRefresh.value),
 )
 
 const statusLabel = computed(() => {
@@ -288,11 +275,15 @@ const statusLabel = computed(() => {
 
 const statusClass = computed(() => {
   switch (props.card.status) {
-    case 'completed':
+    case 'succeeded':
       return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
     case 'failed':
       return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
-    case 'in_progress':
+    case 'cancelled':
+      return 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200'
+    case 'expired':
+      return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+    case 'running':
       return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
     default:
       return 'zt-surface-3 zt-ink-2 dark:bg-gray-700'
@@ -302,37 +293,42 @@ const statusClass = computed(() => {
 const requestSummary = computed(() => {
   const items: string[] = []
   if (props.card.model) items.push(props.card.model)
-  const seconds = props.card.task?.seconds
-  if (seconds) items.push(t('videoPlayground.card.seconds', { seconds }))
-  const size = props.card.task?.size
-  if (size) items.push(size)
+  const task = props.card.task
+  const duration = task?.duration
+  if (typeof duration === 'number') {
+    items.push(
+      duration === VIDEO_SMART_DURATION
+        ? t('videoPlayground.card.smartDuration')
+        : t('videoPlayground.card.duration', { duration }),
+    )
+  }
+  if (task?.resolution) items.push(task.resolution)
+  if (task?.ratio) items.push(task.ratio)
   return items
 })
 
-const progressLabel = computed(() => {
-  const progress = props.card.task?.progress
-  if (typeof progress === 'number' && progress > 0) {
-    return t('videoPlayground.card.progress', { percent: Math.round(progress) })
-  }
-  return statusLabel.value
-})
-
-/** 上游给不出进度就返回 null，让进度条走不确定态而不是停在 0%。 */
-const progressPercent = computed(() => {
-  const progress = props.card.task?.progress
-  if (typeof progress !== 'number' || progress <= 0) return null
-  return Math.min(100, Math.max(1, Math.round(progress)))
-})
-
 const errorCode = computed(() => props.card.task?.error?.code || props.card.submitError?.code || '')
-const errorMessage = computed(
-  () => props.card.task?.error?.message || props.card.submitError?.message || t('videoPlayground.card.failed'),
-)
+const errorMessage = computed(() => {
+  const message = props.card.task?.error?.message || props.card.submitError?.message
+  if (message) return message
+  switch (props.card.status) {
+    case 'cancelled':
+      return t('videoPlayground.card.cancelled')
+    case 'expired':
+      return t('videoPlayground.card.expired')
+    default:
+      return t('videoPlayground.card.failed')
+  }
+})
 
+/**
+ * 耗时。Ark 任务对象没有 completed_at，终态用 updated_at 收口——它在任务完成或结算
+ * 时被推进，与完成时刻相差不过几秒。
+ */
 const elapsedSeconds = computed(() => {
   const start = props.card.task?.created_at || props.card.submittedAt
-  const end = props.card.task?.completed_at
-  const stop = end || (props.card.status === 'failed' || props.card.status === 'completed' ? start : props.now)
+  const terminal = isDone.value || isFailure.value
+  const stop = terminal ? props.card.task?.updated_at || start : props.now
   return Math.max(0, Math.round(stop - start))
 })
 
@@ -402,18 +398,21 @@ function promoteBlob(blob: Blob): void {
   notice.value = ''
 }
 
-/** 取回内容本体并交给播放器。只在直连不可用或已经失败时才走这条路。 */
+/**
+ * 按签名直链取回内容本体并交给播放器。只在直连不可用或已经失败时才走这条路。
+ * 没有直链就没有可取的地址——调用方应先 refreshTask 拿一条。
+ */
 async function loadContent(): Promise<Blob | null> {
   const cached = blobData.value
   if (cached) {
     promoteBlob(cached)
     return cached
   }
-  const taskId = props.card.task?.id
-  if (!taskId || !props.apiKey) return null
+  const url = directUrl.value
+  if (!url) return null
   preparing.value = true
   try {
-    const blob = await fetchVideoContent(props.apiKey, taskId)
+    const blob = await fetchVideoContent(url)
     // 代理认不出内容路径时会把请求放行到内嵌 SPA，于是「成功」地拿回一份 index.html。
     // 贴上 video/mp4 交给播放器只换来一句媒体错误 4，不如直说这不是视频。
     if (!isPlayableBlob(blob)) {
@@ -432,12 +431,10 @@ async function loadContent(): Promise<Blob | null> {
 }
 
 /**
- * 重新拉一次任务，拿当前有效的那条直链。
+ * 重新拉一次任务，拿当前有效的那条签名直链。
  *
- * 公开直链把上游那条带签名的 URL 整个编码进自己的路径里，上游一换签名（重新对账、
- * 重新取内容都会换），旧直链就再也解析不出来——代理认不出路径便放行到内嵌 SPA，于是
- * <video> 拿回一份 HTTP 200 的 index.html，报出的正是媒体错误 4。重新取一次任务就
- * 能拿到新的 url，比把整段视频读进内存便宜得多。
+ * 直链的签名带过期时间，到点后代理回 404；重新取一次任务就能拿到新的 content.video_url，
+ * 比把整段视频读进内存便宜得多。
  */
 async function refreshTask(): Promise<string> {
   const taskId = props.card.task?.id
@@ -445,7 +442,7 @@ async function refreshTask(): Promise<string> {
   try {
     const task = await getVideoTask(props.apiKey, taskId)
     emit('refresh', task)
-    return task.url || ''
+    return task.content?.video_url || ''
   } catch (error) {
     if (classifyContentError(error) === 'expired') contentExpired.value = true
     return ''
@@ -470,11 +467,11 @@ async function recoverDirectPlayback(): Promise<void> {
 
 /**
  * 用户点了播放。有直链就只是把 <video> 放出来，让它自己去拉（能走 Range、边下边播）；
- * 没有直链才动用鉴权取回，那条路要把整段视频读进内存。
+ * 没有直链就先重新取一次任务——也许只是这份快照太旧——拿到链接再取回。
  */
 function activate(): void {
   activated.value = true
-  if (!directPlayable.value) void loadContent()
+  if (!directPlayable.value) void retry()
 }
 
 function onPlaybackError(event: Event): void {
@@ -499,6 +496,16 @@ async function retry(): Promise<void> {
   // 只丢缓存不动播放源：清空 blobUrl 会让播放器先弹回直连、放出首帧，再被换成 blob，
   // 白闪一次。等新内容到手再一次性换。
   blobData.value = null
+  // 没有直链时先换一份新快照：直链只在 succeeded 后才出现，手上这份可能还是提交时的占位。
+  if (!directPlayable.value) {
+    preparing.value = true
+    try {
+      await refreshTask()
+    } finally {
+      preparing.value = false
+    }
+    if (!directPlayable.value) return
+  }
   const blob = await loadContent()
   if (blob) playerNonce.value += 1
 }

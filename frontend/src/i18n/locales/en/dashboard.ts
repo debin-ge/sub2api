@@ -187,6 +187,7 @@ export default {
         codexCliWs: 'Codex CLI (WebSocket)',
         grokCli: 'Grok CLI',
         opencode: 'OpenCode',
+        videos: 'Video API',
       },
       antigravity: {
         description: 'Configure API access for Antigravity group. Select the configuration method based on your client.',
@@ -237,6 +238,13 @@ export default {
         codexDescription: 'Configure Codex with API key authentication and the complete model catalog for this Composite group.',
         codexConfigTomlHint: 'Download the model catalog below, save both files under the Codex config directory, and restart Codex.',
         codexNote: 'Export SUB2API_API_KEY before starting Codex. Model requests are routed by the selected catalog slug.',
+      },
+      videos: {
+        description: 'This group serves video generation only, using the Volcengine Ark (Seedance) task protocol: submit a task to POST /api/v3/contents/generations/tasks, poll it until status is succeeded, then download the result from content.video_url in the response.',
+        note: 'Replace the model with one allowed by this group (see GET /api/v3/contents/generations/models). Tasks are asynchronous: keep polling until status is succeeded, failed, cancelled or expired. content.video_url is a signed, expiring link: download it without an Authorization header, and GET the task again if it has expired. The /api/v3, /v3 and /v1 prefixes are aliases.',
+        submit: 'Submit a task',
+        poll: 'Poll task status',
+        download: 'Download the video',
       },
       routedCodex: {
         description: 'Configure Codex with the complete model catalog for the current routed group.',

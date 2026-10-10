@@ -9,24 +9,11 @@ import (
 const videoModelObject = "video.model"
 
 const (
-	// videoModelParameterInBody 表示参数直接写在创建请求体上；
-	// videoModelParameterInProviderOptions 表示必须包在 provider_options 里。
-	// 两者不可互换：OpenAI 拒收任何 provider_options，而 Ark 的 resolution/ratio
-	// 只认 provider_options，所以每个参数必须自报归属，前端才知道往哪儿放。
-	videoModelParameterInBody            = "body"
-	videoModelParameterInProviderOptions = "provider_options"
+	// videoModelParameterInBody 表示参数直接写在创建请求体上（/v1/videos 的 OpenAI 形态）。
+	videoModelParameterInBody = "body"
 
 	videoReferenceAcceptsHTTPS   = "https"
 	videoReferenceAcceptsDataURI = "data_uri"
-)
-
-// byteDanceVideoResolutionVocabulary / byteDanceVideoRatioVocabulary 是 Ark 认得的
-// 全部取值，顺序即前端的渲染顺序——字典序会把 1080p 排到 480p 前面。
-// 内容必须与 byteDanceSupportedResolution / byteDanceSupportedRatio 一致，同包测试
-// 会把这里的每个取值回喂给那两个判定函数以防漂移。
-var (
-	byteDanceVideoResolutionVocabulary = []string{"480p", "720p", "1080p", "2k", "4k"}
-	byteDanceVideoRatioVocabulary      = []string{"adaptive", "16:9", "9:16", "4:3", "3:4", "1:1", "21:9"}
 )
 
 // VideoModelSeconds 是某个模型可选的生成时长。
@@ -132,29 +119,54 @@ type videoModelCatalogScope struct {
 // 注意：列出 ≠ 一定可调度。真正的路由白名单是账号 model_mapping，SupportedModels 与
 // 价目都只是描述性的。
 func (s *VideoTaskService) ListVideoModels(ctx context.Context, apiKey *APIKey) (*VideoModelsResponse, error) {
+	scopes, owners, err := s.videoModelCatalogScopes(ctx, apiKey)
+	if err != nil {
+		return nil, err
+	}
+	data := make([]VideoModel, 0, 8)
+	for _, scope := range scopes {
+		if IsArkVideoProvider(scope.provider) {
+			// 五家平台只能按 Ark 形态提交，列在 /v1/videos/models 里只会引导用户撞 404。
+			continue
+		}
+		for _, model := range scope.models {
+			if owners[model] != scope.provider {
+				continue
+			}
+			if entry := s.videoModelEntry(scope, model); entry != nil {
+				data = append(data, *entry)
+			}
+		}
+	}
+	return &VideoModelsResponse{Object: "list", Data: data}, nil
+}
+
+// videoModelCatalogScopes 枚举分组可见的 provider 及其配过价的模型，并决定每个模型名归谁输出。
+// ListVideoModels（OpenAI 形态）与 ListArkVideoModels（Ark 形态）共用这一段。
+func (s *VideoTaskService) videoModelCatalogScopes(ctx context.Context, apiKey *APIKey) ([]videoModelCatalogScope, map[string]string, error) {
 	if s == nil || s.cfg == nil || !s.cfg.Gateway.Video.Enabled {
-		return nil, ErrVideoDisabled
+		return nil, nil, ErrVideoDisabled
 	}
 	// 这个端点只为创建表单服务。创建关掉时早报错，好过让用户写完 prompt 再挨 403。
 	if !s.cfg.Gateway.Video.CreationEnabled {
-		return nil, ErrVideoCreationDisabled
+		return nil, nil, ErrVideoCreationDisabled
 	}
 	if apiKey == nil || apiKey.GroupID == nil || *apiKey.GroupID <= 0 || s.groups == nil {
-		return nil, ErrVideoPricingMissing
+		return nil, nil, ErrVideoPricingMissing
 	}
 	group, err := s.groups.GetByID(ctx, *apiKey.GroupID)
 	if err != nil || group == nil {
-		return nil, ErrVideoPricingMissing
+		return nil, nil, ErrVideoPricingMissing
 	}
 	if group.IsSubscriptionType() {
-		return nil, ErrVideoSubscriptionUnsupported
+		return nil, nil, ErrVideoSubscriptionUnsupported
 	}
 	if group.Status != StatusActive {
-		return nil, ErrVideoNoAccountAvailable
+		return nil, nil, ErrVideoNoAccountAvailable
 	}
 	providerNames, ok := videoModelProvidersForPlatform(group.Platform)
 	if !ok {
-		return nil, ErrVideoDisabled
+		return nil, nil, ErrVideoDisabled
 	}
 
 	scopes := make([]videoModelCatalogScope, 0, len(providerNames))
@@ -174,47 +186,20 @@ func (s *VideoTaskService) ListVideoModels(ctx context.Context, apiKey *APIKey) 
 		scope.models = s.pricedVideoModelNames(ctx, group, scope.platform, scope.capabilities)
 		scopes = append(scopes, scope)
 	}
-	owners := assignVideoModelOwners(scopes)
-
-	data := make([]VideoModel, 0, 8)
-	for _, scope := range scopes {
-		for _, model := range scope.models {
-			if owners[model] != scope.provider {
-				continue
-			}
-			if entry := s.videoModelEntry(scope, model); entry != nil {
-				data = append(data, *entry)
-			}
-		}
-	}
-	return &VideoModelsResponse{Object: "list", Data: data}, nil
+	return scopes, assignVideoModelOwners(scopes), nil
 }
 
 // videoModelProvidersForPlatform 把分组平台展开成要枚举的 provider。
 // composite 分组取并集：用户无从预知请求会落到哪一侧，返回空或报错会让页面直接不可用。
 func videoModelProvidersForPlatform(platform string) ([]string, bool) {
 	if strings.TrimSpace(platform) == PlatformComposite {
-		return []string{VideoProviderOpenAI, VideoProviderByteDance}, true
+		return ManagedVideoProviderNames(), true
 	}
 	provider, ok := managedVideoProviderForPlatform(platform)
 	if !ok {
 		return nil, false
 	}
 	return []string{provider}, true
-}
-
-// videoPricingPlatformForProvider 是 managedVideoProviderForPlatform 的反向映射。
-// 二者的取值目前逐字相同，但定价查表用的是平台维度，写死等号会在其中一侧改名时
-// 静默串味。
-func videoPricingPlatformForProvider(provider string) string {
-	switch provider {
-	case VideoProviderByteDance:
-		return PlatformByteDance
-	case VideoProviderOpenAI:
-		return PlatformOpenAI
-	default:
-		return provider
-	}
 }
 
 // assignVideoModelOwners 决定每个模型 id 由哪个 provider 输出。
@@ -356,9 +341,36 @@ func (s *VideoTaskService) videoModelEntry(scope videoModelCatalogScope, model s
 		ContentVariants: videoContentVariantNames(scope.capabilities.ContentVariants),
 		Seconds:         videoModelSeconds(scope.provider, scope.capabilities, canonical, profile),
 		Sizes:           videoModelSizes(scope.capabilities, canonical, profile),
-		Parameters:      videoModelParametersForProvider(scope.provider, profile),
-		ReferenceInputs: videoModelReferenceInputsForProvider(scope.provider),
+		Parameters:      s.videoModelParameters(scope.provider, model, profile),
+		ReferenceInputs: s.videoModelReferenceInputs(scope.provider, model),
 	}
+}
+
+// videoModelCatalogContributor 让注册表里的 provider 自己描述参数与参考输入槽位，
+// 不再逐家往 switch 里加分支。旧 provider（OpenAI / ByteDance）仍走下面的 switch。
+func (s *VideoTaskService) videoModelCatalogContributor(provider string) VideoModelCatalogContributor {
+	if s != nil && s.providers != nil {
+		if live, ok := s.providers.Get(provider); ok && live != nil {
+			if contributor, ok := live.(VideoModelCatalogContributor); ok {
+				return contributor
+			}
+		}
+	}
+	return nil
+}
+
+func (s *VideoTaskService) videoModelParameters(provider, model string, profile *VideoPricingConfig) []VideoModelParameter {
+	if contributor := s.videoModelCatalogContributor(provider); contributor != nil {
+		return contributor.ModelParameters(model, profile)
+	}
+	return videoModelParametersForProvider(provider, profile)
+}
+
+func (s *VideoTaskService) videoModelReferenceInputs(provider, model string) []VideoModelReferenceInput {
+	if contributor := s.videoModelCatalogContributor(provider); contributor != nil {
+		return contributor.ModelReferenceInputs(model)
+	}
+	return videoModelReferenceInputsForProvider(provider)
 }
 
 // videoModelsClaimedElsewhere 列出「被另一个 managed provider 声明为自己的」模型名。
@@ -378,21 +390,17 @@ func (s *VideoTaskService) videoModelsClaimedElsewhere(provider string) map[stri
 			}
 		}
 	}
-	for _, other := range []struct {
-		name    string
-		builtin func() VideoCapabilities
-	}{
-		{VideoProviderOpenAI, DefaultOpenAIVideoCapabilities},
-		{VideoProviderByteDance, DefaultByteDanceVideoCapabilities},
-	} {
-		if other.name == provider {
+	for _, other := range ManagedVideoProviderNames() {
+		if other == provider {
 			continue
 		}
-		absorb(other.builtin())
+		if builtin, ok := builtinVideoCapabilitiesForProvider(other); ok {
+			absorb(builtin)
+		}
 		if s == nil || s.providers == nil {
 			continue
 		}
-		if live, ok := s.providers.Get(other.name); ok && live != nil {
+		if live, ok := s.providers.Get(other); ok && live != nil {
 			absorb(live.Capabilities())
 		}
 	}
@@ -491,6 +499,9 @@ func videoModelSeconds(
 func videoFreeSecondsRange(provider string) (int, int) {
 	if provider == VideoProviderByteDance {
 		return videoFreeSecondsMin, videoByteDanceFreeSecondsMax
+	}
+	if adapter := videoVendorAdapterByName(provider); adapter != nil {
+		return adapter.FreeSecondsRange()
 	}
 	return videoFreeSecondsMin, videoOpenAIFreeSecondsMax
 }
@@ -680,26 +691,18 @@ func videoContentVariantNames(variants map[string]bool) []string {
 	return names
 }
 
-func videoModelParametersForProvider(providerName string, profile *VideoPricingConfig) []VideoModelParameter {
-	switch providerName {
-	case VideoProviderByteDance:
-		return byteDanceVideoModelParameters(profile)
-	case VideoProviderOpenAI:
+func videoModelParametersForProvider(providerName string, _ *VideoPricingConfig) []VideoModelParameter {
+	if providerName == VideoProviderOpenAI {
 		return openAIVideoModelParameters()
-	default:
-		return nil
 	}
+	return nil
 }
 
 func videoModelReferenceInputsForProvider(providerName string) []VideoModelReferenceInput {
-	switch providerName {
-	case VideoProviderByteDance:
-		return byteDanceVideoReferenceInputs()
-	case VideoProviderOpenAI:
+	if providerName == VideoProviderOpenAI {
 		return openAIVideoReferenceInputs()
-	default:
-		return nil
 	}
+	return nil
 }
 
 // openAIVideoCompatibleRatioValues 从校验器自己的词表推导取值，两者因此不会漂移。
@@ -726,45 +729,6 @@ func openAIVideoModelParameters() []VideoModelParameter {
 			ConflictsWith: []string{"ratio", "size"}, IgnoredWhenPresent: framingIgnoredWhenPresent,
 		},
 	}
-}
-
-func byteDanceVideoModelParameters(profile *VideoPricingConfig) []VideoModelParameter {
-	// Ark 用独立的 resolution/ratio 表达画幅，且只认 provider_options。
-	return []VideoModelParameter{
-		{
-			Name: "resolution", In: videoModelParameterInProviderOptions,
-			Values: byteDanceVideoResolutionValues(profile),
-		},
-		{
-			Name: "ratio", In: videoModelParameterInProviderOptions,
-			Values: append([]string(nil), byteDanceVideoRatioVocabulary...),
-		},
-	}
-}
-
-// byteDanceVideoResolutionValues 用价目里声明的分辨率收窄可选项：运营只配了
-// 480p/720p，就不该让用户选到 1080p 再在提交时撞 ErrVideoPricingRuleMissing。
-//
-// 但只保留 Ark 认得的名字——价目的分辨率名是自由字符串，透出一个 Ark 不认的名字
-// 换来的是硬 400（byteDanceGenerationOptions 对未知 resolution 直接报错）。过滤后
-// 为空说明价目用的是另一套命名，此时退回完整词表：收窄到空只会让画幅控件失灵。
-func byteDanceVideoResolutionValues(profile *VideoPricingConfig) []string {
-	if profile == nil || len(profile.Resolutions) == 0 {
-		return append([]string(nil), byteDanceVideoResolutionVocabulary...)
-	}
-	values := make([]string, 0, len(byteDanceVideoResolutionVocabulary))
-	for _, candidate := range byteDanceVideoResolutionVocabulary {
-		for name := range profile.Resolutions {
-			if strings.EqualFold(strings.TrimSpace(name), candidate) {
-				values = append(values, candidate)
-				break
-			}
-		}
-	}
-	if len(values) == 0 {
-		return append([]string(nil), byteDanceVideoResolutionVocabulary...)
-	}
-	return values
 }
 
 // openAIVideoReferenceInputs 描述 OpenAI 兼容通道用 URL 提交参考素材时的槽位。
@@ -827,22 +791,6 @@ func openAIVideoReferenceInputs() []VideoModelReferenceInput {
 			},
 		},
 	}
-}
-
-// byteDanceVideoReferenceInputs 给出与 OpenAI 兼容通道相同的槽位，只是一律不接受
-// data URI（原生模式走 normalizeProviderVideoURL，它只认 http(s)）。
-//
-// 这里刻意不再取"原生模式 ∩ 兼容模式"的交集。协议模式是账号级的、在这一层不可见，
-// 取交集意味着兼容模式的账号在 Playground 里永远看不到首尾帧、参考视频与参考音频，
-// 而那正是用户报上来的问题。两种错法的代价并不对称：多报换来的是原生模式账号提交时
-// 一个明确的 400（byteDanceReferenceImages 对首尾帧/视频/音频直接报错），错误会原样
-// 贴在卡片上；少报换来的是能力被静默藏掉，用户既发现不了也诊断不了。
-func byteDanceVideoReferenceInputs() []VideoModelReferenceInput {
-	slots := openAIVideoReferenceInputs()
-	for i := range slots {
-		slots[i].Accepts = []string{videoReferenceAcceptsHTTPS}
-	}
-	return slots
 }
 
 // ListVideoPricedModelsForGroup 枚举某分组在指定平台上 billing_mode=video 的渠道定价，

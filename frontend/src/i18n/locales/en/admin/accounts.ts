@@ -142,6 +142,10 @@ export default {
         minimax: 'MiniMax',
         opencode_go: 'OpenCode',
         bytedance: 'ByteDance',
+        fal: 'fal.ai',
+        wavespeed: 'WaveSpeed',
+        runware: 'Runware',
+        flova: 'Flova',
       },
       cnProviders: {
         accountMode: {
@@ -784,6 +788,41 @@ export default {
             'A third-party relay forwards Seedance in OpenAI shape (/v1/videos). The relay base URL is required.',
           baseUrlRequired:
             'An OpenAI-compatible relay has no official host, so its base URL is required — without it the account can never be scheduled.'
+        }
+      },
+      flova: {
+        baseUrlHint: 'Flova Agent API base URL. Leave blank to use the official host (https://service.flova.ai/api/agent/v2).',
+        apiKeyHint: 'Flova Agent API Key from the Flova console. A paid plan is required; free-tier keys cannot run tasks.',
+        sectionTitle: 'Flova runtime settings',
+        uploadUrl: 'Upload URL',
+        uploadUrlHint: 'Endpoint for uploading reference images. Leave blank to use the official upload host.',
+        envName: 'Environment name',
+        envNameHint: 'Optional Flova environment name (env_name). Leave blank unless Flova support gave you one.',
+        skillId: 'Skill ID',
+        skillIdHint: 'Leave blank and run "Test connection": the backend creates a Skill automatically and writes its ID back here.',
+        maxRunMinutes: 'Max run time (minutes)',
+        maxRunMinutesHint: 'A single run is abandoned after this many minutes. Default 60.',
+        autoConfirmHighCost: 'Auto-confirm high-cost tasks',
+        autoConfirmHighCostHint: 'Automatically approve Flova high-cost confirmations (e.g. 1080p). When off, such tasks fail instead of waiting.',
+        priceDriftTolerance: 'Price drift tolerance',
+        priceDriftToleranceHint: 'Allowed deviation (0–1) between the quoted credits and the catalog price. 0.10 = 10%. Beyond it the task fails with price_drift.',
+        autoConfirmCreditsMax: 'Auto-confirm credits cap',
+        autoConfirmCreditsMaxHint: 'Only auto-confirm high-cost tasks up to this many credits. 0 = no cap.',
+        roundFeeCredits: 'Per-round fee (credits)',
+        roundFeeCreditsHint: 'Extra credits Flova charges per run, added to the pre-check reserve. Default 0.',
+        minCreditsReserve: 'Minimum credits reserve',
+        minCreditsReserveHint: 'When the account balance drops below this, it is temporarily removed from scheduling. Default 60.',
+        credits: 'Flova credits',
+        creditsValue: '{credits} credits',
+        plan: 'Plan',
+        errors: {
+          invalidBaseUrl: 'Flova base URL must be a valid http(s) URL.',
+          invalidUploadUrl: 'Flova upload URL must be a valid http(s) URL.',
+          invalidMaxRunMinutes: 'Max run time must be a positive number of minutes.',
+          invalidPriceDriftTolerance: 'Price drift tolerance must be between 0 and 1.',
+          negativeAutoConfirmCreditsMax: 'Auto-confirm credits cap cannot be negative.',
+          negativeRoundFeeCredits: 'Per-round fee cannot be negative.',
+          negativeMinCreditsReserve: 'Minimum credits reserve cannot be negative.'
         }
       },
       grok: {

@@ -345,6 +345,10 @@ export default {
         minimax: 'MiniMax',
         opencode_go: 'OpenCode',
         bytedance: 'ByteDance',
+        fal: 'fal.ai',
+        wavespeed: 'WaveSpeed',
+        runware: 'Runware',
+        flova: 'Flova',
       },
       cnProviders: {
         accountMode: {
@@ -856,6 +860,41 @@ export default {
           openaiCompatibleDesc:
             '第三方中转以 OpenAI 形态（/v1/videos）转发 Seedance。必须填写中转站 Base URL。',
           baseUrlRequired: 'OpenAI 兼容转发没有官方地址，必须填写中转站 Base URL，否则该账号无法被调度。'
+        }
+      },
+      flova: {
+        baseUrlHint: 'Flova Agent API 地址，留空即使用官方地址（https://service.flova.ai/api/agent/v2）。',
+        apiKeyHint: '在 Flova 控制台获取的 Agent API Key。需要付费档位，免费档 Key 无法运行任务。',
+        sectionTitle: 'Flova 运行参数',
+        uploadUrl: '上传地址',
+        uploadUrlHint: '参考图上传接口地址，留空即使用官方上传地址。',
+        envName: '环境名称',
+        envNameHint: '可选的 Flova 环境名（env_name），除非 Flova 提供，否则留空。',
+        skillId: 'Skill ID',
+        skillIdHint: '留空后点击「测试连接」：后端会自动创建 Skill 并把 ID 回填到这里。',
+        maxRunMinutes: '单次运行时限（分钟）',
+        maxRunMinutesHint: '单次 run 超过该分钟数即放弃等待。默认 60。',
+        autoConfirmHighCost: '自动放行高成本任务',
+        autoConfirmHighCostHint: '自动确认 Flova 的高成本提示（如 1080p）。关闭后此类任务直接失败而不是挂起等待。',
+        priceDriftTolerance: '价格漂移容忍度',
+        priceDriftToleranceHint: '上游报价与价格表允许的偏差比例（0–1），0.10 即 10%。超出则任务以 price_drift 失败。',
+        autoConfirmCreditsMax: '自动放行积分上限',
+        autoConfirmCreditsMaxHint: '仅当高成本任务积分不超过此值时自动放行；0 表示不设上限。',
+        roundFeeCredits: '每轮附加费（积分）',
+        roundFeeCreditsHint: 'Flova 每次 run 额外收取的积分，计入预扣校验。默认 0。',
+        minCreditsReserve: '最低积分水位',
+        minCreditsReserveHint: '账号余额低于此值时临时移出调度。默认 60。',
+        credits: 'Flova 积分',
+        creditsValue: '{credits} 积分',
+        plan: '档位',
+        errors: {
+          invalidBaseUrl: 'Flova Base URL 必须是合法的 http(s) 地址。',
+          invalidUploadUrl: 'Flova 上传地址必须是合法的 http(s) 地址。',
+          invalidMaxRunMinutes: '单次运行时限必须是正数（分钟）。',
+          invalidPriceDriftTolerance: '价格漂移容忍度必须在 0 到 1 之间。',
+          negativeAutoConfirmCreditsMax: '自动放行积分上限不能为负数。',
+          negativeRoundFeeCredits: '每轮附加费不能为负数。',
+          negativeMinCreditsReserve: '最低积分水位不能为负数。'
         }
       },
       grok: {

@@ -84,8 +84,23 @@
           <span class="mb-1 block text-xs font-medium zt-ink-2">{{ t('admin.videos.filters.account') }}</span>
           <input v-model.trim="filters.account_id" inputmode="numeric" class="input h-9 w-full" placeholder="ID" @keyup.enter="applyFilters" />
         </label>
+        <!--
+          对账筛选：只列出曾进入「提交结果未知」流程的任务（submission_unknown_at 非空）。
+          后端只认 true/false，这里勾选即 'true'，不勾即不传。
+        -->
+        <label v-if="activeTab === 'tasks'" class="flex h-9 flex-none items-center gap-2 text-sm zt-ink-2">
+          <input
+            v-model="filters.submission_unknown"
+            type="checkbox"
+            true-value="true"
+            false-value=""
+            class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600"
+            data-test="video-filter-submission-unknown"
+          />
+          <span class="whitespace-nowrap">{{ t('admin.videos.filters.submissionUnknownOnly') }}</span>
+        </label>
         <div class="flex h-9 gap-2">
-          <button type="button" class="btn btn-primary" @click="applyFilters">{{ t('common.apply') }}</button>
+          <button type="button" class="btn btn-primary" data-test="video-filters-apply" @click="applyFilters">{{ t('common.apply') }}</button>
           <button type="button" class="btn btn-secondary px-2.5" :title="t('common.refresh')" :disabled="loading" @click="refresh">
             <Icon name="refresh" size="sm" :class="loading ? 'animate-spin' : ''" />
           </button>
@@ -116,7 +131,15 @@
                   <p class="mt-1 max-w-64 truncate text-xs zt-ink-3">{{ taskSubtitle(task) }}</p>
                 </td>
                 <td class="px-4 py-3 font-mono text-xs">U{{ task.user_id }} / A{{ task.account_id ?? '-' }}</td>
-                <td class="px-4 py-3"><span :class="statusClass(task.generation_state)">{{ stateLabel(task.generation_state) }}</span></td>
+                <td class="px-4 py-3">
+                  <span :class="statusClass(task.generation_state)">{{ stateLabel(task.generation_state) }}</span>
+                  <span
+                    v-if="task.submission_unknown_at"
+                    class="ml-1 inline-flex min-h-6 items-center rounded border border-amber-300 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 dark:border-amber-800 dark:text-amber-300"
+                    :title="t('admin.videos.reconciliation.badgeTitle', { value: formatDate(task.submission_unknown_at) })"
+                    data-test="video-task-reconciliation-badge"
+                  >{{ t('admin.videos.reconciliation.badge') }}</span>
+                </td>
                 <td class="px-4 py-3"><span :class="statusClass(task.billing_state)">{{ stateLabel(task.billing_state) }}</span></td>
 				<td class="px-4 py-3 text-xs" data-test="video-task-amounts">
 					<p v-if="task.actual_cost != null" class="font-mono font-medium zt-good-text">
@@ -183,6 +206,14 @@
       <div v-if="selectedTask" class="space-y-5">
 		<section v-for="section in detailSections" :key="section.key" :data-test="`video-detail-${section.key}`">
 			<h4 class="mb-3 text-sm font-semibold zt-ink">{{ section.title }}</h4>
+			<p
+				v-if="section.warning"
+				class="mb-3 flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
+				:data-test="`video-detail-${section.key}-warning`"
+			>
+				<Icon name="exclamationTriangle" size="sm" class="flex-none" />
+				<span>{{ section.warning }}</span>
+			</p>
 			<div class="grid grid-cols-1 gap-x-6 gap-y-3 text-sm md:grid-cols-2 xl:grid-cols-3">
 				<div v-for="field in section.fields" :key="field.label" class="min-w-0 border-b zt-border-c pb-2">
 					<p class="text-xs zt-ink-3">{{ field.label }}</p>
@@ -259,7 +290,7 @@ const callbackRows = ref<VideoAdminCallback[]>([])
 const selectedTask = ref<VideoAdminTask | null>(null)
 const taskEvents = ref<VideoAdminEvent[]>([])
 const pagination = reactive({ page: 1, page_size: 20, total: 0 })
-const filters = reactive({ q: '', generation_state: '', billing_state: '', status: '', account_id: '' })
+const filters = reactive({ q: '', generation_state: '', billing_state: '', status: '', account_id: '', submission_unknown: '' as '' | 'true' })
 let overviewRequest = 0
 let rowsRequest = 0
 let detailRequest = 0
@@ -322,10 +353,59 @@ function modelFields(task: VideoAdminTask) {
 	return [{ label: t('admin.videos.columns.model'), value: chain[0].value }]
 }
 
-const detailSections = computed(() => {
+type DetailField = { label: string; value: string }
+type DetailSection = { key: string; title: string; fields: DetailField[]; warning?: string }
+
+// 两个快照都是 Record<string, unknown>，后端由各 provider 适配器按自己的口径写入
+// （Runware 回传实际成本、fal 回传计费单位 / 推理秒、WaveSpeed 回传推理毫秒与提交前报价），
+// 同一个任务只会有其中一小部分键。这里只认数字与非空字符串，其余一律当缺席。
+function snapshotNumber(snapshot: Record<string, unknown> | null | undefined, key: string): number | undefined {
+	const value = snapshot?.[key]
+	if (typeof value === 'number') return Number.isFinite(value) ? value : undefined
+	if (typeof value === 'string' && value.trim() !== '') {
+		const parsed = Number(value)
+		return Number.isFinite(parsed) ? parsed : undefined
+	}
+	return undefined
+}
+function snapshotString(snapshot: Record<string, unknown> | null | undefined, key: string): string {
+	const value = snapshot?.[key]
+	return typeof value === 'string' ? value.trim() : ''
+}
+
+function upstreamCostSection(task: VideoAdminTask): DetailSection {
+	const usage = task.usage_snapshot
+	const cost = task.provider_cost_snapshot
+	const fields: DetailField[] = []
+	const upstreamActual = snapshotNumber(usage, 'upstream_cost_usd')
+	if (upstreamActual != null) fields.push({ label: t('admin.videos.detail.upstreamActualCost'), value: formatMoney(upstreamActual, 'USD') })
+	const billableUnits = snapshotNumber(usage, 'billable_units')
+	if (billableUnits != null) fields.push({ label: t('admin.videos.detail.billableUnits'), value: formatNumberValue(billableUnits) })
+	const inferenceMs = snapshotNumber(usage, 'inference_ms')
+	if (inferenceMs != null) fields.push({ label: t('admin.videos.detail.inferenceMs'), value: `${formatNumberValue(inferenceMs)} ms` })
+	const inferenceSeconds = snapshotNumber(usage, 'inference_seconds')
+	if (inferenceSeconds != null) fields.push({ label: t('admin.videos.detail.inferenceSeconds'), value: formatDurationSeconds(inferenceSeconds) })
+	const upstreamQuote = snapshotNumber(cost, 'upstream_quote_usd')
+	if (upstreamQuote != null) fields.push({ label: t('admin.videos.detail.upstreamQuote'), value: formatMoney(upstreamQuote, 'USD') })
+	const configuredBase = snapshotNumber(cost, 'configured_base_usd')
+	if (configuredBase != null) fields.push({ label: t('admin.videos.detail.configuredBase'), value: formatMoney(configuredBase, 'USD') })
+	const quoteError = snapshotString(cost, 'upstream_quote_error')
+	if (quoteError) fields.push({ label: t('admin.videos.detail.upstreamQuoteError'), value: quoteError })
+	const rateMultiplier = snapshotNumber(cost, 'account_rate_multiplier')
+	if (rateMultiplier != null) fields.push({ label: t('admin.videos.detail.accountRateMultiplier'), value: `${rateMultiplier.toFixed(4)}x` })
+	return {
+		key: 'upstream-cost',
+		title: t('admin.videos.detail.upstreamCost'),
+		fields,
+		// 后端只在报价超过本地基础价（含容差）时才写入 true，其余情况这个键不存在。
+		warning: cost?.upstream_quote_exceeds_price === true ? t('admin.videos.detail.upstreamQuoteExceeds') : undefined,
+	}
+}
+
+const detailSections = computed<DetailSection[]>(() => {
   const task = selectedTask.value
   if (!task) return []
-  const sections = [
+  const sections: DetailSection[] = [
 	{
 		key: 'routing',
 		title: t('admin.videos.detail.routing'),
@@ -372,6 +452,7 @@ const detailSections = computed(() => {
 			{ label: t('admin.videos.detail.holdId'), value: task.hold_id || '-' },
 		],
 	},
+	upstreamCostSection(task),
 	{
 		key: 'lifecycle',
 		title: t('admin.videos.detail.lifecycle'),
@@ -392,9 +473,10 @@ const detailSections = computed(() => {
   ]
   // 一个典型任务里近一半字段是 '-'，留着只会把真有内容的那几行淹掉。状态类字段
   // （生成 / 结算 / 删除状态）经 stateLabel 永远不是 '-'，所以不会整段消失。
+  // 上游成本一段没有常驻字段，只有 provider 真回传了成本 / 报价时才出现。
   return sections
     .map(section => ({ ...section, fields: section.fields.filter(field => field.value !== '-' && field.value !== '') }))
-    .filter(section => section.fields.length > 0)
+    .filter(section => section.fields.length > 0 || Boolean(section.warning))
 })
 
 function numericFilter(value: string): number | undefined {
@@ -421,7 +503,7 @@ async function loadRows() {
   error.value = ''
   try {
     if (tab === 'tasks') {
-      const query = { page: pagination.page, page_size: pagination.page_size, q: filters.q || undefined, generation_state: filters.generation_state || undefined, billing_state: filters.billing_state || undefined, account_id: numericFilter(filters.account_id) }
+      const query = { page: pagination.page, page_size: pagination.page_size, q: filters.q || undefined, generation_state: filters.generation_state || undefined, billing_state: filters.billing_state || undefined, account_id: numericFilter(filters.account_id), submission_unknown: filters.submission_unknown || undefined }
       const page = await videosAPI.listTasks(query)
       if (disposed || request !== rowsRequest) return
       taskRows.value = page.items
@@ -464,6 +546,7 @@ function selectTab(tab: TabKey) {
   pagination.page = 1
 	filters.generation_state = ''
 	filters.billing_state = ''
+	filters.submission_unknown = ''
   filters.status = ''
   void loadRows()
 }

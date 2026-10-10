@@ -581,6 +581,27 @@
         :account="account"
         @updated="handleOllamaCloudUsageUpdated"
       />
+      <!-- Flova：积分同步快照（extra.flova_credits / flova_subscription.lookup_key），
+           由后端周期同步写入，这里只做静态展示，不发探测请求。 -->
+      <div
+        v-if="flovaCredits"
+        data-testid="flova-credits"
+        class="mb-0.5 flex flex-wrap items-center gap-1.5 text-[10px]"
+      >
+        <span
+          :class="['font-medium leading-4', platformTextClass('flova')]"
+          :title="t('admin.accounts.flova.credits')"
+        >
+          {{ t('admin.accounts.flova.creditsValue', { credits: formatCompactNumber(flovaCredits.credits) }) }}
+        </span>
+        <span
+          v-if="flovaCredits.plan"
+          class="rounded zt-surface-3 px-1.5 py-0.5 dark:bg-gray-800"
+          :title="t('admin.accounts.flova.plan')"
+        >
+          {{ flovaCredits.plan }}
+        </span>
+      </div>
       <!-- Today stats row (requests, tokens, cost, user_cost) -->
       <div
         v-if="todayStats"
@@ -662,6 +683,8 @@ import CNProviderQuotaCell from './CNProviderQuotaCell.vue'
 import CNProviderBalanceCell from './CNProviderBalanceCell.vue'
 import OllamaCloudUsageCell from './OllamaCloudUsageCell.vue'
 import { cnQuotaCellVisible as cnQuotaCellVisibleFn, cnBalanceCellVisible as cnBalanceCellVisibleFn } from './credentialsBuilder'
+import { readFlovaCreditsSnapshot } from './flovaCredentials'
+import { platformTextClass } from '@/utils/platformColors'
 
 // Module-level cache shared across all AccountUsageCell instances
 const _usageCache = new Map<number, { data: AccountUsageInfo; ts: number }>()
@@ -766,6 +789,13 @@ const cnQuotaCellVisible = computed(() => cnQuotaCellVisibleFn(props.account.pla
 const cnBalanceCellVisible = computed(() => cnBalanceCellVisibleFn(props.account.platform, cnAccountMode.value))
 
 const isBatchManaged = computed(() => typeof props.requestBatchedUsage === 'function')
+
+// Flova 积分快照：只对 flova 账号且 extra.flova_credits 为数字时展示。
+const flovaCredits = computed(() =>
+  props.account.platform === 'flova'
+    ? readFlovaCreditsSnapshot(props.account.extra as Record<string, unknown> | undefined)
+    : null
+)
 
 const showGeminiTodayStats = computed(() => {
   return props.account.platform === 'gemini' && props.account.type === 'service_account'

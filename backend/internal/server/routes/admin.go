@@ -67,6 +67,7 @@ func RegisterAdminRoutes(
 
 		// 国产供应商（kimi/zhipu/deepseek）额度与余额
 		registerCNProviderRoutes(admin, h)
+		registerFlovaRoutes(admin, h)
 
 		// 代理管理
 		registerProxyRoutes(admin, h, stepUpAuth)
@@ -554,6 +555,14 @@ func registerGrokOAuthRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		grok.GET("/accounts/:id/quota", h.Admin.GrokOAuth.QueryQuota)
 		grok.POST("/accounts/:id/reset-quota", h.Admin.GrokOAuth.ResetQuota)
 		grok.GET("/runtime-sanity", h.Admin.GrokOAuth.RuntimeSanity)
+	}
+}
+
+// registerFlovaRoutes 注册 Flova 账号积分手动刷新端点。
+func registerFlovaRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	flova := admin.Group("/flova")
+	{
+		flova.POST("/accounts/:id/credits/refresh", h.Admin.Flova.RefreshCredits)
 	}
 }
 

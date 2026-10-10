@@ -1132,8 +1132,12 @@ type GatewayVideoCallbackConfig struct {
 }
 
 type GatewayVideoConfig struct {
-	Enabled                         bool                           `mapstructure:"enabled"`
-	CreationEnabled                 bool                           `mapstructure:"creation_enabled"`
+	Enabled         bool `mapstructure:"enabled"`
+	CreationEnabled bool `mapstructure:"creation_enabled"`
+	// TaskJSONBodyMaxBytes 是 Ark 形态创建请求（/contents/generations/tasks）的 JSON 体上限。
+	// content[] 里的 data: URI 图片会内联在请求体里，所以要比 /v1/videos 的 1MB 宽松；
+	// 单张图片仍受内容审核的 8MB 上限约束。
+	TaskJSONBodyMaxBytes            int64                          `mapstructure:"task_json_body_max_bytes"`
 	SubmitTimeoutSeconds            int                            `mapstructure:"submit_timeout_seconds"`
 	SubmissionReconciliationMinutes int                            `mapstructure:"submission_reconciliation_minutes"`
 	PollIntervalSeconds             int                            `mapstructure:"poll_interval_seconds"`
@@ -1145,6 +1149,22 @@ type GatewayVideoConfig struct {
 	Spool                           GatewayVideoSpoolConfig        `mapstructure:"spool"`
 	ContentProxy                    GatewayVideoContentProxyConfig `mapstructure:"content_proxy"`
 	Callback                        GatewayVideoCallbackConfig     `mapstructure:"callback"`
+}
+
+// GatewayFlovaConfig 是 Flova 托管视频 provider（Agent 式视频创作平台）的专属配置。
+type GatewayFlovaConfig struct {
+	// UserAgent 用于调用 Flova Agent API 与直拉签名内容；Flova 的 CDN 按 UA 拦截默认 UA。
+	UserAgent string `mapstructure:"user_agent"`
+	// ClientVersion 写入 /chat 的 extra_data.client_version，跟随官方 CLI 版本。
+	ClientVersion string `mapstructure:"client_version"`
+	// CreditsCheckIntervalMinutes 账号积分周期同步间隔（分钟）；<=0 关闭同步任务。
+	CreditsCheckIntervalMinutes int `mapstructure:"credits_check_interval_minutes"`
+	// CreditsReserveDefault 账号未配置 min_credits_reserve 时的低水位默认值（积分）。
+	CreditsReserveDefault float64 `mapstructure:"credits_reserve_default"`
+	// MaxRunMinutesDefault 账号未配置 max_run_minutes 时单次 run 的最长等待（分钟）。
+	MaxRunMinutesDefault int `mapstructure:"max_run_minutes_default"`
+	// PriceDriftToleranceDefault 高成本确认报价相对价格表的容差默认值（0.10 = 10%）。
+	PriceDriftToleranceDefault float64 `mapstructure:"price_drift_tolerance_default"`
 }
 
 // GatewayConfig API网关相关配置
@@ -1231,6 +1251,8 @@ type GatewayConfig struct {
 	ImageConcurrency ImageConcurrencyConfig `mapstructure:"image_concurrency"`
 	// Video is the provider-neutral asynchronous video task platform.
 	Video GatewayVideoConfig `mapstructure:"video"`
+	// Flova: Agent 式视频创作平台（托管视频 provider "flova"）的专属配置。
+	Flova GatewayFlovaConfig `mapstructure:"flova"`
 
 	// HTTP 上游连接池配置（性能优化：支持高并发场景调优）
 	// MaxIdleConns: 所有主机的最大空闲连接总数
@@ -2907,6 +2929,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.image_concurrency.max_waiting_requests", 100)
 	viper.SetDefault("gateway.video.enabled", false)
 	viper.SetDefault("gateway.video.creation_enabled", false)
+	viper.SetDefault("gateway.video.task_json_body_max_bytes", int64(16*1024*1024))
 	viper.SetDefault("gateway.video.submit_timeout_seconds", 180)
 	viper.SetDefault("gateway.video.submission_reconciliation_minutes", 30)
 	viper.SetDefault("gateway.video.poll_interval_seconds", 10)
@@ -2928,6 +2951,12 @@ func setDefaults() {
 	viper.SetDefault("gateway.video.content_proxy.max_account_concurrency", 16)
 	viper.SetDefault("gateway.video.content_proxy.response_header_timeout_seconds", 30)
 	viper.SetDefault("gateway.video.content_proxy.idle_timeout_seconds", 60)
+	viper.SetDefault("gateway.flova.user_agent", "flova-cli/v0.0.10 (linux; amd64)")
+	viper.SetDefault("gateway.flova.client_version", "v0.0.10")
+	viper.SetDefault("gateway.flova.credits_check_interval_minutes", 10)
+	viper.SetDefault("gateway.flova.credits_reserve_default", 60)
+	viper.SetDefault("gateway.flova.max_run_minutes_default", 60)
+	viper.SetDefault("gateway.flova.price_drift_tolerance_default", 0.10)
 	viper.SetDefault("gateway.video.content_proxy.total_timeout_seconds", 3600)
 	viper.SetDefault("gateway.video.callback.enabled", false)
 	viper.SetDefault("gateway.video.callback.retry_hours", 24)
@@ -3974,6 +4003,10 @@ func (c *Config) Validate() error {
 	if videoConfigured {
 		if c.Gateway.Video.SubmitTimeoutSeconds <= 0 {
 			return fmt.Errorf("gateway.video.submit_timeout_seconds must be positive")
+		}
+		if c.Gateway.Video.TaskJSONBodyMaxBytes < 0 || (c.Gateway.Video.TaskJSONBodyMaxBytes > 0 &&
+			(c.Gateway.Video.TaskJSONBodyMaxBytes < 1<<20 || c.Gateway.Video.TaskJSONBodyMaxBytes > 64<<20)) {
+			return fmt.Errorf("gateway.video.task_json_body_max_bytes must be between 1048576 and 67108864 when set")
 		}
 		if c.Gateway.Video.SubmissionReconciliationMinutes <= 0 || c.Gateway.Video.SubmissionReconciliationMinutes > 24*60 {
 			return fmt.Errorf("gateway.video.submission_reconciliation_minutes must be between 1 and 1440")

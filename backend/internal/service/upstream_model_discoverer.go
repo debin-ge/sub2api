@@ -199,6 +199,13 @@ func (d *UpstreamModelDiscoverer) buildUpstreamModelsRequest(ctx context.Context
 		return d.buildWindsurfUpstreamModelsRequest(ctx, account)
 	case account.Platform == PlatformByteDance:
 		return d.buildByteDanceUpstreamModelsRequest(ctx, account)
+	case account.Platform == PlatformRunware:
+		return d.buildRunwareUpstreamModelsRequest(ctx, account)
+	case account.Platform == PlatformWaveSpeed:
+		return d.buildWaveSpeedUpstreamModelsRequest(ctx, account)
+	case account.Platform == PlatformFal:
+		// fal 的模型搜索属于 Platform API，Model API key 调不到；端点 ID 以模型页为准。
+		return nil, newUpstreamModelSyncUnsupportedError("fal.ai has no model list endpoint for upstream model sync", nil)
 	case account.Platform == PlatformAntigravity && account.Type == AccountTypeUpstream:
 		return d.buildAntigravityUpstreamModelsRequest(ctx, account)
 	case account.Platform == PlatformAntigravity:
@@ -884,6 +891,10 @@ func parseDiscoveredUpstreamModelIDs(platform string, body []byte) ([]string, er
 		return parseWindsurfModelListBody(body)
 	case PlatformGrok:
 		return extractGrokUpstreamModelIDs(body)
+	case PlatformRunware:
+		return parseRunwareModelIndex(body)
+	case PlatformWaveSpeed:
+		return parseWaveSpeedModelList(body)
 	default:
 		return extractUpstreamModelIDs(body)
 	}

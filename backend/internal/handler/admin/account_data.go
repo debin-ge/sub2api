@@ -752,19 +752,19 @@ func validateDataAccount(item DataAccount) error {
 			return errors.New("opencode_go account api_key is required")
 		}
 	}
-	if item.Platform == service.PlatformByteDance {
+	if service.IsVideoOnlyPlatform(item.Platform) {
 		if item.Type != service.AccountTypeAPIKey {
-			return errors.New("bytedance account type must be apikey")
+			return fmt.Errorf("%s account type must be apikey", item.Platform)
 		}
 		apiKey, _ := item.Credentials["api_key"].(string)
 		if strings.TrimSpace(apiKey) == "" {
-			return errors.New("bytedance account api_key is required")
+			return fmt.Errorf("%s account api_key is required", item.Platform)
 		}
 		if baseURL, _ := item.Credentials["base_url"].(string); strings.TrimSpace(baseURL) != "" {
 			parsed, err := url.Parse(strings.TrimSpace(baseURL))
 			if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" ||
 				(parsed.Scheme != "http" && parsed.Scheme != "https") {
-				return errors.New("bytedance account base_url is invalid")
+				return fmt.Errorf("%s account base_url is invalid", item.Platform)
 			}
 		}
 	}

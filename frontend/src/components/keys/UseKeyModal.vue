@@ -262,6 +262,7 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { useClipboard } from '@/composables/useClipboard'
 import { fetchCodexModelsManifest } from '@/api/codex'
+import { isVideoOnlyPlatform } from '@/components/account/credentialsBuilder'
 import type { GroupPlatform } from '@/types'
 import {
   findCodexCatalogModel,
@@ -344,7 +345,7 @@ const defaultClientTab = computed(() => {
     case 'opencode_go':
       return 'opencode'
     default:
-      return 'claude'
+      return isVideoOnlyPlatform(props.platform ?? '') ? 'videos' : 'claude'
   }
 })
 
@@ -438,6 +439,10 @@ const SparkleIcon = {
 
 const clientTabs = computed((): TabConfig[] => {
   if (!props.platform) return []
+  // 仅视频平台只有 /v1/videos 一条路，CLI 客户端配置对它们无意义。
+  if (isVideoOnlyPlatform(props.platform)) {
+    return [{ id: 'videos', label: t('keys.useKeyModal.cliTabs.videos'), icon: TerminalIcon }]
+  }
   switch (props.platform) {
     case 'openai': {
       const tabs: TabConfig[] = [
@@ -504,7 +509,7 @@ const openaiTabs: TabConfig[] = [
   { id: 'windows', label: 'Windows', icon: WindowsIcon }
 ]
 
-const showShellTabs = computed(() => activeClientTab.value !== 'opencode')
+const showShellTabs = computed(() => activeClientTab.value !== 'opencode' && activeClientTab.value !== 'videos')
 
 const showCodexAuthMode = computed(() =>
   props.platform === 'openai' &&
@@ -520,6 +525,9 @@ const currentTabs = computed(() => {
 })
 
 const platformDescription = computed(() => {
+  if (activeClientTab.value === 'videos') {
+    return t('keys.useKeyModal.videos.description')
+  }
   if (activeClientTab.value === 'codex' &&
     props.platform !== 'openai' &&
     props.platform !== 'grok' &&
@@ -564,6 +572,9 @@ const platformDescription = computed(() => {
 })
 
 const platformNote = computed(() => {
+  if (activeClientTab.value === 'videos') {
+    return t('keys.useKeyModal.videos.note')
+  }
   if (activeClientTab.value === 'codex' &&
     props.platform !== 'openai' &&
     props.platform !== 'grok' &&
@@ -719,6 +730,10 @@ const currentFiles = computed((): FileConfig[] => {
     return trimmed.endsWith('/v1beta') ? trimmed : `${trimmed}/v1beta`
   })()
 
+  if (activeClientTab.value === 'videos') {
+    return generateVideoApiFiles(baseRoot, apiKey)
+  }
+
   if (activeClientTab.value === 'opencode') {
     switch (props.platform) {
       case 'anthropic':
@@ -799,6 +814,47 @@ const currentFiles = computed((): FileConfig[] => {
       return generateAnthropicFiles(baseUrl, apiKey)
   }
 })
+
+/**
+ * 仅视频平台（ByteDance / fal / WaveSpeed / Runware / Flova）的调用示例，走火山方舟（Seedance）
+ * 任务协议：提交 → 轮询 → 下载。baseUrl 是网关根地址（不带 /v1），路径用 /api/v3 前缀；
+ * 后端对 /v1/contents/generations/tasks 同样放行。模型占位符由用户替换为分组允许的模型。
+ */
+function generateVideoApiFiles(baseUrl: string, apiKey: string): FileConfig[] {
+  const tasksUrl = `${baseUrl}/api/v3/contents/generations/tasks`
+  return [
+    {
+      path: t('keys.useKeyModal.videos.submit'),
+      content: `curl -X POST "${tasksUrl}" \\
+  -H "Authorization: Bearer ${apiKey}" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "<model>",
+    "content": [
+      {"type": "text", "text": "A golden retriever running on a beach at sunset"},
+      {"type": "image_url", "image_url": {"url": "https://example.com/first-frame.png"}, "role": "first_frame"}
+    ],
+    "duration": 5,
+    "resolution": "720p",
+    "ratio": "16:9"
+  }'
+# => {"id": "video_..."}`
+    },
+    {
+      path: t('keys.useKeyModal.videos.poll'),
+      content: `curl "${tasksUrl}/<video_id>" \\
+  -H "Authorization: Bearer ${apiKey}"
+# => {"id": "...", "status": "queued|running|succeeded|failed|cancelled|expired",
+#     "content": {"video_url": "https://.../content?variant=video&exp=...&sig=..."}, ...}`
+    },
+    {
+      path: t('keys.useKeyModal.videos.download'),
+      content: `# content.video_url is a signed, expiring link from the GET response above.
+# It needs no Authorization header; if it has expired, GET the task again for a fresh one.
+curl -L "<content.video_url>" -o video.mp4`
+    }
+  ]
+}
 
 function generateAnthropicFiles(baseUrl: string, apiKey: string): FileConfig[] {
   let path: string
@@ -1269,6 +1325,10 @@ function generateRoutedCodexFiles(
     windsurf: 'Windsurf',
     opencode_go: 'OpenCode',
     bytedance: 'ByteDance',
+    fal: 'fal.ai',
+    wavespeed: 'WaveSpeed',
+    runware: 'Runware',
+    flova: 'Flova',
     composite: 'Composite'
   }
   const label = labels[platform]

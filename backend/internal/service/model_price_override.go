@@ -272,6 +272,10 @@ func CatalogOverridePlatforms() []string {
 		PlatformWindsurf,
 		PlatformOpenCodeGo,
 		PlatformByteDance,
+		PlatformFal,
+		PlatformWaveSpeed,
+		PlatformRunware,
+		PlatformFlova,
 		PlatformComposite,
 	}
 }

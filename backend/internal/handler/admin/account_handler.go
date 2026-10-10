@@ -1536,18 +1536,29 @@ func validateUpdateAccountRequest(account *service.Account, req UpdateAccountReq
 }
 
 func validateOptionalAccountBaseURL(platform string, credentials map[string]any) error {
-	if platform != service.PlatformByteDance || credentials == nil {
+	if !service.IsVideoOnlyPlatform(platform) || credentials == nil {
 		return nil
 	}
-	baseURL, _ := credentials["base_url"].(string)
-	baseURL = strings.TrimSpace(baseURL)
-	if baseURL == "" {
+	if err := validateOptionalAccountURLField(platform, credentials, "base_url"); err != nil {
+		return err
+	}
+	if platform == service.PlatformFlova {
+		// Flova 的上传端点与 base_url 不同源（CLI 硬编码 gcp 主机），单独校验。
+		return validateOptionalAccountURLField(platform, credentials, "upload_url")
+	}
+	return nil
+}
+
+func validateOptionalAccountURLField(platform string, credentials map[string]any, field string) error {
+	raw, _ := credentials[field].(string)
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
 		return nil
 	}
-	parsed, err := url.Parse(baseURL)
+	parsed, err := url.Parse(raw)
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" ||
 		(parsed.Scheme != "http" && parsed.Scheme != "https") {
-		return fmt.Errorf("%s account base_url is invalid", platform)
+		return fmt.Errorf("%s account %s is invalid", platform, field)
 	}
 	return nil
 }
@@ -1555,7 +1566,8 @@ func validateOptionalAccountBaseURL(platform string, credentials map[string]any)
 func requiresAPIKeyAccount(platform string) bool {
 	switch service.CanonicalCNPlatform(platform) {
 	case service.PlatformZhipu, service.PlatformKimi, service.PlatformDeepSeek, service.PlatformWindsurf,
-		service.PlatformOpenCodeGo, service.PlatformByteDance:
+		service.PlatformOpenCodeGo, service.PlatformByteDance, service.PlatformFal, service.PlatformWaveSpeed, service.PlatformRunware,
+		service.PlatformFlova:
 		return true
 	default:
 		return false
