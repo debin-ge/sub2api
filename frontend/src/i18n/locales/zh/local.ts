@@ -18,7 +18,10 @@ export default {
       "health": "服务健康",
       "quota": "额度雷达",
       "degradation": "降智雷达",
-      "register": "免费注册"
+      "register": "免费注册",
+      "siteNavigation": "站点导航",
+      "plaza": "模型广场",
+      "docs": "文档"
     },
     "hero": {
       "eyebrow": "模型雷达 · AI 网关",

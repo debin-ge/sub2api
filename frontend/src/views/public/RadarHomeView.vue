@@ -190,7 +190,7 @@
             </div>
             <span class="text-base font-bold text-gray-950 dark:text-white">{{ siteName }}</span>
           </div>
-          <p class="max-w-md text-sm leading-6 text-gray-500 dark:text-gray-400">
+          <p class="min-w-0 max-w-4xl text-sm leading-6 text-gray-500 dark:text-gray-400">
             {{ t('radar.home.footer.tagline', 'A standardized API gateway that unifies access to leading AI models, powering your applications and digital assets.') }}
           </p>
         </div>

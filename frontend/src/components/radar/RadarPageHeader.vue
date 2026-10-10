@@ -11,6 +11,20 @@
       </router-link>
 
       <div class="flex shrink-0 items-center gap-1 sm:gap-2">
+        <nav
+          class="hidden items-center gap-1 sm:flex"
+          :aria-label="t('radar.header.siteNavigation', 'Site navigation')"
+        >
+          <router-link
+            v-for="link in siteLinks"
+            :key="link.to"
+            :to="link.to"
+            class="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-gray-300 dark:hover:bg-dark-800 dark:hover:text-white"
+          >
+            {{ link.label }}
+          </router-link>
+        </nav>
+
         <LocaleSwitcher />
         <button
           type="button"
@@ -63,6 +77,20 @@ const siteName = computed(() => appStore.cachedPublicSettings?.site_name || appS
 const siteLogo = computed(() => appStore.cachedPublicSettings?.site_logo || appStore.siteLogo || '')
 const isAuthenticated = computed(() => authStore.isAuthenticated)
 const dashboardPath = computed(() => (authStore.isAdmin ? '/admin/dashboard' : '/dashboard'))
+
+// Mirrors the gating used by SiteHeader on the docs / plaza pages.
+const showPlaza = computed(() => {
+  if (appStore.cachedPublicSettings?.model_plaza_enabled !== true) return false
+  return isAuthenticated.value || appStore.cachedPublicSettings?.model_plaza_require_auth !== true
+})
+
+const siteLinks = computed(() => {
+  const links = [
+    { key: 'plaza', to: '/plaza', label: t('radar.header.plaza', 'Model Plaza') },
+    { key: 'docs', to: '/docs', label: t('radar.header.docs', 'Docs') },
+  ]
+  return links.filter((link) => link.key !== 'plaza' || showPlaza.value)
+})
 
 function toggleTheme(): void {
   isDark.value = !isDark.value

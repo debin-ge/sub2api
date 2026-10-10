@@ -18,7 +18,10 @@ export default {
       "health": "Service health",
       "quota": "Quota radar",
       "degradation": "Benchmark radar",
-      "register": "Sign up free"
+      "register": "Sign up free",
+      "siteNavigation": "Site navigation",
+      "plaza": "Model Plaza",
+      "docs": "Docs"
     },
     "hero": {
       "eyebrow": "Model Radar · AI Gateway",

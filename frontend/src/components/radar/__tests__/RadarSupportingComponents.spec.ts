@@ -5,6 +5,7 @@ import RadarPageHeader from '@/components/radar/RadarPageHeader.vue'
 import RadarHero from '@/components/radar/RadarHero.vue'
 import RadarSectionState from '@/components/radar/RadarSectionState.vue'
 import DataSourceFooter from '@/components/radar/DataSourceFooter.vue'
+import { useAppStore } from '@/stores'
 import { source } from './fixtures'
 
 const { localeMock } = vi.hoisted(() => ({ localeMock: { value: 'en' } }))
@@ -45,11 +46,42 @@ describe('radar supporting components', () => {
       },
     })
 
-    expect(wrapper.find('nav').exists()).toBe(false)
+    expect(wrapper.find('a[href^="#"]').exists()).toBe(false)
     expect(wrapper.find('[data-radar-anchor]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Service health')
     expect(wrapper.text()).not.toContain('Quota radar')
     expect(wrapper.text()).not.toContain('Benchmark radar')
+  })
+
+  it('links to the docs page and, when enabled, the model plaza like SiteHeader does', () => {
+    const headerStubs = {
+      LocaleSwitcher: { template: '<button>locale</button>' },
+      RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' },
+      Icon: true,
+    }
+
+    const withoutPlaza = mount(RadarPageHeader, { global: { stubs: headerStubs } })
+    expect(withoutPlaza.get('a[href="/docs"]').text()).toBe('Docs')
+    expect(withoutPlaza.find('a[href="/plaza"]').exists()).toBe(false)
+
+    const appStore = useAppStore()
+    appStore.cachedPublicSettings = {
+      ...(appStore.cachedPublicSettings ?? {}),
+      model_plaza_enabled: true,
+      model_plaza_require_auth: true,
+    } as typeof appStore.cachedPublicSettings
+
+    const authRequired = mount(RadarPageHeader, { global: { stubs: headerStubs } })
+    expect(authRequired.find('a[href="/plaza"]').exists()).toBe(false)
+
+    appStore.cachedPublicSettings = {
+      ...appStore.cachedPublicSettings,
+      model_plaza_require_auth: false,
+    } as typeof appStore.cachedPublicSettings
+
+    const withPlaza = mount(RadarPageHeader, { global: { stubs: headerStubs } })
+    expect(withPlaza.get('a[href="/plaza"]').text()).toBe('Model Plaza')
+    expect(withPlaza.get('a[href="/docs"]').text()).toBe('Docs')
   })
 
   it('reuses the locale control and exposes working theme and login entries', async () => {
