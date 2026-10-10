@@ -139,6 +139,35 @@ func TestVideoCompositeFrozenMappingSupportsLegacyReplayWithoutCurrentConfigurat
 	require.True(t, videoRequestMatchesTask(request, currentHash, task))
 }
 
+func TestVideoRequestMatchesTaskReplaysContractVersion2Hash(t *testing.T) {
+	request := videoSubmitRequestForTest()
+	currentHash, err := videoClientRequestHash(request)
+	require.NoError(t, err)
+	// 与升级前 videoClientRequestHash 的字段集逐字一致；旧任务的 request_hash 就是这样算出来的。
+	legacyHash, err := HashVideoRequest(map[string]any{
+		"operation": request.Operation, "model": request.Model, "prompt": request.Prompt, "seconds": request.Seconds,
+		"size": request.Size, "quality": "", "audio_enabled": nil, "service_tier": "", "request_mode": "",
+		"inference_mode": "", "input_reference": nil, "inputs": []any{}, "characters": nil, "source_video": "",
+		"provider_options": nil, "callback_url": "",
+	})
+	require.NoError(t, err)
+	require.NotEqual(t, currentHash, legacyHash)
+	task := &VideoTask{RequestedModel: request.Model, PublicModel: request.Model, RequestHash: legacyHash,
+		RequestAttributes: map[string]any{"client_request_contract_version": 2}}
+	require.True(t, videoRequestMatchesTask(request, currentHash, task))
+
+	changed := request
+	changed.Seconds++
+	changedHash, err := videoClientRequestHash(changed)
+	require.NoError(t, err)
+	require.False(t, videoRequestMatchesTask(changed, changedHash, task))
+
+	task.RequestAttributes["client_request_contract_version"] = videoClientRequestContractVersion
+	require.False(t, videoRequestMatchesTask(request, currentHash, task))
+	task.RequestHash = currentHash
+	require.True(t, videoRequestMatchesTask(request, currentHash, task))
+}
+
 func TestVideoCompositeRejectsMismatchedDecisionScope(t *testing.T) {
 	group := videoGroupForTest(SubscriptionTypeStandard)
 	group.Platform = PlatformComposite
