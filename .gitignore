@@ -15,6 +15,8 @@ backend/bin/
 backend/server
 backend/sub2api
 backend/main
+# go build ./cmd/tools/video-vendor-profiles 在 backend/ 下产出的二进制
+backend/video-vendor-profiles
 
 # Go 测试二进制
 *.test
