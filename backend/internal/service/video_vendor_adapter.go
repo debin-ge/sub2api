@@ -137,6 +137,17 @@ type videoModelProfile struct {
 	// OptionWhitelist 把 provider_options 的键映射到请求体 JSON 路径；不在表里的键被拒绝。
 	OptionWhitelist map[string]string
 
+	// Ark 维度（公开协议的画幅与开关）。Ratios / CanonicalResolutions 用 Ark 词表
+	// （16:9…、480p/720p/1080p/4k）；Resolutions 仍是厂商词表，二者经 ResolutionLabels 对应。
+	// 为空时由 finalizeArkDimensions 从 Sizes / DefaultSize / OptionWhitelist 推导。
+	Ratios               []string
+	CanonicalResolutions []string
+	DefaultRatio         string
+	DefaultResolution    string
+	// ArkFieldMap 把 Ark 开关字段（seed / camera_fixed / watermark）映射到厂商 JSON 路径；
+	// generate_audio 用 AudioField。未映射的字段带值提交会被拒绝，而不是静默丢弃。
+	ArkFieldMap map[string]string
+
 	// OutputPath 是结果里视频 URL 的 JSON 路径（点号分层，数组下标用数字）。
 	OutputPath string
 
@@ -193,6 +204,217 @@ func (p *videoModelProfile) supportsSize(size string) bool {
 		}
 	}
 	return false
+}
+
+// arkFieldOptionKeys 列出历史上通过 provider_options 透传、现已成为 Ark 显式字段的键。
+var arkFieldOptionKeys = map[string]string{
+	"seed": "seed", "camera_fixed": "camera_fixed", "cameraFixed": "camera_fixed", "watermark": "watermark",
+}
+
+// finalizeArkDimensions 补齐 Ark 维度：从 Sizes 推导比例与档位词表、从 DefaultSize 推导
+// 默认值、把 OptionWhitelist 里的 seed / camera_fixed / watermark 挪进 ArkFieldMap。幂等。
+func (p *videoModelProfile) finalizeArkDimensions() *videoModelProfile {
+	if p == nil {
+		return nil
+	}
+	if len(p.Ratios) == 0 {
+		seen := map[string]struct{}{}
+		for _, size := range p.Sizes {
+			if label := videoVendorAspectRatioLabel(size); label != "" && IsArkVideoRatio(label) {
+				if _, ok := seen[label]; !ok {
+					seen[label] = struct{}{}
+					p.Ratios = append(p.Ratios, label)
+				}
+			}
+		}
+	}
+	if len(p.CanonicalResolutions) == 0 {
+		if len(p.Resolutions) > 0 {
+			for _, canonical := range videoVendorResolutionOrder {
+				if _, ok := p.vendorResolutionLabel(canonical); ok {
+					p.CanonicalResolutions = append(p.CanonicalResolutions, canonical)
+				}
+			}
+		}
+		if len(p.CanonicalResolutions) == 0 {
+			seen := map[string]struct{}{}
+			for _, size := range p.Sizes {
+				if label := videoVendorResolutionLabel(size); IsArkVideoResolution(label) {
+					if _, ok := seen[label]; !ok {
+						seen[label] = struct{}{}
+						p.CanonicalResolutions = append(p.CanonicalResolutions, label)
+					}
+				}
+			}
+		}
+	}
+	if p.DefaultRatio == "" {
+		if label := videoVendorAspectRatioLabel(p.DefaultSize); label != "" && (len(p.Ratios) == 0 || p.supportsRatio(label)) {
+			p.DefaultRatio = label
+		} else if len(p.Ratios) > 0 {
+			p.DefaultRatio = p.Ratios[0]
+		}
+	}
+	if p.DefaultResolution == "" {
+		if label := videoVendorResolutionLabel(p.DefaultSize); IsArkVideoResolution(label) && (len(p.CanonicalResolutions) == 0 || p.supportsResolution(label)) {
+			p.DefaultResolution = label
+		} else if len(p.CanonicalResolutions) > 0 {
+			p.DefaultResolution = p.CanonicalResolutions[0]
+		}
+	}
+	if p.ArkFieldMap == nil {
+		p.ArkFieldMap = map[string]string{}
+	}
+	for key, path := range p.OptionWhitelist {
+		if field, ok := arkFieldOptionKeys[key]; ok {
+			if _, exists := p.ArkFieldMap[field]; !exists {
+				p.ArkFieldMap[field] = path
+			}
+			delete(p.OptionWhitelist, key)
+		}
+	}
+	return p
+}
+
+// supportsRatio 报告比例是否在档案词表内；词表为空表示不限制。
+func (p *videoModelProfile) supportsRatio(ratio string) bool {
+	if p == nil || p.Fallback || len(p.Ratios) == 0 {
+		return IsArkVideoRatio(ratio)
+	}
+	for _, candidate := range p.Ratios {
+		if candidate == ratio {
+			return true
+		}
+	}
+	return false
+}
+
+// supportsResolution 报告 Ark 档位是否在档案词表内；词表为空表示不限制。
+func (p *videoModelProfile) supportsResolution(resolution string) bool {
+	if p == nil || p.Fallback || len(p.CanonicalResolutions) == 0 {
+		return IsArkVideoResolution(resolution)
+	}
+	for _, candidate := range p.CanonicalResolutions {
+		if candidate == resolution {
+			return true
+		}
+	}
+	return false
+}
+
+// vendorResolutionLabel 把 Ark 档位换成厂商词表（MiniMax 把 720p 叫 768p）；厂商词表
+// 非空且不含该档位时返回 ok=false。
+func (p *videoModelProfile) vendorResolutionLabel(canonical string) (string, bool) {
+	label := strings.ToLower(strings.TrimSpace(canonical))
+	if label == "" {
+		return "", false
+	}
+	if p != nil && p.ResolutionLabels != nil {
+		if mapped, ok := p.ResolutionLabels[label]; ok {
+			label = mapped
+		}
+	}
+	if p != nil && len(p.Resolutions) > 0 {
+		for _, allowed := range p.Resolutions {
+			if strings.EqualFold(strings.TrimSpace(allowed), label) {
+				return label, true
+			}
+		}
+		return "", false
+	}
+	return label, true
+}
+
+// sizeForArkDimensions 给 width_height 编码的厂商找 (档位, 比例) 对应的 WxH：优先档案
+// 自己的尺寸表，其次 Seedance 的代表尺寸表。
+func (p *videoModelProfile) sizeForArkDimensions(resolution, ratio string) (string, bool) {
+	if p != nil {
+		for _, size := range p.Sizes {
+			if videoVendorResolutionLabel(size) == resolution && videoVendorAspectRatioLabel(size) == ratio {
+				return size, true
+			}
+		}
+	}
+	if size := videoVendorCanonicalSizes[resolution][ratio]; size != "" {
+		return size, true
+	}
+	return "", false
+}
+
+// videoVendorApplyFraming 按档案的尺寸编码把 Ark 的 (ratio, resolution) 写进厂商请求体。
+// 带图时比例随图，不送 aspect；分辨率先换成厂商词表，不在词表内就不送。
+func videoVendorApplyFraming(body map[string]any, profile *videoModelProfile, request VideoCreateRequest, hasImage bool, aspectField, resolutionField string) {
+	if profile == nil {
+		return
+	}
+	ratio := strings.TrimSpace(request.Ratio)
+	if ratio == ArkVideoRatioAdaptive || hasImage {
+		ratio = ""
+	}
+	resolution, hasResolution := profile.vendorResolutionLabel(request.Resolution)
+	switch profile.SizeEnc {
+	case videoSizeAspectRatioRes:
+		if ratio != "" {
+			videoVendorSetPath(body, aspectField, ratio)
+		}
+		if hasResolution {
+			videoVendorSetPath(body, resolutionField, resolution)
+		}
+	case videoSizeAspectRatio, videoSizeResolutionInID:
+		if ratio != "" {
+			videoVendorSetPath(body, aspectField, ratio)
+		}
+	case videoSizeResolutionOnly:
+		if hasResolution {
+			videoVendorSetPath(body, resolutionField, resolution)
+		}
+	}
+}
+
+// videoVendorApplyArkFields 把 Ark 开关字段写进厂商请求体；档案没有映射的字段带值即拒绝。
+func videoVendorApplyArkFields(body map[string]any, profile *videoModelProfile, request VideoCreateRequest) error {
+	if profile == nil {
+		return nil
+	}
+	apply := func(field string, value any) error {
+		if value == nil {
+			return nil
+		}
+		path := profile.ArkFieldMap[field]
+		if field == "generate_audio" && path == "" {
+			path = profile.AudioField
+		}
+		if path == "" {
+			return videoVendorValidationError("unsupported_parameter", "%s is not supported by model %q", field, request.Model)
+		}
+		videoVendorSetPath(body, path, value)
+		return nil
+	}
+	if request.Seed != nil {
+		if err := apply("seed", *request.Seed); err != nil {
+			return err
+		}
+	}
+	if request.CameraFixed != nil {
+		if err := apply("camera_fixed", *request.CameraFixed); err != nil {
+			return err
+		}
+	}
+	if request.Watermark != nil {
+		if err := apply("watermark", *request.Watermark); err != nil {
+			return err
+		}
+	}
+	if request.AudioEnabled != nil {
+		if !*request.AudioEnabled && profile.ArkFieldMap["generate_audio"] == "" && profile.AudioField == "" {
+			// 没有音频字段的模型本来就不出声：generate_audio=false 是空操作，与 Flova 同口径。
+			return nil
+		}
+		if err := apply("generate_audio", *request.AudioEnabled); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // videoVendorResolutionLabel 把尺寸归到分辨率档位。三家的尺寸表都按 480p / 720p /
@@ -306,20 +528,22 @@ func videoVendorAspectRatioLabel(size string) string {
 	return best
 }
 
-// videoVendorRequestResolution 供 providerRequestResolution 使用：没有尺寸时返回空串，
-// 定价规则就只能按模型匹配。
+// videoVendorRequestResolution 供 providerRequestResolution 使用：请求没带 resolution
+// 时按模型 ID 固化的档位或档案默认档位补齐，都没有就留空让定价按模型匹配。
 func videoVendorRequestResolution(adapter videoVendorAdapter, request VideoCreateRequest) string {
 	if adapter == nil {
 		return ""
 	}
-	if profile := adapter.Profiles()[strings.ToLower(strings.TrimSpace(request.Model))]; profile != nil && profile.SizeEnc == videoSizeResolutionInID {
-		return videoVendorResolutionFromModelID(request.Model)
+	if resolution := strings.ToLower(strings.TrimSpace(request.Resolution)); resolution != "" {
+		return resolution
 	}
-	if label := videoVendorResolutionLabel(request.Size); label != "" {
+	if label := videoVendorResolutionFromModelID(request.Model); label != "" {
 		return label
 	}
-	// 没有尺寸（图生视频比例随图）时退回模型 ID 里的档位，没有就留空让定价按模型匹配。
-	return videoVendorResolutionFromModelID(request.Model)
+	if profile := adapter.Profiles()[strings.ToLower(strings.TrimSpace(request.Model))]; profile != nil {
+		return profile.DefaultResolution
+	}
+	return ""
 }
 
 // videoVendorResolutionFromModelID 从模型 ID 里抽分辨率档位（WaveSpeed 的 seedance-v1-pro-i2v-720p）。
@@ -418,22 +642,28 @@ func videoVendorCapabilitiesFromProfiles(defaultModel string, profiles map[strin
 		models = append(models, model)
 	}
 	sort.Strings(models)
+	imageMIMEs := map[string]bool{"image/jpeg": true, "image/png": true, "image/webp": true}
 	capabilities := VideoCapabilities{
-		DefaultModel:     defaultModel,
-		DefaultSeconds:   map[string]int{},
-		DefaultSizes:     map[string]string{},
-		Operations:       operations,
-		SupportedModels:  map[string]bool{},
-		SupportedSeconds: map[string][]int{},
-		SupportedSizes:   map[string][]string{},
+		DefaultModel:         defaultModel,
+		DefaultSeconds:       map[string]int{},
+		Operations:           operations,
+		SupportedModels:      map[string]bool{},
+		SupportedSeconds:     map[string][]int{},
+		SupportedResolutions: map[string][]string{},
+		SupportedRatios:      map[string][]string{},
+		DefaultResolutions:   map[string]string{},
+		DefaultRatios:        map[string]string{},
 		InputRolesByOperation: map[string]map[VideoInputRole]bool{
-			VideoOperationGenerate: {VideoInputRoleReferenceImage: true},
+			VideoOperationGenerate: {VideoInputRoleFirstFrame: true, VideoInputRoleLastFrame: true},
 		},
 		InputMIMETypes: map[VideoInputRole]map[string]bool{
-			VideoInputRoleReferenceImage: {"image/jpeg": true, "image/png": true, "image/webp": true},
+			VideoInputRoleFirstFrame: imageMIMEs, VideoInputRoleLastFrame: imageMIMEs,
 		},
-		MaxInputBytes:        map[VideoInputRole]int64{VideoInputRoleReferenceImage: MaxContentModerationImageBytes},
+		MaxInputBytes: map[VideoInputRole]int64{
+			VideoInputRoleFirstFrame: MaxContentModerationImageBytes, VideoInputRoleLastFrame: MaxContentModerationImageBytes,
+		},
 		MaxInputsByOperation: map[string]int{VideoOperationGenerate: 2},
+		MaxContentByRole:     map[VideoInputRole]int{VideoInputRoleFirstFrame: 1, VideoInputRoleLastFrame: 1},
 		ContentVariants:      map[string]bool{"video": true},
 	}
 	for _, model := range models {
@@ -459,10 +689,21 @@ func videoVendorCapabilitiesFromProfiles(defaultModel string, profiles map[strin
 				break
 			}
 		}
-		if len(profile.Sizes) > 0 {
-			capabilities.SupportedSizes[model] = append([]string(nil), profile.Sizes...)
-			if profile.DefaultSize != "" && profile.supportsSize(profile.DefaultSize) {
-				capabilities.DefaultSizes[model] = profile.DefaultSize
+		profile.finalizeArkDimensions()
+		if len(profile.CanonicalResolutions) > 0 {
+			capabilities.SupportedResolutions[model] = append([]string(nil), profile.CanonicalResolutions...)
+			if profile.DefaultResolution != "" {
+				capabilities.DefaultResolutions[model] = profile.DefaultResolution
+			}
+		}
+		if len(profile.Ratios) > 0 {
+			ratios := append([]string(nil), profile.Ratios...)
+			if profile.AllowsImage {
+				ratios = append(ratios, ArkVideoRatioAdaptive)
+			}
+			capabilities.SupportedRatios[model] = ratios
+			if profile.DefaultRatio != "" {
+				capabilities.DefaultRatios[model] = profile.DefaultRatio
 			}
 		}
 	}

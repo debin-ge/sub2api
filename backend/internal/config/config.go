@@ -1132,8 +1132,12 @@ type GatewayVideoCallbackConfig struct {
 }
 
 type GatewayVideoConfig struct {
-	Enabled                         bool                           `mapstructure:"enabled"`
-	CreationEnabled                 bool                           `mapstructure:"creation_enabled"`
+	Enabled         bool `mapstructure:"enabled"`
+	CreationEnabled bool `mapstructure:"creation_enabled"`
+	// TaskJSONBodyMaxBytes 是 Ark 形态创建请求（/contents/generations/tasks）的 JSON 体上限。
+	// content[] 里的 data: URI 图片会内联在请求体里，所以要比 /v1/videos 的 1MB 宽松；
+	// 单张图片仍受内容审核的 8MB 上限约束。
+	TaskJSONBodyMaxBytes            int64                          `mapstructure:"task_json_body_max_bytes"`
 	SubmitTimeoutSeconds            int                            `mapstructure:"submit_timeout_seconds"`
 	SubmissionReconciliationMinutes int                            `mapstructure:"submission_reconciliation_minutes"`
 	PollIntervalSeconds             int                            `mapstructure:"poll_interval_seconds"`
@@ -2925,6 +2929,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.image_concurrency.max_waiting_requests", 100)
 	viper.SetDefault("gateway.video.enabled", false)
 	viper.SetDefault("gateway.video.creation_enabled", false)
+	viper.SetDefault("gateway.video.task_json_body_max_bytes", int64(16*1024*1024))
 	viper.SetDefault("gateway.video.submit_timeout_seconds", 180)
 	viper.SetDefault("gateway.video.submission_reconciliation_minutes", 30)
 	viper.SetDefault("gateway.video.poll_interval_seconds", 10)
@@ -3998,6 +4003,10 @@ func (c *Config) Validate() error {
 	if videoConfigured {
 		if c.Gateway.Video.SubmitTimeoutSeconds <= 0 {
 			return fmt.Errorf("gateway.video.submit_timeout_seconds must be positive")
+		}
+		if c.Gateway.Video.TaskJSONBodyMaxBytes < 0 || (c.Gateway.Video.TaskJSONBodyMaxBytes > 0 &&
+			(c.Gateway.Video.TaskJSONBodyMaxBytes < 1<<20 || c.Gateway.Video.TaskJSONBodyMaxBytes > 64<<20)) {
+			return fmt.Errorf("gateway.video.task_json_body_max_bytes must be between 1048576 and 67108864 when set")
 		}
 		if c.Gateway.Video.SubmissionReconciliationMinutes <= 0 || c.Gateway.Video.SubmissionReconciliationMinutes > 24*60 {
 			return fmt.Errorf("gateway.video.submission_reconciliation_minutes must be between 1 and 1440")

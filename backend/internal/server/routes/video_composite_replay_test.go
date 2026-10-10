@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -47,16 +48,24 @@ func (repo *compositeReplayTaskRepo) CreateHeldVideoTask(context.Context, servic
 
 func TestCompositeVideoHTTPReplayPrecedesRouteChangesAndExhaustedBudget(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	for _, prefix := range []string{"", "/v1"} {
-		t.Run(prefix, func(t *testing.T) {
+	for _, scenario := range []struct {
+		prefix          string
+		contractVersion int
+	}{{"", 3}, {"/v1", 3}, {"/v1", 2}} {
+		prefix := scenario.prefix
+		t.Run(prefix+"/v"+strconv.Itoa(scenario.contractVersion), func(t *testing.T) {
 			group := &service.Group{ID: 42, Platform: service.PlatformComposite, Status: service.StatusActive, Hydrated: true}
 			user := &service.User{ID: 7, Role: service.RoleUser, Status: service.StatusActive, Balance: 0}
 			key := &service.APIKey{ID: 9, UserID: user.ID, Key: "composite-replay-test-key", User: user, Group: group, GroupID: &group.ID,
 				Status: service.StatusAPIKeyQuotaExhausted, Quota: 4, QuotaUsed: 4}
 			cfg := &config.Config{RunMode: config.RunModeStandard, Gateway: config.GatewayConfig{Video: config.GatewayVideoConfig{Enabled: true, CreationEnabled: false, DisclosurePolicy: config.VideoDisclosureNone}}}
+			// 客户端请求哈希契约 v3：键集合以 Ark 维度为规范（见 service.videoClientRequestHash）。
+			// 这里按手工重算，确保老任务（含 v2 行）在键集合变化后仍能被同 key 同内容的重放命中。
 			hash, err := service.HashVideoRequest(map[string]any{
-				"operation": "generate", "model": "video-alias", "prompt": "test", "seconds": 8, "size": "1280x720",
-				"quality": "", "audio_enabled": nil, "service_tier": "", "request_mode": "", "inference_mode": "",
+				"operation": "generate", "model": "video-alias", "prompt": "test", "seconds": 8, "smart_duration": false, "frames": 0,
+				"resolution": "", "ratio": "", "size": "1280x720", "quality": "", "aspect_ratio": "",
+				"audio_enabled": nil, "seed": nil, "camera_fixed": nil, "watermark": nil, "return_last_frame": nil,
+				"service_tier": "", "execution_expires_after": 0, "request_mode": "", "inference_mode": "",
 				"input_reference": nil, "inputs": []any{}, "characters": nil, "source_video": "", "provider_options": nil, "callback_url": "",
 			})
 			require.NoError(t, err)
@@ -64,7 +73,7 @@ func TestCompositeVideoHTTPReplayPrecedesRouteChangesAndExhaustedBudget(t *testi
 				Operation: service.VideoOperationGenerate, Provider: service.VideoProviderOpenAI, RequestHash: hash,
 				RequestedModel: "video-alias", PublicModel: service.OpenAIVideoModelSora2, UpstreamModel: service.OpenAIVideoModelSora2,
 				GenerationState: service.VideoGenerationQueued, BillingState: service.VideoBillingHeld,
-				RequestAttributes: map[string]any{"client_request_contract_version": 2}, CreatedAt: time.Now()}}
+				RequestAttributes: map[string]any{"client_request_contract_version": scenario.contractVersion}, CreatedAt: time.Now()}}
 			resolver := service.NewCompositeRouteResolver(compositeRouteRepoStub{routes: []service.CompositeModelRoute{
 				{GroupID: group.ID, PublicModel: "video-alias", UpstreamModel: "grok-imagine-video", TargetPlatform: service.PlatformGrok, MatchType: service.CompositeRouteMatchExact, Endpoint: service.CompositeRouteEndpointVideos, Enabled: true},
 			}})

@@ -169,6 +169,14 @@ func (p *flovaModelProfile) minSeconds() int {
 	return p.MinSeconds
 }
 
+// supportedRatios 返回模型接受的比例词表（空表示只有 16:9 / 9:16）。
+func (p *flovaModelProfile) supportedRatios() []string {
+	if len(p.Ratios) == 0 {
+		return []string{"16:9", "9:16"}
+	}
+	return append([]string(nil), p.Ratios...)
+}
+
 func (p *flovaModelProfile) supportedSizes() []string {
 	sizes := make([]string, 0, len(flovaSizeTable))
 	for _, spec := range flovaSizeTable {
@@ -192,6 +200,30 @@ func (p *flovaModelProfile) defaultSize() string {
 	return ""
 }
 
+// flovaArkResolution 把 Flova 自己的档位名换成 Ark 词表：MiniMax H3 的 1366x768 对外是 720p
+// 档（与聚合平台 ResolutionLabels 的处理一致），其余档位名本来就在词表内。能力表、定价属性与
+// 任务元数据都用 Ark 词表；只有发给 Flova 的指令与积分表用原生名。
+func flovaArkResolution(native string) string {
+	if strings.EqualFold(strings.TrimSpace(native), "768p") {
+		return "720p"
+	}
+	return strings.ToLower(strings.TrimSpace(native))
+}
+
+func flovaArkResolutions(native []string) []string {
+	out := make([]string, 0, len(native))
+	seen := map[string]struct{}{}
+	for _, value := range native {
+		label := flovaArkResolution(value)
+		if _, ok := seen[label]; ok {
+			continue
+		}
+		seen[label] = struct{}{}
+		out = append(out, label)
+	}
+	return out
+}
+
 func flovaSizeSpecFor(size string) (flovaSizeSpec, bool) {
 	size = strings.ToLower(strings.TrimSpace(size))
 	for _, spec := range flovaSizeTable {
@@ -202,36 +234,31 @@ func flovaSizeSpecFor(size string) (flovaSizeSpec, bool) {
 	return flovaSizeSpec{}, false
 }
 
-// flovaResolveRendition 把请求的 size / provider_options 归一成 (ratio, resolution)。
-// provider_options.ratio / resolution 优先于 size；都缺省时用模型默认尺寸。
-func flovaResolveRendition(profile *flovaModelProfile, size string, options map[string]any) (ratio, resolution string, err error) {
+// flovaResolveRendition 把请求的 ratio / resolution 归一成 Flova 指令用的 (ratio, resolution)。
+// 都缺省时用模型默认档位（首选分辨率 + 16:9）；adaptive 由参考图决定，Flova 侧退回 16:9。
+func flovaResolveRendition(profile *flovaModelProfile, requestRatio, requestResolution string) (ratio, resolution string, err error) {
 	if profile == nil {
 		return "", "", fmt.Errorf("flova: unknown model")
 	}
-	optRatio := strings.TrimSpace(stringOption(options, "ratio"))
-	optResolution := strings.ToLower(strings.TrimSpace(stringOption(options, "resolution")))
-	if strings.TrimSpace(size) != "" {
-		spec, ok := flovaSizeSpecFor(size)
-		if !ok {
-			return "", "", fmt.Errorf("flova: unsupported size %q", strings.TrimSpace(size))
-		}
-		ratio, resolution = spec.Ratio, spec.Resolution
-	}
-	if optRatio != "" {
-		ratio = optRatio
-	}
-	if optResolution != "" {
-		resolution = optResolution
-	}
-	if ratio == "" && resolution == "" {
-		spec, _ := flovaSizeSpecFor(profile.defaultSize())
-		ratio, resolution = spec.Ratio, spec.Resolution
+	ratio = strings.TrimSpace(requestRatio)
+	resolution = strings.ToLower(strings.TrimSpace(requestResolution))
+	if ratio == ArkVideoRatioAdaptive {
+		ratio = ""
 	}
 	if resolution == "" {
 		resolution = profile.Resolutions[0]
 	}
 	if ratio == "" {
 		ratio = "16:9"
+	}
+	if !profile.allowsResolution(resolution) {
+		// 请求用的是 Ark 词表（720p）；换回该模型的原生档位名（768p）。
+		for _, native := range profile.Resolutions {
+			if flovaArkResolution(native) == resolution {
+				resolution = native
+				break
+			}
+		}
 	}
 	if !profile.allowsResolution(resolution) {
 		return "", "", fmt.Errorf("flova: %s does not support resolution %s", profile.DisplayName, resolution)
@@ -259,11 +286,11 @@ func flovaRequestResolution(request VideoCreateRequest) string {
 	if profile == nil {
 		return ""
 	}
-	_, resolution, err := flovaResolveRendition(profile, request.Size, request.ProviderOptions)
+	_, resolution, err := flovaResolveRendition(profile, request.Ratio, request.Resolution)
 	if err != nil {
 		return ""
 	}
-	return resolution
+	return flovaArkResolution(resolution)
 }
 
 // flovaCreditsPerSecond 返回模型在该分辨率档位的每秒积分；未实测档位返回 0, false。
@@ -281,36 +308,44 @@ func flovaCreditsPerSecond(model, resolution string) (float64, bool) {
 func DefaultFlovaVideoCapabilities() VideoCapabilities {
 	supportedModels := make(map[string]bool, len(flovaModelOrder))
 	supportedSeconds := make(map[string][]int, len(flovaModelOrder))
-	supportedSizes := make(map[string][]string, len(flovaModelOrder))
 	defaultSeconds := make(map[string]int, len(flovaModelOrder))
-	defaultSizes := make(map[string]string, len(flovaModelOrder))
+	supportedResolutions := make(map[string][]string, len(flovaModelOrder))
+	supportedRatios := make(map[string][]string, len(flovaModelOrder))
+	defaultResolutions := make(map[string]string, len(flovaModelOrder))
+	defaultRatios := make(map[string]string, len(flovaModelOrder))
 	for _, id := range flovaModelOrder {
 		profile := flovaModelProfiles[id]
 		supportedModels[id] = true
 		supportedSeconds[id] = profile.supportedSeconds()
-		supportedSizes[id] = profile.supportedSizes()
 		defaultSeconds[id] = profile.DefaultSeconds
-		defaultSizes[id] = profile.defaultSize()
+		supportedResolutions[id] = flovaArkResolutions(profile.Resolutions)
+		supportedRatios[id] = profile.supportedRatios()
+		defaultResolutions[id] = flovaArkResolution(profile.Resolutions[0])
+		defaultRatios[id] = "16:9"
 	}
+	imageMIMEs := map[string]bool{"image/jpeg": true, "image/png": true, "image/webp": true}
 	return VideoCapabilities{
-		DefaultModel:   FlovaVideoModelSeedance25,
-		DefaultSeconds: defaultSeconds,
-		DefaultSizes:   defaultSizes,
+		DefaultModel:         FlovaVideoModelSeedance25,
+		DefaultSeconds:       defaultSeconds,
+		SupportedResolutions: supportedResolutions,
+		SupportedRatios:      supportedRatios,
+		DefaultResolutions:   defaultResolutions,
+		DefaultRatios:        defaultRatios,
 		Operations: map[VideoCapability]bool{
 			VideoCapabilityCreate: true, VideoCapabilityInputReference: true,
 		},
 		InputRolesByOperation: map[string]map[VideoInputRole]bool{
-			VideoOperationGenerate: {VideoInputRoleReferenceImage: true},
+			VideoOperationGenerate: {VideoInputRoleFirstFrame: true},
 		},
 		InputMIMETypes: map[VideoInputRole]map[string]bool{
-			VideoInputRoleReferenceImage: {"image/jpeg": true, "image/png": true, "image/webp": true},
+			VideoInputRoleFirstFrame: imageMIMEs,
 		},
-		MaxInputBytes:        map[VideoInputRole]int64{VideoInputRoleReferenceImage: flovaMaxReferenceImageBytes},
+		MaxInputBytes:        map[VideoInputRole]int64{VideoInputRoleFirstFrame: flovaMaxReferenceImageBytes},
 		MaxInputsByOperation: map[string]int{VideoOperationGenerate: 1},
+		MaxContentByRole:     map[VideoInputRole]int{VideoInputRoleFirstFrame: 1},
 		ContentVariants:      map[string]bool{"video": true},
 		SupportedModels:      supportedModels,
 		SupportedSeconds:     supportedSeconds,
-		SupportedSizes:       supportedSizes,
 	}
 }
 

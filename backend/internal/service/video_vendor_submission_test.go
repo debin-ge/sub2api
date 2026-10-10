@@ -102,7 +102,7 @@ func TestWaveSpeedEstimateUpstreamCost(t *testing.T) {
 		_, _ = w.Write([]byte(`{"code":200,"message":"success","data":{"model_id":"bytedance/seedance-2.0/text-to-video","price":1.2,"discounted_price":1.08,"discount_rate":90,"currency":"USD"}}`))
 	})
 	account := newWaveSpeedTestAccount(server.URL + "/api/v3")
-	request := VideoCreateRequest{Operation: VideoOperationGenerate, Model: "bytedance/seedance-2.0/text-to-video", Prompt: "p", Seconds: 5, Size: "1280x720"}
+	request := VideoCreateRequest{Operation: VideoOperationGenerate, Model: "bytedance/seedance-2.0/text-to-video", Prompt: "p", Seconds: 5, Resolution: "720p", Ratio: "16:9"}
 	price, ok, err := provider.EstimateUpstreamCost(context.Background(), account, request)
 	require.NoError(t, err)
 	require.True(t, ok)

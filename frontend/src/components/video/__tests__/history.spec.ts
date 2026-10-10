@@ -8,10 +8,9 @@ import type { VideoPlaygroundCard } from '../types'
 function task(id: string, createdAt: number, overrides: Partial<VideoTask> = {}): VideoTask {
   return {
     id,
-    object: 'video',
     created_at: createdAt,
-    status: 'completed',
-    model: 'sora-2',
+    status: 'succeeded',
+    model: 'doubao-seedance-1-0-pro-250528',
     ...overrides,
   }
 }
@@ -20,7 +19,7 @@ function localCard(localId: string, submittedAt: number, taskId?: string): Video
   return {
     localId,
     prompt: 'local prompt',
-    model: 'sora-2',
+    model: 'doubao-seedance-1-0-pro-250528',
     status: 'queued',
     submittedAt,
     task: taskId ? task(taskId, submittedAt, { status: 'queued' }) : null,
@@ -43,7 +42,7 @@ describe('mergeVideoHistoryCards', () => {
     const existing = localCard('idempotency-key', 200, 'video_b')
     const merged = mergeVideoHistoryCards(
       [existing],
-      [task('video_b', 200, { status: 'completed' }), task('video_a', 100)],
+      [task('video_b', 200, { status: 'succeeded' }), task('video_a', 100)],
     )
 
     expect(merged).toHaveLength(2)

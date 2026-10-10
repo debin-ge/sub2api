@@ -244,8 +244,8 @@ export default {
         codexNote: '启动 Codex 前先导出 SUB2API_API_KEY；分组会根据目录中选中的模型路由请求。'
       },
       videos: {
-        description: '该分组仅提供视频生成。先 POST /v1/videos 提交任务，轮询到完成后再下载结果。',
-        note: '把 model 换成该分组允许的模型（见 /v1/videos/models）。任务是异步的：持续轮询直到 status 为 completed 或 failed。',
+        description: '该分组仅提供视频生成，走火山方舟（Seedance）任务协议：先 POST /api/v3/contents/generations/tasks 提交任务，轮询到 succeeded 后，用响应里的 content.video_url 下载成片。',
+        note: '把 model 换成该分组允许的模型（见 GET /api/v3/contents/generations/models）。任务是异步的：持续轮询直到 status 为 succeeded、failed、cancelled 或 expired。content.video_url 是带签名、会过期的直链，下载时不要带 Authorization 头；链接失效就重新 GET 一次任务。/api/v3、/v3、/v1 三个前缀互为别名。',
         submit: '提交任务',
         poll: '轮询任务状态',
         download: '下载视频'

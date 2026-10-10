@@ -17,136 +17,192 @@
     </div>
 
     <!-- 时长有三种形态，全部由目录决定：
-         · values 非空 → 只能挑这几档（Sora 的 4/8/12/16/20，或运营在价目里收窄过的档位）；
-         · min/max 非空 → 区间内任意整数秒，给滑杆；
+         · options 非空 → 只能挑这几档（Seedance 的 5/10，或运营在价目里收窄过的档位）；
+         · range 非空 → 区间内任意整数秒，给滑杆；
          · 两者都没有 → 自由输入。都没有并不代表不能选时长——按秒计价的价目本就不必逐条
-           列 conditions.seconds。整块藏掉只会让用户被迫接受上游默认值。 -->
+           列档位。整块藏掉只会让用户被迫接受上游默认值。
+         allowSmart 时再加一个「智能时长」档（duration = -1），由模型按内容决定长度。 -->
     <div v-if="hasModel">
       <label class="mb-1 flex items-center justify-between gap-2 text-xs font-medium zt-ink-2">
-        <span>{{ t('videoPlayground.settings.seconds') }}</span>
-        <span v-if="secondsRange" class="tabular-nums font-semibold zt-accent-text">
-          {{ t('videoPlayground.card.seconds', { seconds: sliderValue }) }}
+        <span>{{ t('videoPlayground.settings.duration') }}</span>
+        <span v-if="durationChoices.range && !smartActive" class="tabular-nums font-semibold zt-accent-text">
+          {{ t('videoPlayground.card.duration', { duration: sliderValue }) }}
         </span>
       </label>
-      <div v-if="secondsOptions.length > 0" class="flex flex-wrap gap-2">
+      <div v-if="durationChoices.options.length > 0 || durationChoices.allowSmart" class="flex flex-wrap gap-2">
         <button
-          v-for="value in secondsOptions"
+          v-for="value in durationChoices.options"
           :key="value"
           type="button"
-          :class="chipClass(seconds === value, false)"
-          @click="emit('update:seconds', value)"
+          :class="chipClass(duration === value, false)"
+          @click="emit('update:duration', value)"
         >
-          {{ t('videoPlayground.card.seconds', { seconds: value }) }}
+          {{ t('videoPlayground.card.duration', { duration: value }) }}
+        </button>
+        <button
+          v-if="durationChoices.allowSmart"
+          type="button"
+          :class="chipClass(smartActive, false)"
+          :title="t('videoPlayground.settings.smartDurationHint')"
+          @click="toggleSmartDuration"
+        >
+          {{ t('videoPlayground.settings.smartDuration') }}
         </button>
       </div>
-      <template v-else-if="secondsRange">
+      <template v-if="durationChoices.options.length === 0 && durationChoices.range">
         <input
-          class="seconds-slider"
+          class="duration-slider"
+          :class="durationChoices.allowSmart ? 'mt-2' : ''"
           type="range"
-          :min="secondsRange.min"
-          :max="secondsRange.max"
+          :min="durationChoices.range.min"
+          :max="durationChoices.range.max"
           step="1"
           :value="sliderValue"
-          :aria-label="t('videoPlayground.settings.seconds')"
+          :disabled="smartActive"
+          :aria-label="t('videoPlayground.settings.duration')"
           @input="onSliderInput"
         />
         <div class="mt-1 flex justify-between text-[11px] tabular-nums zt-ink-3">
-          <span>{{ t('videoPlayground.card.seconds', { seconds: secondsRange.min }) }}</span>
-          <span>{{ t('videoPlayground.card.seconds', { seconds: secondsRange.max }) }}</span>
+          <span>{{ t('videoPlayground.card.duration', { duration: durationChoices.range.min }) }}</span>
+          <span>{{ t('videoPlayground.card.duration', { duration: durationChoices.range.max }) }}</span>
         </div>
       </template>
-      <template v-else>
+      <template v-else-if="durationChoices.options.length === 0">
         <input
-          :value="seconds ?? ''"
+          :value="smartActive ? '' : (duration ?? '')"
           type="number"
           min="1"
           step="1"
           class="input"
-          :placeholder="t('videoPlayground.settings.secondsPlaceholder')"
-          @input="onSecondsInput"
+          :class="durationChoices.allowSmart ? 'mt-2' : ''"
+          :disabled="smartActive"
+          :placeholder="t('videoPlayground.settings.durationPlaceholder')"
+          @input="onDurationInput"
         />
         <p class="mt-1 text-xs zt-ink-3">
-          {{ t('videoPlayground.settings.secondsFreeHint') }}
+          {{ t('videoPlayground.settings.durationFreeHint') }}
         </p>
       </template>
     </div>
 
-    <!-- 画幅：size 与 ratio/aspect_ratio/resolution 被拉平成同一种控件，
-         可用性完全由目录里声明的互斥与"被素材决定"关系派生。 -->
-    <div v-for="control in framingControls" :key="control.name">
-      <label class="mb-1 flex flex-wrap items-center gap-2 text-xs font-medium zt-ink-2">
-        <span>{{ framingLabel(control.name) }}</span>
-        <span v-if="control.disabledByConflict" class="font-normal zt-warn-text">
-          {{ t('videoPlayground.settings.conflictHint', { field: fieldLabel(control.disabledByConflict) }) }}
-        </span>
-        <span v-else-if="control.ignoredBy" class="font-normal zt-warn-text">
-          {{ t('videoPlayground.settings.ignoredHint', { field: fieldLabel(control.ignoredBy) }) }}
-        </span>
-        <!-- 还没填素材时也要先说清楚"这个控件只在文生视频下生效"。等填完素材才由上面那条
-             琥珀色提示告知，用户已经白选了一次画幅。Ark 的 resolution/ratio 不声明这层关系，
-             ignoredWhenPresent 为空，不会误挂这句。 -->
-        <span v-else-if="control.ignoredWhenPresent.length > 0" class="font-normal zt-ink-3">
-          {{ t('videoPlayground.settings.framingTextOnlyHint') }}
-        </span>
+    <!-- 分辨率：同一个值再点一次即取消，让"不指定"始终可达。 -->
+    <div v-if="resolutionOptions.length > 0">
+      <label class="mb-1 block text-xs font-medium zt-ink-2">
+        {{ t('videoPlayground.settings.resolution') }}
       </label>
       <div class="flex flex-wrap gap-2">
         <button
-          v-for="value in control.values"
+          v-for="value in resolutionOptions"
           :key="value"
           type="button"
-          :disabled="!!control.disabledByConflict || !!control.ignoredBy"
-          :class="chipClass(framing[control.name] === value, !!control.disabledByConflict || !!control.ignoredBy)"
-          @click="toggleFraming(control.name, value)"
+          :class="chipClass(resolution === value, false)"
+          @click="emit('update:resolution', resolution === value ? '' : value)"
         >
           {{ value }}
         </button>
       </div>
     </div>
 
-    <!-- 参考素材：只填 URL，不提供任何上传入口 -->
-    <div v-if="referenceSlots.length > 0">
+    <!-- 比例：adaptive 要有首帧才能选，上游对没有首帧的 adaptive 是硬 400。 -->
+    <div v-if="ratioControl.values.length > 0">
+      <label class="mb-1 flex flex-wrap items-center gap-2 text-xs font-medium zt-ink-2">
+        <span>{{ t('videoPlayground.settings.ratio') }}</span>
+        <span
+          v-if="ratioControl.values.includes(VIDEO_RATIO_ADAPTIVE) && ratioControl.adaptiveDisabled"
+          class="font-normal zt-ink-3"
+        >
+          {{ t('videoPlayground.settings.ratioAdaptiveHint') }}
+        </span>
+      </label>
+      <div class="flex flex-wrap gap-2">
+        <button
+          v-for="value in ratioControl.values"
+          :key="value"
+          type="button"
+          :disabled="value === VIDEO_RATIO_ADAPTIVE && ratioControl.adaptiveDisabled"
+          :class="chipClass(ratio === value, value === VIDEO_RATIO_ADAPTIVE && ratioControl.adaptiveDisabled)"
+          @click="emit('update:ratio', ratio === value ? '' : value)"
+        >
+          {{ value === VIDEO_RATIO_ADAPTIVE ? t('videoPlayground.settings.ratioAdaptive') : value }}
+        </button>
+      </div>
+    </div>
+
+    <!-- 开关与种子：只摆目录放行的。未勾选即不进请求体，让上游用自己的默认值。 -->
+    <div v-if="flagControls.length > 0 || seedEnabled">
+      <label class="mb-1 block text-xs font-medium zt-ink-2">
+        {{ t('videoPlayground.settings.flags') }}
+      </label>
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <label
+          v-for="flag in flagControls"
+          :key="flag"
+          class="inline-flex cursor-pointer items-center gap-1.5 text-xs zt-ink-2"
+        >
+          <input
+            type="checkbox"
+            class="h-3.5 w-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-gray-600"
+            :checked="flags[flag] === true"
+            @change="emit('update:flag', flag, ($event.target as HTMLInputElement).checked)"
+          />
+          {{ t(`videoPlayground.flags.${flag}`) }}
+        </label>
+      </div>
+      <div v-if="seedEnabled" class="mt-2 flex items-center gap-2">
+        <span class="text-xs zt-ink-2">{{ t('videoPlayground.settings.seed') }}</span>
+        <input
+          :value="seed ?? ''"
+          type="number"
+          min="-1"
+          step="1"
+          class="input w-40"
+          :placeholder="t('videoPlayground.settings.seedPlaceholder')"
+          @input="onSeedInput"
+        />
+      </div>
+    </div>
+
+    <!-- 参考素材：按角色分桶，只填 URL 或 data: URI，不提供任何上传入口 -->
+    <div v-if="contentSlots.length > 0">
       <button
         type="button"
         class="flex items-center gap-1 text-xs font-medium zt-ink-2"
-        @click="showReferences = !showReferences"
+        @click="showContent = !showContent"
       >
-        <Icon :name="showReferences ? 'chevronDown' : 'chevronRight'" size="sm" />
-        {{ t('videoPlayground.settings.references') }}
+        <Icon :name="showContent ? 'chevronDown' : 'chevronRight'" size="sm" />
+        {{ t('videoPlayground.settings.content') }}
       </button>
-      <div v-if="showReferences" class="mt-2 space-y-3">
-        <div v-for="slot in referenceSlots" :key="slot.field">
+      <div v-if="showContent" class="mt-2 space-y-3">
+        <div v-for="slot in contentSlots" :key="slot.role">
           <label class="mb-1 flex flex-wrap items-center gap-2 text-xs zt-ink-2">
-            <span class="font-medium">{{ fieldLabel(slot.field) }}</span>
+            <span class="font-medium">{{ roleLabel(slot.role) }}</span>
             <span class="zt-ink-3">{{ t('videoPlayground.settings.slotMax', { max: slot.max }) }}</span>
-            <span v-if="slot.disabledByConflict" class="zt-warn-text">
-              {{ t('videoPlayground.settings.conflictHint', { field: fieldLabel(slot.disabledByConflict) }) }}
-            </span>
-            <span v-else-if="slot.missingPrerequisite" class="zt-warn-text">
-              {{ t('videoPlayground.settings.requiresHint', { fields: (slot.requires_any || []).map(fieldLabel).join(' / ') }) }}
+            <span v-if="slot.missingPrerequisite" class="zt-warn-text">
+              {{ t('videoPlayground.settings.requiresHint', { roles: slot.requires.map(roleLabel).join(' / ') }) }}
             </span>
           </label>
-          <!-- 六个槽位光看名字分不出用途：首帧、首尾帧、风格参考、运镜参考是四件不同的事，
-               混填的后果是上游一个笼统的 400。用途与硬规则就地写在槽位上，不靠用户去翻文档。 -->
-          <p v-if="fieldHint(slot.field)" class="mb-1 text-[11px] leading-relaxed zt-ink-3">
-            {{ fieldHint(slot.field) }}
+          <!-- 五个角色光看名字分不出用途：首帧、尾帧、风格参考、运镜参考、配乐参考是五件不同的事，
+               混填的后果是上游一个笼统的 400。用途就地写在槽位上，不靠用户去翻文档。 -->
+          <p v-if="roleHint(slot.role)" class="mb-1 text-[11px] leading-relaxed zt-ink-3">
+            {{ roleHint(slot.role) }}
           </p>
           <div class="space-y-1">
             <div v-for="index in slotRowCount(slot)" :key="index" class="flex items-center gap-1">
               <input
-                :value="(references[slot.field] || [])[index - 1] || ''"
-                type="url"
+                :value="(content[slot.role] || [])[index - 1] || ''"
+                type="text"
                 inputmode="url"
                 class="input flex-1"
-                :disabled="!!slot.disabledByConflict || slot.missingPrerequisite"
+                :disabled="slot.missingPrerequisite"
                 :placeholder="slotPlaceholder(slot)"
-                @input="setReference(slot, index - 1, ($event.target as HTMLInputElement).value)"
+                @input="setContent(slot, index - 1, ($event.target as HTMLInputElement).value)"
               />
               <button
                 v-if="slot.max > 1"
                 type="button"
                 class="btn btn-ghost btn-sm"
                 :title="t('videoPlayground.settings.removeUrl')"
-                @click="removeReference(slot, index - 1)"
+                @click="removeContent(slot, index - 1)"
               >
                 <Icon name="x" size="sm" />
               </button>
@@ -156,15 +212,46 @@
             v-if="slot.max > 1 && slotRowCount(slot) < slot.max"
             type="button"
             class="mt-1 text-xs zt-accent-text hover:underline disabled:opacity-50"
-            :disabled="!!slot.disabledByConflict || slot.missingPrerequisite"
-            @click="addReference(slot)"
+            :disabled="slot.missingPrerequisite"
+            @click="addContent(slot)"
           >
             + {{ t('videoPlayground.settings.addUrl') }}
           </button>
         </div>
         <p class="text-xs zt-ink-3">
-          {{ t('videoPlayground.settings.referenceHint') }}
+          {{ t('videoPlayground.settings.contentHint') }}
         </p>
+      </div>
+    </div>
+
+    <!-- 厂商特有参数：只有目录列出了才渲染；键名原样显示，这是厂商自己的词表。 -->
+    <div v-if="providerOptionControls.length > 0">
+      <label class="mb-1 block text-xs font-medium zt-ink-2">
+        {{ t('videoPlayground.settings.providerOptions') }}
+      </label>
+      <div class="space-y-2">
+        <div v-for="control in providerOptionControls" :key="control.name">
+          <span class="mb-1 block font-mono text-[11px] zt-ink-3">{{ control.name }}</span>
+          <div v-if="control.values.length > 0" class="flex flex-wrap gap-2">
+            <button
+              v-for="value in control.values"
+              :key="value"
+              type="button"
+              :class="chipClass(providerOptions[control.name] === value, false)"
+              @click="emit('update:providerOption', control.name, providerOptions[control.name] === value ? '' : value)"
+            >
+              {{ value }}
+            </button>
+          </div>
+          <input
+            v-else
+            :value="providerOptions[control.name] || ''"
+            type="text"
+            class="input"
+            :placeholder="t('videoPlayground.settings.providerOptionPlaceholder')"
+            @input="emit('update:providerOption', control.name, ($event.target as HTMLInputElement).value)"
+          />
+        </div>
       </div>
     </div>
   </div>
@@ -176,55 +263,96 @@ import { useI18n } from 'vue-i18n'
 import Select from '@/components/common/Select.vue'
 import { Icon } from '@/components/icons'
 import type { VideoModel } from '@/api/video'
-import type { VideoFramingControl, VideoReferenceSlot } from '@/composables/useVideoPlaygroundModels'
+import {
+  VIDEO_RATIO_ADAPTIVE,
+  VIDEO_SMART_DURATION,
+  type VideoBooleanFlag,
+  type VideoContentSlot,
+  type VideoDurationChoices,
+  type VideoProviderOptionControl,
+  type VideoRatioControl,
+} from '@/composables/useVideoPlaygroundModels'
 
 const props = defineProps<{
   models: VideoModel[]
   modelId: string
-  seconds: number | null
-  secondsOptions: number[]
-  secondsRange: { min: number; max: number } | null
-  framing: Record<string, string>
-  framingControls: VideoFramingControl[]
-  references: Record<string, string[]>
-  referenceSlots: VideoReferenceSlot[]
+  duration: number | null
+  durationChoices: VideoDurationChoices
+  resolution: string
+  resolutionOptions: string[]
+  ratio: string
+  ratioControl: VideoRatioControl
+  flags: Partial<Record<VideoBooleanFlag, boolean>>
+  flagControls: VideoBooleanFlag[]
+  seed: number | null
+  seedEnabled: boolean
+  content: Record<string, string[]>
+  contentSlots: VideoContentSlot[]
+  providerOptions: Record<string, string>
+  providerOptionControls: VideoProviderOptionControl[]
   loading: boolean
 }>()
 
 const emit = defineEmits<{
   (e: 'update:modelId', value: string): void
-  (e: 'update:seconds', value: number | null): void
-  (e: 'update:framing', name: string, value: string): void
-  (e: 'update:reference', field: string, values: string[]): void
+  (e: 'update:duration', value: number | null): void
+  (e: 'update:resolution', value: string): void
+  (e: 'update:ratio', value: string): void
+  (e: 'update:flag', name: VideoBooleanFlag, value: boolean): void
+  (e: 'update:seed', value: number | null): void
+  (e: 'update:content', role: string, values: string[]): void
+  (e: 'update:providerOption', name: string, value: string): void
 }>()
 
 const { t } = useI18n()
-const showReferences = ref(false)
+const showContent = ref(false)
 
 const hasModel = computed(() => !!props.modelId)
+const smartActive = computed(() => props.duration === VIDEO_SMART_DURATION)
 
-/** 滑杆必须始终有一个落在区间内的位置：没选过就停在目录给的下界。 */
+/** 滑杆必须始终有一个落在区间内的位置：没选过（或选了智能）就停在目录给的下界。 */
 const sliderValue = computed(() => {
-  const range = props.secondsRange
-  if (!range) return props.seconds ?? 0
-  const current = props.seconds ?? range.min
+  const range = props.durationChoices.range
+  if (!range) return props.duration ?? 0
+  const current = props.duration === null || smartActive.value ? range.min : props.duration
   return Math.min(range.max, Math.max(range.min, current))
 })
 
-function onSliderInput(event: Event): void {
-  const value = Number.parseInt((event.target as HTMLInputElement).value, 10)
-  if (Number.isFinite(value)) emit('update:seconds', value)
+/** 退出智能时长时回到一个确定的档位，而不是 null——否则目录有档位的模型会立刻报"请选时长"。 */
+function toggleSmartDuration(): void {
+  if (!smartActive.value) {
+    emit('update:duration', VIDEO_SMART_DURATION)
+    return
+  }
+  const { options, range } = props.durationChoices
+  emit('update:duration', options[0] ?? range?.min ?? null)
 }
 
-/** 清空输入等于"不指定时长"，交 null 让 buildRequest 整个略掉 seconds 字段。 */
-function onSecondsInput(event: Event): void {
+function onSliderInput(event: Event): void {
+  const value = Number.parseInt((event.target as HTMLInputElement).value, 10)
+  if (Number.isFinite(value)) emit('update:duration', value)
+}
+
+/** 清空输入等于"不指定时长"，交 null 让 buildRequest 整个略掉 duration 字段。 */
+function onDurationInput(event: Event): void {
   const raw = (event.target as HTMLInputElement).value.trim()
   if (!raw) {
-    emit('update:seconds', null)
+    emit('update:duration', null)
     return
   }
   const value = Number.parseInt(raw, 10)
-  emit('update:seconds', Number.isFinite(value) && value > 0 ? value : null)
+  emit('update:duration', Number.isFinite(value) && value > 0 ? value : null)
+}
+
+/** 种子接受 -1（随机）到 2^32-1；清空即不指定。 */
+function onSeedInput(event: Event): void {
+  const raw = (event.target as HTMLInputElement).value.trim()
+  if (!raw) {
+    emit('update:seed', null)
+    return
+  }
+  const value = Number.parseInt(raw, 10)
+  emit('update:seed', Number.isFinite(value) && value >= -1 ? value : null)
 }
 
 const chipBase =
@@ -240,65 +368,57 @@ function chipClass(active: boolean, disabled: boolean): string {
 const modelOptions = computed(() =>
   props.models.map((model) => ({
     value: model.id,
-    // composite 分组同时列出两侧的模型，不标 provider 用户无从分辨。
+    // composite 分组同时列出多家的模型，不标 provider 用户无从分辨。
     label: props.models.some((other) => other.provider !== model.provider)
       ? `${model.id} · ${model.provider}`
       : model.id,
   })),
 )
 
-/** 目录里的字段名对用户没有意义，有对应文案就用文案，没有就原样显示。 */
-function fieldLabel(field: string): string {
-  const key = `videoPlayground.fields.${field}`
+/** 目录里的角色名对用户没有意义，有对应文案就用文案，没有就原样显示。 */
+function roleLabel(role: string): string {
+  const key = `videoPlayground.roles.${role}`
   const label = t(key)
-  return label === key ? field : label
+  return label === key ? role : label
 }
 
-function framingLabel(name: string): string {
-  return fieldLabel(name)
-}
-
-/** 槽位用途说明。没写文案的字段整行不渲染，目录将来新增槽位也不会冒出一行键名。 */
-function fieldHint(field: string): string {
-  const key = `videoPlayground.fieldHints.${field}`
+/** 角色用途说明。没写文案的角色整行不渲染，目录将来新增角色也不会冒出一行键名。 */
+function roleHint(role: string): string {
+  const key = `videoPlayground.roleHints.${role}`
   const hint = t(key)
   return hint === key ? '' : hint
 }
 
-/** 同一个值再点一次即取消，让"不指定画幅"始终可达。 */
-function toggleFraming(name: string, value: string): void {
-  emit('update:framing', name, props.framing[name] === value ? '' : value)
-}
-
-function slotRowCount(slot: VideoReferenceSlot): number {
-  const filled = (props.references[slot.field] || []).length
+function slotRowCount(slot: VideoContentSlot): number {
+  const filled = (props.content[slot.role] || []).length
   return Math.min(slot.max, Math.max(1, filled))
 }
 
-function setReference(slot: VideoReferenceSlot, index: number, value: string): void {
-  const values = [...(props.references[slot.field] || [])]
+function setContent(slot: VideoContentSlot, index: number, value: string): void {
+  const values = [...(props.content[slot.role] || [])]
   while (values.length <= index) values.push('')
   values[index] = value
-  emit('update:reference', slot.field, values)
+  emit('update:content', slot.role, values)
 }
 
-function addReference(slot: VideoReferenceSlot): void {
-  const values = [...(props.references[slot.field] || [])]
+function addContent(slot: VideoContentSlot): void {
+  const values = [...(props.content[slot.role] || [])]
   if (values.length === 0) values.push('')
   values.push('')
-  emit('update:reference', slot.field, values.slice(0, slot.max))
+  emit('update:content', slot.role, values.slice(0, slot.max))
 }
 
-function removeReference(slot: VideoReferenceSlot, index: number): void {
-  const values = [...(props.references[slot.field] || [])]
+function removeContent(slot: VideoContentSlot, index: number): void {
+  const values = [...(props.content[slot.role] || [])]
   values.splice(index, 1)
-  emit('update:reference', slot.field, values)
+  emit('update:content', slot.role, values)
 }
 
-function slotPlaceholder(slot: VideoReferenceSlot): string {
-  return slot.accepts.includes('data_uri')
-    ? t('videoPlayground.settings.urlOrDataUri')
-    : t('videoPlayground.settings.urlOnly')
+function slotPlaceholder(slot: VideoContentSlot): string {
+  const acceptsData = slot.accepts.includes('data_uri')
+  const acceptsHTTPS = slot.accepts.includes('https')
+  if (acceptsData && !acceptsHTTPS) return t('videoPlayground.settings.dataUriOnly')
+  return acceptsData ? t('videoPlayground.settings.urlOrDataUri') : t('videoPlayground.settings.urlOnly')
 }
 </script>
 
@@ -306,19 +426,23 @@ function slotPlaceholder(slot: VideoReferenceSlot): string {
 /* 滑杆全仓只此一处，就地写样式而不进 Tailwind 配置。两套伪元素缺一不可：
    ::-webkit-slider-thumb 管 Chrome/Safari，::-moz-range-thumb 管 Firefox，
    两者不能合并成一条选择器——任一浏览器认不得的选择器会让整条规则被丢弃。 */
-.seconds-slider {
+.duration-slider {
   @apply h-1.5 w-full cursor-pointer appearance-none rounded-full bg-gray-200 dark:bg-gray-600;
 }
 
-.seconds-slider::-webkit-slider-thumb {
+.duration-slider:disabled {
+  @apply cursor-not-allowed opacity-50;
+}
+
+.duration-slider::-webkit-slider-thumb {
   @apply h-4 w-4 appearance-none rounded-full border-2 border-white bg-primary-600 shadow;
 }
 
-.seconds-slider::-moz-range-thumb {
+.duration-slider::-moz-range-thumb {
   @apply h-4 w-4 rounded-full border-2 border-white bg-primary-600 shadow;
 }
 
-.seconds-slider:focus-visible {
+.duration-slider:focus-visible {
   @apply outline-none ring-2 ring-primary-500 ring-offset-2 dark:ring-offset-gray-900;
 }
 </style>

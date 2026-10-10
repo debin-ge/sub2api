@@ -85,7 +85,7 @@ func runwareFallbackProfile(model string) *videoModelProfile {
 		minSeconds: 1, maxSeconds: 30, defSeconds: 5, defSize: "1280x720", audio: "settings.audio",
 	})
 	profile.Fallback = true
-	return profile
+	return profile.finalizeArkDimensions()
 }
 
 func runwareVideoProfiles() map[string]*videoModelProfile {

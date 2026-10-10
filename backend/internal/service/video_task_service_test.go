@@ -784,7 +784,7 @@ func TestVideoTaskServicePricesCompatibleReferenceVideoAsVideoInput(t *testing.T
 	request.Model = model
 	request.Size = "864x480"
 	request.Seconds = 5
-	request.ReferenceMedia.ReferenceVideos = []string{"https://media.example.com/reference.mp4?auth_key=signed"}
+	request.Content = []VideoContentItem{{Type: VideoContentTypeVideo, Role: VideoInputRoleReferenceVideo, URL: "https://media.example.com/reference.mp4?auth_key=signed"}}
 
 	result, err := svc.Submit(context.Background(), request)
 
@@ -797,28 +797,54 @@ func TestVideoTaskServicePricesCompatibleReferenceVideoAsVideoInput(t *testing.T
 	require.NotContains(t, tasks.create.RequestAttributes, "reference_videos")
 }
 
-func TestVideoReferenceMediaPreservesLegacyRequestHashWhenEmpty(t *testing.T) {
-	request := videoSubmitRequestForTest()
-	legacyHash, err := HashVideoRequest(map[string]any{
-		"operation": request.Operation, "model": strings.TrimSpace(request.Model),
-		"prompt": request.Prompt, "seconds": request.Seconds, "size": strings.TrimSpace(request.Size),
-		"quality": strings.TrimSpace(request.Quality), "audio_enabled": request.AudioEnabled,
-		"service_tier": strings.TrimSpace(request.ServiceTier), "request_mode": strings.TrimSpace(request.RequestMode),
-		"inference_mode": strings.TrimSpace(request.InferenceMode), "input_reference": request.InputReference,
-		"inputs": videoInputHashManifest(request.Inputs), "characters": request.CharacterIDs,
-		"source_video": strings.TrimSpace(request.SourceVideoID), "provider_options": request.ProviderOptions,
-		"callback_url": strings.TrimSpace(request.CallbackURL),
-	})
+// TestVideoClientRequestHashCoversArkFields：request_hash 是幂等重放的身份。Ark 维度的
+// 每个字段都必须参与哈希，否则换了 ratio 或 seed 的新请求会被当成旧任务的重放。
+func TestVideoClientRequestHashCoversArkFields(t *testing.T) {
+	base := videoSubmitRequestForTest()
+	baseHash, err := videoClientRequestHash(base)
 	require.NoError(t, err)
+	again, err := videoClientRequestHash(videoSubmitRequestForTest())
+	require.NoError(t, err)
+	require.Equal(t, baseHash, again, "the hash is deterministic")
 
-	currentHash, err := videoClientRequestHash(request)
-	require.NoError(t, err)
-	require.Equal(t, legacyHash, currentHash)
+	flag := true
+	seed := int64(7)
+	mutations := map[string]func(*VideoSubmitRequest){
+		"content": func(r *VideoSubmitRequest) {
+			r.Content = []VideoContentItem{{Type: VideoContentTypeVideo, Role: VideoInputRoleReferenceVideo, URL: "https://media.example.com/reference.mp4"}}
+		},
+		"text content":      func(r *VideoSubmitRequest) { r.Content = []VideoContentItem{{Type: VideoContentTypeText, Text: "x"}} },
+		"smart duration":    func(r *VideoSubmitRequest) { r.SmartDuration = true },
+		"frames":            func(r *VideoSubmitRequest) { r.Frames = 29 },
+		"resolution":        func(r *VideoSubmitRequest) { r.Resolution = "720p" },
+		"ratio":             func(r *VideoSubmitRequest) { r.Ratio = "9:16" },
+		"seed":              func(r *VideoSubmitRequest) { r.Seed = &seed },
+		"camera_fixed":      func(r *VideoSubmitRequest) { r.CameraFixed = &flag },
+		"watermark":         func(r *VideoSubmitRequest) { r.Watermark = &flag },
+		"return_last_frame": func(r *VideoSubmitRequest) { r.ReturnLastFrame = &flag },
+		"expiry":            func(r *VideoSubmitRequest) { r.ExecutionExpiresAfter = 3600 },
+		"aspect_ratio":      func(r *VideoSubmitRequest) { r.AspectRatio = "16:9" },
+	}
+	seen := map[string]string{baseHash: "base"}
+	for name, mutate := range mutations {
+		request := videoSubmitRequestForTest()
+		mutate(&request)
+		hash, err := videoClientRequestHash(request)
+		require.NoError(t, err)
+		previous, duplicate := seen[hash]
+		require.False(t, duplicate, "%s collides with %s", name, previous)
+		seen[hash] = name
+	}
 
-	request.ReferenceMedia.ReferenceVideos = []string{"https://media.example.com/reference.mp4"}
-	referenceHash, err := videoClientRequestHash(request)
-	require.NoError(t, err)
-	require.NotEqual(t, legacyHash, referenceHash)
+	// 已存任务按契约版本 2 或 3 都能匹配重放；别的版本不认。
+	task := &VideoTask{RequestHash: baseHash, RequestAttributes: map[string]any{"client_request_contract_version": float64(2)}}
+	require.True(t, videoRequestMatchesTask(base, baseHash, task))
+	task.RequestAttributes["client_request_contract_version"] = float64(videoClientRequestContractVersion)
+	require.True(t, videoRequestMatchesTask(base, baseHash, task))
+	task.RequestAttributes["client_request_contract_version"] = float64(1)
+	require.False(t, videoRequestMatchesTask(base, baseHash, task))
+	task.RequestAttributes["client_request_contract_version"] = float64(videoClientRequestContractVersion)
+	require.False(t, videoRequestMatchesTask(base, "other", task))
 }
 
 func TestVideoTaskServiceForwardsWhitelistedCustomVideoModel(t *testing.T) {

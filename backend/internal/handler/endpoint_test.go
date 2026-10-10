@@ -38,6 +38,11 @@ func TestNormalizeInboundEndpoint(t *testing.T) {
 		{"/v1/videos/generations", EndpointVideosGenerations},
 		{"/v1/videos/characters", EndpointVideoCharacters},
 		{"/v1/videos/req_123", EndpointVideos},
+		// Ark 任务协议的四组别名归一到同一个端点常量（原 EndpointSeedanceTasks，值不变）。
+		{"/api/v3/contents/generations/tasks", EndpointVideoTasks},
+		{"/v3/contents/generations/tasks/video_0123456789abcdef0123456789abcdef", EndpointVideoTasks},
+		{"/v1/contents/generations/tasks", EndpointVideoTasks},
+		{"/contents/generations/tasks/video_0123456789abcdef0123456789abcdef/content", EndpointVideoTasks},
 		{"/v1beta/models", EndpointGeminiModels},
 
 		// Prefixed paths (antigravity, openai).

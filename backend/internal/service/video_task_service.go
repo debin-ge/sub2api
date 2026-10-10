@@ -16,26 +16,71 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/observability"
 )
 
+// VideoSubmitRequest 是入口层解析后的提交请求。字段语义与 VideoCreateRequest 一致：
+// Ark 维度为规范（Seconds=duration、AudioEnabled=generate_audio、Content 带角色媒体），
+// Size / Quality / AspectRatio / InputReference / CharacterIDs / SourceVideoID 只服务 OpenAI 形态。
 type VideoSubmitRequest struct {
-	APIKey          *APIKey
-	Operation       string
-	Model           string
-	Prompt          string
-	Seconds         int
-	Size            string
-	Quality         string
-	AudioEnabled    *bool
-	ServiceTier     string
-	RequestMode     string
-	InferenceMode   string
-	InputReference  *ProviderInputReference
-	ReferenceMedia  ProviderVideoReferenceMedia
-	Inputs          []VideoInput
-	CharacterIDs    []string
-	SourceVideoID   string
-	IdempotencyKey  string
-	CallbackURL     string
-	ProviderOptions map[string]any
+	APIKey                *APIKey
+	Operation             string
+	Model                 string
+	Prompt                string
+	Content               []VideoContentItem
+	Seconds               int
+	SmartDuration         bool
+	Frames                int
+	Resolution            string
+	Ratio                 string
+	AudioEnabled          *bool
+	Seed                  *int64
+	CameraFixed           *bool
+	Watermark             *bool
+	ReturnLastFrame       *bool
+	ServiceTier           string
+	ExecutionExpiresAfter int
+	RequestMode           string
+	InferenceMode         string
+	Inputs                []VideoInput
+	IdempotencyKey        string
+	CallbackURL           string
+	ProviderOptions       map[string]any
+
+	// OpenAI（Sora）专用。
+	Size           string
+	Quality        string
+	AspectRatio    string
+	InputReference *ProviderInputReference
+	CharacterIDs   []string
+	SourceVideoID  string
+}
+
+// MediaContent 返回全部媒体引用项。
+func (request VideoSubmitRequest) MediaContent() []VideoContentItem {
+	return videoMediaContent(request.Content)
+}
+
+// ContentByRole 返回指定角色的媒体引用项。
+func (request VideoSubmitRequest) ContentByRole(role VideoInputRole) []VideoContentItem {
+	return videoContentByRole(request.Content, role)
+}
+
+// HasImageContent 报告是否带任何图片引用（URL 或字节）。
+func (request VideoSubmitRequest) HasImageContent() bool {
+	for _, item := range request.Content {
+		if item.IsMedia() && item.Role.IsImageContentRole() {
+			return true
+		}
+	}
+	return false
+}
+
+// HasVideoContent 报告是否带任何视频引用。
+func (request VideoSubmitRequest) HasVideoContent() bool {
+	for _, item := range request.Content {
+		if item.IsMedia() && item.Role.IsVideoContentRole() {
+			return true
+		}
+	}
+	return false
 }
 
 type VideoSubmitResult struct {
@@ -437,6 +482,8 @@ func (s *VideoTaskService) resolveSubmission(ctx context.Context, request VideoS
 	request.Model = requestedModel
 	request.Seconds = providerRequest.Seconds
 	request.Size = providerRequest.Size
+	request.Resolution = providerRequest.Resolution
+	request.Ratio = providerRequest.Ratio
 	if err := ValidateVideoCreateCapabilities(provider.Capabilities(), providerRequest, request.Inputs); err != nil {
 		return nil, err
 	}
@@ -455,7 +502,8 @@ func (s *VideoTaskService) resolveSubmission(ctx context.Context, request VideoS
 		Provider: provider.Name(), Model: upstreamModel, Operation: request.Operation,
 		Size: request.Size, Resolution: executionSpec.Resolution,
 		Seconds: request.Seconds, InputType: inputType,
-		MaximumOutputSeconds: videoMaximumOutputSeconds(request, providerRequest),
+		MaximumOutputSeconds: videoMaximumOutputSeconds(request, providerRequest, provider.Capabilities()),
+		Ratio:                providerRequest.Ratio, Frames: providerRequest.Frames, SmartDuration: providerRequest.SmartDuration,
 		OutputSpecUnverified: executionSpec.OutputUnverified,
 		InputHasVideo:        videoInputHasVideo(request), InputVideoSeconds: trustedVideoInputSeconds(request, sourceTask),
 		AudioEnabled: request.AudioEnabled, Quality: request.Quality, ServiceTier: request.ServiceTier,
@@ -581,23 +629,25 @@ func (s *VideoTaskService) recoverCharacterResource(ctx context.Context, request
 // to produce. Ark takes resolution as its own request parameter, so it can only
 // be read back from the request — a model identifier does not encode it.
 // OpenAI expresses the same thing through size and reports no resolution.
+// providerRequestResolution 给定价与执行规格一个分辨率档位。Ark 形态的请求直接带
+// resolution；缺省时按 provider 的模型默认档位补齐（能力表 DefaultResolutions，
+// 或模型 ID 里固化的档位）。OpenAI 用 size 表达画幅，不走这里。
 func providerRequestResolution(provider string, request VideoCreateRequest) string {
+	if resolution := strings.ToLower(strings.TrimSpace(request.Resolution)); resolution != "" {
+		return resolution
+	}
 	if adapter := videoVendorAdapterByName(provider); adapter != nil {
-		// 聚合媒体平台用尺寸表反查分辨率档位（1920x1080 → 1080p），供定价的
-		// resolutions 条件与执行规格冻结使用。
 		return videoVendorRequestResolution(adapter, request)
 	}
-	if provider == VideoProviderFlova {
+	switch provider {
+	case VideoProviderFlova:
 		return flovaRequestResolution(request)
-	}
-	if provider != VideoProviderByteDance {
+	case VideoProviderByteDance:
+		caps, _ := builtinVideoCapabilitiesForProvider(provider)
+		return caps.DefaultResolutions[canonicalOpenAIVideoModel(firstNonEmptyString(request.RequestedModel, request.Model))]
+	default:
 		return ""
 	}
-	options, err := byteDanceGenerationOptions(request)
-	if err != nil {
-		return ""
-	}
-	return options.Resolution
 }
 
 func (s *VideoTaskService) selectVideoAccount(ctx context.Context, userID, groupID int64, targetPlatform, providerName, model string, forcedAccountID int64, excludedAccounts map[int64]struct{}, requiresOwnedAccount bool) (*Account, string, VideoProvider, error) {
@@ -1978,11 +2028,15 @@ func (s *VideoTaskService) DeleteCharacterForOwner(ctx context.Context, userID i
 func (request VideoSubmitRequest) providerRequest(publicModel, upstreamModel string, characters []ProviderResourceRef) VideoCreateRequest {
 	return VideoCreateRequest{
 		Operation: request.Operation, Model: upstreamModel, RequestedModel: publicModel,
-		Prompt: request.Prompt, Seconds: request.Seconds, Size: request.Size,
-		Quality: request.Quality, AudioEnabled: request.AudioEnabled,
-		ServiceTier: request.ServiceTier, Characters: characters,
-		InputReference: request.InputReference, ReferenceMedia: request.ReferenceMedia,
+		Prompt: request.Prompt, Content: append([]VideoContentItem(nil), request.Content...),
+		Seconds: request.Seconds, SmartDuration: request.SmartDuration, Frames: request.Frames,
+		Resolution: strings.ToLower(strings.TrimSpace(request.Resolution)), Ratio: strings.ToLower(strings.TrimSpace(request.Ratio)),
+		AudioEnabled: request.AudioEnabled, Seed: request.Seed, CameraFixed: request.CameraFixed,
+		Watermark: request.Watermark, ReturnLastFrame: request.ReturnLastFrame,
+		ServiceTier: request.ServiceTier, ExecutionExpiresAfter: request.ExecutionExpiresAfter,
 		ProviderOptions: request.ProviderOptions,
+		Size:            request.Size, Quality: request.Quality, AspectRatio: request.AspectRatio,
+		InputReference: request.InputReference, Characters: characters,
 	}
 }
 
@@ -2089,10 +2143,10 @@ func videoPricingInputType(request VideoSubmitRequest) string {
 	if request.InputReference != nil {
 		return string(VideoInputRoleReferenceImage)
 	}
-	if request.ReferenceMedia.HasVideo() {
+	if request.HasVideoContent() {
 		return string(VideoInputRoleReferenceVideo)
 	}
-	if request.ReferenceMedia.HasImage() {
+	if request.HasImageContent() {
 		return string(VideoInputRoleReferenceImage)
 	}
 	if len(request.CharacterIDs) > 0 {
@@ -2104,7 +2158,25 @@ func videoPricingInputType(request VideoSubmitRequest) string {
 	return "text"
 }
 
-func videoMaximumOutputSeconds(request VideoSubmitRequest, providerRequest VideoCreateRequest) int {
+// videoMaximumOutputSeconds 给预扣一个时长上界。智能时长（duration=-1）按模型声明的
+// 最长档位预扣，结算再按上游回报的实际时长收敛；帧数按 24fps 向上取整。
+func videoMaximumOutputSeconds(request VideoSubmitRequest, providerRequest VideoCreateRequest, caps VideoCapabilities) int {
+	if providerRequest.Frames > 0 {
+		return (providerRequest.Frames + videoArkFramesPerSecond - 1) / videoArkFramesPerSecond
+	}
+	if providerRequest.SmartDuration {
+		model := canonicalOpenAIVideoModel(firstNonEmptyString(providerRequest.RequestedModel, providerRequest.Model))
+		maximum := 0
+		for _, seconds := range caps.SupportedSeconds[model] {
+			if seconds > maximum {
+				maximum = seconds
+			}
+		}
+		if maximum <= 0 {
+			_, maximum = videoFreeSecondsRange(VideoProviderByteDance)
+		}
+		return maximum
+	}
 	if request.Seconds > 0 {
 		return request.Seconds
 	}
@@ -2113,6 +2185,9 @@ func videoMaximumOutputSeconds(request VideoSubmitRequest, providerRequest Video
 	}
 	return 0
 }
+
+// videoArkFramesPerSecond 是 Ark 的 frames 与 duration 换算基准（frames = 25 + 4n，24fps）。
+const videoArkFramesPerSecond = 24
 
 func videoRequestModeOrDefault(value string) string {
 	value = strings.ToLower(strings.TrimSpace(value))
@@ -2131,7 +2206,7 @@ func videoInferenceModeOrDefault(value string) string {
 }
 
 func videoInputHasVideo(request VideoSubmitRequest) bool {
-	if strings.TrimSpace(request.SourceVideoID) != "" || request.ReferenceMedia.HasVideo() {
+	if strings.TrimSpace(request.SourceVideoID) != "" || request.HasVideoContent() {
 		return true
 	}
 	for _, input := range request.Inputs {
@@ -2164,19 +2239,28 @@ func videoInputManifest(inputs []VideoInput) []VideoInputManifestEntry {
 	return manifest
 }
 
+// videoClientRequestContractVersion 标记 request_hash 的字段契约；Ark 维度（content /
+// resolution / ratio / seed 等）进入哈希后升到 3，旧任务按 2 存着，重放匹配时按版本分叉。
+const videoClientRequestContractVersion = 3
+
 func videoClientRequestHash(request VideoSubmitRequest) (string, error) {
 	contract := map[string]any{
 		"operation": request.Operation, "model": strings.TrimSpace(request.Model),
-		"prompt": request.Prompt, "seconds": request.Seconds, "size": strings.TrimSpace(request.Size),
-		"quality": strings.TrimSpace(request.Quality), "audio_enabled": request.AudioEnabled,
-		"service_tier": strings.TrimSpace(request.ServiceTier), "request_mode": strings.TrimSpace(request.RequestMode),
+		"prompt": request.Prompt, "seconds": request.Seconds, "smart_duration": request.SmartDuration,
+		"frames": request.Frames, "resolution": strings.ToLower(strings.TrimSpace(request.Resolution)),
+		"ratio": strings.ToLower(strings.TrimSpace(request.Ratio)), "size": strings.TrimSpace(request.Size),
+		"quality": strings.TrimSpace(request.Quality), "aspect_ratio": strings.TrimSpace(request.AspectRatio),
+		"audio_enabled": request.AudioEnabled, "seed": request.Seed, "camera_fixed": request.CameraFixed,
+		"watermark": request.Watermark, "return_last_frame": request.ReturnLastFrame,
+		"service_tier": strings.TrimSpace(request.ServiceTier), "execution_expires_after": request.ExecutionExpiresAfter,
+		"request_mode":   strings.TrimSpace(request.RequestMode),
 		"inference_mode": strings.TrimSpace(request.InferenceMode), "input_reference": request.InputReference,
 		"inputs": videoInputHashManifest(request.Inputs), "characters": request.CharacterIDs,
 		"source_video": strings.TrimSpace(request.SourceVideoID), "provider_options": request.ProviderOptions,
 		"callback_url": strings.TrimSpace(request.CallbackURL),
 	}
-	if !request.ReferenceMedia.Empty() {
-		contract["reference_media"] = request.ReferenceMedia
+	if len(request.Content) > 0 {
+		contract["content"] = request.Content
 	}
 	return HashVideoRequest(contract)
 }
@@ -2207,7 +2291,7 @@ const videoPromptAttributeMaxRunes = 2000
 func videoRequestAttributes(request VideoSubmitRequest, resolved *resolvedVideoSubmission) map[string]any {
 	attrs := resolved.quote.Attributes
 	attributes := map[string]any{
-		"client_request_contract_version": 2,
+		"client_request_contract_version": videoClientRequestContractVersion,
 		"account_identity_version":        resolved.account.ProviderIdentityVersion,
 		"requires_verified_isolation":     request.InputReference != nil && strings.TrimSpace(request.InputReference.FileID) != "",
 		"execution_spec":                  resolved.executionSpec,
@@ -2219,19 +2303,27 @@ func videoRequestAttributes(request VideoSubmitRequest, resolved *resolvedVideoS
 		"callback_contract_version":       1,
 		"callback_retry_hours":            resolved.callbackRetryHours,
 		"callback_disclosure_policy":      resolved.callbackDisclosurePolicy,
-		"seconds":                         request.Seconds, "size": request.Size, "raw_size": request.Size,
-		"resolution": attrs.Resolution, "quality": request.Quality, "audio_enabled": attrs.AudioEnabled,
+		// seconds 是结算、补偿与扩展链路一直读的键：显式时长照抄；智能时长与按帧请求
+		// 没有确定秒数，写入预扣用的上界，上游没回报实际时长时就按上界结算，不会少收。
+		// Ark 形态的投影读 duration（-1 表示智能时长）。
+		"seconds": videoRequestSecondsAttribute(request, attrs), "duration": videoArkDurationValue(request.Seconds, request.SmartDuration),
+		"smart_duration": request.SmartDuration, "frames": request.Frames,
+		"size": request.Size, "raw_size": request.Size,
+		"resolution": attrs.Resolution, "ratio": attrs.Ratio, "quality": request.Quality,
+		"audio_enabled": attrs.AudioEnabled, "generate_audio": attrs.AudioEnabled,
+		"seed": request.Seed, "camera_fixed": request.CameraFixed, "watermark": request.Watermark,
+		"return_last_frame": request.ReturnLastFrame, "execution_expires_after": request.ExecutionExpiresAfter,
 		"service_tier": request.ServiceTier, "input_type": videoPricingInputType(request),
 		"input_has_video": attrs.InputHasVideo, "input_video_seconds": attrs.InputVideoSeconds,
 		"request_mode": attrs.RequestMode, "inference_mode": attrs.InferenceMode,
 		"billing_model":   resolved.quote.BillingModel,
 		"character_ids":   append([]string(nil), request.CharacterIDs...),
 		"source_video_id": request.SourceVideoID,
-		"reference_image_count": len(request.ReferenceMedia.ReferenceImages) + videoOptionalReferenceCount(
-			request.ReferenceMedia.ImageURL, request.ReferenceMedia.FirstImageURL, request.ReferenceMedia.LastImageURL,
-		),
-		"reference_video_count": len(request.ReferenceMedia.ReferenceVideos),
-		"reference_audio_count": len(request.ReferenceMedia.ReferenceAudios),
+		// 媒体引用只留角色计数，不留 URL：签名 URL 是请求级凭据，不进持久化。
+		"content_roles":         VideoContentRoleCounts(request.Content),
+		"reference_image_count": videoContentImageCount(request.Content),
+		"reference_video_count": len(request.ContentByRole(VideoInputRoleReferenceVideo)),
+		"reference_audio_count": len(request.ContentByRole(VideoInputRoleReferenceAudio)),
 		"provider":              resolved.provider.Name(),
 	}
 	// 提示词跟着任务一起留存：它不参与任何上游请求或哈希，只是让任务事后还说得清
@@ -2243,14 +2335,33 @@ func videoRequestAttributes(request VideoSubmitRequest, resolved *resolvedVideoS
 	return attributes
 }
 
-func videoOptionalReferenceCount(values ...string) int {
+// videoRequestSecondsAttribute 给 request_attributes.seconds 取值：显式秒数优先，否则取报价时的时长上界。
+func videoRequestSecondsAttribute(request VideoSubmitRequest, attrs VideoPricingAttributes) int {
+	if request.Seconds > 0 {
+		return request.Seconds
+	}
+	if attrs.MaximumOutputSeconds > 0 {
+		return attrs.MaximumOutputSeconds
+	}
+	return 0
+}
+
+func videoContentImageCount(content []VideoContentItem) int {
 	count := 0
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
+	for _, item := range content {
+		if item.IsMedia() && item.Role.IsImageContentRole() {
 			count++
 		}
 	}
 	return count
+}
+
+// videoArkDurationValue 把内部 (seconds, smart) 还原成 Ark 的 duration 取值：智能时长为 -1。
+func videoArkDurationValue(seconds int, smart bool) int {
+	if smart {
+		return -1
+	}
+	return seconds
 }
 
 func videoPriceSnapshot(quote *VideoPriceQuote) map[string]any {
@@ -2267,8 +2378,10 @@ func videoPriceSnapshot(quote *VideoPriceQuote) map[string]any {
 		"estimated_cost": quote.EstimatedCost, "hold_amount": quote.HoldAmount,
 		"priority": quote.Priority, "specificity": quote.Specificity,
 		"operation": quote.Attributes.Operation, "raw_size": quote.Attributes.Size,
-		"resolution": quote.Attributes.Resolution, "seconds": quote.Attributes.Seconds,
-		"input_type": quote.Attributes.InputType, "input_has_video": quote.Attributes.InputHasVideo,
+		"resolution": quote.Attributes.Resolution, "ratio": quote.Attributes.Ratio, "seconds": quote.Attributes.Seconds,
+		"frames": quote.Attributes.Frames, "smart_duration": quote.Attributes.SmartDuration,
+		"maximum_output_seconds": quote.Attributes.MaximumOutputSeconds,
+		"input_type":             quote.Attributes.InputType, "input_has_video": quote.Attributes.InputHasVideo,
 		"input_video_seconds": quote.Attributes.InputVideoSeconds, "generate_audio": quote.Attributes.AudioEnabled,
 		"request_mode": quote.Attributes.RequestMode, "inference_mode": quote.Attributes.InferenceMode,
 		"service_tier": quote.Attributes.ServiceTier, "quality": quote.Attributes.Quality,
@@ -2358,6 +2471,23 @@ func numericMapValue(values map[string]any, key string) (float64, bool) {
 		return float64(value), true
 	case int64:
 		return float64(value), true
+	// request_attributes 在内存里带着 videoRequestAttributes 写入的指针（seed 等），落库读回
+	// 才变成标量；两种形态都要能读，否则刚创建的任务投影不出这些字段。
+	case *int64:
+		if value == nil {
+			return 0, false
+		}
+		return float64(*value), true
+	case *int:
+		if value == nil {
+			return 0, false
+		}
+		return float64(*value), true
+	case *float64:
+		if value == nil {
+			return 0, false
+		}
+		return *value, true
 	case json.Number:
 		parsed, err := value.Float64()
 		return parsed, err == nil

@@ -320,6 +320,13 @@ func TestCompositeVideoPathsUseDedicatedRouteEndpoints(t *testing.T) {
 		"/v1/videos/characters": service.CompositeRouteEndpointVideoCharacters,
 		"/v1/videos/edits":      service.CompositeRouteEndpointVideoEdits,
 		"/v1/videos/extensions": service.CompositeRouteEndpointVideoExtensions,
+		// Ark 任务协议复用 videos 端点的路由规则（不加迁移）。
+		"/api/v3/contents/generations/tasks":   service.CompositeRouteEndpointVideos,
+		"/v3/contents/generations/tasks":       service.CompositeRouteEndpointVideos,
+		"/v1/contents/generations/tasks":       service.CompositeRouteEndpointVideos,
+		"/contents/generations/tasks":          service.CompositeRouteEndpointVideos,
+		"/api/v3/contents/generations/tasks/x": service.CompositeRouteEndpointVideos,
+		"/api/v3/contents/generations/models":  service.CompositeRouteEndpointVideos,
 	} {
 		require.Equal(t, expected, compositeRouteEndpointForPath(path), "path=%s", path)
 	}

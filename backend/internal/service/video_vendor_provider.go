@@ -128,12 +128,21 @@ func (p *VideoVendorProvider) ValidateSubmission(account *Account, request Video
 	return err
 }
 
-// videoVendorPlan 是校验后的提交计划：选定档案与归一化后的素材清单（尚未读取字节）。
+// videoVendorPlan 是校验后的提交计划：选定档案、归一化后的素材清单（尚未读取字节）、
+// 时长与 Ark 维度的画幅（resolution 为 Ark 档位，adapter 再换成厂商词表）。
 type videoVendorPlan struct {
-	profile  *videoModelProfile
-	imageURL []string
-	seconds  int
-	size     string
+	profile    *videoModelProfile
+	images     []videoVendorPlanImage
+	seconds    int
+	resolution string
+	ratio      string
+}
+
+// videoVendorPlanImage 是一张起止帧图：远端 URL 或 spool 字节。
+type videoVendorPlanImage struct {
+	role  VideoInputRole
+	url   string
+	input *VideoInput
 }
 
 func (p *VideoVendorProvider) validateAndPlan(account *Account, request VideoCreateRequest, inputs []VideoInput) (*videoVendorPlan, *videoModelProfile, error) {
@@ -146,59 +155,88 @@ func (p *VideoVendorProvider) validateAndPlan(account *Account, request VideoCre
 	if strings.TrimSpace(request.Prompt) == "" {
 		return nil, nil, videoVendorValidationError("missing_prompt", "prompt is required")
 	}
-	if request.Quality != "" || request.ServiceTier != "" || request.ParentTask != nil || len(request.Characters) != 0 {
-		return nil, nil, videoVendorValidationError("unsupported_option", "quality, service_tier, characters and parent tasks are not supported by %s", p.Name())
+	if request.HasOpenAIOnlyFields() || request.ParentTask != nil {
+		return nil, nil, videoVendorValidationError("unsupported_option", "size, quality, aspect_ratio, input_reference, characters and parent tasks are not supported by %s", p.Name())
 	}
-	if request.InputReference != nil && strings.TrimSpace(request.InputReference.FileID) != "" {
-		return nil, nil, videoVendorValidationError("unsupported_reference_media", "input_reference.file_id is not supported by %s; submit an image_url or upload the image", p.Name())
+	if request.SmartDuration || request.Frames > 0 {
+		return nil, nil, videoVendorValidationError("unsupported_parameter", "duration -1 and frames are not supported by %s", p.Name())
 	}
-	media := request.ReferenceMedia
-	if len(media.ReferenceImages) != 0 || len(media.ReferenceVideos) != 0 || len(media.ReferenceAudios) != 0 {
-		return nil, nil, videoVendorValidationError("unsupported_reference_media", "reference_images, reference_videos and reference_audios are not supported by %s yet", p.Name())
+	if request.ReturnLastFrame != nil || request.ExecutionExpiresAfter != 0 || strings.TrimSpace(request.ServiceTier) != "" {
+		return nil, nil, videoVendorValidationError("unsupported_parameter", "return_last_frame, service_tier and execution_expires_after are not supported by %s", p.Name())
 	}
 	profile := p.profileFor(request.Model)
 	if profile == nil {
 		return nil, nil, videoVendorValidationError("unsupported_model", "model %q is not supported by %s", request.Model, p.Name())
 	}
+	profile.finalizeArkDimensions()
 
-	// 起止帧：spool 上传与 URL 二选一，总数受档案 MaxImages 约束。
-	urls := make([]string, 0, 2)
-	start := ""
-	if request.InputReference != nil {
-		start = strings.TrimSpace(request.InputReference.ImageURL)
-	}
-	if start == "" {
-		start = strings.TrimSpace(media.ImageURL)
-	}
-	if start == "" {
-		start = strings.TrimSpace(media.FirstImageURL)
-	}
-	if start != "" {
-		urls = append(urls, start)
-	}
-	if last := strings.TrimSpace(media.LastImageURL); last != "" {
-		if start == "" && len(inputs) == 0 {
-			return nil, nil, videoVendorValidationError("unsupported_reference_media", "last_image_url requires a first frame image")
+	// 起止帧：content[] 里的 first_frame / last_frame（URL 或字节），总数受档案 MaxImages 约束。
+	images := make([]videoVendorPlanImage, 0, 2)
+	var first, last *videoVendorPlanImage
+	for i := range request.Content {
+		item := request.Content[i]
+		if !item.IsMedia() {
+			continue
 		}
-		urls = append(urls, last)
-	}
-	for _, url := range urls {
-		if !strings.HasPrefix(strings.ToLower(url), "https://") && !strings.HasPrefix(strings.ToLower(url), "data:image/") {
-			return nil, nil, videoVendorValidationError("unsupported_reference_media", "image references must be https URLs or data URIs")
+		switch item.Role {
+		case VideoInputRoleFirstFrame, VideoInputRoleReferenceImage:
+			if first != nil {
+				return nil, nil, videoVendorValidationError("unsupported_reference_media", "only one first_frame image is accepted")
+			}
+			first = &videoVendorPlanImage{role: VideoInputRoleFirstFrame, url: strings.TrimSpace(item.URL), input: item.Input}
+		case VideoInputRoleLastFrame:
+			if last != nil {
+				return nil, nil, videoVendorValidationError("unsupported_reference_media", "only one last_frame image is accepted")
+			}
+			last = &videoVendorPlanImage{role: VideoInputRoleLastFrame, url: strings.TrimSpace(item.URL), input: item.Input}
+		default:
+			return nil, nil, videoVendorValidationError("unsupported_reference_media", "content role %q is not supported by %s yet", item.Role, p.Name())
 		}
-		if len(url) > openAIVideoMaxReferenceBytes {
+	}
+	// 没挂到 content 上的 spool 输入（旧式 multipart）按首帧、尾帧顺序补位。
+	for i := range inputs {
+		if videoVendorInputBound(request.Content, &inputs[i]) {
+			continue
+		}
+		image := &videoVendorPlanImage{role: inputs[i].Role, input: &inputs[i]}
+		switch {
+		case first == nil:
+			image.role = VideoInputRoleFirstFrame
+			first = image
+		case last == nil:
+			image.role = VideoInputRoleLastFrame
+			last = image
+		default:
+			return nil, nil, videoVendorValidationError("unsupported_reference_media", "model %q accepts at most 2 image(s)", request.Model)
+		}
+	}
+	if last != nil && first == nil {
+		return nil, nil, videoVendorValidationError("unsupported_reference_media", "last_frame requires a first_frame image")
+	}
+	if first != nil {
+		images = append(images, *first)
+	}
+	if last != nil {
+		images = append(images, *last)
+	}
+	for _, image := range images {
+		if image.input != nil {
+			if !image.input.Role.IsImageContentRole() || !strings.HasPrefix(strings.ToLower(strings.TrimSpace(image.input.MIMEType)), "image/") {
+				return nil, nil, videoVendorValidationError("unsupported_input", "input role %q is not supported by %s", image.input.Role, p.Name())
+			}
+			if image.input.Size > videoVendorMaxInlineBytes {
+				return nil, nil, rejectedVideoProviderError("validation", "input_too_large", "image input is too large to inline", http.StatusBadRequest)
+			}
+			continue
+		}
+		if !strings.HasPrefix(strings.ToLower(image.url), "https://") {
+			return nil, nil, videoVendorValidationError("unsupported_reference_media", "image references must be https URLs or inline data URIs")
+		}
+		if len(image.url) > openAIVideoMaxReferenceBytes {
 			return nil, nil, videoVendorValidationError("unsupported_reference_media", "image reference is too large")
 		}
 	}
-	for _, input := range inputs {
-		if input.Role != VideoInputRoleReferenceImage {
-			return nil, nil, videoVendorValidationError("unsupported_input", "input role %q is not supported by %s", input.Role, p.Name())
-		}
-		if input.Size > videoVendorMaxInlineBytes {
-			return nil, nil, rejectedVideoProviderError("validation", "input_too_large", "image input is too large to inline", http.StatusBadRequest)
-		}
-	}
-	imageCount := len(urls) + len(inputs)
+	imageCount := len(images)
 	if imageCount > 0 && !profile.AllowsImage {
 		return nil, nil, videoVendorValidationError("unsupported_reference_media", "model %q does not accept image input", request.Model)
 	}
@@ -220,22 +258,37 @@ func (p *VideoVendorProvider) validateAndPlan(account *Account, request VideoCre
 	if !profile.supportsSeconds(seconds) {
 		return nil, nil, videoVendorValidationError("unsupported_seconds", "model %q does not support %d second videos", request.Model, seconds)
 	}
-	size := strings.TrimSpace(request.Size)
-	if size != "" {
-		if normalized, _, _, valid := parseVideoDimensions(size); valid {
-			size = normalized
-		} else if profile.SizeEnc != videoSizeNotSupported && profile.SizeEnc != videoSizeResolutionInID {
-			return nil, nil, videoVendorValidationError("unsupported_size", "size %q must be WIDTHxHEIGHT", request.Size)
+	resolution := strings.ToLower(strings.TrimSpace(request.Resolution))
+	if resolution == "" && profile.SizeEnc != videoSizeNotSupported && profile.SizeEnc != videoSizeAspectRatio {
+		resolution = profile.DefaultResolution
+	}
+	if resolution != "" {
+		if !profile.supportsResolution(resolution) {
+			return nil, nil, videoVendorValidationError("unsupported_resolution", "model %q does not support resolution %s", request.Model, resolution)
 		}
-		if !profile.supportsSize(size) {
-			return nil, nil, videoVendorValidationError("unsupported_size", "model %q does not support size %s", request.Model, size)
+		if _, ok := profile.vendorResolutionLabel(resolution); !ok && profile.SizeEnc != videoSizeResolutionInID && profile.SizeEnc != videoSizeNotSupported {
+			return nil, nil, videoVendorValidationError("unsupported_resolution", "model %q does not support resolution %s", request.Model, resolution)
 		}
 	}
-	if size == "" && imageCount == 0 && profile.SizeEnc == videoSizeWidthHeight {
-		size = profile.DefaultSize
+	ratio := strings.ToLower(strings.TrimSpace(request.Ratio))
+	if ratio == ArkVideoRatioAdaptive {
+		if imageCount == 0 {
+			return nil, nil, videoVendorValidationError("unsupported_ratio", "ratio adaptive requires a first_frame image")
+		}
+		ratio = ""
 	}
-	if request.AudioEnabled != nil && *request.AudioEnabled && profile.AudioField == "" {
-		return nil, nil, videoVendorValidationError("unsupported_option", "model %q does not support audio generation", request.Model)
+	if ratio == "" && imageCount == 0 && profile.SizeEnc != videoSizeNotSupported && profile.SizeEnc != videoSizeResolutionOnly {
+		ratio = profile.DefaultRatio
+	}
+	if ratio != "" && !profile.supportsRatio(ratio) {
+		return nil, nil, videoVendorValidationError("unsupported_ratio", "model %q does not support ratio %s", request.Model, ratio)
+	}
+	if imageCount > 0 {
+		// 图生视频比例随图：显式比例会被厂商忽略，不送也不记。
+		ratio = ""
+	}
+	if err := videoVendorApplyArkFields(map[string]any{}, profile, request); err != nil {
+		return nil, nil, err
 	}
 	for key, raw := range request.ProviderOptions {
 		if _, ok := profile.OptionWhitelist[key]; !ok {
@@ -245,7 +298,16 @@ func (p *VideoVendorProvider) validateAndPlan(account *Account, request VideoCre
 			return nil, nil, videoVendorValidationError("unsupported_option", "provider_options.%s must be a scalar value", key)
 		}
 	}
-	return &videoVendorPlan{profile: profile, imageURL: urls, seconds: seconds, size: size}, profile, nil
+	return &videoVendorPlan{profile: profile, images: images, seconds: seconds, resolution: resolution, ratio: ratio}, profile, nil
+}
+
+func videoVendorInputBound(content []VideoContentItem, input *VideoInput) bool {
+	for _, item := range content {
+		if item.Input != nil && item.Input.SHA256 == input.SHA256 && item.Input.Role == input.Role {
+			return true
+		}
+	}
+	return false
 }
 
 // ---------------------------------------------------------------------------
@@ -258,17 +320,19 @@ func (p *VideoVendorProvider) Create(ctx context.Context, account *Account, requ
 		return nil, err
 	}
 	request.Seconds = plan.seconds
-	request.Size = plan.size
-	vendorInputs := make([]videoVendorInput, 0, len(plan.imageURL)+len(inputs))
-	for _, raw := range plan.imageURL {
-		vendorInputs = append(vendorInputs, videoVendorInput{Role: VideoInputRoleReferenceImage, URL: raw})
-	}
-	for i := range inputs {
-		data, err := p.readInput(ctx, inputs[i])
+	request.Resolution = plan.resolution
+	request.Ratio = plan.ratio
+	vendorInputs := make([]videoVendorInput, 0, len(plan.images))
+	for _, image := range plan.images {
+		if image.input == nil {
+			vendorInputs = append(vendorInputs, videoVendorInput{Role: image.role, URL: image.url})
+			continue
+		}
+		data, err := p.readInput(ctx, *image.input)
 		if err != nil {
 			return nil, err
 		}
-		vendorInputs = append(vendorInputs, videoVendorInput{Role: inputs[i].Role, MIMEType: inputs[i].MIMEType, Data: data})
+		vendorInputs = append(vendorInputs, videoVendorInput{Role: image.role, MIMEType: image.input.MIMEType, Data: data})
 	}
 	if uploader, ok := p.adapter.(videoVendorInputUploader); ok {
 		for i := range vendorInputs {
@@ -473,8 +537,14 @@ func (p *VideoVendorProvider) applyRequestMetadata(task *ProviderVideoTask, requ
 	if _, ok := task.Metadata["seconds"]; !ok && request.Seconds > 0 {
 		task.Metadata["seconds"] = request.Seconds
 	}
-	if _, ok := task.Metadata["size"]; !ok && strings.TrimSpace(request.Size) != "" {
-		task.Metadata["size"] = strings.TrimSpace(request.Size)
+	if _, ok := task.Metadata["resolution"]; !ok && strings.TrimSpace(request.Resolution) != "" {
+		task.Metadata["resolution"] = strings.TrimSpace(request.Resolution)
+	}
+	if _, ok := task.Metadata["ratio"]; !ok && strings.TrimSpace(request.Ratio) != "" {
+		task.Metadata["ratio"] = strings.TrimSpace(request.Ratio)
+	}
+	if _, ok := task.Metadata["seed"]; !ok && request.Seed != nil && *request.Seed >= 0 {
+		task.Metadata["seed"] = *request.Seed
 	}
 }
 
@@ -506,15 +576,20 @@ func (p *VideoVendorProvider) EstimateUpstreamCost(ctx context.Context, account 
 	if err != nil {
 		return 0, false, err
 	}
-	if profile.RequiresImage && len(plan.imageURL) == 0 {
+	inputs := make([]videoVendorInput, 0, len(plan.images))
+	for _, image := range plan.images {
+		if image.input != nil {
+			// spool 字节此时还没有厂商 URL，无法询价。
+			return 0, false, nil
+		}
+		inputs = append(inputs, videoVendorInput{Role: image.role, URL: image.url})
+	}
+	if profile.RequiresImage && len(inputs) == 0 {
 		return 0, false, nil
 	}
 	request.Seconds = plan.seconds
-	request.Size = plan.size
-	inputs := make([]videoVendorInput, 0, len(plan.imageURL))
-	for _, raw := range plan.imageURL {
-		inputs = append(inputs, videoVendorInput{Role: VideoInputRoleReferenceImage, URL: raw})
-	}
+	request.Resolution = plan.resolution
+	request.Ratio = plan.ratio
 	upstream, ok := estimator.BuildEstimate(request, profile, inputs)
 	if !ok {
 		return 0, false, nil
@@ -531,48 +606,6 @@ func (p *VideoVendorProvider) EstimateUpstreamCost(ctx context.Context, account 
 		return 0, false, err
 	}
 	return price, true, nil
-}
-
-// ---------------------------------------------------------------------------
-// Model catalog contribution
-// ---------------------------------------------------------------------------
-
-func (p *VideoVendorProvider) ModelParameters(model string, _ *VideoPricingConfig) []VideoModelParameter {
-	profile := p.profileFor(model)
-	if profile == nil {
-		return nil
-	}
-	parameters := make([]VideoModelParameter, 0, 2+len(profile.OptionWhitelist))
-	if profile.AudioField != "" {
-		parameters = append(parameters, VideoModelParameter{Name: "audio", In: "body", Values: []string{"true", "false"}})
-	}
-	keys := make([]string, 0, len(profile.OptionWhitelist))
-	for key := range profile.OptionWhitelist {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		parameters = append(parameters, VideoModelParameter{Name: key, In: videoModelParameterInProviderOptions})
-	}
-	return parameters
-}
-
-func (p *VideoVendorProvider) ModelReferenceInputs(model string) []VideoModelReferenceInput {
-	profile := p.profileFor(model)
-	if profile == nil || !profile.AllowsImage {
-		return nil
-	}
-	accepts := []string{videoReferenceAcceptsHTTPS, videoReferenceAcceptsDataURI}
-	slots := []VideoModelReferenceInput{
-		{Field: "image_url", Kind: "image", Max: 1, Accepts: accepts, MaxValueBytes: openAIVideoMaxReferenceBytes, ConflictsWith: []string{"first_image_url"}},
-	}
-	if profile.MaxImages >= 2 {
-		slots = append(slots,
-			VideoModelReferenceInput{Field: "first_image_url", Kind: "image", Max: 1, Accepts: accepts, MaxValueBytes: openAIVideoMaxReferenceBytes, ConflictsWith: []string{"image_url"}},
-			VideoModelReferenceInput{Field: "last_image_url", Kind: "image", Max: 1, Accepts: accepts, MaxValueBytes: openAIVideoMaxReferenceBytes, RequiresAny: []string{"image_url", "first_image_url"}},
-		)
-	}
-	return slots
 }
 
 // ---------------------------------------------------------------------------

@@ -9,8 +9,11 @@ const hasAllowedVideoKey = ref(false)
 let pendingLoad: Promise<boolean> | null = null
 const pageSize = 100
 
-/** 网关只把 /v1/videos 放给这些平台（OpenAI、ByteDance、四家聚合视频供应商与复合分组），其余平台连路由都进不去。 */
-export const VIDEO_PLAYGROUND_PLATFORMS = ['openai', 'bytedance', 'fal', 'wavespeed', 'runware', 'flova', 'composite'] as const
+/**
+ * 网关只把 Ark 任务入口（/contents/generations/tasks）放给这些平台：五家托管视频平台与复合分组，
+ * 其余平台一律 403。OpenAI（Sora）与 Grok 仍走 /v1/videos，不在这个 Playground 的范围内。
+ */
+export const VIDEO_PLAYGROUND_PLATFORMS = ['bytedance', 'fal', 'wavespeed', 'runware', 'flova', 'composite'] as const
 
 /**
  * 判定一个 Key 能否用于视频 Playground。

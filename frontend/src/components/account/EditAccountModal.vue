@@ -4213,8 +4213,7 @@ const openAITextEndpointCapabilityLabel = computed(() => {
 const openAIEndpointCapabilityOptions = computed<{ value: OpenAIEndpointCapability; label: string }[]>(() => [
   { value: 'chat_completions', label: openAITextEndpointCapabilityLabel.value },
   { value: 'embeddings', label: t('admin.accounts.openai.capabilityEmbeddings') },
-  { value: 'videos', label: t('admin.accounts.openai.capabilityVideos') },
-  { value: 'seedance', label: 'Seedance (Ark)' }
+  { value: 'videos', label: t('admin.accounts.openai.capabilityVideos') }
 ])
 const videoDisclosurePolicyOptions = computed(() => [
   { value: '', label: t('admin.accounts.openai.videoDisclosureInherit') },
@@ -4228,7 +4227,7 @@ const openAITextGenerationCapabilityEnabled = computed(() =>
 )
 
 const normalizeOpenAIEndpointCapabilities = (values: OpenAIEndpointCapability[]): OpenAIEndpointCapability[] => {
-  const allowed: OpenAIEndpointCapability[] = ['chat_completions', 'embeddings', 'videos', 'seedance']
+  const allowed: OpenAIEndpointCapability[] = ['chat_completions', 'embeddings', 'videos']
   const selected = allowed.filter((value) => values.includes(value))
   return selected.length > 0 ? selected : ['chat_completions', 'embeddings']
 }
@@ -4256,7 +4255,7 @@ const readOpenAIEndpointCapabilities = (credentials?: Record<string, unknown>, e
   if (Array.isArray(raw)) {
     return normalizeOpenAIEndpointCapabilities(
       raw.filter((value): value is OpenAIEndpointCapability =>
-        value === 'chat_completions' || value === 'embeddings' || value === 'videos' || value === 'seedance'
+        value === 'chat_completions' || value === 'embeddings' || value === 'videos'
       )
     )
   }

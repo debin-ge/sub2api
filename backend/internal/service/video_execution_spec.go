@@ -15,7 +15,10 @@ type ResolvedVideoExecutionSpec struct {
 	Model             string  `json:"model"`
 	Size              string  `json:"size"`
 	Resolution        string  `json:"resolution,omitempty"`
+	Ratio             string  `json:"ratio,omitempty"`
 	Seconds           int     `json:"seconds"`
+	Frames            int     `json:"frames,omitempty"`
+	SmartDuration     bool    `json:"smart_duration,omitempty"`
 	DurationSemantics string  `json:"duration_semantics"`
 	SourceTaskID      int64   `json:"source_task_id,omitempty"`
 	SourceVersion     int64   `json:"source_version,omitempty"`
@@ -37,7 +40,12 @@ func resolveVideoExecutionSpec(request VideoCreateRequest, accountID int64, prov
 	spec := ResolvedVideoExecutionSpec{
 		Version: 2, Provider: provider, AccountID: accountID, Operation: request.Operation,
 		Model: request.Model, Size: request.Size, Resolution: providerRequestResolution(provider, request),
-		Seconds: request.Seconds, DurationSemantics: "output",
+		Ratio: strings.ToLower(strings.TrimSpace(request.Ratio)), Seconds: request.Seconds,
+		Frames: request.Frames, SmartDuration: request.SmartDuration, DurationSemantics: "output",
+	}
+	if spec.SmartDuration {
+		// 智能时长：上游自选，实际秒数只能在结算时从观测值取；规格里不冻结 seconds。
+		spec.DurationSemantics = "smart_output"
 	}
 	if source == nil {
 		if request.Operation == VideoOperationEdit {
@@ -206,10 +214,20 @@ func videoCheckObservedSpecification(task *VideoTask, metadata map[string]any) e
 			return ErrVideoSourceSpecConflict
 		}
 	}
+	if value, exists := metadata["ratio"]; exists && value != nil && value != "" && spec.Ratio != "" && spec.Ratio != "adaptive" {
+		ratio, ok := value.(string)
+		if !ok || !strings.EqualFold(strings.TrimSpace(ratio), spec.Ratio) {
+			return ErrVideoSourceSpecConflict
+		}
+	}
 	if value, exists := metadata["seconds"]; exists {
 		seconds, valid := numericMapValue(map[string]any{"seconds": value}, "seconds")
 		if !valid || !finitePositive(seconds) {
 			return ErrVideoSourceSpecConflict
+		}
+		if spec.SmartDuration {
+			// 智能时长没有可比对的预期值，上游回报的任何正数都是结算依据。
+			return nil
 		}
 		expected := float64(spec.Seconds)
 		if spec.DurationSemantics == "extension_segment" {

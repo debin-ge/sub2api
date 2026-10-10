@@ -731,7 +731,7 @@ const currentFiles = computed((): FileConfig[] => {
   })()
 
   if (activeClientTab.value === 'videos') {
-    return generateVideoApiFiles(apiBase, apiKey)
+    return generateVideoApiFiles(baseRoot, apiKey)
   }
 
   if (activeClientTab.value === 'opencode') {
@@ -816,33 +816,42 @@ const currentFiles = computed((): FileConfig[] => {
 })
 
 /**
- * 仅视频平台（ByteDance / fal / WaveSpeed / Runware / Flova）的 /v1/videos 调用示例：
- * 提交 → 轮询 → 下载。模型占位符由用户替换为分组允许的模型。
+ * 仅视频平台（ByteDance / fal / WaveSpeed / Runware / Flova）的调用示例，走火山方舟（Seedance）
+ * 任务协议：提交 → 轮询 → 下载。baseUrl 是网关根地址（不带 /v1），路径用 /api/v3 前缀；
+ * 后端对 /v1/contents/generations/tasks 同样放行。模型占位符由用户替换为分组允许的模型。
  */
 function generateVideoApiFiles(baseUrl: string, apiKey: string): FileConfig[] {
+  const tasksUrl = `${baseUrl}/api/v3/contents/generations/tasks`
   return [
     {
       path: t('keys.useKeyModal.videos.submit'),
-      content: `curl -X POST "${baseUrl}/videos" \\
+      content: `curl -X POST "${tasksUrl}" \\
   -H "Authorization: Bearer ${apiKey}" \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "<model>",
-    "prompt": "A golden retriever running on a beach at sunset",
-    "seconds": 5,
-    "size": "1280x720"
-  }'`
+    "content": [
+      {"type": "text", "text": "A golden retriever running on a beach at sunset"},
+      {"type": "image_url", "image_url": {"url": "https://example.com/first-frame.png"}, "role": "first_frame"}
+    ],
+    "duration": 5,
+    "resolution": "720p",
+    "ratio": "16:9"
+  }'
+# => {"id": "video_..."}`
     },
     {
       path: t('keys.useKeyModal.videos.poll'),
-      content: `curl "${baseUrl}/videos/<video_id>" \\
-  -H "Authorization: Bearer ${apiKey}"`
+      content: `curl "${tasksUrl}/<video_id>" \\
+  -H "Authorization: Bearer ${apiKey}"
+# => {"id": "...", "status": "queued|running|succeeded|failed|cancelled|expired",
+#     "content": {"video_url": "https://.../content?variant=video&exp=...&sig=..."}, ...}`
     },
     {
       path: t('keys.useKeyModal.videos.download'),
-      content: `curl -L "${baseUrl}/videos/<video_id>/content" \\
-  -H "Authorization: Bearer ${apiKey}" \\
-  -o video.mp4`
+      content: `# content.video_url is a signed, expiring link from the GET response above.
+# It needs no Authorization header; if it has expired, GET the task again for a fresh one.
+curl -L "<content.video_url>" -o video.mp4`
     }
   ]
 }

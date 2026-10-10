@@ -210,6 +210,59 @@ func validateVideoCapabilities(provider string, capabilities VideoCapabilities) 
 			return fail("supported_sizes: %v", err)
 		}
 	}
+	for field, values := range map[string]map[string][]string{
+		"supported_resolutions": capabilities.SupportedResolutions,
+		"supported_ratios":      capabilities.SupportedRatios,
+	} {
+		for model, entries := range values {
+			if err := validateVideoCapabilitySpecModel(model, validatedModels); err != nil {
+				return fail("%s: %v", field, err)
+			}
+			seen := make(map[string]struct{}, len(entries))
+			for _, entry := range entries {
+				normalized := strings.ToLower(strings.TrimSpace(entry))
+				if normalized == "" || normalized != entry {
+					return fail("%s: model %q has invalid entry %q", field, model, entry)
+				}
+				if field == "supported_resolutions" && !IsArkVideoResolution(normalized) {
+					return fail("%s: model %q has unknown resolution %q", field, model, entry)
+				}
+				if field == "supported_ratios" && !IsArkVideoRatio(normalized) {
+					return fail("%s: model %q has unknown ratio %q", field, model, entry)
+				}
+				if _, duplicate := seen[normalized]; duplicate {
+					return fail("%s: model %q has duplicate entry %q", field, model, entry)
+				}
+				seen[normalized] = struct{}{}
+			}
+		}
+	}
+	for model, value := range capabilities.DefaultResolutions {
+		if err := validateVideoCapabilitySpecModel(model, validatedModels); err != nil {
+			return fail("default_resolutions: %v", err)
+		}
+		if !slices.Contains(capabilities.SupportedResolutions[model], value) {
+			return fail("default_resolutions: model %q default %q is not supported", model, value)
+		}
+	}
+	for model, value := range capabilities.DefaultRatios {
+		if err := validateVideoCapabilitySpecModel(model, validatedModels); err != nil {
+			return fail("default_ratios: %v", err)
+		}
+		if !slices.Contains(capabilities.SupportedRatios[model], value) {
+			return fail("default_ratios: model %q default %q is not supported", model, value)
+		}
+	}
+	for model, enabled := range capabilities.SmartDurationModels {
+		if err := validateVideoCapabilitySpecModel(model, validatedModels); err != nil || !enabled {
+			return fail("smart_duration_models must list supported models with true values")
+		}
+	}
+	for role, maximum := range capabilities.MaxContentByRole {
+		if !IsValidVideoInputRole(role) || maximum <= 0 || maximum > 16 {
+			return fail("max_content_by_role: role %q has invalid maximum %d", role, maximum)
+		}
+	}
 	for operation, roles := range capabilities.InputRolesByOperation {
 		if !isKnownVideoInputOperation(operation) {
 			return fail("input operation %q is not supported", operation)
@@ -424,6 +477,28 @@ func cloneVideoCapabilities(value VideoCapabilities) VideoCapabilities {
 	clone.SupportedSizes = make(map[string][]string, len(value.SupportedSizes))
 	for model, sizes := range value.SupportedSizes {
 		clone.SupportedSizes[model] = append([]string(nil), sizes...)
+	}
+	clone.SupportedResolutions = cloneStringSliceMap(value.SupportedResolutions)
+	clone.SupportedRatios = cloneStringSliceMap(value.SupportedRatios)
+	clone.DefaultResolutions = cloneStringStringMap(value.DefaultResolutions)
+	clone.DefaultRatios = cloneStringStringMap(value.DefaultRatios)
+	clone.SmartDurationModels = cloneStringBoolMap(value.SmartDurationModels)
+	if value.MaxContentByRole != nil {
+		clone.MaxContentByRole = make(map[VideoInputRole]int, len(value.MaxContentByRole))
+		for role, maximum := range value.MaxContentByRole {
+			clone.MaxContentByRole[role] = maximum
+		}
+	}
+	return clone
+}
+
+func cloneStringSliceMap(value map[string][]string) map[string][]string {
+	if value == nil {
+		return nil
+	}
+	clone := make(map[string][]string, len(value))
+	for key, values := range value {
+		clone[key] = append([]string(nil), values...)
 	}
 	return clone
 }

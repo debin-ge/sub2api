@@ -940,7 +940,7 @@ func (p *OpenAIVideoProvider) VerifyWebhook(ctx context.Context, account *Accoun
 }
 
 func (p *OpenAIVideoProvider) validateAccountAndRequest(account *Account, request VideoCreateRequest, inputs []VideoInput) error {
-	request.ReferenceMedia = normalizeOpenAICompatibleVideoReferenceFraming(request.ReferenceMedia)
+	media := normalizeOpenAICompatibleVideoReferenceFraming(request.ReferenceMedia())
 	if p == nil || p.httpUpstream == nil || !p.SupportsAccount(account) {
 		return rejectedVideoProviderError("permission", "unsupported_account", "account does not support OpenAI videos", http.StatusForbidden)
 	}
@@ -956,14 +956,25 @@ func (p *OpenAIVideoProvider) validateAccountAndRequest(account *Account, reques
 	if request.AudioEnabled != nil || strings.TrimSpace(request.ServiceTier) != "" || len(request.ProviderOptions) > 0 {
 		return rejectedVideoProviderError("validation", "unsupported_option", "OpenAI video request contains an unsupported option", http.StatusBadRequest)
 	}
-	if !request.ReferenceMedia.Empty() {
-		hasRatio := strings.TrimSpace(request.ReferenceMedia.Ratio) != "" ||
-			strings.TrimSpace(request.ReferenceMedia.AspectRatio) != ""
+	// Ark 维度的字段（resolution / seed / camera_fixed / watermark / frames / 智能时长）
+	// 在 OpenAI Videos 协议里没有对应物，不能静默丢弃。
+	if strings.TrimSpace(request.Resolution) != "" || request.Seed != nil || request.CameraFixed != nil || request.Watermark != nil ||
+		request.ReturnLastFrame != nil || request.Frames > 0 || request.SmartDuration || request.ExecutionExpiresAfter != 0 {
+		return rejectedVideoProviderError("validation", "unsupported_option", "OpenAI video request contains Ark-only parameters", http.StatusBadRequest)
+	}
+	for _, item := range request.MediaContent() {
+		if item.Input != nil {
+			return rejectedVideoProviderError("validation", "unsupported_reference_media", "OpenAI videos take uploaded media through multipart input_reference only", http.StatusBadRequest)
+		}
+	}
+	if !media.Empty() {
+		hasRatio := strings.TrimSpace(media.Ratio) != "" ||
+			strings.TrimSpace(media.AspectRatio) != ""
 		if request.Operation != VideoOperationGenerate || isOfficialOpenAIVideoAccount(account) || len(inputs) > 0 ||
 			request.InputReference != nil || (strings.TrimSpace(request.Size) != "" && hasRatio) {
 			return rejectedVideoProviderError("validation", "unsupported_reference_media", "video reference fields are not supported for this request", http.StatusBadRequest)
 		}
-		if _, err := openAICompatibleVideoReferenceFields(request.ReferenceMedia); err != nil {
+		if _, err := openAICompatibleVideoReferenceFields(media); err != nil {
 			return rejectedVideoProviderError("validation", "invalid_reference_media", "compatible video reference fields are invalid", http.StatusBadRequest)
 		}
 	}
@@ -986,7 +997,7 @@ func (p *OpenAIVideoProvider) validateAccountAndRequest(account *Account, reques
 }
 
 func openAIVideoCreateJSON(account *Account, request VideoCreateRequest) (map[string]any, error) {
-	request.ReferenceMedia = normalizeOpenAICompatibleVideoReferenceFraming(request.ReferenceMedia)
+	media := normalizeOpenAICompatibleVideoReferenceFraming(request.ReferenceMedia())
 	body := map[string]any{"model": request.Model, "prompt": request.Prompt}
 	if request.Seconds > 0 {
 		body["seconds"] = openAIVideoJSONSeconds(account, request)
@@ -1016,8 +1027,8 @@ func openAIVideoCreateJSON(account *Account, request VideoCreateRequest) (map[st
 		}
 		body["characters"] = characters
 	}
-	if !request.ReferenceMedia.Empty() {
-		fields, err := openAICompatibleVideoReferenceFields(request.ReferenceMedia)
+	if !media.Empty() {
+		fields, err := openAICompatibleVideoReferenceFields(media)
 		if err != nil {
 			return nil, err
 		}

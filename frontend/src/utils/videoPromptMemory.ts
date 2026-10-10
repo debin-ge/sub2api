@@ -1,8 +1,8 @@
 /**
  * 提示词的本地记忆——**老任务的兜底**，不是主来源。
  *
- * 服务端现在会把提示词留在 `request_attributes.prompt` 里，`GET /v1/videos` 回放时
- * 原样带回（见 `VideoTask.prompt`），因此新任务根本不走这里。留着它只为一件事：
+ * 服务端现在会把提示词留在 `request_attributes.prompt` 里，`GET /api/v3/contents/generations/tasks`
+ * 回放时原样带回（见 `VideoTask.prompt`），因此新任务根本不走这里。留着它只为一件事：
  * 服务端开始留存之前创建的那批任务，除了本浏览器这份记忆再无处可寻。
  *
  * 三条边界要清楚：

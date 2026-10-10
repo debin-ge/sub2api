@@ -29,11 +29,22 @@ func DefaultByteDanceVideoCapabilities() VideoCapabilities {
 	supportedModels := make(map[string]bool, len(models))
 	supportedSeconds := make(map[string][]int, len(models))
 	defaultSeconds := make(map[string]int, len(models))
+	supportedResolutions := make(map[string][]string, len(models))
+	supportedRatios := make(map[string][]string, len(models))
+	defaultResolutions := make(map[string]string, len(models))
+	defaultRatios := make(map[string]string, len(models))
+	smartDuration := make(map[string]bool, len(models))
 	for _, model := range models {
 		supportedModels[model] = true
 		supportedSeconds[model] = []int{5, 10}
 		defaultSeconds[model] = 5
+		supportedResolutions[model] = []string{"480p", "720p", "1080p"}
+		supportedRatios[model] = []string{"16:9", "9:16", "4:3", "3:4", "1:1", "21:9", ArkVideoRatioAdaptive}
+		defaultResolutions[model] = "720p"
+		defaultRatios[model] = "16:9"
+		smartDuration[model] = true
 	}
+	imageMIMEs := map[string]bool{"image/jpeg": true, "image/png": true, "image/webp": true, "image/bmp": true, "image/tiff": true, "image/gif": true}
 	return VideoCapabilities{
 		DefaultModel:   ByteDanceVideoModelSeedance10Pro,
 		DefaultSeconds: defaultSeconds,
@@ -43,18 +54,33 @@ func DefaultByteDanceVideoCapabilities() VideoCapabilities {
 			VideoCapabilityCreate: true, VideoCapabilityInputReference: true, VideoCapabilityCancel: true,
 		},
 		InputRolesByOperation: map[string]map[VideoInputRole]bool{
-			VideoOperationGenerate: {VideoInputRoleReferenceImage: true},
+			VideoOperationGenerate: {
+				VideoInputRoleFirstFrame: true, VideoInputRoleLastFrame: true, VideoInputRoleTaggedReferenceImage: true,
+			},
 		},
 		InputMIMETypes: map[VideoInputRole]map[string]bool{
-			VideoInputRoleReferenceImage: {"image/jpeg": true, "image/png": true, "image/webp": true},
+			VideoInputRoleFirstFrame: imageMIMEs, VideoInputRoleLastFrame: imageMIMEs, VideoInputRoleTaggedReferenceImage: imageMIMEs,
 		},
 		// An image reference is inlined into the JSON body as a data URI, so the
 		// upload cap is the inline cap rather than a multipart limit.
-		MaxInputBytes:        map[VideoInputRole]int64{VideoInputRoleReferenceImage: byteDanceMaxInlineImageBytes},
-		MaxInputsByOperation: map[string]int{VideoOperationGenerate: 1},
-		ContentVariants:      map[string]bool{"video": true},
+		MaxInputBytes: map[VideoInputRole]int64{
+			VideoInputRoleFirstFrame: byteDanceMaxInlineImageBytes, VideoInputRoleLastFrame: byteDanceMaxInlineImageBytes,
+			VideoInputRoleTaggedReferenceImage: byteDanceMaxInlineImageBytes,
+		},
+		MaxInputsByOperation: map[string]int{VideoOperationGenerate: 11},
+		// content[] 角色上限按 Ark 文档：首尾帧各一张，参考图最多 9 张，参考视频 3 段，参考音频 3 段。
+		MaxContentByRole: map[VideoInputRole]int{
+			VideoInputRoleFirstFrame: 1, VideoInputRoleLastFrame: 1, VideoInputRoleTaggedReferenceImage: 9,
+			VideoInputRoleReferenceVideo: 3, VideoInputRoleReferenceAudio: 3,
+		},
+		ContentVariants:      map[string]bool{"video": true, "last_frame": true},
 		SupportedModels:      supportedModels,
 		SupportedSeconds:     supportedSeconds,
+		SupportedResolutions: supportedResolutions,
+		SupportedRatios:      supportedRatios,
+		DefaultResolutions:   defaultResolutions,
+		DefaultRatios:        defaultRatios,
+		SmartDurationModels:  smartDuration,
 	}
 }
 
@@ -186,6 +212,9 @@ func ValidateVideoCreateCapabilities(caps VideoCapabilities, request VideoCreate
 	if allowed, ok := caps.SupportedSizes[canonicalOpenAIVideoModel(model)]; knownModel && ok && strings.TrimSpace(request.Size) != "" && !slices.Contains(allowed, strings.ToLower(strings.TrimSpace(request.Size))) {
 		return fmt.Errorf("%w: size %q", ErrVideoCapabilityUnsupported, request.Size)
 	}
+	if err := validateVideoArkCreateCapabilities(caps, request, knownModel); err != nil {
+		return err
+	}
 	for _, input := range inputs {
 		if !caps.SupportsInputForOperation(request.Operation, input.Role) {
 			return fmt.Errorf("%w: role=%s operation=%s", ErrVideoInputUnsupported, input.Role, request.Operation)
@@ -210,6 +239,48 @@ func ValidateVideoCreateCapabilities(caps VideoCapabilities, request VideoCreate
 	return nil
 }
 
+// validateVideoArkCreateCapabilities 校验 Ark 维度：content[] 角色数量、分辨率、比例与智能时长。
+// 未知模型（不在 SupportedModels）只校验角色是否被接受，取值交给上游裁决。
+func validateVideoArkCreateCapabilities(caps VideoCapabilities, request VideoCreateRequest, knownModel bool) error {
+	if normalizeVideoOperation(request.Operation) != VideoOperationGenerate {
+		return nil
+	}
+	canonical := canonicalOpenAIVideoModel(firstNonEmptyString(request.RequestedModel, request.Model))
+	counts := VideoContentRoleCounts(request.Content)
+	// 角色上限只对声明了 MaxContentByRole 的 Ark 形态 provider 生效；OpenAI 兼容上游的
+	// first_image_url / reference_* 由 openai_video_compatible_references.go 自己校验。
+	if len(caps.MaxContentByRole) > 0 {
+		for role, count := range counts {
+			if !caps.SupportsContentRole(VideoInputRole(role), count) {
+				return fmt.Errorf("%w: content role %q (%d item(s))", ErrVideoInputUnsupported, role, count)
+			}
+		}
+	}
+	if request.SmartDuration && !caps.SmartDurationModels[canonical] {
+		return fmt.Errorf("%w: duration -1", ErrVideoCapabilityUnsupported)
+	}
+	if request.Frames > 0 && !caps.SmartDurationModels[canonical] {
+		return fmt.Errorf("%w: frames", ErrVideoCapabilityUnsupported)
+	}
+	if !knownModel {
+		return nil
+	}
+	if resolution := strings.ToLower(strings.TrimSpace(request.Resolution)); resolution != "" {
+		if allowed, ok := caps.SupportedResolutions[canonical]; ok && len(allowed) > 0 && !slices.Contains(allowed, resolution) {
+			return fmt.Errorf("%w: resolution %q", ErrVideoCapabilityUnsupported, resolution)
+		}
+	}
+	if ratio := strings.ToLower(strings.TrimSpace(request.Ratio)); ratio != "" {
+		if allowed, ok := caps.SupportedRatios[canonical]; ok && len(allowed) > 0 && !slices.Contains(allowed, ratio) {
+			return fmt.Errorf("%w: ratio %q", ErrVideoCapabilityUnsupported, ratio)
+		}
+		if ratio == ArkVideoRatioAdaptive && counts[string(VideoInputRoleFirstFrame)] == 0 && counts[string(VideoInputRoleReferenceImage)] == 0 {
+			return ErrVideoAdaptiveRatioRequiresImage
+		}
+	}
+	return nil
+}
+
 // ApplyVideoCapabilityDefaults makes provider defaults explicit before price
 // resolution and request hashing. Derived operations keep their own semantics
 // and therefore do not inherit create-only duration or size defaults.
@@ -224,8 +295,20 @@ func ApplyVideoCapabilityDefaults(caps VideoCapabilities, request VideoCreateReq
 		return request
 	}
 	model := canonicalOpenAIVideoModel(firstNonEmptyString(request.RequestedModel, request.Model))
-	if request.Seconds <= 0 {
+	if request.Seconds <= 0 && !request.SmartDuration && request.Frames <= 0 {
 		request.Seconds = caps.DefaultSeconds[model]
+	}
+	if len(caps.SupportedResolutions) > 0 || len(caps.SupportedRatios) > 0 {
+		// Ark 维度的 provider：补分辨率默认档；比例只在没有首帧图时补（图生视频默认跟随
+		// 图片，由 provider 决定是否送 adaptive）。
+		if strings.TrimSpace(request.Resolution) == "" {
+			request.Resolution = strings.TrimSpace(caps.DefaultResolutions[model])
+		}
+		if strings.TrimSpace(request.Ratio) == "" && len(request.ContentByRole(VideoInputRoleFirstFrame)) == 0 &&
+			len(request.ContentByRole(VideoInputRoleReferenceImage)) == 0 {
+			request.Ratio = strings.TrimSpace(caps.DefaultRatios[model])
+		}
+		return request
 	}
 	if strings.TrimSpace(request.Size) == "" {
 		request.Size = strings.TrimSpace(caps.DefaultSizes[model])

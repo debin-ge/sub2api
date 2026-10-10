@@ -56,7 +56,7 @@ func waveSpeedProfile(model string, spec waveSpeedProfileSpec) *videoModelProfil
 		RequiresImage: spec.image == "required", AllowsImage: spec.image != "", MaxImages: maxImages,
 		Seconds: spec.seconds, MinSeconds: spec.minSeconds, MaxSeconds: spec.maxSeconds, DefaultSeconds: spec.defSeconds,
 		DurationEnc: videoDurationInt, DurationField: "duration",
-		Sizes: sizes, DefaultSize: defSize, SizeEnc: spec.sizeEnc, ResolutionLabels: spec.resLabels,
+		Sizes: sizes, DefaultSize: defSize, SizeEnc: spec.sizeEnc, ResolutionLabels: spec.resLabels, Ratios: append([]string(nil), spec.aspects...), CanonicalResolutions: append([]string(nil), spec.resolution...),
 		AudioField: spec.audio, OptionWhitelist: options, OutputPath: "outputs.0",
 		ImageField: "image", LastImageField: "last_image",
 	}
@@ -69,7 +69,7 @@ func waveSpeedFallbackProfile(model string) *videoModelProfile {
 		options: map[string]string{"seed": "seed", "negative_prompt": "negative_prompt"},
 	})
 	profile.Fallback = true
-	return profile
+	return profile.finalizeArkDimensions()
 }
 
 func waveSpeedVideoProfiles() map[string]*videoModelProfile {
