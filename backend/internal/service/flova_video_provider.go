@@ -311,20 +311,20 @@ type flovaTaskState struct {
 
 func (s flovaTaskState) encode() string {
 	var b strings.Builder
-	b.WriteString(s.ProjectID)
-	b.WriteString(":")
-	b.WriteString(s.StreamChatID)
-	b.WriteString("|m=")
-	b.WriteString(s.ModelKey)
-	b.WriteString(";r=")
-	b.WriteString(s.Resolution)
-	b.WriteString(";s=")
-	b.WriteString(strconv.Itoa(s.Seconds))
-	b.WriteString(";t=")
-	b.WriteString(strconv.FormatInt(s.SubmittedAt.Unix(), 10))
+	_, _ = b.WriteString(s.ProjectID)
+	_, _ = b.WriteString(":")
+	_, _ = b.WriteString(s.StreamChatID)
+	_, _ = b.WriteString("|m=")
+	_, _ = b.WriteString(s.ModelKey)
+	_, _ = b.WriteString(";r=")
+	_, _ = b.WriteString(s.Resolution)
+	_, _ = b.WriteString(";s=")
+	_, _ = b.WriteString(strconv.Itoa(s.Seconds))
+	_, _ = b.WriteString(";t=")
+	_, _ = b.WriteString(strconv.FormatInt(s.SubmittedAt.Unix(), 10))
 	if s.ResourceID != "" {
-		b.WriteString(";x=")
-		b.WriteString(s.ResourceID)
+		_, _ = b.WriteString(";x=")
+		_, _ = b.WriteString(s.ResourceID)
 	}
 	return b.String()
 }
@@ -1167,30 +1167,30 @@ func (p *FlovaVideoProvider) handlePendingActions(ctx context.Context, account *
 // 上游每秒积分不超过价格表 × (1 + 容差)。通过时返回要 resume 的选项 id。
 func (p *FlovaVideoProvider) evaluateHighCostConfirm(account *Account, state flovaTaskState, action flovaPendingAction) (string, error) {
 	if !p.autoConfirmHighCost(account) {
-		return "", errors.New("Flova high-cost confirmation is disabled for this account")
+		return "", errors.New("high-cost confirmation is disabled for this Flova account")
 	}
 	items, _ := action.Payload["items"].([]any)
 	if len(items) != 1 {
-		return "", fmt.Errorf("Flova high-cost confirmation lists %d items, expected exactly one video", len(items))
+		return "", fmt.Errorf("high-cost confirmation lists %d items, expected exactly one video", len(items))
 	}
 	item, _ := items[0].(map[string]any)
 	if item == nil {
-		return "", errors.New("Flova high-cost confirmation item is malformed")
+		return "", errors.New("high-cost confirmation item is malformed")
 	}
 	if count, ok := numericMapValue(item, "video_count"); ok && int(count) != 1 {
-		return "", fmt.Errorf("Flova high-cost confirmation covers %d videos, expected one", int(count))
+		return "", fmt.Errorf("high-cost confirmation covers %d videos, expected one", int(count))
 	}
 	profile := flovaModelProfileFor(state.model())
 	if profile == nil {
-		return "", errors.New("Flova task model is unknown")
+		return "", errors.New("task model is unknown to the Flova catalog")
 	}
 	modelName, _ := item["model_name"].(string)
 	if modelName != "" && !strings.EqualFold(strings.TrimSpace(modelName), profile.DisplayName) {
-		return "", fmt.Errorf("Flova quoted model %q, task requested %s", modelName, profile.DisplayName)
+		return "", fmt.Errorf("quoted model %q differs from the requested %s", modelName, profile.DisplayName)
 	}
 	resolution, _ := item["resolution"].(string)
 	if resolution != "" && !strings.EqualFold(strings.TrimSpace(resolution), state.Resolution) {
-		return "", fmt.Errorf("Flova quoted resolution %s, task requested %s", resolution, state.Resolution)
+		return "", fmt.Errorf("quoted resolution %s differs from the requested %s", resolution, state.Resolution)
 	}
 	expected, ok := flovaCreditsPerSecond(profile.ID, state.Resolution)
 	if !ok {
@@ -1201,15 +1201,15 @@ func (p *FlovaVideoProvider) evaluateHighCostConfirm(account *Account, state flo
 		if estimated, ok := numericMapValue(item, "estimated_credits"); ok && state.Seconds > 0 {
 			quoted = estimated / float64(state.Seconds)
 		} else {
-			return "", errors.New("Flova high-cost confirmation carries no price")
+			return "", errors.New("high-cost confirmation carries no price")
 		}
 	}
 	if quoted > expected*(1+p.priceDriftTolerance(account)) {
-		return "", fmt.Errorf("Flova quotes %.2f credits/s for %s %s, price table expects %.2f", quoted, profile.DisplayName, state.Resolution, expected)
+		return "", fmt.Errorf("quoted %.2f credits/s for %s %s, price table expects %.2f", quoted, profile.DisplayName, state.Resolution, expected)
 	}
 	optionID := flovaResumeOption(action, "once")
 	if optionID == "" {
-		return "", errors.New("Flova high-cost confirmation has no resume option")
+		return "", errors.New("high-cost confirmation has no resume option")
 	}
 	return optionID, nil
 }
@@ -1505,7 +1505,7 @@ func (p *FlovaVideoProvider) fetchContent(ctx context.Context, account *Account,
 		return nil, controlVideoProviderError(err)
 	}
 	if !strings.EqualFold(target.Scheme, "https") {
-		return nil, controlVideoProviderError(errors.New("Flova video content must use HTTPS"))
+		return nil, controlVideoProviderError(errors.New("video content URL must use HTTPS"))
 	}
 	resolver := p.resolver
 	if resolver == nil {
@@ -1572,7 +1572,7 @@ func (p *FlovaVideoProvider) executeContent(ctx context.Context, request *http.R
 		location := response.Header.Get("Location")
 		_ = response.Body.Close()
 		if hop >= flovaContentMaxRedirects {
-			return nil, errors.New("Flova video content exceeded the redirect limit")
+			return nil, errors.New("video content exceeded the redirect limit")
 		}
 		next, nextAddresses, err := validateVideoContentRedirect(ctx, current.URL, location, resolver)
 		if err != nil {

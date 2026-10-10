@@ -2,7 +2,6 @@ package service
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 )
 
@@ -95,22 +94,6 @@ func flovaModelProfileFor(model string) *flovaModelProfile {
 	return flovaModelProfiles[strings.ToLower(strings.TrimSpace(model))]
 }
 
-// flovaSizeSpec 把 sub2api 的 WxH 尺寸映射成 Flova 指令里的「比例 + 分辨率档位」。
-type flovaSizeSpec struct {
-	Size       string
-	Ratio      string
-	Resolution string
-}
-
-// flovaSizeTable 按分辨率档位分组、固定顺序；每组第一个 16:9 尺寸是该档位的默认尺寸。
-var flovaSizeTable = []flovaSizeSpec{
-	{"1280x720", "16:9", "720p"}, {"720x1280", "9:16", "720p"}, {"720x720", "1:1", "720p"},
-	{"960x720", "4:3", "720p"}, {"720x960", "3:4", "720p"}, {"1680x720", "21:9", "720p"},
-	{"1366x768", "16:9", "768p"}, {"768x1366", "9:16", "768p"}, {"768x768", "1:1", "768p"},
-	{"1920x1080", "16:9", "1080p"}, {"1080x1920", "9:16", "1080p"}, {"1080x1080", "1:1", "1080p"},
-	{"1440x1080", "4:3", "1080p"}, {"1080x1440", "3:4", "1080p"}, {"2560x1080", "21:9", "1080p"},
-}
-
 func (p *flovaModelProfile) allowsRatio(ratio string) bool {
 	if len(p.Ratios) == 0 {
 		return ratio == "16:9" || ratio == "9:16"
@@ -155,49 +138,12 @@ func (p *flovaModelProfile) allowsSeconds(seconds int) bool {
 	return seconds >= p.MinSeconds && seconds <= p.MaxSeconds
 }
 
-// minSeconds 是摊入回合费时用的最短可选时长（方案 D11）。
-func (p *flovaModelProfile) minSeconds() int {
-	if len(p.Seconds) > 0 {
-		m := p.Seconds[0]
-		for _, s := range p.Seconds[1:] {
-			if s < m {
-				m = s
-			}
-		}
-		return m
-	}
-	return p.MinSeconds
-}
-
 // supportedRatios 返回模型接受的比例词表（空表示只有 16:9 / 9:16）。
 func (p *flovaModelProfile) supportedRatios() []string {
 	if len(p.Ratios) == 0 {
 		return []string{"16:9", "9:16"}
 	}
 	return append([]string(nil), p.Ratios...)
-}
-
-func (p *flovaModelProfile) supportedSizes() []string {
-	sizes := make([]string, 0, len(flovaSizeTable))
-	for _, spec := range flovaSizeTable {
-		if p.allowsResolution(spec.Resolution) && p.allowsRatio(spec.Ratio) {
-			sizes = append(sizes, spec.Size)
-		}
-	}
-	return sizes
-}
-
-func (p *flovaModelProfile) defaultSize() string {
-	for _, spec := range flovaSizeTable {
-		if spec.Resolution == p.Resolutions[0] && spec.Ratio == "16:9" {
-			return spec.Size
-		}
-	}
-	sizes := p.supportedSizes()
-	if len(sizes) > 0 {
-		return sizes[0]
-	}
-	return ""
 }
 
 // flovaArkResolution 把 Flova 自己的档位名换成 Ark 词表：MiniMax H3 的 1366x768 对外是 720p
@@ -222,16 +168,6 @@ func flovaArkResolutions(native []string) []string {
 		out = append(out, label)
 	}
 	return out
-}
-
-func flovaSizeSpecFor(size string) (flovaSizeSpec, bool) {
-	size = strings.ToLower(strings.TrimSpace(size))
-	for _, spec := range flovaSizeTable {
-		if spec.Size == size {
-			return spec, true
-		}
-	}
-	return flovaSizeSpec{}, false
 }
 
 // flovaResolveRendition 把请求的 ratio / resolution 归一成 Flova 指令用的 (ratio, resolution)。
@@ -267,16 +203,6 @@ func flovaResolveRendition(profile *flovaModelProfile, requestRatio, requestReso
 		return "", "", fmt.Errorf("flova: %s does not support aspect ratio %s", profile.DisplayName, ratio)
 	}
 	return ratio, resolution, nil
-}
-
-func stringOption(options map[string]any, key string) string {
-	if options == nil {
-		return ""
-	}
-	if v, ok := options[key].(string); ok {
-		return v
-	}
-	return ""
 }
 
 // flovaRequestResolution 供 providerRequestResolution 使用：定价的 resolutions 条件与
@@ -347,18 +273,4 @@ func DefaultFlovaVideoCapabilities() VideoCapabilities {
 		SupportedModels:      supportedModels,
 		SupportedSeconds:     supportedSeconds,
 	}
-}
-
-// flovaModelDisplayNames 供日志与前端展示；按目录顺序。
-func flovaModelDisplayNames() map[string]string {
-	out := make(map[string]string, len(flovaModelProfiles))
-	keys := make([]string, 0, len(flovaModelProfiles))
-	for k := range flovaModelProfiles {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		out[k] = flovaModelProfiles[k].DisplayName
-	}
-	return out
 }
