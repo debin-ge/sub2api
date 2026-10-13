@@ -29,9 +29,9 @@ func TestVideoMaximumOutputSeconds(t *testing.T) {
 		{"frames exact", VideoSubmitRequest{}, pro(func(r *VideoCreateRequest) { r.Frames = 48 }), 2},
 		{"frames beat request seconds", VideoSubmitRequest{Seconds: 8}, pro(func(r *VideoCreateRequest) { r.Frames = 29 }), 2},
 		// 智能时长按模型声明的最长档位预扣；没有声明时退回 Ark 的自由区间上限。
-		{"smart duration takes the longest tier", VideoSubmitRequest{Seconds: 8}, pro(func(r *VideoCreateRequest) { r.SmartDuration = true }), 10},
+		{"smart duration takes the longest tier", VideoSubmitRequest{Seconds: 8}, pro(func(r *VideoCreateRequest) { r.SmartDuration = true }), 12},
 		{"smart duration on unknown model", VideoSubmitRequest{}, VideoCreateRequest{Model: "doubao-seedance-9-9-pro-270101", SmartDuration: true}, videoByteDanceFreeSecondsMax},
-		{"smart duration resolves the alias", VideoSubmitRequest{}, VideoCreateRequest{Model: "alias", RequestedModel: ByteDanceVideoModelSeedance10Lite, SmartDuration: true}, 10},
+		{"smart duration resolves the alias", VideoSubmitRequest{}, VideoCreateRequest{Model: "alias", RequestedModel: ByteDanceVideoModelSeedance10Lite, SmartDuration: true}, 12},
 		{"nothing known", VideoSubmitRequest{}, VideoCreateRequest{}, 0},
 	}
 	for _, tc := range cases {

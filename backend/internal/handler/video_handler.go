@@ -1947,7 +1947,37 @@ func videoError(c *gin.Context, err error) {
 	if message == "" {
 		message = http.StatusText(status)
 	}
+	if detail := videoValidationErrorDetail(err); detail != "" {
+		message += ": " + detail
+	}
 	videoJSONError(c, status, code, message)
+}
+
+// videoValidationErrorDetail 取出校验错误包装层里的具体原因（"seconds 8"、"resolution \"2k\""）。
+// 只对请求校验类的错误码放行：这些细节全部来自请求本身，不含上游或内部信息。
+func videoValidationErrorDetail(err error) string {
+	app := infraerrors.FromError(err)
+	if app == nil {
+		return ""
+	}
+	switch app.Reason {
+	case "VIDEO_CAPABILITY_UNSUPPORTED", "VIDEO_INPUT_UNSUPPORTED", "VIDEO_INVALID_REQUEST",
+		"UNSUPPORTED_PARAMETER", "INVALID_CONTENT", "INVALID_ROLE":
+	default:
+		return ""
+	}
+	full, base := err.Error(), app.Error()
+	if !strings.HasPrefix(full, base) || len(full) <= len(base) {
+		return ""
+	}
+	detail := strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(full, base), ":"))
+	if detail == "" || hasControlCharacter(detail) {
+		return ""
+	}
+	if len(detail) > 200 {
+		detail = detail[:200]
+	}
+	return detail
 }
 
 func videoJSONError(c *gin.Context, status int, code, message string) {

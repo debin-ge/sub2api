@@ -230,8 +230,9 @@ func arkVideoProviderOptionsFromWhitelist(whitelist map[string]string) []ArkVide
 	return options
 }
 
-// ArkModelSpec：Ark 原生支持全部开关与全部媒体角色（视频 / 音频引用只接受 https）。
-func (p *ByteDanceVideoProvider) ArkModelSpec(string) ArkVideoModelSpec {
+// ArkModelSpec：Ark 原生支持全部开关与全部媒体角色（视频 / 音频引用只接受 https）；
+// frames 与智能时长同步，只对能力表声明支持的模型给出。
+func (p *ByteDanceVideoProvider) ArkModelSpec(model string) ArkVideoModelSpec {
 	imageAccepts := []string{videoReferenceAcceptsHTTPS, videoReferenceAcceptsDataURI}
 	caps := p.Capabilities()
 	roles := map[VideoInputRole]ArkVideoContentRole{}
@@ -248,7 +249,7 @@ func (p *ByteDanceVideoProvider) ArkModelSpec(string) ArkVideoModelSpec {
 	return ArkVideoModelSpec{
 		Flags:           ArkVideoModelFlags{Seed: true, CameraFixed: true, Watermark: true, GenerateAudio: true, ReturnLastFrame: true},
 		ContentRoles:    roles,
-		FramesSupported: true,
+		FramesSupported: caps.SmartDurationModels[canonicalOpenAIVideoModel(model)],
 	}
 }
 

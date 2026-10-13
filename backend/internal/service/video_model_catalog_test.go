@@ -220,11 +220,12 @@ func TestListArkVideoModelsDescribesArkDimensions(t *testing.T) {
 	for _, model := range response.Data {
 		require.Equal(t, VideoProviderByteDance, model.Provider, "id=%s", model.ID)
 		require.Equal(t, videoModelObject, model.Object, "id=%s", model.ID)
-		// 价目没声明 conditions.seconds，档位回落到能力表；智能时长由能力表声明。
-		require.Equal(t, []int{5, 10}, model.Durations.Values, "id=%s", model.ID)
+		// 价目没声明 conditions.seconds，档位回落到能力表（Ark 文档：1.0 系列 2 到 12 秒）；
+		// 1.0 系列不支持智能时长与 frames，目录照实声明。
+		require.Equal(t, byteDanceSeedance10Durations(), model.Durations.Values, "id=%s", model.ID)
 		require.Equal(t, 5, model.Durations.Default, "id=%s", model.ID)
-		require.True(t, model.Durations.AllowSmart, "id=%s", model.ID)
-		require.Equal(t, &ArkVideoModelFrames{Min: byteDanceMinFrames, Max: byteDanceMaxFrames, Step: 4}, model.Frames, "id=%s", model.ID)
+		require.False(t, model.Durations.AllowSmart, "id=%s", model.ID)
+		require.Nil(t, model.Frames, "id=%s", model.ID)
 		require.Equal(t, ArkVideoModelFlags{Seed: true, CameraFixed: true, Watermark: true, GenerateAudio: true, ReturnLastFrame: true}, model.Flags)
 		require.Empty(t, model.ProviderOptions, "Ark has no vendor-specific provider_options")
 	}
@@ -513,7 +514,7 @@ func TestListVideoModelsKeepsPricedModelsWithoutDeclaredSeconds(t *testing.T) {
 		response, err := service.ListArkVideoModels(context.Background(), videoModelCatalogAPIKey(42))
 		require.NoError(t, err)
 		model := arkVideoModelByID(t, response, ByteDanceVideoModelSeedance10Pro)
-		require.Equal(t, []int{5, 10}, model.Durations.Values)
+		require.Equal(t, byteDanceSeedance10Durations(), model.Durations.Values)
 		require.Equal(t, 5, model.Durations.Default)
 		require.Zero(t, model.Durations.Min)
 		require.Zero(t, model.Durations.Max)

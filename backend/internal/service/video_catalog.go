@@ -36,13 +36,14 @@ func DefaultByteDanceVideoCapabilities() VideoCapabilities {
 	smartDuration := make(map[string]bool, len(models))
 	for _, model := range models {
 		supportedModels[model] = true
-		supportedSeconds[model] = []int{5, 10}
+		// Ark 文档：Seedance 1.0 系列 duration 取 [2, 12] 的整数秒，默认 5；不支持智能时长（-1）
+		// 与 frames，那是 1.5 Pro 与 2.x 的能力。能力表不认识的新模型由 Ark 自己裁决。
+		supportedSeconds[model] = byteDanceSeedance10Durations()
 		defaultSeconds[model] = 5
 		supportedResolutions[model] = []string{"480p", "720p", "1080p"}
 		supportedRatios[model] = []string{"16:9", "9:16", "4:3", "3:4", "1:1", "21:9", ArkVideoRatioAdaptive}
 		defaultResolutions[model] = "720p"
 		defaultRatios[model] = "16:9"
-		smartDuration[model] = true
 	}
 	imageMIMEs := map[string]bool{"image/jpeg": true, "image/png": true, "image/webp": true, "image/bmp": true, "image/tiff": true, "image/gif": true}
 	return VideoCapabilities{
@@ -82,6 +83,15 @@ func DefaultByteDanceVideoCapabilities() VideoCapabilities {
 		DefaultRatios:        defaultRatios,
 		SmartDurationModels:  smartDuration,
 	}
+}
+
+// byteDanceSeedance10Durations 是 Seedance 1.0 系列的时长档位：2 到 12 秒的连续整数。
+func byteDanceSeedance10Durations() []int {
+	values := make([]int, 0, 11)
+	for seconds := 2; seconds <= 12; seconds++ {
+		values = append(values, seconds)
+	}
+	return values
 }
 
 // DefaultOpenAIVideoCapabilities is the built-in safe snapshot. Runtime
@@ -256,14 +266,16 @@ func validateVideoArkCreateCapabilities(caps VideoCapabilities, request VideoCre
 			}
 		}
 	}
+	if !knownModel {
+		// 能力表不认识的模型（新发布的 Seedance、ep-* 接入点）：时长、画幅、智能时长与帧数
+		// 都交给上游裁决；聚合平台与 Flova 在各自的 provider 校验里另行拒绝 -1 与 frames。
+		return nil
+	}
 	if request.SmartDuration && !caps.SmartDurationModels[canonical] {
 		return fmt.Errorf("%w: duration -1", ErrVideoCapabilityUnsupported)
 	}
 	if request.Frames > 0 && !caps.SmartDurationModels[canonical] {
 		return fmt.Errorf("%w: frames", ErrVideoCapabilityUnsupported)
-	}
-	if !knownModel {
-		return nil
 	}
 	if resolution := strings.ToLower(strings.TrimSpace(request.Resolution)); resolution != "" {
 		if allowed, ok := caps.SupportedResolutions[canonical]; ok && len(allowed) > 0 && !slices.Contains(allowed, resolution) {

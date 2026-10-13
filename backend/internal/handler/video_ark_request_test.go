@@ -7,15 +7,18 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
 
@@ -395,4 +398,32 @@ func TestParseArkVideoRequestValidatesExecutionExpiresAfterRange(t *testing.T) {
 	require.NotNil(t, request.Watermark)
 	require.False(t, *request.Watermark)
 	require.Equal(t, "default", request.ServiceTier)
+}
+
+// 校验类错误把包装层的具体原因带进 message，其他错误码不透出内部细节。
+func TestVideoErrorSurfacesValidationDetail(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	render := func(err error) (int, string) {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		c.Request = httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", nil)
+		videoError(c, err)
+		return recorder.Code, recorder.Body.String()
+	}
+	status, body := render(fmt.Errorf("%w: seconds 8", service.ErrVideoCapabilityUnsupported))
+	require.Equal(t, http.StatusBadRequest, status)
+	require.Contains(t, body, `"code":"video_capability_unsupported"`)
+	require.Contains(t, body, "video capability is not supported: seconds 8")
+
+	status, body = render(fmt.Errorf("%w: resolution %q", service.ErrVideoUnsupportedParameter, "2k"))
+	require.Equal(t, http.StatusBadRequest, status)
+	require.Contains(t, body, `request parameter is not supported by this model: resolution \"2k\"`)
+
+	_, body = render(service.ErrVideoCapabilityUnsupported)
+	require.Contains(t, body, `"message":"video capability is not supported"`)
+
+	// 非校验类错误保持原文案，不把内部原因暴露出去。
+	_, body = render(fmt.Errorf("%w: rule lookup failed on shard 3", service.ErrVideoPricingMissing))
+	require.Contains(t, body, `"message":"video pricing is not configured"`)
+	require.NotContains(t, body, "shard")
 }

@@ -53,7 +53,7 @@ curl "$SUB2API_BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" -H "Authoriz
 
 - `model`（必填）、`content[]`（必填，至少一个 `text` 项）。媒体项：`image_url`（role `first_frame` 默认 / `last_frame` / `reference_image`）、
   `video_url`（`reference_video`）、`audio_url`（`reference_audio`）。图片可用 `https://` 或 `data:image/...;base64,` 内联（单张 ≤ 8MB，请求体默认 ≤ 16MB）；视频 / 音频只接受 `https://`。
-- `duration`（整数秒；`-1` 为智能时长）与 `frames`（25+4n，[29, 289]）二选一。
+- `duration`（整数秒；`-1` 为智能时长）与 `frames`（25+4n，[29, 289]）二选一。内置能力表按 Ark 文档约束 Seedance 1.0 系列：时长 2 到 12 秒，不支持 `-1` 与 `frames`；能力表不认识的模型（新版本、`ep-*` 接入点）由上游自行裁决，可在运行时能力目录里补充声明。
 - `resolution`：480p / 720p / 1080p / 2k / 4k；`ratio`：16:9 / 9:16 / 4:3 / 3:4 / 1:1 / 21:9 / adaptive（adaptive 需要 first_frame）。
 - `seed`、`camera_fixed`、`watermark`、`generate_audio`、`return_last_frame`、`service_tier`、`execution_expires_after`（[3600, 259200] 秒）、`callback_url`。
 - 弱校验写法同样生效：`"text": "海浪 --rs 720p --rt 16:9 --dur 5 --seed 11 --cf false --wm true"`，flag 覆盖顶层字段，预扣按解析后的值。
@@ -64,6 +64,7 @@ curl "$SUB2API_BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" -H "Authoriz
 - `execution_expires_after` 对所有上游生效：Ark 直连账号原样透传由 Ark 执行；其他上游由本网关执行，任务创建后到时限仍未开始执行即取消并置 `expired`、释放预扣。
 - 参考媒体角色：ByteDance 直连接受全部角色；WaveSpeed 的 Seedance 2.5 接受 `reference_image`（≤30，可 `data:` 内联）、`reference_video`（≤10）、`reference_audio`（≤10），均需 https 引用；其他聚合平台模型只接受首尾帧，见能力目录的 `content_roles`。
 - `Idempotency-Key` 头是 sub2api 扩展：同 key 同请求重放原任务，同 key 不同请求 409。创建开关关闭时该头必填。
+- 校验类错误（`video_capability_unsupported`、`video_input_unsupported`、`video_invalid_request`、`unsupported_parameter` 等）的 `message` 带具体原因，例如 `video capability is not supported: seconds 13`。
 
 ### 响应
 

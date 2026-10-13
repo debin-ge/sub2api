@@ -587,8 +587,10 @@ func TestByteDanceVideoProviderNativeCreateEncodesArkFields(t *testing.T) {
 	}}, nil)
 	on, off := true, false
 	seed := int64(7)
+	// 1.0 系列不支持智能时长与 frames；用内置快照不认识的 1.5 Pro，这些参数交给 Ark 裁决并原样透传。
+	const model = "doubao-seedance-1-5-pro-251215"
 	request := VideoCreateRequest{
-		Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Prompt: "A tracking shot",
+		Operation: VideoOperationGenerate, Model: model, Prompt: "A tracking shot",
 		SmartDuration: true, Resolution: "1080p", Ratio: ArkVideoRatioAdaptive,
 		Seed: &seed, CameraFixed: &on, Watermark: &off, AudioEnabled: &on, ReturnLastFrame: &on,
 		ServiceTier: "flex", ExecutionExpiresAfter: 7200,
@@ -628,10 +630,10 @@ func TestByteDanceVideoProviderNativeCreateEncodesArkFields(t *testing.T) {
 	require.NotContains(t, task.Metadata, "ratio")
 	require.NotContains(t, task.Metadata, "seconds")
 	require.Equal(t, int64(7), task.Metadata["seed"])
-	require.Equal(t, ByteDanceVideoModelSeedance10Pro, task.Metadata["model"])
+	require.Equal(t, model, task.Metadata["model"])
 
 	// frames 请求：送 frames，不送 duration。
-	frames := VideoCreateRequest{Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Prompt: "A tracking shot", Frames: 121, Resolution: "720p", Ratio: "16:9"}
+	frames := VideoCreateRequest{Operation: VideoOperationGenerate, Model: model, Prompt: "A tracking shot", Frames: 121, Resolution: "720p", Ratio: "16:9"}
 	task, err = provider.Create(context.Background(), byteDanceVideoTestAccount(), frames, nil)
 	require.NoError(t, err)
 	require.EqualValues(t, 121, payload["frames"])
@@ -713,14 +715,19 @@ func TestByteDanceVideoProviderOpenAICompatibleRejectsArkOnlyFields(t *testing.T
 		inputs []VideoInput
 		code   string
 	}{
-		"smart duration":    {func(r *VideoCreateRequest) { r.Seconds, r.SmartDuration = 0, true }, nil, "unsupported_option"},
-		"frames":            {func(r *VideoCreateRequest) { r.Seconds, r.Frames = 0, 29 }, nil, "unsupported_option"},
-		"seed":              {func(r *VideoCreateRequest) { r.Seed = &seed }, nil, "unsupported_option"},
-		"camera_fixed":      {func(r *VideoCreateRequest) { r.CameraFixed = &on }, nil, "unsupported_option"},
-		"watermark":         {func(r *VideoCreateRequest) { r.Watermark = &on }, nil, "unsupported_option"},
-		"generate_audio":    {func(r *VideoCreateRequest) { r.AudioEnabled = &on }, nil, "unsupported_option"},
-		"return_last_frame": {func(r *VideoCreateRequest) { r.ReturnLastFrame = &on }, nil, "unsupported_option"},
-		"service_tier":      {func(r *VideoCreateRequest) { r.ServiceTier = "flex" }, nil, "unsupported_option"},
+		// 1.0 系列在能力表层就不接受智能时长与 frames；快照外的模型才走到中继自己的拒绝。
+		"smart duration": {func(r *VideoCreateRequest) { r.Seconds, r.SmartDuration = 0, true }, nil, "unsupported_capability"},
+		"frames":         {func(r *VideoCreateRequest) { r.Seconds, r.Frames = 0, 29 }, nil, "unsupported_capability"},
+		"smart duration unknown model": {func(r *VideoCreateRequest) {
+			r.Model, r.Seconds, r.SmartDuration = "doubao-seedance-1-5-pro-251215", 0, true
+		}, nil, "unsupported_option"},
+		"frames unknown model": {func(r *VideoCreateRequest) { r.Model, r.Seconds, r.Frames = "doubao-seedance-1-5-pro-251215", 0, 29 }, nil, "unsupported_option"},
+		"seed":                 {func(r *VideoCreateRequest) { r.Seed = &seed }, nil, "unsupported_option"},
+		"camera_fixed":         {func(r *VideoCreateRequest) { r.CameraFixed = &on }, nil, "unsupported_option"},
+		"watermark":            {func(r *VideoCreateRequest) { r.Watermark = &on }, nil, "unsupported_option"},
+		"generate_audio":       {func(r *VideoCreateRequest) { r.AudioEnabled = &on }, nil, "unsupported_option"},
+		"return_last_frame":    {func(r *VideoCreateRequest) { r.ReturnLastFrame = &on }, nil, "unsupported_option"},
+		"service_tier":         {func(r *VideoCreateRequest) { r.ServiceTier = "flex" }, nil, "unsupported_option"},
 		// execution_expires_after 不再在此拒绝：中继模式下由本网关 worker 执行排队超时。
 		// 中继只认 https 引用：spool 字节没有可上传的通道。
 		"uploaded input": {func(r *VideoCreateRequest) {}, []VideoInput{*byteDanceSpoolImageForTest(VideoInputRoleFirstFrame, "image/png", "aaa")}, "unsupported_input"},

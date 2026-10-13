@@ -18,8 +18,9 @@ func arkContentItems(role VideoInputRole, count int) []VideoContentItem {
 
 func TestValidateVideoArkCreateCapabilities(t *testing.T) {
 	ark := DefaultByteDanceVideoCapabilities()
-	noSmart := cloneVideoCapabilities(ark)
-	noSmart.SmartDurationModels = nil
+	// 内置快照里 1.0 系列不支持智能时长；smart 模拟运行时目录给某模型补上了声明。
+	smart := cloneVideoCapabilities(ark)
+	smart.SmartDurationModels = map[string]bool{ByteDanceVideoModelSeedance10Pro: true}
 	vendor := newRunwareVideoAdapter().DefaultCapabilities()
 	openAI := DefaultOpenAIVideoCapabilities()
 
@@ -52,11 +53,14 @@ func TestValidateVideoArkCreateCapabilities(t *testing.T) {
 		{"adaptive with first frame", ark, VideoCreateRequest{Ratio: ArkVideoRatioAdaptive, Content: arkContentItems(VideoInputRoleFirstFrame, 1)}, true, nil},
 		{"adaptive with input_reference", openAI, VideoCreateRequest{Ratio: ArkVideoRatioAdaptive, Content: arkContentItems(VideoInputRoleReferenceImage, 1)}, true, nil},
 		{"ark caps reject generic input_reference content", ark, VideoCreateRequest{Content: arkContentItems(VideoInputRoleReferenceImage, 1)}, true, ErrVideoInputUnsupported},
-		// 智能时长与 frames 由 SmartDurationModels 一并门控。
-		{"smart duration allowed", ark, VideoCreateRequest{SmartDuration: true}, true, nil},
-		{"smart duration gated", noSmart, VideoCreateRequest{SmartDuration: true}, true, ErrVideoCapabilityUnsupported},
-		{"frames allowed", ark, VideoCreateRequest{Frames: 29}, true, nil},
-		{"frames gated", noSmart, VideoCreateRequest{Frames: 29}, true, ErrVideoCapabilityUnsupported},
+		// 智能时长与 frames 由 SmartDurationModels 一并门控，且只对能力表认识的模型生效：
+		// 新模型 / ep-* 接入点交给 Ark 自己裁决。
+		{"smart duration allowed", smart, VideoCreateRequest{SmartDuration: true}, true, nil},
+		{"smart duration gated", ark, VideoCreateRequest{SmartDuration: true}, true, ErrVideoCapabilityUnsupported},
+		{"smart duration on unknown model deferred", ark, VideoCreateRequest{Model: "doubao-seedance-2-0-260128", SmartDuration: true}, false, nil},
+		{"frames allowed", smart, VideoCreateRequest{Frames: 29}, true, nil},
+		{"frames gated", ark, VideoCreateRequest{Frames: 29}, true, ErrVideoCapabilityUnsupported},
+		{"frames on unknown model deferred", ark, VideoCreateRequest{Model: "ep-20261013-abcdef", Frames: 29}, false, nil},
 		{"vendor gates smart duration", vendor, VideoCreateRequest{SmartDuration: true}, true, ErrVideoCapabilityUnsupported},
 		// 分辨率与比例词表只对已知模型生效；取值大小写不敏感。
 		{"unknown resolution", ark, VideoCreateRequest{Resolution: "2k"}, true, ErrVideoCapabilityUnsupported},
@@ -91,11 +95,17 @@ func TestValidateVideoArkCreateCapabilities(t *testing.T) {
 		Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Seconds: 5, Ratio: ArkVideoRatioAdaptive,
 	}, nil)
 	require.ErrorIs(t, err, ErrVideoAdaptiveRatioRequiresImage)
-	err = ValidateVideoCreateCapabilities(ark, VideoCreateRequest{
+	err = ValidateVideoCreateCapabilities(smart, VideoCreateRequest{
 		Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Frames: 121, Resolution: "1080p",
 		Content: arkContentItems(VideoInputRoleFirstFrame, 1),
 	}, nil)
 	require.NoError(t, err)
+	// 1.0 系列按 Ark 文档接受 2 到 12 秒；能力表外的秒数才被拦。
+	err = ValidateVideoCreateCapabilities(ark, VideoCreateRequest{Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Seconds: 8}, nil)
+	require.NoError(t, err)
+	err = ValidateVideoCreateCapabilities(ark, VideoCreateRequest{Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Seconds: 13}, nil)
+	require.ErrorIs(t, err, ErrVideoCapabilityUnsupported)
+	require.Contains(t, err.Error(), "seconds 13", "细节随错误一起返回给调用方")
 }
 
 func TestApplyVideoCapabilityDefaultsArkBranch(t *testing.T) {
