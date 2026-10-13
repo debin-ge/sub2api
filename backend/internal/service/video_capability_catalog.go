@@ -118,6 +118,13 @@ func ValidateVideoCapabilityCatalog(document VideoCapabilityCatalogDocument) err
 	return nil
 }
 
+// 能力表的硬上限：单次请求的字节素材数（每份都要进 spool 与审核）与 content[] 单角色
+// 的引用数（WaveSpeed Seedance 2.5 允许 30 张参考图）。
+const (
+	videoMaxBinaryInputsPerOperation = 16
+	videoMaxContentItemsPerRole      = 32
+)
+
 func validateVideoCapabilities(provider string, capabilities VideoCapabilities) error {
 	fail := func(format string, args ...any) error {
 		return fmt.Errorf("%w: provider %s: %s", ErrVideoInvalidRequest, provider, fmt.Sprintf(format, args...))
@@ -259,7 +266,7 @@ func validateVideoCapabilities(provider string, capabilities VideoCapabilities) 
 		}
 	}
 	for role, maximum := range capabilities.MaxContentByRole {
-		if !IsValidVideoInputRole(role) || maximum <= 0 || maximum > 16 {
+		if !IsValidVideoInputRole(role) || maximum <= 0 || maximum > videoMaxContentItemsPerRole {
 			return fail("max_content_by_role: role %q has invalid maximum %d", role, maximum)
 		}
 	}
@@ -294,7 +301,7 @@ func validateVideoCapabilities(provider string, capabilities VideoCapabilities) 
 		}
 	}
 	for operation, maximum := range capabilities.MaxInputsByOperation {
-		if !isKnownVideoInputOperation(operation) || maximum < 0 || maximum > 16 {
+		if !isKnownVideoInputOperation(operation) || maximum < 0 || maximum > videoMaxBinaryInputsPerOperation {
 			return fail("operation %q has invalid maximum input count", operation)
 		}
 	}

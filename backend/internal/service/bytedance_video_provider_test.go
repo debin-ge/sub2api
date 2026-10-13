@@ -713,15 +713,15 @@ func TestByteDanceVideoProviderOpenAICompatibleRejectsArkOnlyFields(t *testing.T
 		inputs []VideoInput
 		code   string
 	}{
-		"smart duration":          {func(r *VideoCreateRequest) { r.Seconds, r.SmartDuration = 0, true }, nil, "unsupported_option"},
-		"frames":                  {func(r *VideoCreateRequest) { r.Seconds, r.Frames = 0, 29 }, nil, "unsupported_option"},
-		"seed":                    {func(r *VideoCreateRequest) { r.Seed = &seed }, nil, "unsupported_option"},
-		"camera_fixed":            {func(r *VideoCreateRequest) { r.CameraFixed = &on }, nil, "unsupported_option"},
-		"watermark":               {func(r *VideoCreateRequest) { r.Watermark = &on }, nil, "unsupported_option"},
-		"generate_audio":          {func(r *VideoCreateRequest) { r.AudioEnabled = &on }, nil, "unsupported_option"},
-		"return_last_frame":       {func(r *VideoCreateRequest) { r.ReturnLastFrame = &on }, nil, "unsupported_option"},
-		"service_tier":            {func(r *VideoCreateRequest) { r.ServiceTier = "flex" }, nil, "unsupported_option"},
-		"execution_expires_after": {func(r *VideoCreateRequest) { r.ExecutionExpiresAfter = 3600 }, nil, "unsupported_option"},
+		"smart duration":    {func(r *VideoCreateRequest) { r.Seconds, r.SmartDuration = 0, true }, nil, "unsupported_option"},
+		"frames":            {func(r *VideoCreateRequest) { r.Seconds, r.Frames = 0, 29 }, nil, "unsupported_option"},
+		"seed":              {func(r *VideoCreateRequest) { r.Seed = &seed }, nil, "unsupported_option"},
+		"camera_fixed":      {func(r *VideoCreateRequest) { r.CameraFixed = &on }, nil, "unsupported_option"},
+		"watermark":         {func(r *VideoCreateRequest) { r.Watermark = &on }, nil, "unsupported_option"},
+		"generate_audio":    {func(r *VideoCreateRequest) { r.AudioEnabled = &on }, nil, "unsupported_option"},
+		"return_last_frame": {func(r *VideoCreateRequest) { r.ReturnLastFrame = &on }, nil, "unsupported_option"},
+		"service_tier":      {func(r *VideoCreateRequest) { r.ServiceTier = "flex" }, nil, "unsupported_option"},
+		// execution_expires_after 不再在此拒绝：中继模式下由本网关 worker 执行排队超时。
 		// 中继只认 https 引用：spool 字节没有可上传的通道。
 		"uploaded input": {func(r *VideoCreateRequest) {}, []VideoInput{*byteDanceSpoolImageForTest(VideoInputRoleFirstFrame, "image/png", "aaa")}, "unsupported_input"},
 	}

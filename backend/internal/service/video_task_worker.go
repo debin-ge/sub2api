@@ -372,6 +372,23 @@ func (w *VideoTaskWorker) poll(ctx context.Context, task *VideoTask) error {
 		return w.recordRetryablePollFailure(ctx, task, errors.New("video provider returned no task observation"))
 	}
 	w.trackFlovaObservation(ctx, account, task, observed)
+	if videoExecutionExpired(task, observed, time.Now().UTC()) {
+		// 上游没有 execution_expires_after 的概念，由本网关执行：尽力取消上游任务，再按
+		// 「过期」终态走统一的释放预扣路径。取消失败不阻塞过期，上游若之后仍产出也不会计费。
+		if canceller, ok := provider.(VideoCanceller); ok {
+			cancelCtx, cancelDone := context.WithTimeout(ctx, videoWorkerRequestTimeout(w.cfg))
+			if cancelErr := canceller.Cancel(cancelCtx, account, ref); cancelErr != nil {
+				slog.Warn("video execution expiry cancel failed", "task", task.PublicID, "provider", task.Provider, "error", cancelErr)
+			}
+			cancelDone()
+		}
+		expired, err := w.service.ReconcileProviderObservation(ctx, task, videoExecutionExpiredObservation(task), "execution_expired")
+		if err != nil {
+			return err
+		}
+		// 与上游永久失败同一口径：在本轮就把预扣释放掉，不等下一次队列调度。
+		return w.settle(ctx, expired)
+	}
 	_, err = w.service.ReconcileProviderObservation(ctx, task, observed, "provider_polled")
 	return err
 }

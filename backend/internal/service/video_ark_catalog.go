@@ -274,7 +274,21 @@ func (p *VideoVendorProvider) ArkModelSpec(model string) ArkVideoModelSpec {
 			spec.ContentRoles[VideoInputRoleLastFrame] = ArkVideoContentRole{Max: 1, Accepts: accepts, Requires: []string{string(VideoInputRoleFirstFrame)}}
 		}
 	}
+	for _, role := range []VideoInputRole{VideoInputRoleTaggedReferenceImage, VideoInputRoleReferenceVideo, VideoInputRoleReferenceAudio} {
+		if field, maximum := profile.referenceField(role); field != "" && maximum > 0 {
+			accepts := []string{videoReferenceAcceptsHTTPS}
+			if _, uploads := p.adapter.(videoVendorInputUploader); uploads && role == VideoInputRoleTaggedReferenceImage {
+				accepts = append(accepts, videoReferenceAcceptsDataURI)
+			}
+			spec.ContentRoles[role] = ArkVideoContentRole{Max: maximum, Accepts: accepts}
+		}
+	}
 	return spec
+}
+
+// ArkParameterSupport：Flova 没有任何 Ark 开关可落地；排队超时由本网关 worker 执行。
+func (p *FlovaVideoProvider) ArkParameterSupport(*Account, VideoCreateRequest) VideoArkParameterSupport {
+	return VideoArkParameterSupport{}
 }
 
 // ArkModelSpec：Flova 没有任何开关；参考图必须是字节（先上传到 Flova 存储）。

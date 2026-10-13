@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -349,4 +350,85 @@ func TestWaveSpeedProfilesEncodeVendorSpecificFields(t *testing.T) {
 	require.Error(t, err)
 	// 带图走兜底档案的未知模型可以提交。
 	require.NoError(t, provider.ValidateSubmission(account, VideoCreateRequest{Operation: VideoOperationGenerate, Model: "vendor/new-model", Prompt: "p", Seconds: 5, Content: firstFrame}, nil))
+}
+
+// Seedance 2.5 在 WaveSpeed 上接受 reference_images / reference_videos / reference_audios 数组；
+// 其他档案没有这些字段的模型继续拒绝对应角色。
+func TestWaveSpeedSeedance25EncodesReferenceMedia(t *testing.T) {
+	adapter := newWaveSpeedVideoAdapter()
+	profile := adapter.Profiles()["bytedance/seedance-2.5/text-to-video"]
+	require.NotNil(t, profile)
+	require.Equal(t, "reference_images", profile.ReferenceImagesField)
+	require.Equal(t, 30, profile.MaxReferenceImages)
+	require.Equal(t, 10, profile.MaxReferenceVideos)
+	require.Equal(t, 10, profile.MaxReferenceAudios)
+
+	inputs := []videoVendorInput{
+		{Role: VideoInputRoleTaggedReferenceImage, URL: "https://cdn.example.com/ref-1.png"},
+		{Role: VideoInputRoleTaggedReferenceImage, URL: "https://cdn.example.com/ref-2.png"},
+		{Role: VideoInputRoleReferenceVideo, URL: "https://cdn.example.com/ref.mp4"},
+		{Role: VideoInputRoleReferenceAudio, URL: "https://cdn.example.com/ref.mp3"},
+	}
+	upstream, err := adapter.BuildCreate(VideoCreateRequest{Model: profile.PublicModel, Prompt: "p", Seconds: 5, Resolution: "720p", Ratio: "16:9"}, profile, inputs, "")
+	require.NoError(t, err)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(upstream.Body, &body))
+	require.Equal(t, []any{"https://cdn.example.com/ref-1.png", "https://cdn.example.com/ref-2.png"}, body["reference_images"])
+	require.Equal(t, []any{"https://cdn.example.com/ref.mp4"}, body["reference_videos"])
+	require.Equal(t, []any{"https://cdn.example.com/ref.mp3"}, body["reference_audios"])
+	// 参考媒体不是首帧：文生视频的比例仍然发送，image 字段不出现。
+	require.Equal(t, "16:9", body["aspect_ratio"])
+	_, hasImage := body["image"]
+	require.False(t, hasImage)
+
+	provider := newVideoVendorProvider(adapter, nil, nil)
+	account := newWaveSpeedTestAccount("")
+	content := func(role VideoInputRole, urls ...string) []VideoContentItem {
+		items := []VideoContentItem{{Type: VideoContentTypeText, Text: "p"}}
+		for _, raw := range urls {
+			items = append(items, VideoContentItem{Type: role.ArkContentTypeForRole(), Role: role, URL: raw})
+		}
+		return items
+	}
+	require.NoError(t, provider.ValidateSubmission(account, VideoCreateRequest{
+		Operation: VideoOperationGenerate, Model: profile.PublicModel, Prompt: "p", Seconds: 5, Resolution: "720p", Ratio: "16:9",
+		Content: content(VideoInputRoleReferenceVideo, "https://cdn.example.com/ref.mp4"),
+	}, nil))
+
+	var providerErr *VideoProviderError
+	err = provider.ValidateSubmission(account, VideoCreateRequest{
+		Operation: VideoOperationGenerate, Model: "bytedance/seedance-v1.5-pro/text-to-video", Prompt: "p", Seconds: 5, Resolution: "720p", Ratio: "16:9",
+		Content: content(VideoInputRoleReferenceVideo, "https://cdn.example.com/ref.mp4"),
+	}, nil)
+	require.ErrorAs(t, err, &providerErr)
+	require.Equal(t, "unsupported_reference_media", providerErr.Code)
+
+	tooMany := make([]string, 0, 11)
+	for i := 0; i < 11; i++ {
+		tooMany = append(tooMany, "https://cdn.example.com/ref-"+strconv.Itoa(i)+".mp4")
+	}
+	err = provider.ValidateSubmission(account, VideoCreateRequest{
+		Operation: VideoOperationGenerate, Model: profile.PublicModel, Prompt: "p", Seconds: 5, Resolution: "720p", Ratio: "16:9",
+		Content: content(VideoInputRoleReferenceVideo, tooMany...),
+	}, nil)
+	require.ErrorAs(t, err, &providerErr)
+	require.Equal(t, "unsupported_reference_media", providerErr.Code)
+
+	// 参考视频必须是 https 引用。
+	err = provider.ValidateSubmission(account, VideoCreateRequest{
+		Operation: VideoOperationGenerate, Model: profile.PublicModel, Prompt: "p", Seconds: 5, Resolution: "720p", Ratio: "16:9",
+		Content: content(VideoInputRoleReferenceVideo, "http://cdn.example.com/ref.mp4"),
+	}, nil)
+	require.ErrorAs(t, err, &providerErr)
+	require.Equal(t, "unsupported_reference_media", providerErr.Code)
+
+	// 能力表与目录同步放行这些角色。
+	caps := adapter.DefaultCapabilities()
+	require.Equal(t, 30, caps.MaxContentByRole[VideoInputRoleTaggedReferenceImage])
+	require.Equal(t, 10, caps.MaxContentByRole[VideoInputRoleReferenceVideo])
+	require.LessOrEqual(t, caps.MaxInputsByOperation[VideoOperationGenerate], 16)
+	spec := provider.ArkModelSpec(profile.PublicModel)
+	require.Equal(t, 10, spec.ContentRoles[VideoInputRoleReferenceAudio].Max)
+	require.Contains(t, spec.ContentRoles[VideoInputRoleTaggedReferenceImage].Accepts, videoReferenceAcceptsDataURI, "WaveSpeed 有上传通道，内联参考图可先上传")
+	require.NotContains(t, spec.ContentRoles[VideoInputRoleReferenceVideo].Accepts, videoReferenceAcceptsDataURI)
 }

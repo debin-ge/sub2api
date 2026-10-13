@@ -149,13 +149,15 @@ func (a *falVideoAdapter) BuildCreate(request VideoCreateRequest, profile *video
 	if lastImageField == "" {
 		lastImageField = "end_image_url"
 	}
-	for i, input := range inputs {
-		switch i {
-		case 0:
-			videoVendorSetPath(body, imageField, input.dataURI())
-		case 1:
-			videoVendorSetPath(body, lastImageField, input.dataURI())
-		}
+	first, last := videoVendorFrameInputs(inputs)
+	if first != nil {
+		videoVendorSetPath(body, imageField, first.dataURI())
+	}
+	if last != nil {
+		videoVendorSetPath(body, lastImageField, last.dataURI())
+	}
+	if err := videoVendorApplyReferences(body, profile, inputs); err != nil {
+		return nil, err
 	}
 	aspectField := profile.AspectRatioField
 	if aspectField == "" {
@@ -165,7 +167,7 @@ func (a *falVideoAdapter) BuildCreate(request VideoCreateRequest, profile *video
 	if resolutionField == "" {
 		resolutionField = "resolution"
 	}
-	videoVendorApplyFraming(body, profile, request, len(inputs) > 0, aspectField, resolutionField)
+	videoVendorApplyFraming(body, profile, request, first != nil, aspectField, resolutionField)
 	if err := videoVendorApplyArkFields(body, profile, request); err != nil {
 		return nil, err
 	}

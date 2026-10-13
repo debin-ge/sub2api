@@ -133,6 +133,7 @@ func (p *VideoVendorProvider) ValidateSubmission(account *Account, request Video
 type videoVendorPlan struct {
 	profile    *videoModelProfile
 	images     []videoVendorPlanImage
+	references []videoVendorPlanImage
 	seconds    int
 	resolution string
 	ratio      string
@@ -161,8 +162,13 @@ func (p *VideoVendorProvider) validateAndPlan(account *Account, request VideoCre
 	if request.SmartDuration || request.Frames > 0 {
 		return nil, nil, videoVendorValidationError("unsupported_parameter", "duration -1 and frames are not supported by %s", p.Name())
 	}
-	if request.ReturnLastFrame != nil || request.ExecutionExpiresAfter != 0 || strings.TrimSpace(request.ServiceTier) != "" {
-		return nil, nil, videoVendorValidationError("unsupported_parameter", "return_last_frame, service_tier and execution_expires_after are not supported by %s", p.Name())
+	// 中性值（return_last_frame=false、service_tier=default）已在任务服务里清掉；到这里的
+	// 都是厂商做不到的要求。execution_expires_after 由本网关 worker 执行，不在此拒绝。
+	if request.ReturnLastFrame != nil {
+		return nil, nil, videoVendorValidationError("unsupported_parameter", "return_last_frame is not supported by %s", p.Name())
+	}
+	if tier := strings.TrimSpace(request.ServiceTier); tier != "" {
+		return nil, nil, videoVendorValidationError("unsupported_parameter", "service_tier %q is not supported by %s", tier, p.Name())
 	}
 	profile := p.profileFor(request.Model)
 	if profile == nil {
@@ -170,8 +176,10 @@ func (p *VideoVendorProvider) validateAndPlan(account *Account, request VideoCre
 	}
 	profile.finalizeArkDimensions()
 
-	// 起止帧：content[] 里的 first_frame / last_frame（URL 或字节），总数受档案 MaxImages 约束。
+	// 起止帧：content[] 里的 first_frame / last_frame（URL 或字节），总数受档案 MaxImages 约束；
+	// reference_* 角色只在档案声明了对应字段的模型上接受。
 	images := make([]videoVendorPlanImage, 0, 2)
+	references := make([]videoVendorPlanImage, 0, 4)
 	var first, last *videoVendorPlanImage
 	for i := range request.Content {
 		item := request.Content[i]
@@ -189,8 +197,37 @@ func (p *VideoVendorProvider) validateAndPlan(account *Account, request VideoCre
 				return nil, nil, videoVendorValidationError("unsupported_reference_media", "only one last_frame image is accepted")
 			}
 			last = &videoVendorPlanImage{role: VideoInputRoleLastFrame, url: strings.TrimSpace(item.URL), input: item.Input}
+		case VideoInputRoleTaggedReferenceImage, VideoInputRoleReferenceVideo, VideoInputRoleReferenceAudio:
+			field, maximum := profile.referenceField(item.Role)
+			if field == "" {
+				return nil, nil, videoVendorValidationError("unsupported_reference_media", "content role %q is not supported by model %q", item.Role, request.Model)
+			}
+			references = append(references, videoVendorPlanImage{role: item.Role, url: strings.TrimSpace(item.URL), input: item.Input})
+			if count := videoVendorPlanRoleCount(references, item.Role); count > maximum {
+				return nil, nil, videoVendorValidationError("unsupported_reference_media", "model %q accepts at most %d %s item(s)", request.Model, maximum, item.Role)
+			}
 		default:
 			return nil, nil, videoVendorValidationError("unsupported_reference_media", "content role %q is not supported by %s yet", item.Role, p.Name())
+		}
+	}
+	for _, reference := range references {
+		if reference.input != nil {
+			if reference.role != VideoInputRoleTaggedReferenceImage {
+				return nil, nil, videoVendorValidationError("unsupported_reference_media", "%s must be an https URL", reference.role)
+			}
+			if _, uploads := p.adapter.(videoVendorInputUploader); !uploads {
+				return nil, nil, videoVendorValidationError("unsupported_reference_media", "%s does not accept inline reference images; use an https URL", p.Name())
+			}
+			if reference.input.Size > videoVendorMaxInlineBytes {
+				return nil, nil, rejectedVideoProviderError("validation", "input_too_large", "reference image is too large", http.StatusBadRequest)
+			}
+			continue
+		}
+		if !strings.HasPrefix(strings.ToLower(reference.url), "https://") {
+			return nil, nil, videoVendorValidationError("unsupported_reference_media", "%s references must be https URLs", reference.role)
+		}
+		if len(reference.url) > openAIVideoMaxReferenceBytes {
+			return nil, nil, videoVendorValidationError("unsupported_reference_media", "reference is too large")
 		}
 	}
 	// 没挂到 content 上的 spool 输入（旧式 multipart）按首帧、尾帧顺序补位。
@@ -298,7 +335,32 @@ func (p *VideoVendorProvider) validateAndPlan(account *Account, request VideoCre
 			return nil, nil, videoVendorValidationError("unsupported_option", "provider_options.%s must be a scalar value", key)
 		}
 	}
-	return &videoVendorPlan{profile: profile, images: images, seconds: seconds, resolution: resolution, ratio: ratio}, profile, nil
+	return &videoVendorPlan{profile: profile, images: images, references: references, seconds: seconds, resolution: resolution, ratio: ratio}, profile, nil
+}
+
+func videoVendorPlanRoleCount(items []videoVendorPlanImage, role VideoInputRole) int {
+	count := 0
+	for _, item := range items {
+		if item.role == role {
+			count++
+		}
+	}
+	return count
+}
+
+// ArkParameterSupport：三家聚合平台按模型档案的映射表回答；排队超时由本网关执行。
+func (p *VideoVendorProvider) ArkParameterSupport(_ *Account, request VideoCreateRequest) VideoArkParameterSupport {
+	profile := p.profileFor(request.Model)
+	if profile == nil {
+		return VideoArkParameterSupport{}
+	}
+	profile.finalizeArkDimensions()
+	return VideoArkParameterSupport{
+		Seed:          profile.ArkFieldMap["seed"] != "",
+		CameraFixed:   profile.ArkFieldMap["camera_fixed"] != "",
+		Watermark:     profile.ArkFieldMap["watermark"] != "",
+		GenerateAudio: profile.AudioField != "" || profile.ArkFieldMap["generate_audio"] != "",
+	}
 }
 
 func videoVendorInputBound(content []VideoContentItem, input *VideoInput) bool {
@@ -322,8 +384,8 @@ func (p *VideoVendorProvider) Create(ctx context.Context, account *Account, requ
 	request.Seconds = plan.seconds
 	request.Resolution = plan.resolution
 	request.Ratio = plan.ratio
-	vendorInputs := make([]videoVendorInput, 0, len(plan.images))
-	for _, image := range plan.images {
+	vendorInputs := make([]videoVendorInput, 0, len(plan.images)+len(plan.references))
+	for _, image := range append(append([]videoVendorPlanImage(nil), plan.images...), plan.references...) {
 		if image.input == nil {
 			vendorInputs = append(vendorInputs, videoVendorInput{Role: image.role, URL: image.url})
 			continue
@@ -576,8 +638,8 @@ func (p *VideoVendorProvider) EstimateUpstreamCost(ctx context.Context, account 
 	if err != nil {
 		return 0, false, err
 	}
-	inputs := make([]videoVendorInput, 0, len(plan.images))
-	for _, image := range plan.images {
+	inputs := make([]videoVendorInput, 0, len(plan.images)+len(plan.references))
+	for _, image := range append(append([]videoVendorPlanImage(nil), plan.images...), plan.references...) {
 		if image.input != nil {
 			// spool 字节此时还没有厂商 URL，无法询价。
 			return 0, false, nil

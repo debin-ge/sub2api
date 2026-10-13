@@ -640,8 +640,10 @@ func (p *FlovaVideoProvider) plan(account *Account, request VideoCreateRequest, 
 	if request.HasOpenAIOnlyFields() {
 		return nil, rejectedVideoProviderError("validation", "unsupported_option", "size, quality, aspect_ratio, input_reference and characters are OpenAI-only fields", http.StatusBadRequest)
 	}
+	// 中性值（seed=-1、camera_fixed/watermark/return_last_frame/generate_audio=false、service_tier=default）
+	// 已在任务服务里清掉并记为 ignored；execution_expires_after 由本网关 worker 执行。
 	if request.SmartDuration || request.Frames > 0 || request.Seed != nil || request.CameraFixed != nil || request.Watermark != nil ||
-		request.ReturnLastFrame != nil || request.ExecutionExpiresAfter != 0 || (request.AudioEnabled != nil && *request.AudioEnabled) {
+		request.ReturnLastFrame != nil || (request.AudioEnabled != nil && *request.AudioEnabled) {
 		return nil, rejectedVideoProviderError("validation", "unsupported_option", "Flova does not support duration -1, frames, seed, camera_fixed, watermark, generate_audio or return_last_frame", http.StatusBadRequest)
 	}
 	// Flova 的参考图必须先上传到它的存储：content[] 里只接受首帧，且必须是字节（data: URI），

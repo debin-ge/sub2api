@@ -373,3 +373,26 @@ func TestParseArkSubmitRequestEnforcesTransportRules(t *testing.T) {
 		require.Equal(t, int64(service.VideoCreateJSONMaxBytes), newVideoHandler(&videoTaskAPIFake{}, nil, oversized).ArkJSONBodyLimit())
 	})
 }
+
+// execution_expires_after 对所有上游都按 Ark 的取值范围校验：Ark 直连透传，其他上游由本网关执行。
+func TestParseArkVideoRequestValidatesExecutionExpiresAfterRange(t *testing.T) {
+	handler := newArkParseTestHandler(t, false)
+	body := func(value string) string {
+		return `{"model":"doubao-seedance-1-0-pro-250528","content":[{"type":"text","text":"waves"}],"duration":5,"execution_expires_after":` + value + `}`
+	}
+	for _, value := range []string{"60", "3599", "259201", "-1"} {
+		_, _, err := parseArkTestRequest(t, handler, body(value))
+		require.ErrorIs(t, err, service.ErrVideoInvalidRequest, "execution_expires_after=%s", value)
+	}
+	for _, value := range []string{"3600", "86400", "259200"} {
+		request, _, err := parseArkTestRequest(t, handler, body(value))
+		require.NoError(t, err, "execution_expires_after=%s", value)
+		require.NotZero(t, request.ExecutionExpiresAfter)
+	}
+	// 中性值不在解析层处理：watermark=false 等照常进入请求，由任务服务按上游能力决定是否为空操作。
+	request, _, err := parseArkTestRequest(t, handler, `{"model":"bytedance/seedance-2.5/text-to-video","content":[{"type":"text","text":"waves"}],"duration":5,"watermark":false,"return_last_frame":false,"service_tier":"default"}`)
+	require.NoError(t, err)
+	require.NotNil(t, request.Watermark)
+	require.False(t, *request.Watermark)
+	require.Equal(t, "default", request.ServiceTier)
+}

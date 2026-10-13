@@ -32,6 +32,11 @@ type waveSpeedProfileSpec struct {
 	image      string // "" = 不接受图片；"required" = 必须；"optional"
 	lastImage  bool
 	resLabels  map[string]string
+	// refImages / refVideos / refAudios 是 reference_images / reference_videos / reference_audios
+	// 数组的上限；0 表示模型不接受该类参考媒体。
+	refImages int
+	refVideos int
+	refAudios int
 }
 
 func waveSpeedProfile(model string, spec waveSpeedProfileSpec) *videoModelProfile {
@@ -59,7 +64,17 @@ func waveSpeedProfile(model string, spec waveSpeedProfileSpec) *videoModelProfil
 		Sizes: sizes, DefaultSize: defSize, SizeEnc: spec.sizeEnc, ResolutionLabels: spec.resLabels, Ratios: append([]string(nil), spec.aspects...), CanonicalResolutions: append([]string(nil), spec.resolution...),
 		AudioField: spec.audio, OptionWhitelist: options, OutputPath: "outputs.0",
 		ImageField: "image", LastImageField: "last_image",
+		ReferenceImagesField: waveSpeedReferenceField(spec.refImages, "reference_images"), MaxReferenceImages: spec.refImages,
+		ReferenceVideosField: waveSpeedReferenceField(spec.refVideos, "reference_videos"), MaxReferenceVideos: spec.refVideos,
+		ReferenceAudiosField: waveSpeedReferenceField(spec.refAudios, "reference_audios"), MaxReferenceAudios: spec.refAudios,
 	}
+}
+
+func waveSpeedReferenceField(maximum int, field string) string {
+	if maximum <= 0 {
+		return ""
+	}
+	return field
 }
 
 func waveSpeedFallbackProfile(model string) *videoModelProfile {
@@ -94,8 +109,10 @@ func waveSpeedVideoProfiles() map[string]*videoModelProfile {
 	seedance20T2V := waveSpeedProfileSpec{minSeconds: 4, maxSeconds: 15, defSeconds: 5, aspects: waveSpeedAllAspects, resolution: waveSpeedRes4, sizeEnc: videoSizeAspectRatioRes, audio: "generate_audio", options: webSearch}
 	seedance20I2V := waveSpeedProfileSpec{minSeconds: 4, maxSeconds: 15, defSeconds: 5, aspects: waveSpeedAllAspects, resolution: waveSpeedRes4, sizeEnc: videoSizeResolutionOnly, audio: "generate_audio", options: webSearch, image: "required", lastImage: true}
 	// Seedance 2.5
-	seedance25T2V := waveSpeedProfileSpec{minSeconds: 4, maxSeconds: 30, defSeconds: 5, aspects: waveSpeedAllAspects, resolution: waveSpeedRes4, sizeEnc: videoSizeAspectRatioRes, audio: "generate_audio"}
-	seedance25I2V := waveSpeedProfileSpec{minSeconds: 4, maxSeconds: 30, defSeconds: 5, aspects: waveSpeedAllAspects, resolution: waveSpeedRes4, sizeEnc: videoSizeResolutionOnly, audio: "generate_audio", image: "required", lastImage: true}
+	// Seedance 2.5：WaveSpeed 文档只列 prompt / aspect_ratio / resolution / duration / generate_audio
+	// 与 reference_images(≤30) / reference_videos(≤10) / reference_audios(≤10)，没有 seed / watermark / camera_fixed。
+	seedance25T2V := waveSpeedProfileSpec{minSeconds: 4, maxSeconds: 30, defSeconds: 5, aspects: waveSpeedAllAspects, resolution: waveSpeedRes4, sizeEnc: videoSizeAspectRatioRes, audio: "generate_audio", refImages: 30, refVideos: 10, refAudios: 10}
+	seedance25I2V := waveSpeedProfileSpec{minSeconds: 4, maxSeconds: 30, defSeconds: 5, aspects: waveSpeedAllAspects, resolution: waveSpeedRes4, sizeEnc: videoSizeResolutionOnly, audio: "generate_audio", image: "required", lastImage: true, refImages: 30, refVideos: 10, refAudios: 10}
 	// Kling 3.0 / Omni：音频字段叫 sound；图生视频比例随图。
 	kling3T2V := waveSpeedProfileSpec{minSeconds: 3, maxSeconds: 15, defSeconds: 5, aspects: waveSpeedKlingAspects, resolution: []string{"1080p"}, sizeEnc: videoSizeAspectRatio, audio: "sound", options: klingOpt}
 	kling3I2V := waveSpeedProfileSpec{minSeconds: 3, maxSeconds: 15, defSeconds: 5, sizeEnc: videoSizeNotSupported, audio: "sound", options: klingOpt, image: "required", lastImage: true}

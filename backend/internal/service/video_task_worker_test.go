@@ -585,3 +585,37 @@ func TestVideoTaskWorkerRequeuesRetryableDeleteFailure(t *testing.T) {
 	require.Equal(t, VideoDeleteFailed, tasks.task.DeleteState)
 	require.NotEmpty(t, queue.requeued)
 }
+
+// 本网关执行 Ark 的 execution_expires_after：上游没有排队超时概念时，任务到点仍在排队即判过期并释放预扣。
+func TestVideoTaskWorkerExpiresQueuedTaskAfterLocalExecutionDeadline(t *testing.T) {
+	task := baseVideoWorkerTask()
+	task.CreatedAt = time.Now().Add(-2 * time.Hour)
+	task.RequestAttributes["execution_expires_after"] = float64(3600)
+	task.RequestAttributes["execution_expiry_enforced_locally"] = true
+	observed := &ProviderVideoTask{ProviderTaskID: "video_upstream", Status: VideoGenerationQueued, RawStatus: "created"}
+	worker, tasks, _, _ := newVideoWorkerForTest(task, observed)
+	require.NoError(t, worker.processTask(context.Background(), task))
+	require.Equal(t, VideoGenerationExpired, tasks.task.GenerationState)
+	require.Equal(t, VideoBillingReleased, tasks.task.BillingState, "过期任务没有产出，预扣全额释放")
+	require.Equal(t, "execution_expired", videoStringValue(tasks.task.LastErrorCode))
+	require.Equal(t, ArkVideoStatusExpired, ProjectArkVideoStatus(tasks.task))
+
+	// 时限未到：照常记录一次排队观测，不动状态。
+	fresh := baseVideoWorkerTask()
+	fresh.CreatedAt = time.Now().Add(-10 * time.Minute)
+	fresh.RequestAttributes["execution_expires_after"] = float64(3600)
+	fresh.RequestAttributes["execution_expiry_enforced_locally"] = true
+	worker, tasks, _, _ = newVideoWorkerForTest(fresh, observed)
+	require.NoError(t, worker.processTask(context.Background(), fresh))
+	require.Equal(t, VideoGenerationQueued, tasks.task.GenerationState)
+	require.Equal(t, VideoBillingHeld, tasks.task.BillingState)
+
+	// Ark 直连由上游自己过期：本地标记为假时 worker 不介入。
+	upstream := baseVideoWorkerTask()
+	upstream.CreatedAt = time.Now().Add(-2 * time.Hour)
+	upstream.RequestAttributes["execution_expires_after"] = float64(3600)
+	upstream.RequestAttributes["execution_expiry_enforced_locally"] = false
+	worker, tasks, _, _ = newVideoWorkerForTest(upstream, observed)
+	require.NoError(t, worker.processTask(context.Background(), upstream))
+	require.Equal(t, VideoGenerationQueued, tasks.task.GenerationState)
+}

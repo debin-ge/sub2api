@@ -27,8 +27,8 @@ const (
 	byteDanceMinFrames               = 29
 	byteDanceMaxFrames               = 289
 	byteDanceMaxSeed                 = int64(1)<<32 - 1
-	byteDanceMinExecutionExpiresSecs = 3600
-	byteDanceMaxExecutionExpiresSecs = 259200
+	byteDanceMinExecutionExpiresSecs = ArkExecutionExpiresMinSeconds
+	byteDanceMaxExecutionExpiresSecs = ArkExecutionExpiresMaxSeconds
 )
 
 // validateByteDanceArkRequest 校验 Ark 维度的请求字段。画幅、时长、种子等都以显式字段

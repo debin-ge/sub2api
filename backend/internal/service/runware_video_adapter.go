@@ -152,14 +152,17 @@ func (a *runwareVideoAdapter) BuildCreate(request VideoCreateRequest, profile *v
 	if request.Seconds > 0 {
 		videoVendorSetPath(body, durationField, videoVendorEncodeDuration(profile, request.Seconds))
 	}
-	if len(inputs) > 0 {
-		frames := make([]any, 0, len(inputs))
-		switch len(inputs) {
-		case 1:
-			frames = append(frames, inputs[0].dataURI())
-		default:
-			frames = append(frames, map[string]any{"image": inputs[0].dataURI(), "frame": "first"})
-			frames = append(frames, map[string]any{"image": inputs[1].dataURI(), "frame": "last"})
+	first, last := videoVendorFrameInputs(inputs)
+	if err := videoVendorApplyReferences(body, profile, inputs); err != nil {
+		return nil, err
+	}
+	if first != nil {
+		frames := make([]any, 0, 2)
+		if last == nil {
+			frames = append(frames, first.dataURI())
+		} else {
+			frames = append(frames, map[string]any{"image": first.dataURI(), "frame": "first"})
+			frames = append(frames, map[string]any{"image": last.dataURI(), "frame": "last"})
 		}
 		videoVendorSetPath(body, "inputs.frameImages", frames)
 		// 带图时 Runware 禁止 width/height，用 resolution 档位表达尺寸诉求。

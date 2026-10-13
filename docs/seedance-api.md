@@ -55,10 +55,14 @@ curl "$SUB2API_BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" -H "Authoriz
   `video_url`（`reference_video`）、`audio_url`（`reference_audio`）。图片可用 `https://` 或 `data:image/...;base64,` 内联（单张 ≤ 8MB，请求体默认 ≤ 16MB）；视频 / 音频只接受 `https://`。
 - `duration`（整数秒；`-1` 为智能时长）与 `frames`（25+4n，[29, 289]）二选一。
 - `resolution`：480p / 720p / 1080p / 2k / 4k；`ratio`：16:9 / 9:16 / 4:3 / 3:4 / 1:1 / 21:9 / adaptive（adaptive 需要 first_frame）。
-- `seed`、`camera_fixed`、`watermark`、`generate_audio`、`return_last_frame`、`service_tier`、`execution_expires_after`、`callback_url`。
+- `seed`、`camera_fixed`、`watermark`、`generate_audio`、`return_last_frame`、`service_tier`、`execution_expires_after`（[3600, 259200] 秒）、`callback_url`。
 - 弱校验写法同样生效：`"text": "海浪 --rs 720p --rt 16:9 --dur 5 --seed 11 --cf false --wm true"`，flag 覆盖顶层字段，预扣按解析后的值。
 - `provider_options`：sub2api 扩展，承载厂商特有参数（见能力目录的 `provider_options`）；Ark 直连账号不接受。
-- 各家不支持的参数一律 400（错误码 `unsupported_parameter`），不会静默丢弃：fal / WaveSpeed / Runware 按模型档案支持 `seed / camera_fixed / generate_audio`，不支持 `-1`、`frames`、`return_last_frame`；Flova 不支持任何开关，且参考图必须以 `data:` 内联。
+- 非 Ark 直连的上游（fal / WaveSpeed / Runware / Flova、ByteDance 中继账号）对 Ark 开关的处理分两类：
+  - 取值等于该上游固有行为的「中性值」是空操作，会被接受并在查询响应的 `ignored_parameters` 里列出：`watermark=false`、`return_last_frame=false`、`camera_fixed=false`（模型无此字段时）、`generate_audio=false`（模型无音频字段时）、`seed=-1`（模型无 seed 字段时）、`service_tier="default"`。Ark 原生客户端带默认值提交时不会再被拒。
+  - 真正要求上游做它做不到的事一律 400（错误码 `unsupported_parameter`），不会静默丢弃：`watermark=true`、`return_last_frame=true`、`service_tier="flex"`、`duration=-1`、`frames`，以及模型档案没有映射的 `seed>=0`、`camera_fixed=true`、`generate_audio=true`。fal / WaveSpeed / Runware 的具体支持见能力目录的 `flags`；Flova 不支持任何开关，且参考图必须以 `data:` 内联。
+- `execution_expires_after` 对所有上游生效：Ark 直连账号原样透传由 Ark 执行；其他上游由本网关执行，任务创建后到时限仍未开始执行即取消并置 `expired`、释放预扣。
+- 参考媒体角色：ByteDance 直连接受全部角色；WaveSpeed 的 Seedance 2.5 接受 `reference_image`（≤30，可 `data:` 内联）、`reference_video`（≤10）、`reference_audio`（≤10），均需 https 引用；其他聚合平台模型只接受首尾帧，见能力目录的 `content_roles`。
 - `Idempotency-Key` 头是 sub2api 扩展：同 key 同请求重放原任务，同 key 不同请求 409。创建开关关闭时该头必填。
 
 ### 响应
@@ -66,7 +70,7 @@ curl "$SUB2API_BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" -H "Authoriz
 查询响应与 Ark 一致：`id / model / status / content{video_url,last_frame_url} / usage{completion_tokens,total_tokens} / created_at / updated_at /
 seed / resolution / ratio / duration / frames / framespersecond / generate_audio / service_tier / error{code,message}`。
 `id` 是本网关的任务 ID（`video_` 前缀），不暴露上游 ID。`usage` 只在上游真实回报 token 时出现（Ark 直连）。
-按分组披露策略追加 `prompt / actual_cost / currency / provider / provider_access`。
+按分组披露策略追加 `prompt / actual_cost / currency / provider / provider_access`；被当作空操作接受的开关列在 `ignored_parameters`。
 
 状态：`queued`（含本地预占与提交中）、`running`（含生成完成但尚未结算）、`succeeded`（已结算）、`failed`、`cancelled`、`expired`。
 

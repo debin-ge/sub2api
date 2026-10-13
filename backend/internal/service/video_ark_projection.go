@@ -110,6 +110,10 @@ func BuildArkVideoTaskObject(task *VideoTask, contentURLs ArkVideoContentURLs) m
 	if usage := arkUsageObject(task.UsageSnapshot); usage != nil {
 		object["usage"] = usage
 	}
+	if ignored := arkStringList(attributes["ignored_parameters"]); len(ignored) > 0 {
+		// sub2api 扩展：这些 Ark 开关对该上游是空操作，已被接受但未生效。
+		object["ignored_parameters"] = ignored
+	}
 	if status == ArkVideoStatusSucceeded {
 		content := map[string]any{}
 		if url := strings.TrimSpace(contentURLs["video"]); url != "" {
@@ -222,4 +226,21 @@ func IsArkVideoProvider(provider string) bool {
 func IsArkVideoPlatform(platform string) bool {
 	provider, ok := managedVideoProviderForPlatform(platform)
 	return ok && IsArkVideoProvider(provider)
+}
+
+func arkStringList(raw any) []string {
+	switch typed := raw.(type) {
+	case []string:
+		return append([]string(nil), typed...)
+	case []any:
+		out := make([]string, 0, len(typed))
+		for _, value := range typed {
+			if text, ok := value.(string); ok && strings.TrimSpace(text) != "" {
+				out = append(out, text)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
 }

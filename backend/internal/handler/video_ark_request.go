@@ -299,8 +299,10 @@ func (h *VideoHandler) parseArkVideoRequest(ctx context.Context, raw []byte, use
 	if request.Seed != nil && (*request.Seed < -1 || *request.Seed > int64(1)<<32-1) {
 		return service.VideoSubmitRequest{}, session, fmt.Errorf("%w: seed must be within [-1, 2^32-1]", service.ErrVideoInvalidRequest)
 	}
-	if request.ExecutionExpiresAfter < 0 {
-		return service.VideoSubmitRequest{}, session, fmt.Errorf("%w: execution_expires_after must be positive", service.ErrVideoInvalidRequest)
+	if request.ExecutionExpiresAfter != 0 &&
+		(request.ExecutionExpiresAfter < service.ArkExecutionExpiresMinSeconds || request.ExecutionExpiresAfter > service.ArkExecutionExpiresMaxSeconds) {
+		return service.VideoSubmitRequest{}, session, fmt.Errorf("%w: execution_expires_after must be within [%d, %d] seconds",
+			service.ErrVideoInvalidRequest, service.ArkExecutionExpiresMinSeconds, service.ArkExecutionExpiresMaxSeconds)
 	}
 	for key, value := range request.ProviderOptions {
 		if strings.TrimSpace(key) == "" || value == nil {

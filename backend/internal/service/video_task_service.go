@@ -141,6 +141,10 @@ func NewVideoTaskService(
 }
 
 type resolvedVideoSubmission struct {
+	// ignoredParameters 是被当作空操作接受的 Ark 开关（审计与查询响应透出）。
+	ignoredParameters []string
+	// executionExpiryLocal 为真时 execution_expires_after 由本网关 worker 执行。
+	executionExpiryLocal     bool
 	providerRequest          VideoCreateRequest
 	executionSpec            ResolvedVideoExecutionSpec
 	executionSpecHash        string
@@ -465,6 +469,14 @@ func (s *VideoTaskService) resolveSubmission(ctx context.Context, request VideoS
 	}
 	providerRequest := request.providerRequest(publicModel, upstreamModel, characters)
 	providerRequest = ApplyVideoCapabilityDefaults(provider.Capabilities(), providerRequest)
+	// Ark 开关的中性值对非 Ark 直连 provider 是空操作：先清掉并记录，再让 provider 校验
+	// 真正要求厂商做到的值。排队超时由上游执行还是本网关执行也在这里定下来。
+	var ignoredParameters []string
+	arkSupport := ArkNativeParameterSupport()
+	if normalizer, ok := provider.(VideoArkParameterNormalizer); ok {
+		arkSupport = normalizer.ArkParameterSupport(account, providerRequest)
+		providerRequest, ignoredParameters = normalizeNeutralArkParameters(providerRequest, arkSupport)
+	}
 	for _, input := range request.Inputs {
 		capabilities := provider.Capabilities()
 		if !capabilities.SupportsInputForOperation(request.Operation, input.Role) || !capabilities.SupportsInput(input.Role, input.MIMEType, input.Size) {
@@ -550,6 +562,8 @@ func (s *VideoTaskService) resolveSubmission(ctx context.Context, request VideoS
 	}
 	return &resolvedVideoSubmission{
 		providerRequest: providerRequest, executionSpec: executionSpec, executionSpecHash: executionSpecHash,
+		ignoredParameters:        ignoredParameters,
+		executionExpiryLocal:     providerRequest.ExecutionExpiresAfter > 0 && !arkSupport.ExecutionExpiresAfter,
 		callbackRetryHours:       callbackRetryHours,
 		callbackDisclosurePolicy: effectiveVideoDisclosurePolicy(s.cfg.Gateway.Video.DisclosurePolicy, group.VideoDisclosurePolicy, account.VideoDisclosurePolicy),
 		request:                  request, group: group, provider: provider, account: account, endpoint: endpoint,
@@ -2335,7 +2349,8 @@ func videoRequestAttributes(request VideoSubmitRequest, resolved *resolvedVideoS
 		"audio_enabled": attrs.AudioEnabled, "generate_audio": attrs.AudioEnabled,
 		"seed": request.Seed, "camera_fixed": request.CameraFixed, "watermark": request.Watermark,
 		"return_last_frame": request.ReturnLastFrame, "execution_expires_after": request.ExecutionExpiresAfter,
-		"service_tier": request.ServiceTier, "input_type": videoPricingInputType(request),
+		"execution_expiry_enforced_locally": resolved.executionExpiryLocal,
+		"service_tier":                      request.ServiceTier, "input_type": videoPricingInputType(request),
 		"input_has_video": attrs.InputHasVideo, "input_video_seconds": attrs.InputVideoSeconds,
 		"request_mode": attrs.RequestMode, "inference_mode": attrs.InferenceMode,
 		"billing_model":   resolved.quote.BillingModel,
@@ -2353,6 +2368,9 @@ func videoRequestAttributes(request VideoSubmitRequest, resolved *resolvedVideoS
 	// "存过但为空"。
 	if prompt := trimRunes(strings.TrimSpace(request.Prompt), videoPromptAttributeMaxRunes); prompt != "" {
 		attributes["prompt"] = prompt
+	}
+	if len(resolved.ignoredParameters) > 0 {
+		attributes["ignored_parameters"] = append([]string(nil), resolved.ignoredParameters...)
 	}
 	return attributes
 }

@@ -145,16 +145,20 @@ func (a *waveSpeedVideoAdapter) buildBody(request VideoCreateRequest, profile *v
 	if lastImageField == "" {
 		lastImageField = "last_image"
 	}
-	for i, input := range inputs {
+	for _, input := range inputs {
 		if input.URL == "" {
 			return nil, "", videoVendorValidationError("unsupported_input", "wavespeed image inputs must be uploaded before submission")
 		}
-		switch i {
-		case 0:
-			videoVendorSetPath(body, imageField, input.URL)
-		case 1:
-			videoVendorSetPath(body, lastImageField, input.URL)
-		}
+	}
+	first, last := videoVendorFrameInputs(inputs)
+	if first != nil {
+		videoVendorSetPath(body, imageField, first.URL)
+	}
+	if last != nil {
+		videoVendorSetPath(body, lastImageField, last.URL)
+	}
+	if err := videoVendorApplyReferences(body, profile, inputs); err != nil {
+		return nil, "", err
 	}
 	aspectField := profile.AspectRatioField
 	if aspectField == "" {
@@ -164,7 +168,7 @@ func (a *waveSpeedVideoAdapter) buildBody(request VideoCreateRequest, profile *v
 	if resolutionField == "" {
 		resolutionField = "resolution"
 	}
-	videoVendorApplyFraming(body, profile, request, len(inputs) > 0, aspectField, resolutionField)
+	videoVendorApplyFraming(body, profile, request, first != nil, aspectField, resolutionField)
 	if err := videoVendorApplyArkFields(body, profile, request); err != nil {
 		return nil, "", err
 	}

@@ -148,6 +148,15 @@ type videoModelProfile struct {
 	// generate_audio 用 AudioField。未映射的字段带值提交会被拒绝，而不是静默丢弃。
 	ArkFieldMap map[string]string
 
+	// 参考媒体（Ark 的 reference_image / reference_video / reference_audio 角色）在厂商请求体
+	// 里的数组字段与数量上限；字段为空表示该模型不接受对应角色。
+	ReferenceImagesField string
+	MaxReferenceImages   int
+	ReferenceVideosField string
+	MaxReferenceVideos   int
+	ReferenceAudiosField string
+	MaxReferenceAudios   int
+
 	// OutputPath 是结果里视频 URL 的 JSON 路径（点号分层，数组下标用数字）。
 	OutputPath string
 
@@ -258,6 +267,75 @@ func (p *videoModelProfile) finalizeArkDimensions() *videoModelProfile {
 		}
 	}
 	return p
+}
+
+// referenceField 返回某个参考媒体角色在厂商请求体里的字段与上限；不接受该角色时字段为空。
+func (p *videoModelProfile) referenceField(role VideoInputRole) (string, int) {
+	if p == nil {
+		return "", 0
+	}
+	switch role {
+	case VideoInputRoleTaggedReferenceImage:
+		return p.ReferenceImagesField, p.MaxReferenceImages
+	case VideoInputRoleReferenceVideo:
+		return p.ReferenceVideosField, p.MaxReferenceVideos
+	case VideoInputRoleReferenceAudio:
+		return p.ReferenceAudiosField, p.MaxReferenceAudios
+	default:
+		return "", 0
+	}
+}
+
+// videoVendorFrameInputs 从素材清单里按角色取出首帧与尾帧：first_frame / 旧式 input_reference
+// 是首帧，last_frame 是尾帧；没有标角色的素材按出现顺序补位（第一张首帧、第二张尾帧）。
+func videoVendorFrameInputs(inputs []videoVendorInput) (first, last *videoVendorInput) {
+	for i := range inputs {
+		switch inputs[i].Role {
+		case VideoInputRoleFirstFrame, VideoInputRoleReferenceImage:
+			if first == nil {
+				first = &inputs[i]
+			}
+		case VideoInputRoleLastFrame:
+			if last == nil {
+				last = &inputs[i]
+			}
+		case "":
+			if first == nil {
+				first = &inputs[i]
+			} else if last == nil {
+				last = &inputs[i]
+			}
+		}
+	}
+	return first, last
+}
+
+// videoVendorApplyReferences 把 reference_* 角色的素材 URL 按档案字段写成数组。素材必须
+// 已是 URL（字节在骨架里先上传换 URL）。
+func videoVendorApplyReferences(body map[string]any, profile *videoModelProfile, inputs []videoVendorInput) error {
+	if profile == nil {
+		return nil
+	}
+	for _, role := range []VideoInputRole{VideoInputRoleTaggedReferenceImage, VideoInputRoleReferenceVideo, VideoInputRoleReferenceAudio} {
+		field, _ := profile.referenceField(role)
+		values := make([]any, 0, 2)
+		for _, input := range inputs {
+			if input.Role != role {
+				continue
+			}
+			if field == "" {
+				return videoVendorValidationError("unsupported_reference_media", "content role %q is not supported by model %q", role, profile.PublicModel)
+			}
+			if input.URL == "" {
+				return videoVendorValidationError("unsupported_input", "%s references must be uploaded before submission", role)
+			}
+			values = append(values, input.URL)
+		}
+		if len(values) > 0 {
+			videoVendorSetPath(body, field, values)
+		}
+	}
+	return nil
 }
 
 // supportsRatio 报告比例是否在档案词表内；词表为空表示不限制。
@@ -632,6 +710,24 @@ func videoVendorCapabilitiesFromProfiles(defaultModel string, profiles map[strin
 		profile := profiles[model]
 		if profile == nil || profile.Fallback {
 			continue
+		}
+		// 参考媒体角色：任一模型声明了字段就在 provider 级能力表里放行，上限取各模型的最大值；
+		// 逐模型的字段与上限由 validateAndPlan 再收窄。
+		for _, role := range []VideoInputRole{VideoInputRoleTaggedReferenceImage, VideoInputRoleReferenceVideo, VideoInputRoleReferenceAudio} {
+			if field, maximum := profile.referenceField(role); field != "" && maximum > 0 {
+				if maximum > capabilities.MaxContentByRole[role] {
+					capabilities.MaxContentByRole[role] = maximum
+				}
+				if role == VideoInputRoleTaggedReferenceImage {
+					capabilities.InputRolesByOperation[VideoOperationGenerate][role] = true
+					capabilities.InputMIMETypes[role] = imageMIMEs
+					capabilities.MaxInputBytes[role] = MaxContentModerationImageBytes
+					// 字节形式的参考图上限受能力表校验（≤16）约束；URL 引用不占这个额度。
+					if limit := min(2+maximum, videoMaxBinaryInputsPerOperation); capabilities.MaxInputsByOperation[VideoOperationGenerate] < limit {
+						capabilities.MaxInputsByOperation[VideoOperationGenerate] = limit
+					}
+				}
+			}
 		}
 		capabilities.SupportedModels[model] = true
 		seconds := profile.supportedSecondsList()
