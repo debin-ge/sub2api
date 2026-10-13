@@ -14,9 +14,10 @@ const (
 
 // VideoArkParameterSupport 描述 provider 对 Ark 开关字段的真实支持情况。
 //
-// 字段为 false 不等于「带值就拒绝」：与厂商固有行为等价的中性值（不加水印、不要尾帧、
-// 不固定镜头、不出声、随机种子、默认服务档）是空操作，由 normalizeNeutralArkParameters
-// 清空并记为 ignored；只有真正要求厂商做到做不到的事（watermark=true 等）才留给校验拒绝。
+// 字段为 false 不等于「带值就拒绝」：与厂商固有行为等价的中性值（不加水印、不固定镜头、
+// 不出声、随机种子、默认服务档）是空操作，由 normalizeNeutralArkParameters 清空并记为
+// ignored；return_last_frame 只影响响应里是否附带尾帧链接，任何取值都按空操作处理；只有
+// 真正改变产出或计费而厂商做不到的事（watermark=true、service_tier=flex 等）才留给校验拒绝。
 // ExecutionExpiresAfter 为 true 表示 provider 会把排队超时原样交给上游执行（Ark 直连），
 // 否则由本网关的 worker 自己执行。
 type VideoArkParameterSupport struct {
@@ -66,7 +67,9 @@ func normalizeNeutralArkParameters(request VideoCreateRequest, support VideoArkP
 		request.AudioEnabled = nil
 		ignored = append(ignored, "generate_audio")
 	}
-	if !support.ReturnLastFrame && request.ReturnLastFrame != nil && !*request.ReturnLastFrame {
+	// return_last_frame 只决定响应里是否多一个尾帧链接，不改变生成结果与计费：上游给不出
+	// 尾帧时无论取值都当作空操作接受，查询响应里没有 last_frame_url，并记入 ignored。
+	if !support.ReturnLastFrame && request.ReturnLastFrame != nil {
 		request.ReturnLastFrame = nil
 		ignored = append(ignored, "return_last_frame")
 	}

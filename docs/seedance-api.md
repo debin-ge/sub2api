@@ -59,8 +59,8 @@ curl "$SUB2API_BASE_URL/api/v3/contents/generations/tasks/$TASK_ID" -H "Authoriz
 - 弱校验写法同样生效：`"text": "海浪 --rs 720p --rt 16:9 --dur 5 --seed 11 --cf false --wm true"`，flag 覆盖顶层字段，预扣按解析后的值。
 - `provider_options`：sub2api 扩展，承载厂商特有参数（见能力目录的 `provider_options`）；Ark 直连账号不接受。
 - 非 Ark 直连的上游（fal / WaveSpeed / Runware / Flova、ByteDance 中继账号）对 Ark 开关的处理分两类：
-  - 取值等于该上游固有行为的「中性值」是空操作，会被接受并在查询响应的 `ignored_parameters` 里列出：`watermark=false`、`return_last_frame=false`、`camera_fixed=false`（模型无此字段时）、`generate_audio=false`（模型无音频字段时）、`seed=-1`（模型无 seed 字段时）、`service_tier="default"`。Ark 原生客户端带默认值提交时不会再被拒。
-  - 真正要求上游做它做不到的事一律 400（错误码 `unsupported_parameter`），不会静默丢弃：`watermark=true`、`return_last_frame=true`、`service_tier="flex"`、`duration=-1`、`frames`，以及模型档案没有映射的 `seed>=0`、`camera_fixed=true`、`generate_audio=true`。fal / WaveSpeed / Runware 的具体支持见能力目录的 `flags`；Flova 不支持任何开关，且参考图必须以 `data:` 内联。
+  - 取值等于该上游固有行为的「中性值」是空操作，会被接受并在查询响应的 `ignored_parameters` 里列出：`watermark=false`、`camera_fixed=false`（模型无此字段时）、`generate_audio=false`（模型无音频字段时）、`seed=-1`（模型无 seed 字段时）、`service_tier="default"`。`return_last_frame` 无论取值都按空操作接受（它只决定响应里是否附带 `last_frame_url`，不影响生成与计费），上游给不出尾帧时响应里没有该字段。Ark 原生客户端带默认值提交时不会再被拒。
+  - 真正改变产出或计费而上游做不到的事一律 400（错误码 `unsupported_parameter`），不会静默丢弃：`watermark=true`、`service_tier="flex"`、`duration=-1`、`frames`，以及模型档案没有映射的 `seed>=0`、`camera_fixed=true`、`generate_audio=true`。fal / WaveSpeed / Runware 的具体支持见能力目录的 `flags`；Flova 不支持任何开关，且参考图必须以 `data:` 内联。
 - `execution_expires_after` 对所有上游生效：Ark 直连账号原样透传由 Ark 执行；其他上游由本网关执行，任务创建后到时限仍未开始执行即取消并置 `expired`、释放预扣。
 - 参考媒体角色：ByteDance 直连接受全部角色；WaveSpeed 的 Seedance 2.5 接受 `reference_image`（≤30，可 `data:` 内联）、`reference_video`（≤10）、`reference_audio`（≤10），均需 https 引用；其他聚合平台模型只接受首尾帧，见能力目录的 `content_roles`。
 - `Idempotency-Key` 头是 sub2api 扩展：同 key 同请求重放原任务，同 key 不同请求 409。创建开关关闭时该头必填。

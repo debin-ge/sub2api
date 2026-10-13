@@ -31,12 +31,16 @@ func TestNormalizeNeutralArkParametersClearsOnlyNeutralValues(t *testing.T) {
 	require.Nil(t, ignored)
 	require.Equal(t, base, normalized)
 
-	// 非中性值不是空操作：留给 provider 拒绝。
+	// 非中性值不是空操作：留给 provider 拒绝。return_last_frame 例外：它只决定响应里有没有
+	// 尾帧链接，上游给不出时 true 也按空操作接受并记录。
 	loud := base
 	loud.Seed, loud.CameraFixed, loud.Watermark, loud.AudioEnabled, loud.ReturnLastFrame, loud.ServiceTier = &fixed, &on, &on, &on, &on, "flex"
 	normalized, ignored = normalizeNeutralArkParameters(loud, VideoArkParameterSupport{})
-	require.Nil(t, ignored)
-	require.Equal(t, loud, normalized)
+	require.Equal(t, []string{"return_last_frame"}, ignored)
+	require.Nil(t, normalized.ReturnLastFrame)
+	expected := loud
+	expected.ReturnLastFrame = nil
+	require.Equal(t, expected, normalized)
 
 	// 部分支持：只清不支持的那几个。
 	partial := VideoArkParameterSupport{Seed: true, GenerateAudio: true}
