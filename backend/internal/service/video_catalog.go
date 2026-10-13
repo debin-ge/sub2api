@@ -283,15 +283,11 @@ func validateVideoArkCreateCapabilities(caps VideoCapabilities, request VideoCre
 		}
 	}
 	if ratio := strings.ToLower(strings.TrimSpace(request.Ratio)); ratio != "" {
-		// adaptive 不是一个比例而是「跟随首帧」模式：能力表的比例词表只约束具体比例，
-		// adaptive 只看有没有首帧图；各 provider 再按自己的方式落地（厂商不认 adaptive 时
-		// 图生视频本来就不送比例）。
-		if ratio == ArkVideoRatioAdaptive {
-			if counts[string(VideoInputRoleFirstFrame)] == 0 && counts[string(VideoInputRoleReferenceImage)] == 0 {
-				return ErrVideoAdaptiveRatioRequiresImage
-			}
-		} else if allowed, ok := caps.SupportedRatios[canonical]; ok && len(allowed) > 0 && !slices.Contains(allowed, ratio) {
+		if allowed, ok := caps.SupportedRatios[canonical]; ok && len(allowed) > 0 && !slices.Contains(allowed, ratio) {
 			return fmt.Errorf("%w: ratio %q", ErrVideoCapabilityUnsupported, ratio)
+		}
+		if ratio == ArkVideoRatioAdaptive && counts[string(VideoInputRoleFirstFrame)] == 0 && counts[string(VideoInputRoleReferenceImage)] == 0 {
+			return ErrVideoAdaptiveRatioRequiresImage
 		}
 	}
 	return nil

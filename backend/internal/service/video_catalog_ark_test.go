@@ -68,9 +68,6 @@ func TestValidateVideoArkCreateCapabilities(t *testing.T) {
 		{"uppercase resolution", ark, VideoCreateRequest{Resolution: "720P"}, true, nil},
 		{"unknown ratio", ark, VideoCreateRequest{Ratio: "3:2"}, true, ErrVideoCapabilityUnsupported},
 		{"unknown ratio on unknown model", ark, VideoCreateRequest{Ratio: "3:2"}, false, nil},
-		// adaptive 是模式不是比例：词表里没有它也放行，只要求有首帧图。
-		{"adaptive outside vocabulary with first frame", vendor, VideoCreateRequest{Model: "bytedance:seedance@2.0", Ratio: ArkVideoRatioAdaptive, Content: arkContentItems(VideoInputRoleFirstFrame, 1)}, true, nil},
-		{"adaptive outside vocabulary without image", vendor, VideoCreateRequest{Model: "bytedance:seedance@2.0", Ratio: ArkVideoRatioAdaptive}, true, ErrVideoAdaptiveRatioRequiresImage},
 		{"known ratio", ark, VideoCreateRequest{Ratio: "21:9"}, true, nil},
 		// 非 generate 操作不做 Ark 维度校验。
 		{"edit skips ark checks", ark, VideoCreateRequest{Operation: VideoOperationEdit, Ratio: "5:2", Content: arkContentItems(VideoInputRoleFirstFrame, 3)}, true, nil},
