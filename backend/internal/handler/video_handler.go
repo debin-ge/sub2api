@@ -161,6 +161,8 @@ func (h *VideoHandler) submitWithShape(c *gin.Context, operation string, ark boo
 		videoError(c, err)
 		return
 	}
+	// 运维错误日志按这里记录的模型归因；不写的话 Ark 入口的失败请求在后台只显示"—"。
+	setOpsRequestContext(c, request.Model, false)
 	request.APIKey = apiKey
 	request.IdempotencyKey = strings.TrimSpace(c.GetHeader("Idempotency-Key"))
 	if err := validateVideoIdempotencyKey(request.IdempotencyKey); err != nil {
