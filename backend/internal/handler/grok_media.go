@@ -505,10 +505,11 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		if endpoint == service.GrokMediaEndpointVideoStatus || endpoint == service.GrokMediaEndpointVideoContent {
 			taskID := strings.TrimSpace(requestID)
 			if billResult := prepareGrokVideoCompletionBilling(requestCtx, h, reqLog, apiKey, subject, taskID, result); billResult != nil {
-				recordGrokMediaUsage(c, h, reqLog, apiKey, subject, subscription, account, billResult, endpoint, billResult.Model, body, taskID)
+				// The lookup itself is free; this settles the earlier video generation.
+				recordGrokMediaUsage(c, h, reqLog, apiKey, subject, subscription, account, billResult, service.BillingKindVideo, billResult.Model, body, taskID)
 			}
 		} else if shouldRecordGrokMediaUsage(endpoint, requestModel, result) {
-			recordGrokMediaUsage(c, h, reqLog, apiKey, subject, subscription, account, result, endpoint, requestModel, body, requestID)
+			recordGrokMediaUsage(c, h, reqLog, apiKey, subject, subscription, account, result, endpoint.BillingKind(), requestModel, body, requestID)
 		}
 		reqLog.Debug("grok_media.request_completed",
 			zap.Int64("account_id", account.ID),
@@ -701,7 +702,7 @@ func recordGrokMediaUsage(
 	subscription *service.UserSubscription,
 	account *service.Account,
 	result *service.OpenAIForwardResult,
-	endpoint service.GrokMediaEndpoint,
+	settlementKind service.BillingKind,
 	requestModel string,
 	body []byte,
 	requestID string,
@@ -750,10 +751,9 @@ func recordGrokMediaUsage(
 			APIKeyService:      h.apiKeyService,
 			QuotaPlatform:      quotaPlatform,
 			SessionID:          sessionID,
-			// 图片还是视频由端点决定。此前靠上游回的 video_count 反推：
-			// videos/extensions 这类端点若漏回该字段就会掉进 token 分支，
-			// 而 grok-imagine-video 没有 token 价，一条已交付的视频就成了 $0。
-			BillingKind:        endpoint.BillingKind(),
+			// Deferred generation settlement has its own billing kind, independent
+			// of the free status/content lookup that observed completion.
+			BillingKind:        settlementKind,
 			ChannelUsageFields: channelUsageFields,
 		}); err != nil {
 			if videoTaskID != "" {

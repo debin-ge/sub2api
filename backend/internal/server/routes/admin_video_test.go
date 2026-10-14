@@ -22,6 +22,8 @@ func TestRegisterAdminVideoRoutesExposeOnlySafeRecoveryCommands(t *testing.T) {
 	}
 	for _, expected := range []string{
 		"GET /api/v1/admin/videos/overview",
+		"GET /api/v1/admin/videos/provider-costs",
+		"POST /api/v1/admin/videos/provider-costs/:id/resolve",
 		"GET /api/v1/admin/videos/capabilities",
 		"PUT /api/v1/admin/videos/capabilities",
 		"GET /api/v1/admin/videos/tasks",
@@ -39,8 +41,8 @@ func TestRegisterAdminVideoRoutesExposeOnlySafeRecoveryCommands(t *testing.T) {
 		_, ok := routes[expected]
 		require.True(t, ok, expected)
 	}
-	// The surviving admin surface is pure retry. Nothing here carries an
-	// operator's decision, because manual review no longer exists.
+	// Task execution remains retry-only. The separate supplier accounting ledger
+	// cannot change a task outcome or authorize customer billing.
 	for route := range routes {
 		require.NotContains(t, route, "/videos/grok/")
 		require.NotContains(t, route, "/videos/intents")

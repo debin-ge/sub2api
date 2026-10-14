@@ -148,6 +148,8 @@ func registerAdminVideoRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	videos := admin.Group("/videos")
 	{
 		videos.GET("/overview", h.Admin.Video.Overview)
+		videos.GET("/provider-costs", h.Admin.Video.ListProviderCosts)
+		videos.POST("/provider-costs/:id/resolve", h.Admin.Video.ResolveProviderCost)
 		videos.GET("/capabilities", h.Admin.Video.GetCapabilityCatalog)
 		videos.PUT("/capabilities", h.Admin.Video.UpdateCapabilityCatalog)
 		videos.GET("/accounts/:id/capability", h.Admin.Video.GetAccountCapability)

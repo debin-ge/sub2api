@@ -43,6 +43,10 @@ type ImageTaskRecord struct {
 	CreatedAt   int64           `json:"created_at"`
 	CompletedAt *int64          `json:"completed_at,omitempty"`
 	ExpiresAt   int64           `json:"expires_at"`
+	// PendingToken and ExecutionDeadline are private admission metadata. Records
+	// written before distributed admission do not contain these fields.
+	PendingToken      string `json:"pending_token,omitempty"`
+	ExecutionDeadline int64  `json:"execution_deadline,omitempty"`
 }
 
 // ImageTask is the API-safe task representation returned to callers.
@@ -70,15 +74,14 @@ type ImageTaskStore interface {
 	Get(ctx context.Context, id string) (*ImageTaskRecord, error)
 }
 
-// ImageTaskPendingCounter 是 store 的可选扩展：若底层存储能够按用户统计未终态任务数
-// （例如维护了 per-user 索引），实现该接口后 CountPendingForUser 优先采用其结果；
-// 否则回落到服务内的进程本地追踪。
+// ImageTaskPendingCounter supports legacy diagnostic callers. Admission must
+// use Reserve and ImageTaskPendingStore; a count is never an admission permit.
 type ImageTaskPendingCounter interface {
 	CountPendingForUser(ctx context.Context, userID int64) (int, error)
 }
 
-// imageTaskPendingGrace 是进程本地追踪对未收到终态回写任务的宽限：任务创建时间超过
-// 执行超时 + 宽限仍未终结（如 finish 落库失败），视为已不再占用挂起配额。
+// imageTaskPendingGrace bounds cleanup after the absolute execution deadline.
+// Result retention is independent from this admission reservation lifetime.
 const imageTaskPendingGrace = time.Minute
 
 // ImageStorageResolver reports the currently effective object-storage binding.
@@ -97,9 +100,8 @@ type ImageTaskService struct {
 
 	now func() time.Time
 
-	// pending 记录本进程创建且尚未终结的任务：userID -> taskID -> 创建时间。
-	// Redis store 只有按 ID 的 K/V，没有 per-user 索引，因此挂起数在此本地统计；
-	// 任务由创建它的进程执行并回写终态，本地视图对该进程是完整的。
+	// Legacy Create callers retain a local diagnostic count. The HTTP admission
+	// path uses distributed reservations and never consults this map.
 	pendingMu sync.Mutex
 	pending   map[int64]map[string]time.Time
 }
@@ -196,8 +198,7 @@ func (s *ImageTaskService) Create(ctx context.Context, owner ImageTaskOwner) (*I
 	return imageTaskToPublic(task), nil
 }
 
-// CountPendingForUser 返回用户当前未终态（processing）的异步图片任务数。
-// store 实现了 ImageTaskPendingCounter 时以其为准，否则使用进程本地追踪。
+// CountPendingForUser is a legacy diagnostic view, not a distributed quota.
 func (s *ImageTaskService) CountPendingForUser(ctx context.Context, userID int64) (int, error) {
 	if s == nil || s.store == nil {
 		return 0, ErrImageTaskUnavailable
@@ -292,10 +293,43 @@ func (s *ImageTaskService) Get(ctx context.Context, owner ImageTaskOwner, id str
 		// Do not reveal whether a random task ID exists for another caller.
 		return nil, ErrImageTaskNotFound
 	}
+	// A crashed submitter cannot complete its in-process worker. Recover the
+	// visible state after the execution deadline and cleanup grace have elapsed.
+	if task.Status == ImageTaskStatusProcessing && task.ExecutionDeadline > 0 &&
+		s.clock().After(time.UnixMilli(task.ExecutionDeadline).Add(imageTaskPendingGrace)) {
+		if err := s.Fail(ctx, task.ID, http.StatusGatewayTimeout, imageTaskErrorJSON("timeout_error", "image generation task expired before completion")); err != nil {
+			return nil, err
+		}
+		task, err = s.store.Get(ctx, task.ID)
+		if err != nil {
+			return nil, ErrImageTaskUnavailable.WithCause(err)
+		}
+	}
 	return imageTaskToPublic(task), nil
 }
 
 func (s *ImageTaskService) Complete(ctx context.Context, id string, statusCode int, result json.RawMessage) error {
+	if s == nil || s.store == nil {
+		return ErrImageTaskUnavailable
+	}
+	task, err := s.store.Get(ctx, id)
+	if err != nil {
+		if errors.Is(err, ErrImageTaskNotFound) {
+			return ErrImageTaskNotFound
+		}
+		return ErrImageTaskUnavailable.WithCause(err)
+	}
+	if task.Status != ImageTaskStatusProcessing {
+		return nil
+	}
+	if task.ExecutionDeadline > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, time.UnixMilli(task.ExecutionDeadline))
+		defer cancel()
+	}
+	if ctx.Err() != nil {
+		return ErrImageTaskReservationExpired
+	}
 	if !json.Valid(result) {
 		return s.Fail(ctx, id, http.StatusBadGateway, imageTaskErrorJSON("api_error", "upstream returned a non-JSON image response"))
 	}
@@ -329,7 +363,13 @@ func (s *ImageTaskService) finish(ctx context.Context, id, status string, status
 		}
 		return ErrImageTaskUnavailable.WithCause(err)
 	}
+	if task.Status != ImageTaskStatusProcessing {
+		return nil
+	}
 	now := s.clock().UTC()
+	if status == ImageTaskStatusCompleted && task.ExecutionDeadline > 0 && !now.Before(time.UnixMilli(task.ExecutionDeadline)) {
+		return ErrImageTaskReservationExpired
+	}
 	completedAt := now.Unix()
 	task.Status = status
 	task.HTTPStatus = statusCode
@@ -337,8 +377,16 @@ func (s *ImageTaskService) finish(ctx context.Context, id, status string, status
 	task.Error = taskErr
 	task.CompletedAt = &completedAt
 	task.ExpiresAt = now.Add(s.ttl).Unix()
-	if err := s.store.Save(ctx, task, s.ttl); err != nil {
-		return ErrImageTaskUnavailable.WithCause(err)
+	var saveErr error
+	if store, ok := s.store.(ImageTaskTerminalStore); ok {
+		saveErr = store.FinishImageTask(ctx, task, s.ttl)
+	} else if task.PendingToken != "" {
+		return ErrImageTaskUnavailable
+	} else {
+		saveErr = s.store.Save(ctx, task, s.ttl)
+	}
+	if saveErr != nil {
+		return ErrImageTaskUnavailable.WithCause(saveErr)
 	}
 	s.untrackPending(task.UserID, task.ID)
 	return nil

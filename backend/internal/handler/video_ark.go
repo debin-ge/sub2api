@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -79,7 +80,7 @@ func (h *VideoHandler) ArkRetrieve(c *gin.Context) {
 }
 
 // ArkList 列出本用户的任务。接受 Ark 的 page_num / page_size / filter.status / filter.model，
-// 也接受裸的 status / model。total 只在翻到末页时给出：仓储是游标分页，没有总数查询。
+// 也接受裸的 status / model。所有筛选在仓储分页之前完成，不扫描用户全部历史。
 func (h *VideoHandler) ArkList(c *gin.Context) {
 	apiKey, ok := h.arkGroupAllowed(c)
 	if !ok {
@@ -112,50 +113,29 @@ func (h *VideoHandler) ArkList(c *gin.Context) {
 	}
 	model := strings.TrimSpace(firstNonEmptyVideoString(c.Query("filter.model"), c.Query("model")))
 
-	// 仓储按游标翻页；page_num 用连续翻页实现，状态过滤在投影后做（Ark 的 queued
-	// 对应多个内部状态，仓储的单值过滤表达不了）。
-	skip := (pageNum - 1) * pageSize
+	page, err := h.tasks.ListForOwner(c.Request.Context(), apiKey.UserID, service.VideoTaskFilter{
+		Model: model, Operation: service.VideoOperationGenerate, Limit: pageSize, Order: "desc",
+		ArkOnly: true, ArkStatus: status, Offset: (pageNum - 1) * pageSize,
+	})
+	if err != nil {
+		if errors.Is(err, service.ErrVideoListRateLimited) {
+			c.Header("Retry-After", "60")
+		}
+		videoError(c, err)
+		return
+	}
 	items := make([]map[string]any, 0, pageSize)
-	after := ""
-	morePages := true
-	truncated := false
-	for morePages && !truncated {
-		page, err := h.tasks.ListForOwner(c.Request.Context(), apiKey.UserID, service.VideoTaskFilter{
-			Model: model, Operation: service.VideoOperationGenerate, Limit: arkVideoListMaxPageSize, After: after, Order: "desc",
-		})
-		if err != nil {
-			videoError(c, err)
+	for _, task := range page.Data {
+		item, projectErr := h.projectArkTask(c.Request.Context(), apiKey.UserID, task, c.Request)
+		if projectErr != nil {
+			videoError(c, projectErr)
 			return
 		}
-		for _, task := range page.Data {
-			if !service.IsArkVideoProvider(task.Provider) {
-				continue
-			}
-			if status != "" && service.ProjectArkVideoStatus(task) != status {
-				continue
-			}
-			if skip > 0 {
-				skip--
-				continue
-			}
-			if len(items) >= pageSize {
-				// 本页还有没消费的任务：下一页一定非空。
-				truncated = true
-				break
-			}
-			item, projectErr := h.projectArkTask(c.Request.Context(), apiKey.UserID, task, c.Request)
-			if projectErr != nil {
-				videoError(c, projectErr)
-				return
-			}
-			items = append(items, item)
-		}
-		morePages = page.HasMore && page.After != ""
-		after = page.After
+		items = append(items, item)
 	}
-	hasMore := truncated || morePages
-	response := gin.H{"items": items, "page_num": pageNum, "page_size": pageSize, "has_more": hasMore}
-	if !hasMore {
+	response := gin.H{"items": items, "page_num": pageNum, "page_size": pageSize, "has_more": page.HasMore}
+	// An empty page past the end does not reveal the exact total.
+	if !page.HasMore && (len(items) > 0 || pageNum == 1) {
 		response["total"] = (pageNum-1)*pageSize + len(items)
 	}
 	h.setNoStore(c)

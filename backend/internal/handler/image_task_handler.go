@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -51,28 +50,6 @@ func (h *AsyncImageHandler) maxPendingPerUser() int {
 	return h.cfg.Gateway.ImagesMaxPendingPerUser
 }
 
-// rejectIfPendingLimitReached 在用户挂起任务数达到上限时写出 429 并返回 true。
-// 计数与创建之间存在窄小竞态窗口，这是软上限：目的在于阻断单用户以无界并发
-// 触发 go h.run 的资源耗尽，而非精确配额。
-func (h *AsyncImageHandler) rejectIfPendingLimitReached(c *gin.Context, userID int64) bool {
-	limit := h.maxPendingPerUser()
-	if limit <= 0 {
-		return false
-	}
-	pending, err := h.tasks.CountPendingForUser(c.Request.Context(), userID)
-	if err != nil {
-		imageTaskError(c, err)
-		return true
-	}
-	if pending < limit {
-		return false
-	}
-	c.Header("Retry-After", imageTaskPendingLimitRetryAfterSeconds)
-	imageTaskJSONError(c, http.StatusTooManyRequests, "IMAGE_TASKS_PENDING_LIMIT",
-		fmt.Sprintf("too many pending image tasks: at most %d may be in progress per user, retry later", limit))
-	return true
-}
-
 // enabled reports whether the async image task feature is available. Object
 // storage is the enablement gate: without it the endpoints are fully disabled
 // so that large base64 results never land in Redis.
@@ -115,13 +92,47 @@ func (h *AsyncImageHandler) Submit(c *gin.Context) {
 		imageTaskError(c, service.ErrImageTaskUnavailable)
 		return
 	}
-	// 挂起上限在读体/审核之前判定：被拒绝的请求不应消耗解析与内容审核开销。
-	if h.rejectIfPendingLimitReached(c, apiKey.UserID) {
+	// Reserve atomically before body parsing/moderation. The reservation remains
+	// owned by this request until the background worker takes responsibility.
+	reservation, err := h.tasks.Reserve(c.Request.Context(), service.ImageTaskOwner{UserID: apiKey.UserID, APIKeyID: apiKey.ID}, h.maxPendingPerUser())
+	if err != nil {
+		if errors.Is(err, service.ErrImageTaskPendingLimit) {
+			c.Header("Retry-After", imageTaskPendingLimitRetryAfterSeconds)
+		}
+		imageTaskError(c, err)
 		return
 	}
+	transferred := false
+	defer func() {
+		if !transferred {
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := h.tasks.ReleaseReservation(cleanupCtx, reservation); err != nil {
+				logger.L().Error("image_task.admission_release_failed", zap.String("task_id", reservation.ID), zap.Error(err))
+			}
+		}
+	}()
+	preflightCtx, cancelPreflight := context.WithDeadline(c.Request.Context(), reservation.Deadline)
+	c.Request = c.Request.WithContext(preflightCtx)
+	// A context deadline alone cannot interrupt a blocked HTTP body Read.
+	// Real net/http writers support read deadlines; Close also supports test or
+	// embedded transports whose bodies unblock on cancellation.
+	controller := http.NewResponseController(c.Writer)
+	_ = controller.SetReadDeadline(reservation.Deadline)
+	bodyReader := c.Request.Body
+	stopBodyClose := context.AfterFunc(preflightCtx, func() { _ = bodyReader.Close() })
+	defer func() {
+		stopBodyClose()
+		cancelPreflight()
+		_ = controller.SetReadDeadline(time.Time{})
+	}()
 
 	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
 	if err != nil {
+		if preflightCtx.Err() != nil {
+			imageTaskJSONError(c, http.StatusRequestTimeout, "timeout_error", "image task submission timed out")
+			return
+		}
 		if maxErr, ok := extractMaxBytesError(err); ok {
 			imageTaskJSONError(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
 			return
@@ -144,11 +155,18 @@ func (h *AsyncImageHandler) Submit(c *gin.Context) {
 	if !h.checkSecurityAuditBeforeSubmit(c, apiKey, platform, body) {
 		return
 	}
+	if preflightCtx.Err() != nil {
+		imageTaskJSONError(c, http.StatusRequestTimeout, "timeout_error", "image task submission timed out")
+		return
+	}
 
-	taskCtx, recorder, cancel := newAsyncImageContext(c, body, h.tasks.ExecutionTimeout())
-	task, err := h.tasks.Create(c.Request.Context(), service.ImageTaskOwner{UserID: apiKey.UserID, APIKeyID: apiKey.ID})
+	taskCtx, recorder, cancel := newAsyncImageContext(c, body, reservation.Deadline)
+	task, err := h.tasks.CreateReserved(c.Request.Context(), reservation)
 	if err != nil {
 		cancel()
+		// A lost Redis response can hide a successful commit. No worker was
+		// launched, so fail any such record before relinquishing the reservation.
+		h.failTask(reservation.ID, http.StatusServiceUnavailable, imageTaskErrorPayload("api_error", "image task submission failed"))
 		imageTaskError(c, err)
 		return
 	}
@@ -167,6 +185,7 @@ func (h *AsyncImageHandler) Submit(c *gin.Context) {
 		"poll_url":   pollURL,
 	})
 
+	transferred = true
 	go h.run(task.ID, platform, taskCtx, recorder, cancel)
 }
 
@@ -281,9 +300,13 @@ func (h *AsyncImageHandler) run(taskID, platform string, taskCtx *gin.Context, r
 		}
 	}()
 
+	if taskCtx.Request.Context().Err() != nil {
+		h.failTask(taskID, http.StatusGatewayTimeout, imageTaskErrorPayload("timeout_error", "image generation task timed out"))
+		return
+	}
 	h.execute(platform, taskCtx)
 	body := bytes.TrimSpace(recorder.Body.Bytes())
-	if err := taskCtx.Request.Context().Err(); err != nil && len(body) == 0 {
+	if err := taskCtx.Request.Context().Err(); err != nil {
 		h.failTask(taskID, http.StatusGatewayTimeout, imageTaskErrorPayload("timeout_error", "image generation task timed out"))
 		return
 	}
@@ -296,8 +319,9 @@ func (h *AsyncImageHandler) run(taskID, platform string, taskCtx *gin.Context, r
 			h.failTask(taskID, http.StatusBadGateway, imageTaskErrorPayload("api_error", "upstream returned an invalid image response"))
 			return
 		}
-		if err := h.tasks.Complete(context.Background(), taskID, statusCode, json.RawMessage(body)); err != nil {
+		if err := h.tasks.Complete(taskCtx.Request.Context(), taskID, statusCode, json.RawMessage(body)); err != nil {
 			logger.L().Error("image_task.complete_store_failed", zap.String("task_id", taskID), zap.Error(err))
+			h.failTask(taskID, http.StatusBadGateway, imageTaskErrorPayload("api_error", "image task completion failed"))
 		}
 		return
 	}
@@ -305,14 +329,17 @@ func (h *AsyncImageHandler) run(taskID, platform string, taskCtx *gin.Context, r
 }
 
 func (h *AsyncImageHandler) failTask(taskID string, statusCode int, taskErr json.RawMessage) {
-	if err := h.tasks.Fail(context.Background(), taskID, statusCode, taskErr); err != nil {
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := h.tasks.Fail(cleanupCtx, taskID, statusCode, taskErr); err != nil && !errors.Is(err, service.ErrImageTaskNotFound) {
 		logger.L().Error("image_task.failure_store_failed", zap.String("task_id", taskID), zap.Error(err))
 	}
 }
 
-func newAsyncImageContext(c *gin.Context, body []byte, timeoutDuration time.Duration) (*gin.Context, *httptest.ResponseRecorder, context.CancelFunc) {
+func newAsyncImageContext(c *gin.Context, body []byte, deadline time.Time) (*gin.Context, *httptest.ResponseRecorder, context.CancelFunc) {
 	base := context.WithoutCancel(c.Request.Context())
-	executionCtx, cancel := context.WithTimeout(base, timeoutDuration)
+	base = service.WithImageTaskExecutionDeadline(base, deadline)
+	executionCtx, cancel := context.WithDeadline(base, deadline)
 	request := c.Request.Clone(executionCtx)
 	request.Body = io.NopCloser(bytes.NewReader(body))
 	request.GetBody = func() (io.ReadCloser, error) {

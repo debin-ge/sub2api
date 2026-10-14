@@ -2093,6 +2093,9 @@ func (r *usageBillingRepository) completeVideoBalanceSettlementTx(
 	if _, err := lockVideoBudgetOwnerTx(ctx, tx, settlement.Hold.UserID); err != nil {
 		return nil, err
 	}
+	if err := lockVideoProviderCostAccountTx(ctx, tx, settlement.TaskID, settlement.Hold.UserID, settlement.Hold.APIKeyID, settlement.Hold.RefID); err != nil {
+		return nil, err
+	}
 	var (
 		publicID      string
 		billingState  string
@@ -2177,6 +2180,12 @@ func (r *usageBillingRepository) completeVideoBalanceSettlementTx(
 	}
 	if !claimed {
 		return nil, service.ErrUsageBillingRequestConflict
+	}
+
+	// A customer release/capture does not establish the supplier's final cost.
+	// Persist unresolved supplier exposure atomically with the money operation.
+	if err := recordUncertainVideoProviderCostTx(ctx, tx, settlement.TaskID, settlement.Action); err != nil {
+		return nil, err
 	}
 
 	result := &service.UsageBillingApplyResult{Applied: true}

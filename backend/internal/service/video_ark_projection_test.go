@@ -34,13 +34,8 @@ func TestProjectArkVideoStatus(t *testing.T) {
 
 	for _, status := range []string{ArkVideoStatusQueued, ArkVideoStatusRunning, ArkVideoStatusSucceeded, ArkVideoStatusFailed, ArkVideoStatusCancelled, ArkVideoStatusExpired} {
 		require.True(t, IsArkVideoStatus(status), status)
-		require.NotEmpty(t, ArkVideoStatusGenerationStates(status), status)
 	}
 	require.False(t, IsArkVideoStatus(VideoGenerationCompleted), "internal state names are not Ark statuses")
-	require.Nil(t, ArkVideoStatusGenerationStates(VideoGenerationCompleted))
-	require.Equal(t, []string{VideoGenerationPreparing, VideoGenerationHeld, VideoGenerationSubmitting, VideoGenerationQueued}, ArkVideoStatusGenerationStates(ArkVideoStatusQueued))
-	require.Equal(t, []string{VideoGenerationCompleted}, ArkVideoStatusGenerationStates(ArkVideoStatusSucceeded), "list filters do not gate on billing")
-	require.Equal(t, []string{VideoGenerationCancelled}, ArkVideoStatusGenerationStates(ArkVideoStatusCancelled))
 }
 
 func TestIsArkVideoProvider(t *testing.T) {

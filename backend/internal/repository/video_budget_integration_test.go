@@ -76,6 +76,9 @@ func TestVideoBudgetPlatformReservationsSpanAPIKeys(t *testing.T) {
 }
 
 func TestVideoBudgetConcurrentAccountsCannotOversubscribe(t *testing.T) {
+	// A $5 budget and $2 holds allow only two tasks, below the confirmation-slot
+	// cap. Rejections must therefore still prove the cross-account budget guard.
+	require.Less(t, 2, service.VideoProviderCostMaxUnresolvedPerUser)
 	for _, scope := range []string{"key", "platform"} {
 		t.Run(scope, func(t *testing.T) {
 			ctx := context.Background()
@@ -218,6 +221,9 @@ func TestVideoBudgetRejectsStaleIdentityBeforeHold(t *testing.T) {
 }
 
 func TestVideoBudgetConcurrentSettlementAndCreation(t *testing.T) {
+	// The settled $2 charge leaves room for at most two $4 holds. Keep this
+	// below admission's slot cap so the budget assertion cannot be masked.
+	require.Less(t, 2, service.VideoProviderCostMaxUnresolvedPerUser)
 	ctx := context.Background()
 	repo, _, _, user, key, account := newVideoRepositoryFixture(t, 100)
 	extraAccount := accountEntityToService(newOwnershipTestAccount(t, nil, map[string]any{"api_key": uuid.NewString()}))

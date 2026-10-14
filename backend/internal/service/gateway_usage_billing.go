@@ -774,6 +774,11 @@ func detachUpstreamContext(ctx context.Context) (context.Context, context.Cancel
 	if ctx == nil {
 		return context.Background(), func() {}
 	}
+	if deadline, ok := imageTaskExecutionDeadline(ctx); ok {
+		// The async handler has already detached from the submitter. Preserve
+		// its server-owned lifetime even when image providers detach again.
+		return context.WithDeadline(context.WithoutCancel(ctx), deadline)
+	}
 	return context.WithoutCancel(ctx), func() {}
 }
 

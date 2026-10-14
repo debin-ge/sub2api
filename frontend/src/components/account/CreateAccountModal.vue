@@ -1600,6 +1600,7 @@
         <!-- Flova 专属运行参数（api_key / base_url 沿用上方通用字段） -->
         <div v-if="form.platform === 'flova'" data-testid="flova-fields" class="space-y-4 border-t zt-border-c2 pt-4">
           <label class="input-label">{{ t('admin.accounts.flova.sectionTitle') }}</label>
+          <p role="status" class="input-hint">{{ t('admin.accounts.flova.spendingPausedHint') }}</p>
           <div>
             <label class="input-label">{{ t('admin.accounts.flova.uploadUrl') }}</label>
             <input
@@ -1659,6 +1660,7 @@
               <input
                 v-model.number="flovaForm.auto_confirm_credits_max"
                 data-testid="flova-auto-confirm-credits-max"
+                disabled
                 type="number"
                 class="input"
                 min="0" step="1"
@@ -1696,6 +1698,7 @@
             <Toggle
               v-model="flovaForm.auto_confirm_high_cost"
               data-testid="flova-auto-confirm-high-cost"
+              disabled
               :aria-label="t('admin.accounts.flova.autoConfirmHighCost')"
             />
           </div>

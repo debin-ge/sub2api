@@ -361,21 +361,32 @@ func TestVideoHandlerArkRetrieveHidesOpenAIShapeTasksAndRespectsDisclosure(t *te
 	})
 }
 
-// arkListAPIFake 按游标分页：Ark 列表用 page_num 连续翻页实现，仓储返回的游标必须推进。
+// The fake models the repository contract: filter first, then bounded paging.
 type arkListAPIFake struct {
 	videoTaskAPIFake
-	pages   map[string]*service.VideoTaskPage
+	data    []*service.VideoTask
 	filters []service.VideoTaskFilter
 }
 
 func (f *arkListAPIFake) ListForOwner(_ context.Context, userID int64, filter service.VideoTaskFilter) (*service.VideoTaskPage, error) {
 	f.listUserID = userID
 	f.filters = append(f.filters, filter)
-	page, ok := f.pages[filter.After]
-	if !ok {
+	data := make([]*service.VideoTask, 0)
+	for _, task := range f.data {
+		if !service.IsArkVideoProvider(task.Provider) || (filter.ArkStatus != "" && service.ProjectArkVideoStatus(task) != filter.ArkStatus) {
+			continue
+		}
+		data = append(data, task)
+	}
+	if filter.Offset >= len(data) {
 		return &service.VideoTaskPage{}, nil
 	}
-	return page, nil
+	data = data[filter.Offset:]
+	more := len(data) > filter.Limit
+	if more {
+		data = data[:filter.Limit]
+	}
+	return &service.VideoTaskPage{Data: data, HasMore: more}, nil
 }
 
 func arkListTestTask(index int, provider, generation, billing string) *service.VideoTask {
@@ -391,18 +402,14 @@ func arkListTestTask(index int, provider, generation, billing string) *service.V
 }
 
 func newArkListTestFake() *arkListAPIFake {
-	return &arkListAPIFake{pages: map[string]*service.VideoTaskPage{
-		"": {HasMore: true, After: "cursor-2", Data: []*service.VideoTask{
-			arkListTestTask(0, service.VideoProviderByteDance, service.VideoGenerationQueued, service.VideoBillingHeld),
-			arkListTestTask(1, service.VideoProviderFal, service.VideoGenerationInProgress, service.VideoBillingHeld),
-			arkListTestTask(2, service.VideoProviderFlova, service.VideoGenerationCompleted, service.VideoBillingCaptured),
-			arkListTestTask(9, service.VideoProviderOpenAI, service.VideoGenerationCompleted, service.VideoBillingCaptured),
-		}},
-		"cursor-2": {HasMore: false, Data: []*service.VideoTask{
-			arkListTestTask(3, service.VideoProviderWaveSpeed, service.VideoGenerationFailed, service.VideoBillingReleased),
-			arkListTestTask(4, service.VideoProviderRunware, service.VideoGenerationCompleted, service.VideoBillingCaptured),
-			arkListTestTask(5, service.VideoProviderByteDance, service.VideoGenerationCancelled, service.VideoBillingReleased),
-		}},
+	return &arkListAPIFake{data: []*service.VideoTask{
+		arkListTestTask(0, service.VideoProviderByteDance, service.VideoGenerationQueued, service.VideoBillingHeld),
+		arkListTestTask(1, service.VideoProviderFal, service.VideoGenerationInProgress, service.VideoBillingHeld),
+		arkListTestTask(2, service.VideoProviderFlova, service.VideoGenerationCompleted, service.VideoBillingCaptured),
+		arkListTestTask(9, service.VideoProviderOpenAI, service.VideoGenerationCompleted, service.VideoBillingCaptured),
+		arkListTestTask(3, service.VideoProviderWaveSpeed, service.VideoGenerationFailed, service.VideoBillingReleased),
+		arkListTestTask(4, service.VideoProviderRunware, service.VideoGenerationCompleted, service.VideoBillingCaptured),
+		arkListTestTask(5, service.VideoProviderByteDance, service.VideoGenerationCancelled, service.VideoBillingReleased),
 	}}
 }
 
@@ -435,7 +442,7 @@ func TestVideoHandlerArkListPagesAndFilters(t *testing.T) {
 		require.NotContains(t, response, "total", "total is only known once the last page is reached")
 		require.Equal(t, int64(42), fake.listUserID)
 		require.Len(t, fake.filters, 1)
-		require.Equal(t, service.VideoTaskFilter{Operation: service.VideoOperationGenerate, Limit: arkVideoListMaxPageSize, Order: "desc"}, fake.filters[0])
+		require.Equal(t, service.VideoTaskFilter{Operation: service.VideoOperationGenerate, Limit: 2, Order: "desc", ArkOnly: true}, fake.filters[0])
 		require.Equal(t, "private, no-store", recorder.Header().Get("Cache-Control"))
 	})
 	t.Run("last page skips openai tasks and reports total", func(t *testing.T) {
@@ -447,8 +454,8 @@ func TestVideoHandlerArkListPagesAndFilters(t *testing.T) {
 		require.Equal(t, []string{id(4), id(5)}, ids)
 		require.Equal(t, false, response["has_more"])
 		require.EqualValues(t, 6, response["total"])
-		require.Len(t, fake.filters, 2)
-		require.Equal(t, "cursor-2", fake.filters[1].After)
+		require.Len(t, fake.filters, 1)
+		require.Equal(t, 4, fake.filters[0].Offset)
 		require.NotContains(t, recorder.Body.String(), id(9), "OpenAI-shape tasks never show up in the Ark list")
 	})
 	t.Run("default page size and status words", func(t *testing.T) {
@@ -466,7 +473,7 @@ func TestVideoHandlerArkListPagesAndFilters(t *testing.T) {
 		}
 		require.Equal(t, []string{"queued", "running", "succeeded", "failed", "succeeded", "cancelled"}, statuses)
 	})
-	t.Run("status filter is applied after projection", func(t *testing.T) {
+	t.Run("public status filter reaches repository before pagination", func(t *testing.T) {
 		for _, query := range []string{"filter.status=succeeded", "status=succeeded"} {
 			fake := newArkListTestFake()
 			ctx, recorder := newArkVideoHandlerTestContext(http.MethodGet, "/api/v3/contents/generations/tasks?"+query, service.PlatformByteDance, nil)
@@ -476,10 +483,33 @@ func TestVideoHandlerArkListPagesAndFilters(t *testing.T) {
 			require.Equal(t, []string{id(2), id(4)}, ids, query)
 			require.EqualValues(t, 2, response["total"])
 			require.Equal(t, false, response["has_more"])
+			require.Len(t, fake.filters, 1)
+			require.Equal(t, service.ArkVideoStatusSucceeded, fake.filters[0].ArkStatus)
 			for _, item := range response["items"].([]any) {
 				require.Contains(t, item.(map[string]any), "content", "succeeded items carry signed content links")
 			}
 		}
+	})
+	t.Run("no matching rows performs one query", func(t *testing.T) {
+		fake := newArkListTestFake()
+		ctx, recorder := newArkVideoHandlerTestContext(http.MethodGet, "/api/v3/contents/generations/tasks?status=expired&page_size=1", service.PlatformByteDance, nil)
+		newVideoHandler(fake, nil, videoHandlerTestConfig(t)).ArkList(ctx)
+		require.Equal(t, http.StatusOK, recorder.Code)
+		response, ids := arkListResponse(t, recorder)
+		require.Empty(t, ids)
+		require.Len(t, fake.filters, 1)
+		require.EqualValues(t, 0, response["total"])
+	})
+	t.Run("empty page past end does not invent total", func(t *testing.T) {
+		fake := newArkListTestFake()
+		ctx, recorder := newArkVideoHandlerTestContext(http.MethodGet, "/api/v3/contents/generations/tasks?page_num=50&page_size=100", service.PlatformByteDance, nil)
+		newVideoHandler(fake, nil, videoHandlerTestConfig(t)).ArkList(ctx)
+		require.Equal(t, http.StatusOK, recorder.Code)
+		response, ids := arkListResponse(t, recorder)
+		require.Empty(t, ids)
+		require.Len(t, fake.filters, 1)
+		require.Equal(t, 4900, fake.filters[0].Offset)
+		require.NotContains(t, response, "total")
 	})
 	t.Run("model filter reaches the store", func(t *testing.T) {
 		fake := newArkListTestFake()

@@ -438,6 +438,8 @@ describe('CreateAccountModal', () => {
       expect((wrapper.get('[data-testid="flova-price-drift-tolerance"]').element as HTMLInputElement).value).toBe('0.1')
       expect((wrapper.get('[data-testid="flova-min-credits-reserve"]').element as HTMLInputElement).value).toBe('60')
       expect(wrapper.get('[data-testid="flova-auto-confirm-high-cost"]').attributes('aria-checked')).toBe('true')
+      expect(wrapper.get('[data-testid="flova-auto-confirm-high-cost"]').attributes('disabled')).toBeDefined()
+      expect(wrapper.get('[data-testid="flova-auto-confirm-credits-max"]').attributes('disabled')).toBeDefined()
 
       await wrapper.get('[data-tour="account-form-name"]').setValue('Flova account')
       await wrapper.get('[data-testid="api-key-value"]').setValue('flova-secret')

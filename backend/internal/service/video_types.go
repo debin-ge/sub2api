@@ -31,77 +31,78 @@ const (
 )
 
 type VideoTask struct {
-	ID                    int64
-	PublicID              string
-	Source                string
-	UserID                int64
-	APIKeyID              *int64
-	GroupID               *int64
-	ChannelID             *int64
-	AccountID             *int64
-	AccountOwnerUserID    *int64
-	Provider              string
-	Operation             string
-	ParentTaskID          *int64
-	RootTaskID            *int64
-	Endpoint              string
-	RequestedModel        string
-	PublicModel           string
-	ChannelModel          string
-	UpstreamModel         string
-	RequestHash           string
-	IdempotencyKey        *string
-	InputManifest         []VideoInputManifestEntry
-	RequestAttributes     map[string]any
-	ProviderTaskID        *string
-	ProviderStatus        *string
-	ProviderCreatedAt     *time.Time
-	ProviderFinishedAt    *time.Time
-	StableClientToken     *string
-	GenerationState       string
-	BillingState          string
-	DeleteState           string
-	Version               int64
-	Progress              *float64
-	UsageSnapshot         map[string]any
-	ResponseMetadata      map[string]any
-	ContentVariants       []string
-	ContentExpiresAt      *time.Time
-	ProviderAccessKind    *string
-	ProviderAccessScope   *string
-	ProviderAccessEnc     *string
-	ProviderAccessExpires *time.Time
-	ProviderVideoURLEnc   *string
-	ProviderVideoProxyKey *string
-	BillingUnit           *string
-	EstimatedUnits        *float64
-	ActualUnits           *float64
-	PriceSnapshot         map[string]any
-	ProviderCostSnapshot  map[string]any
-	Currency              string
-	HoldID                *string
-	HoldAmount            *float64
-	ActualCost            *float64
-	CallbackURLEnc        *string
-	CallbackIntentState   string
-	NextActionAt          *time.Time
-	PollAttempts          int
-	SubmitAttempts        int
-	LeaseOwner            *string
-	LeaseExpiresAt        *time.Time
-	LeaseEpoch            int64
-	LastErrorKind         *string
-	LastErrorCode         *string
-	LastErrorMessage      *string
-	CreatedAt             time.Time
-	UpdatedAt             time.Time
-	SubmittedAt           *time.Time
-	StartedAt             *time.Time
-	FinishedAt            *time.Time
-	SettledAt             *time.Time
-	SubmissionUnknownAt   *time.Time
-	QuarantinedAt         *time.Time
-	DeletedAt             *time.Time
+	ID                     int64
+	PublicID               string
+	Source                 string
+	UserID                 int64
+	APIKeyID               *int64
+	GroupID                *int64
+	ChannelID              *int64
+	AccountID              *int64
+	AccountOwnerUserID     *int64
+	Provider               string
+	Operation              string
+	ParentTaskID           *int64
+	RootTaskID             *int64
+	Endpoint               string
+	RequestedModel         string
+	PublicModel            string
+	ChannelModel           string
+	UpstreamModel          string
+	RequestHash            string
+	IdempotencyKey         *string
+	InputManifest          []VideoInputManifestEntry
+	RequestAttributes      map[string]any
+	ProviderTaskID         *string
+	ProviderExecutionState *VideoProviderExecutionState `json:"-"`
+	ProviderStatus         *string
+	ProviderCreatedAt      *time.Time
+	ProviderFinishedAt     *time.Time
+	StableClientToken      *string
+	GenerationState        string
+	BillingState           string
+	DeleteState            string
+	Version                int64
+	Progress               *float64
+	UsageSnapshot          map[string]any
+	ResponseMetadata       map[string]any
+	ContentVariants        []string
+	ContentExpiresAt       *time.Time
+	ProviderAccessKind     *string
+	ProviderAccessScope    *string
+	ProviderAccessEnc      *string
+	ProviderAccessExpires  *time.Time
+	ProviderVideoURLEnc    *string
+	ProviderVideoProxyKey  *string
+	BillingUnit            *string
+	EstimatedUnits         *float64
+	ActualUnits            *float64
+	PriceSnapshot          map[string]any
+	ProviderCostSnapshot   map[string]any
+	Currency               string
+	HoldID                 *string
+	HoldAmount             *float64
+	ActualCost             *float64
+	CallbackURLEnc         *string
+	CallbackIntentState    string
+	NextActionAt           *time.Time
+	PollAttempts           int
+	SubmitAttempts         int
+	LeaseOwner             *string
+	LeaseExpiresAt         *time.Time
+	LeaseEpoch             int64
+	LastErrorKind          *string
+	LastErrorCode          *string
+	LastErrorMessage       *string
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
+	SubmittedAt            *time.Time
+	StartedAt              *time.Time
+	FinishedAt             *time.Time
+	SettledAt              *time.Time
+	SubmissionUnknownAt    *time.Time
+	QuarantinedAt          *time.Time
+	DeletedAt              *time.Time
 }
 
 type VideoResource struct {
@@ -239,6 +240,11 @@ type VideoTaskFilter struct {
 	Limit     int
 	After     string
 	Order     string
+	// ArkOnly selects the Ark public protocol before pagination. ArkStatus
+	// includes billing state; it must not be treated as a generation state.
+	ArkOnly   bool
+	ArkStatus string
+	Offset    int
 }
 
 type VideoCreateTaskParams struct {
@@ -280,6 +286,9 @@ type VideoTaskPage struct {
 }
 
 type VideoTaskTransition struct {
+	ProviderTaskID          *string
+	ProviderExecutionState  *VideoProviderExecutionState
+	BlockedProviderActions  []VideoProviderBlockedAction
 	GenerationState         string
 	BillingState            string
 	DeleteState             string

@@ -270,6 +270,8 @@ type ProviderTaskRef struct {
 	Provider       string
 	AccountID      int64
 	ProviderTaskID string
+	// Private recovery state is never part of a public provider reference.
+	ProviderExecutionState *VideoProviderExecutionState `json:"-"`
 }
 
 type ProviderResourceRef struct {
@@ -281,6 +283,8 @@ type ProviderResourceRef struct {
 type ProviderVideoTask struct {
 	ProviderTaskID string
 	VideoURL       string
+	// Control is private execution state, never public provider metadata.
+	Control *VideoProviderControlObservation `json:"-"`
 	// LastFrameURL 是 Ark return_last_frame=true 时回报的尾帧图链接（变体 last_frame）。
 	LastFrameURL          string
 	Status                string

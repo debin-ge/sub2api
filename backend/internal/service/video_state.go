@@ -196,24 +196,3 @@ func IsArkVideoStatus(status string) bool {
 		return false
 	}
 }
-
-// ArkVideoStatusGenerationStates 把 Ark 状态过滤词映射回内部 generation_state 集合，
-// 列表接口按它过滤。succeeded 对应 completed（含未结算者，列表不做计费门控）。
-func ArkVideoStatusGenerationStates(status string) []string {
-	switch status {
-	case ArkVideoStatusQueued:
-		return []string{VideoGenerationPreparing, VideoGenerationHeld, VideoGenerationSubmitting, VideoGenerationQueued}
-	case ArkVideoStatusRunning:
-		return []string{VideoGenerationInProgress}
-	case ArkVideoStatusSucceeded:
-		return []string{VideoGenerationCompleted}
-	case ArkVideoStatusFailed:
-		return []string{VideoGenerationFailed}
-	case ArkVideoStatusCancelled:
-		return []string{VideoGenerationCancelled}
-	case ArkVideoStatusExpired:
-		return []string{VideoGenerationExpired}
-	default:
-		return nil
-	}
-}

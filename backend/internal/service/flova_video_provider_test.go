@@ -3,10 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
-	"mime"
-	"mime/multipart"
 	"net/http"
 	"net/netip"
 	"strings"
@@ -165,109 +162,34 @@ func TestFlovaTaskIDRoundTrip(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestFlovaVideoProviderCreateThreeSteps(t *testing.T) {
-	stub := newFlovaStubServer()
-	stub.json("/api/agent/v2/user", flovaUserOK)
-	stub.on("/api/agent/v2/upload", func(_ int, req *http.Request, body string) *http.Response {
-		mediaType, params, err := mime.ParseMediaType(req.Header.Get("Content-Type"))
-		require.NoError(t, err)
-		require.Equal(t, "multipart/form-data", mediaType)
-		reader := multipart.NewReader(strings.NewReader(body), params["boundary"])
-		part, err := reader.NextPart()
-		require.NoError(t, err)
-		require.Equal(t, "file", part.FormName())
-		require.Equal(t, "ref.png", part.FileName())
-		require.Equal(t, "image/png", part.Header.Get("Content-Type"))
-		data, _ := io.ReadAll(part)
-		require.Equal(t, "PNGDATA", string(data))
-		return openAIVideoResponseForTest(http.StatusOK, `{"code":0,"message":"ok","data":{"file_name":"ref.png","file_type":"image","file_url":"https://cdn.flova.ai/images/abc.png?sig=1","instant":true}}`, nil)
-	})
-	stub.json("/api/agent/v2/create", `{"code":0,"message":"success","data":{"project_id":"p1","project_url":"https://www.flova.ai/p/p1"}}`)
-	stub.json("/api/agent/v2/chat", `{"code":0,"message":"success","data":{"agent_status":"processing","project_id":"p1","stream_chat_id":"s1","type":"chat_started"}}`)
-	provider := newFlovaTestProvider(stub)
-	account := flovaVideoTestAccount()
-
-	inputs := []VideoInput{{
-		VideoInputManifestEntry: VideoInputManifestEntry{Role: VideoInputRoleReferenceImage, FileName: "ref.png", MIMEType: "image/png", Size: 7},
-		Open:                    func(context.Context) (io.ReadCloser, error) { return io.NopCloser(strings.NewReader("PNGDATA")), nil },
-	}}
-	task, err := provider.Create(context.Background(), account, VideoCreateRequest{
-		TaskID: "task_abc", Model: FlovaVideoModelSeedance25, Prompt: "A red paper boat >>> drifting", Seconds: 5, Resolution: "1080p",
-	}, inputs)
-	require.NoError(t, err)
-	require.Equal(t, []string{"/api/agent/v2/user", "/api/agent/v2/upload", "/api/agent/v2/create", "/api/agent/v2/chat"}, stub.calls)
-
-	// 头：Bearer、UA、X-Request-Id。
-	chatReq := stub.lastRequest("/api/agent/v2/chat")
-	require.Equal(t, "Bearer flova-secret", chatReq.Header.Get("Authorization"))
-	require.Equal(t, "flova-cli/v0.0.10 (linux; amd64)", chatReq.Header.Get("User-Agent"))
-	require.Len(t, chatReq.Header.Get("X-Request-Id"), 32)
-
-	create := stub.lastBody("/api/agent/v2/create")
-	require.Equal(t, "sub2api-task_abc", create["name"])
-	require.EqualValues(t, 0, create["project_type"])
-
-	chat := stub.lastBody("/api/agent/v2/chat")
-	require.Equal(t, "p1", chat["project_id"])
-	extra := chat["extra_data"].(map[string]any)
-	require.Equal(t, "sk_test", extra["skill_id"])
-	require.Equal(t, "flova-cli", extra["client"])
-	require.Equal(t, "v0.0.10", extra["client_version"])
-	files := chat["files"].([]any)
-	require.Len(t, files, 1)
-	file := files[0].(map[string]any)
-	require.Equal(t, "ref.png", file["name"])
-	require.Equal(t, "image", file["type"])
-	require.Equal(t, "https://cdn.flova.ai/images/abc.png?sig=1", file["url"])
-	require.True(t, strings.HasPrefix(file["id"].(string), "file_"))
-	content := chat["content"].(string)
-	require.True(t, strings.HasPrefix(content, "`{\"resource_name\":\"ref.png\",\"type\":\"uploaded\"}` Generate exactly one video. Model: Seedance 2.5. Aspect ratio: 16:9. Resolution: 1080p. Duration: 5 seconds."), content)
-	require.Contains(t, content, "Reference image: use the attached uploaded image")
-	require.Contains(t, content, "<<<A red paper boat > > > drifting>>>", "delimiter inside the prompt must be neutralised")
-
-	require.Equal(t, VideoGenerationQueued, task.Status)
-	state, err := parseFlovaTaskID(task.ProviderTaskID)
-	require.NoError(t, err)
-	require.Equal(t, "p1", state.ProjectID)
-	require.Equal(t, "s1", state.StreamChatID)
-	require.Equal(t, "seedance-2.5", state.ModelKey)
-	require.Equal(t, "1080p", state.Resolution)
-	require.Equal(t, 5, state.Seconds)
-	require.Equal(t, FlovaVideoModelSeedance25, task.Metadata["model"])
-	require.Equal(t, "16:9", task.Metadata["ratio"])
-	require.Equal(t, 5, task.Metadata["seconds"])
-	require.NotEmpty(t, task.Metadata["instruction_sha256"])
-}
-
-func TestFlovaVideoProviderCreateProvisionsSkillWhenMissing(t *testing.T) {
-	stub := newFlovaStubServer()
-	stub.json("/api/agent/v2/user", flovaUserOK)
-	stub.json("/api/agent/v2/skill/create", `{"code":0,"data":{"skill_id":"sk_lazy"}}`)
-	stub.json("/api/agent/v2/create", `{"code":0,"data":{"project_id":"p1"}}`)
-	stub.json("/api/agent/v2/chat", `{"code":0,"data":{"stream_chat_id":"s1"}}`)
-	account := flovaVideoTestAccount()
-	delete(account.Credentials, "skill_id")
-	repo := newFlovaAccountRepoStub(account)
-	provider := newFlovaTestProvider(stub)
-	provider.accounts = repo
-	task, err := provider.Create(context.Background(), account, VideoCreateRequest{TaskID: "t", Model: FlovaVideoModelSeedance20, Prompt: "x", Seconds: 4, Resolution: "720p"}, nil)
-	require.NoError(t, err)
-	require.Equal(t, []string{"/api/agent/v2/user", "/api/agent/v2/skill/create", "/api/agent/v2/create", "/api/agent/v2/chat"}, stub.calls)
-	require.Equal(t, "sk_lazy", stub.lastBody("/api/agent/v2/chat")["extra_data"].(map[string]any)["skill_id"])
-	require.Equal(t, "sk_lazy", repo.updated.Credentials["skill_id"], "skill id is persisted on the account")
-	require.Equal(t, "sk_lazy", task.Metadata["skill_id"])
-}
-
-func TestFlovaVideoProviderCreateRejectsLowCredits(t *testing.T) {
-	stub := newFlovaStubServer()
-	stub.json("/api/agent/v2/user", `{"code":0,"message":"success","data":{"credits_balance":"40.000000","subscription_info":{}}}`)
-	provider := newFlovaTestProvider(stub)
-	_, err := provider.Create(context.Background(), flovaVideoTestAccount(), VideoCreateRequest{TaskID: "t", Model: FlovaVideoModelSeedance25, Prompt: "x", Seconds: 4, Resolution: "720p"}, nil)
-	var typed *VideoProviderError
-	require.ErrorAs(t, err, &typed)
-	require.Equal(t, videoInsufficientBalanceCode, typed.Code)
-	require.Equal(t, VideoSubmissionRejected, typed.Certainty)
-	require.Zero(t, stub.count("/api/agent/v2/create"), "no project is created when credits are short")
+func TestFlovaVideoProviderCreateRejectsUnverifiableBudgetBeforeSideEffects(t *testing.T) {
+	for _, skillPresent := range []bool{true, false} {
+		stub := newFlovaStubServer()
+		provider := newFlovaTestProvider(stub)
+		account := flovaVideoTestAccount()
+		if !skillPresent {
+			delete(account.Credentials, "skill_id")
+		}
+		// Legacy configuration must not opt back into unbounded spending.
+		account.Credentials["auto_confirm_high_cost"] = true
+		account.Credentials["auto_confirm_credits_max"] = 1000000
+		opened := false
+		inputs := []VideoInput{{
+			VideoInputManifestEntry: VideoInputManifestEntry{Role: VideoInputRoleReferenceImage, FileName: "ref.png", MIMEType: "image/png", Size: 7},
+			Open: func(context.Context) (io.ReadCloser, error) {
+				opened = true
+				return io.NopCloser(strings.NewReader("PNGDATA")), nil
+			},
+		}}
+		task, err := provider.Create(context.Background(), account, VideoCreateRequest{TaskID: "t", Model: FlovaVideoModelSeedance25, Prompt: "x", Seconds: 5, Resolution: "720p"}, inputs)
+		var typed *VideoProviderError
+		require.ErrorAs(t, err, &typed)
+		require.Equal(t, "budget_unverifiable", typed.Code)
+		require.Equal(t, VideoSubmissionRejected, typed.Certainty)
+		require.Nil(t, task)
+		require.Empty(t, stub.calls)
+		require.False(t, opened)
+	}
 }
 
 func TestFlovaVideoProviderValidation(t *testing.T) {
@@ -301,28 +223,11 @@ func TestFlovaVideoProviderValidation(t *testing.T) {
 			require.Equal(t, VideoSubmissionRejected, typed.Certainty)
 		})
 	}
-	require.NoError(t, provider.ValidateSubmission(account, VideoCreateRequest{Model: FlovaVideoModelMiniMaxH3, Prompt: "x", Ratio: "9:16"}, nil), "defaults fill seconds and resolution")
+	_, err := provider.plan(account, VideoCreateRequest{Model: FlovaVideoModelMiniMaxH3, Prompt: "x", Ratio: "9:16"}, nil)
+	require.NoError(t, err, "defaults fill seconds and resolution")
 	audioOff := false
-	require.NoError(t, provider.ValidateSubmission(account, VideoCreateRequest{Model: FlovaVideoModelMiniMaxH3, Prompt: "x", Ratio: ArkVideoRatioAdaptive, AudioEnabled: &audioOff}, nil), "adaptive falls back to 16:9 and generate_audio=false is a no-op")
-}
-
-func TestFlovaVideoProviderCreateChatTransportFailureIsUnknown(t *testing.T) {
-	stub := newFlovaStubServer()
-	stub.json("/api/agent/v2/user", flovaUserOK)
-	stub.json("/api/agent/v2/create", `{"code":0,"data":{"project_id":"p1"}}`)
-	stub.fail["/api/agent/v2/chat"] = errors.New("timeout")
-	provider := newFlovaTestProvider(stub)
-	_, err := provider.Create(context.Background(), flovaVideoTestAccount(), VideoCreateRequest{TaskID: "t", Model: FlovaVideoModelSeedance20, Prompt: "x", Seconds: 4, Resolution: "720p"}, nil)
-	var typed *VideoProviderError
-	require.ErrorAs(t, err, &typed)
-	require.Equal(t, VideoSubmissionUnknown, typed.Certainty)
-
-	stub2 := newFlovaStubServer()
-	stub2.json("/api/agent/v2/user", flovaUserOK)
-	stub2.fail["/api/agent/v2/create"] = errors.New("timeout")
-	_, err = newFlovaTestProvider(stub2).Create(context.Background(), flovaVideoTestAccount(), VideoCreateRequest{TaskID: "t", Model: FlovaVideoModelSeedance20, Prompt: "x", Seconds: 4, Resolution: "720p"}, nil)
-	require.ErrorAs(t, err, &typed)
-	require.Equal(t, VideoSubmissionRejected, typed.Certainty, "nothing is spent before /chat")
+	_, err = provider.plan(account, VideoCreateRequest{Model: FlovaVideoModelMiniMaxH3, Prompt: "x", Ratio: ArkVideoRatioAdaptive, AudioEnabled: &audioOff}, nil)
+	require.NoError(t, err, "adaptive falls back to 16:9 and generate_audio=false is a no-op")
 }
 
 func TestFlovaVideoProviderGetStateMachine(t *testing.T) {
@@ -368,12 +273,12 @@ func TestFlovaVideoProviderGetStateMachine(t *testing.T) {
 		require.Equal(t, time.Unix(1791966647, 0).UTC(), *task.ContentExpiresAt)
 		require.Equal(t, "signed_url", task.Access.Kind)
 		require.Equal(t, "video_content", task.Access.Scope)
-		require.Equal(t, 4, task.Metadata["seconds"])
+		require.NotContains(t, task.Metadata, "seconds", "requested duration is not a verified output measurement")
+		require.Empty(t, task.Usage)
 		require.Equal(t, "res1", task.Metadata["resource_id"])
 		require.Equal(t, "Generated one video.", task.Metadata["assistant_text"])
-		state, err := parseFlovaTaskID(task.ProviderTaskID)
-		require.NoError(t, err)
-		require.Equal(t, "res1", state.ResourceID, "resource id is carried in the task id for later refreshes")
+		require.Equal(t, ref.ProviderTaskID, task.ProviderTaskID, "provider identity remains stable")
+		require.Equal(t, "res1", task.Control.State.ResourceID, "resource is persisted in private recovery state")
 	})
 
 	t.Run("no video keeps the assistant explanation", func(t *testing.T) {
@@ -478,85 +383,42 @@ func jsonFloat(v float64) string {
 
 const flovaHighCostOptions = `[{"id":"once","action":"approve","effect":"resume","scope":"run"},{"id":"project","action":"approve","effect":"resume","scope":"project"},{"id":"lower_cost_720p","action":"select_alternative","effect":"resume"}]`
 
-func TestFlovaVideoProviderHighCostConfirm(t *testing.T) {
+func TestFlovaVideoProviderPendingActionsNeverResume(t *testing.T) {
 	ref := flovaTaskRef(flovaSubmittedState("seedance-2.5", "1080p", 4, ""))
-
-	t.Run("within tolerance resumes once", func(t *testing.T) {
+	for _, credits := range []string{`120`, `-1`, `"NaN"`, `"+Inf"`, `"bad"`, `null`} {
 		stub := newFlovaStubServer()
-		stub.json("/api/agent/v2/run_result", flovaRunResultJSON("completed", true, flovaHighCostAction(81, "1080p", flovaHighCostOptions)))
-		stub.json("/api/agent/v2/chat", `{"code":0,"data":{"agent_status":"processing","project_id":"p1","stream_chat_id":"s2","type":"chat_started"}}`)
-		task, err := newFlovaTestProvider(stub).Get(context.Background(), flovaVideoTestAccount(), ref)
-		require.NoError(t, err)
-		require.Equal(t, VideoGenerationInProgress, task.Status)
-		resume := stub.lastBody("/api/agent/v2/chat")
-		require.Equal(t, true, resume["is_resume"])
-		require.Equal(t, "once", resume["option_id"])
-		require.Equal(t, "a1", resume["action_id"])
-		require.Equal(t, "rm1", resume["resume_message_id"])
-		state, err := parseFlovaTaskID(task.ProviderTaskID)
-		require.NoError(t, err)
-		require.Equal(t, "s2", state.StreamChatID, "new stream_chat_id is written back")
-		require.Equal(t, "s1", task.Metadata["previous_stream_chat_id"])
-		require.EqualValues(t, 324, task.Metadata["auto_confirmed_credits"])
-	})
-
-	t.Run("price drift fails without resuming", func(t *testing.T) {
-		stub := newFlovaStubServer()
-		stub.json("/api/agent/v2/run_result", flovaRunResultJSON("completed", true, flovaHighCostAction(120, "1080p", flovaHighCostOptions)))
-		task, err := newFlovaTestProvider(stub).Get(context.Background(), flovaVideoTestAccount(), ref)
-		require.NoError(t, err)
-		require.Equal(t, VideoGenerationFailed, task.Status)
-		require.Equal(t, flovaErrorPriceDrift, task.ErrorCode)
-		require.Zero(t, stub.count("/api/agent/v2/chat"))
-	})
-
-	t.Run("resolution mismatch fails", func(t *testing.T) {
-		stub := newFlovaStubServer()
-		stub.json("/api/agent/v2/run_result", flovaRunResultJSON("completed", true, flovaHighCostAction(26, "720p", flovaHighCostOptions)))
-		task, err := newFlovaTestProvider(stub).Get(context.Background(), flovaVideoTestAccount(), ref)
-		require.NoError(t, err)
-		require.Equal(t, flovaErrorPriceDrift, task.ErrorCode)
-	})
-
-	t.Run("disabled auto confirm fails", func(t *testing.T) {
-		stub := newFlovaStubServer()
-		stub.json("/api/agent/v2/run_result", flovaRunResultJSON("completed", true, flovaHighCostAction(81, "1080p", flovaHighCostOptions)))
+		body := `,"completion_reason":"waiting_user","pending_actions":[{"action_id":"a1","type":"batch_task_limit","options":[{"id":"confirm","effect":"resume"}],"payload":{"credits":` + credits + `},"resume_message_id":"rm1"}]`
+		stub.json("/api/agent/v2/run_result", flovaRunResultJSON("completed", true, body))
 		account := flovaVideoTestAccount()
-		account.Credentials["auto_confirm_high_cost"] = false
-		task, err := newFlovaTestProvider(stub).Get(context.Background(), account, ref)
-		require.NoError(t, err)
-		require.Equal(t, flovaErrorPriceDrift, task.ErrorCode)
-		require.Zero(t, stub.count("/api/agent/v2/chat"))
-	})
-
-	t.Run("subscription required is membership_required", func(t *testing.T) {
-		body := `,"completion_reason":"waiting_user","assistant_messages":[],"pending_actions":[{"action_id":"a2","type":"subscription_required","blocking":true,"message":"The selected model or parameters require a subscription change.","action_url":"https://www.flova.ai/pricing/","options":[{"id":"open_subscription","effect":"open_url"},{"id":"completed","effect":"resume"}],"payload":{"media_type":"video","source":"model_permission_required"},"resume_message_id":"rm2"}]`
-		stub := newFlovaStubServer()
-		stub.json("/api/agent/v2/run_result", flovaRunResultJSON("completed", true, body))
-		task, err := newFlovaTestProvider(stub).Get(context.Background(), flovaVideoTestAccount(), ref)
-		require.NoError(t, err)
-		require.Equal(t, VideoGenerationFailed, task.Status)
-		require.Equal(t, flovaErrorMembershipRequired, task.ErrorCode)
-		require.Contains(t, task.ErrorMessage, "subscription change")
-		require.Zero(t, stub.count("/api/agent/v2/chat"))
-	})
-
-	t.Run("batch task limit honours the credits cap", func(t *testing.T) {
-		body := `,"completion_reason":"waiting_user","assistant_messages":[],"pending_actions":[{"action_id":"a3","type":"batch_task_limit","blocking":true,"message":"This batch task requires confirmation before credits are spent.","options":[{"id":"confirm","effect":"resume"},{"id":"cancel","effect":"none"}],"payload":{"credits":120},"resume_message_id":"rm3"}]`
-		stub := newFlovaStubServer()
-		stub.json("/api/agent/v2/run_result", flovaRunResultJSON("completed", true, body))
-		stub.json("/api/agent/v2/chat", `{"code":0,"data":{"stream_chat_id":"s3"}}`)
+		account.Credentials["auto_confirm_high_cost"] = true
+		account.Credentials["auto_confirm_credits_max"] = 1000000
 		provider := newFlovaTestProvider(stub)
-		task, err := provider.Get(context.Background(), flovaVideoTestAccount(), ref)
+		var key string
+		for i := 0; i < 2; i++ {
+			task, err := provider.Get(context.Background(), account, ref)
+			require.NoError(t, err)
+			require.Equal(t, VideoGenerationInProgress, task.Status)
+			require.Equal(t, "flova_action_blocked", task.ErrorCode)
+			require.Len(t, task.Control.BlockedActions, 1)
+			require.True(t, task.Control.State.CostUncertain)
+			if i == 0 {
+				key = task.Control.BlockedActions[0].ActionKey
+			} else {
+				require.Equal(t, key, task.Control.BlockedActions[0].ActionKey)
+			}
+			if credits != `120` {
+				require.Nil(t, task.Control.BlockedActions[0].QuotedCredits)
+			}
+		}
+		require.Zero(t, stub.count("/api/agent/v2/chat"))
+	}
+	t.Run("high cost stays blocked even with a valid quote", func(t *testing.T) {
+		stub := newFlovaStubServer()
+		stub.json("/api/agent/v2/run_result", flovaRunResultJSON("completed", true, flovaHighCostAction(81, "1080p", flovaHighCostOptions)))
+		task, err := newFlovaTestProvider(stub).Get(context.Background(), flovaVideoTestAccount(), ref)
 		require.NoError(t, err)
-		require.Equal(t, flovaErrorUserActionRequired, task.ErrorCode, "default cap is 0")
-
-		account := flovaVideoTestAccount()
-		account.Credentials["auto_confirm_credits_max"] = 200
-		task, err = provider.Get(context.Background(), account, ref)
-		require.NoError(t, err)
-		require.Equal(t, VideoGenerationInProgress, task.Status)
-		require.Equal(t, "confirm", stub.lastBody("/api/agent/v2/chat")["option_id"])
+		require.Equal(t, "flova_action_blocked", task.ErrorCode)
+		require.Zero(t, stub.count("/api/agent/v2/chat"))
 	})
 }
 
@@ -636,11 +498,74 @@ func TestFlovaVideoProviderOpenContentUsesUAAndRefreshesOn403(t *testing.T) {
 }
 
 func TestFlovaVideoProviderRefreshTaskAccessRequiresResource(t *testing.T) {
-	provider := newFlovaTestProvider(newFlovaStubServer())
+	stub := newFlovaStubServer()
+	stub.json("/api/agent/v2/run_result", flovaRunResultJSON("processing", false, ""))
+	provider := newFlovaTestProvider(stub)
 	_, err := provider.RefreshTaskAccess(context.Background(), flovaVideoTestAccount(), flovaTaskRef(flovaSubmittedState("seedance-2.5", "720p", 4, "")))
 	var typed *VideoProviderError
 	require.ErrorAs(t, err, &typed)
 	require.Equal(t, "content_unavailable", typed.Code)
+	require.Zero(t, stub.count("/api/agent/v2/resource_info"))
+	require.Zero(t, stub.count("/api/agent/v2/chat"))
+}
+
+func TestFlovaVideoProviderRefreshLegacyResourceOnlyReadsOriginalRun(t *testing.T) {
+	video := `,"assistant_messages":[{"artifacts":[{"resource_id":"res1","media_type":"video","status":"success","resource_url":"https://cdn.flova.ai/old.mp4"}]}]`
+	for _, tc := range []struct {
+		name string
+		body string
+		ok   bool
+	}{
+		{"completed", flovaRunResultJSON("completed", true, video), true},
+		{"different stream", strings.Replace(flovaRunResultJSON("completed", true, video), `"stream_chat_id":"s1"`, `"stream_chat_id":"s2"`, 1), false},
+		{"invalid resource", flovaRunResultJSON("completed", true, strings.Replace(video, "res1", "invalid;resource", 1)), false},
+		{"pending action", flovaRunResultJSON("running", false, flovaHighCostAction(81, "1080p", flovaHighCostOptions)), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stub := newFlovaStubServer()
+			stub.json("/api/agent/v2/run_result", tc.body)
+			stub.json("/api/agent/v2/resource_info", `{"code":0,"data":{"resource":{"resource_url":"https://cdn.flova.ai/fresh.mp4"}}}`)
+			provider := newFlovaTestProvider(stub)
+			ref := flovaTaskRef(flovaSubmittedState("seedance-2.5", "720p", 4, ""))
+			access, err := provider.RefreshTaskAccess(context.Background(), flovaVideoTestAccount(), ref)
+			if tc.ok {
+				require.NoError(t, err)
+				require.Equal(t, "https://cdn.flova.ai/fresh.mp4", access.Value)
+				require.Equal(t, "res1", stub.lastBody("/api/agent/v2/resource_info")["resource_id"])
+			} else {
+				require.Error(t, err)
+				require.Nil(t, access)
+				require.Zero(t, stub.count("/api/agent/v2/resource_info"))
+			}
+			require.Equal(t, 1, stub.count("/api/agent/v2/run_result"))
+			require.Equal(t, "p1", stub.lastBody("/api/agent/v2/run_result")["project_id"])
+			require.Equal(t, "s1", stub.lastBody("/api/agent/v2/run_result")["stream_chat_id"])
+			require.Zero(t, stub.count("/api/agent/v2/chat"))
+		})
+	}
+}
+
+func TestFlovaVideoProviderNonterminalPendingActionIsAudited(t *testing.T) {
+	stub := newFlovaStubServer()
+	stub.json("/api/agent/v2/run_result", flovaRunResultJSON("running", false, flovaHighCostAction(81, "1080p", flovaHighCostOptions)))
+	observed, err := newFlovaTestProvider(stub).Get(context.Background(), flovaVideoTestAccount(), flovaTaskRef(flovaSubmittedState("seedance-2.5", "1080p", 4, "")))
+	require.NoError(t, err)
+	require.Equal(t, "flova_action_blocked", observed.ErrorCode)
+	require.Equal(t, VideoGenerationInProgress, observed.Status)
+	require.Len(t, observed.Control.BlockedActions, 1)
+	require.Zero(t, stub.count("/api/agent/v2/chat"))
+}
+
+func TestFlovaVideoProviderRejectsMismatchedPrivateRecoveryState(t *testing.T) {
+	stub := newFlovaStubServer()
+	ref := flovaTaskRef(flovaSubmittedState("seedance-2.5", "720p", 4, ""))
+	state, err := parseFlovaTaskID(ref.ProviderTaskID)
+	require.NoError(t, err)
+	ref.ProviderExecutionState = flovaControlState(state)
+	ref.ProviderExecutionState.StreamChatID = "other"
+	_, err = newFlovaTestProvider(stub).RefreshTaskAccess(context.Background(), flovaVideoTestAccount(), ref)
+	require.Error(t, err)
+	require.Empty(t, stub.calls, "mismatched private state cannot select another upstream run")
 }
 
 func TestFlovaVideoProviderSkillAndUser(t *testing.T) {

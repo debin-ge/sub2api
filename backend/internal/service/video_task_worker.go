@@ -134,7 +134,10 @@ func (w *VideoTaskWorker) ProcessBatch(ctx context.Context, limit int) error {
 		}
 		active--
 	}
-	return errors.Join(batchErr, ctx.Err())
+	// Refunded/settled tasks no longer enter the execution queue. Their supplier
+	// accounting observations have a separate durable lease and never resubmit.
+	costErr := w.reconcileProviderCosts(ctx, limit)
+	return errors.Join(batchErr, costErr, ctx.Err())
 }
 
 func (w *VideoTaskWorker) claimOneTask(ctx context.Context, lease time.Duration, queueAvailable *bool, remainingHints *int) (*VideoTask, error) {
@@ -373,8 +376,9 @@ func (w *VideoTaskWorker) poll(ctx context.Context, task *VideoTask) error {
 	}
 	w.trackFlovaObservation(ctx, account, task, observed)
 	if videoExecutionExpired(task, observed, time.Now().UTC()) {
-		// 上游没有 execution_expires_after 的概念，由本网关执行：尽力取消上游任务，再按
-		// 「过期」终态走统一的释放预扣路径。取消失败不阻塞过期，上游若之后仍产出也不会计费。
+		// Cancellation is best effort, not evidence of zero supplier cost (some
+		// providers acknowledge cancellation of an already completed task).
+		// Every locally enforced expiry retains independent cost exposure.
 		if canceller, ok := provider.(VideoCanceller); ok {
 			cancelCtx, cancelDone := context.WithTimeout(ctx, videoWorkerRequestTimeout(w.cfg))
 			if cancelErr := canceller.Cancel(cancelCtx, account, ref); cancelErr != nil {
@@ -382,7 +386,8 @@ func (w *VideoTaskWorker) poll(ctx context.Context, task *VideoTask) error {
 			}
 			cancelDone()
 		}
-		expired, err := w.service.ReconcileProviderObservation(ctx, task, videoExecutionExpiredObservation(task), "execution_expired")
+		expiryObservation := videoExecutionExpiredObservation(task)
+		expired, err := w.service.ReconcileProviderObservation(ctx, task, expiryObservation, "execution_expired")
 		if err != nil {
 			return err
 		}
@@ -629,6 +634,7 @@ func (w *VideoTaskWorker) controlDependencies(ctx context.Context, task *VideoTa
 	}
 	return account, provider, ProviderTaskRef{
 		Provider: task.Provider, AccountID: *task.AccountID, ProviderTaskID: *task.ProviderTaskID,
+		ProviderExecutionState: task.ProviderExecutionState,
 	}, nil
 }
 

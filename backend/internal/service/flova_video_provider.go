@@ -27,11 +27,11 @@ import (
 
 // FlovaVideoProvider 把 Flova（Agent 式视频创作平台）接成托管视频 provider：
 //
-//	Create = 上传参考图 ×N → POST /create 建项目 → POST /chat 发起受控 run
-//	Get    = POST /run_result 读终态；高成本确认在容差内自动放行（POST /chat is_resume）
+//	Create = 拒绝新提交；Agent API 尚无可验证的任务级硬预算
+//	Get    = 只读 POST /run_result；付费确认仅记录阻断，不调用 /chat
 //	Content= 直拉 CDN 签名 URL（必须带 flova-cli UA），403 时经 /resource_info 刷新
 //
-// 一任务一项目。上游不回传用量，结算按冻结报价；所有协议形状来自 CLI v0.0.10 抓包与
+// 存量任务一任务一项目。上游不回传可信用量，结算按冻结报价；所有协议形状来自 CLI v0.0.10 抓包与
 // 2026-10-07 实测，见《Flova 平台接入实施方案》第 5 节。
 const (
 	flovaDefaultBaseURL       = "https://service.flova.ai/api/agent/v2"
@@ -119,7 +119,7 @@ func (p *FlovaVideoProvider) Capabilities() VideoCapabilities {
 }
 
 // SupportsAccount：平台 / 类型 / Key 齐全，且积分快照（若有）不低于低水位。
-// skill_id 不是前置条件：缺失时首次提交会自动创建并回填（ensureSkill）。
+// skill_id 不是存量任务读取的前置条件；新提交由 ValidateSubmission 拒绝。
 // 快照过滤不发网络请求；提交前还会 live 查一次余额。
 func (p *FlovaVideoProvider) SupportsAccount(account *Account) bool {
 	if p == nil || account == nil {
@@ -293,8 +293,8 @@ func flovaToFloat(v any) (float64, bool) {
 }
 
 // ---------------------------------------------------------------------------
-// 任务标识：provider 在 Get / RefreshTaskAccess 里只拿得到 ProviderTaskID，所以把
-// 复查所需的最小状态编码进去：
+// 任务标识：保留历史编码中的运行身份和冻结参数，后续 resource_id 保存于私有
+// ProviderExecutionState，避免追加内容导致合法标识超过数据库长度上限。
 //
 //	<project_id>:<stream_chat_id>|m=<model key>;r=<resolution>;s=<seconds>;t=<unix>[;x=<resource_id>]
 // ---------------------------------------------------------------------------
@@ -620,8 +620,14 @@ func (p *FlovaVideoProvider) GetSkill(ctx context.Context, account *Account, ski
 // ---------------------------------------------------------------------------
 
 func (p *FlovaVideoProvider) ValidateSubmission(account *Account, request VideoCreateRequest, inputs []VideoInput) error {
-	_, err := p.plan(account, request, inputs)
-	return err
+	if _, err := p.plan(account, request, inputs); err != nil {
+		return err
+	}
+	return flovaUnverifiableBudgetError()
+}
+
+func flovaUnverifiableBudgetError() error {
+	return rejectedVideoProviderError("capability", "budget_unverifiable", "Flova generation is unavailable until the provider supports an enforceable task spending limit", http.StatusServiceUnavailable)
 }
 
 func (p *FlovaVideoProvider) plan(account *Account, request VideoCreateRequest, inputs []VideoInput) (*flovaPlan, error) {
@@ -705,56 +711,14 @@ func (p *FlovaVideoProvider) plan(account *Account, request VideoCreateRequest, 
 }
 
 // ---------------------------------------------------------------------------
-// Create：余额前置校验 → 上传 → 建项目 → chat
+// Create：在任何上游副作用之前拒绝无法硬性约束成本的 Agent 请求。
 // ---------------------------------------------------------------------------
 
 func (p *FlovaVideoProvider) Create(ctx context.Context, account *Account, request VideoCreateRequest, inputs []VideoInput) (*ProviderVideoTask, error) {
-	plan, err := p.plan(account, request, inputs)
-	if err != nil {
-		return nil, err
-	}
-	if err := p.preflightCredits(ctx, account, plan); err != nil {
-		return nil, err
-	}
-	if err := p.ensureSkill(ctx, account); err != nil {
-		return nil, err
-	}
-	files := make([]flovaFile, 0, len(inputs))
-	for i := range inputs {
-		file, err := p.uploadInput(ctx, account, inputs[i])
-		if err != nil {
-			return nil, err
-		}
-		files = append(files, file)
-	}
-	projectID, err := p.createProject(ctx, account, request)
-	if err != nil {
-		return nil, err
-	}
-	content, instructionSHA := flovaRenderInstruction(plan, request.Prompt, files)
-	streamChatID, err := p.startRun(ctx, account, projectID, content, files)
-	if err != nil {
-		return nil, err
-	}
-	now := p.now().UTC()
-	state := flovaTaskState{
-		ProjectID: projectID, StreamChatID: streamChatID, ModelKey: strings.TrimPrefix(plan.profile.ID, "flova/"),
-		Resolution: plan.resolution, Seconds: plan.seconds, SubmittedAt: now,
-	}
-	fileIDs := make([]string, 0, len(files))
-	for _, file := range files {
-		fileIDs = append(fileIDs, file.ID)
-	}
-	return &ProviderVideoTask{
-		ProviderTaskID: state.encode(), Status: VideoGenerationQueued, RawStatus: "chat_started",
-		ProviderCreatedAt: &now, SuggestedPollInterval: flovaDefaultPollInterval,
-		Metadata: map[string]any{
-			"model": plan.profile.ID, "model_display": plan.profile.DisplayName, "resolution": flovaArkResolution(plan.resolution),
-			"ratio": plan.ratio, "seconds": plan.seconds, "project_id": projectID, "stream_chat_id": streamChatID,
-			"submitted_at": now.Format(time.RFC3339), "skill_id": p.skillID(account), "instruction_sha256": instructionSHA,
-			"files": fileIDs,
-		},
-	}, nil
+	// The initial agent chat can itself spend credits without asking for a
+	// confirmation. Neither a prompt nor an operator-provided number enforces an
+	// upstream budget, so reject before uploads, skill creation, or any API call.
+	return nil, p.ValidateSubmission(account, request, inputs)
 }
 
 // ensureSkill：账号没有 skill_id 时创建私有 Skill 并回填凭据（D9 的懒加载形态，测试连接
@@ -1011,7 +975,7 @@ func (p *FlovaVideoProvider) Get(ctx context.Context, account *Account, ref Prov
 	if p == nil || ref.Provider != VideoProviderFlova {
 		return nil, ErrVideoProviderUnsupported
 	}
-	state, err := parseFlovaTaskID(ref.ProviderTaskID)
+	state, err := flovaStateForRef(ref)
 	if err != nil {
 		return nil, controlVideoProviderError(err)
 	}
@@ -1037,6 +1001,10 @@ func (p *FlovaVideoProvider) Get(ctx context.Context, account *Account, ref Prov
 		if err := p.decodeData(result, &run); err != nil {
 			return nil, controlVideoProviderError(err)
 		}
+		if (run.ProjectID != "" && run.ProjectID != state.ProjectID) ||
+			(run.StreamChatID != "" && run.StreamChatID != state.StreamChatID) {
+			return nil, controlVideoProviderError(errors.New("Flova observation belongs to another project or run"))
+		}
 		task, err = p.evaluateRun(ctx, account, state, &run)
 		if err != nil {
 			return nil, err
@@ -1044,8 +1012,16 @@ func (p *FlovaVideoProvider) Get(ctx context.Context, account *Account, ref Prov
 		rawStatus = run.Status
 	}
 	if task.Status != VideoGenerationCompleted && task.Status != VideoGenerationFailed && p.runTimedOut(state, account) {
-		return p.failedTask(state, flovaErrorRunTimeout, fmt.Sprintf("Flova run exceeded %s without a terminal result", p.maxRunDuration(account)), rawStatus), nil
+		timedOut := p.failedTask(state, flovaErrorRunTimeout, fmt.Sprintf("Flova run exceeded %s without a terminal result", p.maxRunDuration(account)), rawStatus)
+		timedOut.Control = task.Control
+		task = timedOut
 	}
+	if task.Control == nil {
+		task.Control = &VideoProviderControlObservation{State: flovaControlState(state)}
+	}
+	// A read-only observation can enrich private state, never replace the
+	// stable provider identity (including legacy encoded resource IDs).
+	task.ProviderTaskID = ref.ProviderTaskID
 	return task, nil
 }
 
@@ -1092,23 +1068,38 @@ func (p *FlovaVideoProvider) runTimedOut(state flovaTaskState, account *Account)
 
 func (p *FlovaVideoProvider) evaluateRun(ctx context.Context, account *Account, state flovaTaskState, run *flovaRunResult) (*ProviderVideoTask, error) {
 	raw := strings.ToLower(strings.TrimSpace(run.Status))
-	if !run.Terminal && !flovaIsTerminalStatus(raw) {
-		if flovaIsQueuedStatus(raw) {
-			return p.progressTask(state, raw, VideoGenerationQueued, flovaDefaultPollInterval), nil
-		}
-		return p.progressTask(state, raw, VideoGenerationInProgress, flovaDefaultPollInterval), nil
-	}
 	if flovaIsFailedStatus(raw) {
 		return p.failedTask(state, raw, flovaLastAssistantText(run, "Flova reported the run as "+raw), raw), nil
 	}
 	if strings.EqualFold(run.CompletionReason, "waiting_user") || len(run.PendingActions) > 0 {
 		return p.handlePendingActions(ctx, account, state, run)
 	}
+	if !run.Terminal && !flovaIsTerminalStatus(raw) {
+		if flovaIsQueuedStatus(raw) {
+			return p.progressTask(state, raw, VideoGenerationQueued, flovaDefaultPollInterval), nil
+		}
+		return p.progressTask(state, raw, VideoGenerationInProgress, flovaDefaultPollInterval), nil
+	}
 	videos, images := flovaCollectArtifacts(run)
 	if len(videos) == 0 {
 		return p.failedTask(state, flovaErrorNoVideoArtifact, flovaLastAssistantText(run, "Flova finished the run without a video"), raw), nil
 	}
 	video := videos[0]
+	if state.ResourceID != "" {
+		found := false
+		for _, candidate := range videos {
+			if candidate.ResourceID == state.ResourceID {
+				video, found = candidate, true
+				break
+			}
+		}
+		if !found {
+			return nil, controlVideoProviderError(errors.New("Flova observation no longer contains the stored resource"))
+		}
+	}
+	if !validVideoProviderIdentifier(video.ResourceID) || strings.ContainsAny(video.ResourceID, ":|;=") {
+		return nil, controlVideoProviderError(errors.New("Flova video has no valid resource identity"))
+	}
 	state.ResourceID = video.ResourceID
 	now := p.now().UTC()
 	expires := flovaSignedURLExpiry(video.ResourceURL, now)
@@ -1117,14 +1108,20 @@ func (p *FlovaVideoProvider) evaluateRun(ctx context.Context, account *Account, 
 		VideoURL: video.ResourceURL, ContentExpiresAt: &expires, ProviderFinishedAt: &now,
 		ContentVariants: []string{"video"},
 		Access:          &ProviderTaskAccess{Kind: "signed_url", Value: video.ResourceURL, Scope: "video_content", ExpiresAt: &expires},
-		Usage:           map[string]any{"seconds": state.Seconds},
+		// Requested parameters are not observed output measurements. Legacy
+		// completions use the frozen customer quote, with missing usage audited.
+		Usage: map[string]any{},
 		Metadata: map[string]any{
-			"model": state.model(), "resolution": flovaArkResolution(state.Resolution), "seconds": state.Seconds,
 			"project_id": state.ProjectID, "stream_chat_id": state.StreamChatID, "resource_id": video.ResourceID,
 			"artifact_count": len(videos) + len(images), "image_count": len(images),
 			"assistant_text": flovaLastAssistantText(run, ""),
 		},
 	}
+	task.ErrorCode = "flova_output_unverified"
+	task.ErrorMessage = "Flova output measurements and provider spend could not be verified; customer billing uses the frozen quote"
+	task.Control = &VideoProviderControlObservation{State: flovaControlState(state)}
+	task.Control.State.VideoArtifacts = len(videos)
+	task.Control.State.ImageArtifacts = len(images)
 	if len(videos) > 1 {
 		task.Metadata["extra_artifacts"] = len(videos) - 1
 		observability.DefaultVideoMetrics().RecordFlovaOutcome("extra_artifacts")
@@ -1133,140 +1130,17 @@ func (p *FlovaVideoProvider) evaluateRun(ctx context.Context, account *Account, 
 }
 
 func (p *FlovaVideoProvider) handlePendingActions(ctx context.Context, account *Account, state flovaTaskState, run *flovaRunResult) (*ProviderVideoTask, error) {
-	if len(run.PendingActions) == 0 {
-		return p.failedTask(state, flovaErrorUserActionRequired, flovaLastAssistantText(run, "Flova is waiting for a user decision"), run.Status), nil
-	}
-	action := run.PendingActions[0]
-	for _, option := range action.Options {
-		if strings.EqualFold(option.Effect, "open_url") {
-			return p.failedTask(state, flovaErrorMembershipRequired, flovaNonEmpty(action.Message, "Flova requires a subscription change for this model or resolution"), run.Status), nil
+	// Get is observational. Existing account auto-confirm settings cannot grant
+	// permission to execute an unbounded agent action or replay an unknown one.
+	task := p.progressTask(state, "action_blocked", VideoGenerationInProgress, flovaBusyPollInterval)
+	task.ErrorCode = "flova_action_blocked"
+	task.ErrorMessage = "Flova requires an action whose spending limit cannot be verified; automatic confirmation is disabled"
+	task.Control = &VideoProviderControlObservation{State: flovaControlState(state)}
+	for i, action := range run.PendingActions {
+		if i == 16 {
+			break
 		}
-	}
-	switch strings.ToLower(strings.TrimSpace(action.Type)) {
-	case flovaActionSubscriptionRequired:
-		return p.failedTask(state, flovaErrorMembershipRequired, flovaNonEmpty(action.Message, "Flova requires a subscription change for this model or resolution"), run.Status), nil
-	case flovaActionHighCostConfirm:
-		optionID, err := p.evaluateHighCostConfirm(account, state, action)
-		if err != nil {
-			return p.failedTask(state, flovaErrorPriceDrift, err.Error(), run.Status), nil
-		}
-		return p.resume(ctx, account, state, action, optionID)
-	case flovaActionBatchTaskLimit:
-		credits, _ := numericMapValue(action.Payload, "credits")
-		if credits <= p.autoConfirmCreditsMax(account) {
-			optionID := flovaResumeOption(action, "")
-			if optionID != "" {
-				return p.resume(ctx, account, state, action, optionID)
-			}
-		}
-		return p.failedTask(state, flovaErrorUserActionRequired, flovaNonEmpty(action.Message, "Flova requires a confirmation before spending credits"), run.Status), nil
-	default:
-		return p.failedTask(state, flovaErrorUserActionRequired, flovaNonEmpty(action.Message, "Flova requires a user decision ("+action.Type+")"), run.Status), nil
-	}
-}
-
-// evaluateHighCostConfirm 校验高成本确认的报价：恰好 1 个视频、模型 / 分辨率匹配、
-// 上游每秒积分不超过价格表 × (1 + 容差)。通过时返回要 resume 的选项 id。
-func (p *FlovaVideoProvider) evaluateHighCostConfirm(account *Account, state flovaTaskState, action flovaPendingAction) (string, error) {
-	if !p.autoConfirmHighCost(account) {
-		return "", errors.New("high-cost confirmation is disabled for this Flova account")
-	}
-	items, _ := action.Payload["items"].([]any)
-	if len(items) != 1 {
-		return "", fmt.Errorf("high-cost confirmation lists %d items, expected exactly one video", len(items))
-	}
-	item, _ := items[0].(map[string]any)
-	if item == nil {
-		return "", errors.New("high-cost confirmation item is malformed")
-	}
-	if count, ok := numericMapValue(item, "video_count"); ok && int(count) != 1 {
-		return "", fmt.Errorf("high-cost confirmation covers %d videos, expected one", int(count))
-	}
-	profile := flovaModelProfileFor(state.model())
-	if profile == nil {
-		return "", errors.New("task model is unknown to the Flova catalog")
-	}
-	modelName, _ := item["model_name"].(string)
-	if modelName != "" && !strings.EqualFold(strings.TrimSpace(modelName), profile.DisplayName) {
-		return "", fmt.Errorf("quoted model %q differs from the requested %s", modelName, profile.DisplayName)
-	}
-	resolution, _ := item["resolution"].(string)
-	if resolution != "" && !strings.EqualFold(strings.TrimSpace(resolution), state.Resolution) {
-		return "", fmt.Errorf("quoted resolution %s differs from the requested %s", resolution, state.Resolution)
-	}
-	expected, ok := flovaCreditsPerSecond(profile.ID, state.Resolution)
-	if !ok {
-		return "", fmt.Errorf("%s %s has no price on Flova", profile.DisplayName, state.Resolution)
-	}
-	quoted, ok := numericMapValue(item, "credits_per_second")
-	if !ok {
-		if estimated, ok := numericMapValue(item, "estimated_credits"); ok && state.Seconds > 0 {
-			quoted = estimated / float64(state.Seconds)
-		} else {
-			return "", errors.New("high-cost confirmation carries no price")
-		}
-	}
-	if quoted > expected*(1+p.priceDriftTolerance(account)) {
-		return "", fmt.Errorf("quoted %.2f credits/s for %s %s, price table expects %.2f", quoted, profile.DisplayName, state.Resolution, expected)
-	}
-	optionID := flovaResumeOption(action, "once")
-	if optionID == "" {
-		return "", errors.New("high-cost confirmation has no resume option")
-	}
-	return optionID, nil
-}
-
-// flovaResumeOption 选 effect=resume 的选项：优先 preferred id，其次 scope=run，再次任一。
-func flovaResumeOption(action flovaPendingAction, preferred string) string {
-	var fallback, runScoped string
-	for _, option := range action.Options {
-		if !strings.EqualFold(option.Effect, "resume") {
-			continue
-		}
-		if preferred != "" && option.ID == preferred {
-			return option.ID
-		}
-		if strings.EqualFold(option.Scope, "run") && runScoped == "" {
-			runScoped = option.ID
-		}
-		if fallback == "" && !strings.EqualFold(option.Action, "select_alternative") {
-			fallback = option.ID
-		}
-	}
-	if runScoped != "" {
-		return runScoped
-	}
-	return fallback
-}
-
-func (p *FlovaVideoProvider) resume(ctx context.Context, account *Account, state flovaTaskState, action flovaPendingAction, optionID string) (*ProviderVideoTask, error) {
-	result, err := p.do(ctx, account, "/chat", map[string]any{
-		"project_id": state.ProjectID, "is_resume": true,
-		"resume_message_id": action.ResumeMessageID, "action_id": action.ActionID, "option_id": optionID,
-	})
-	if err != nil {
-		return nil, controlVideoProviderError(err)
-	}
-	if err := p.resultError(result, account, false); err != nil {
-		return nil, err
-	}
-	var data struct {
-		StreamChatID string `json:"stream_chat_id"`
-	}
-	_ = p.decodeData(result, &data)
-	previous := state.StreamChatID
-	if validVideoProviderIdentifier(data.StreamChatID) && !strings.ContainsAny(data.StreamChatID, ":|;=") {
-		state.StreamChatID = strings.TrimSpace(data.StreamChatID)
-	}
-	observability.DefaultVideoMetrics().RecordFlovaOutcome("auto_resume")
-	task := p.progressTask(state, "resumed", VideoGenerationInProgress, flovaDefaultPollInterval)
-	task.Metadata["auto_resumed_action"] = action.Type
-	task.Metadata["auto_resumed_option"] = optionID
-	if credits, ok := numericMapValue(action.Payload, "estimated_credits"); ok {
-		task.Metadata["auto_confirmed_credits"] = credits
-	}
-	if previous != state.StreamChatID {
-		task.Metadata["previous_stream_chat_id"] = previous
+		task.Control.BlockedActions = append(task.Control.BlockedActions, flovaBlockedAction(state, action))
 	}
 	return task, nil
 }
@@ -1419,12 +1293,28 @@ func (p *FlovaVideoProvider) RefreshTaskAccess(ctx context.Context, account *Acc
 	if p == nil || ref.Provider != VideoProviderFlova {
 		return nil, ErrVideoProviderUnsupported
 	}
-	state, err := parseFlovaTaskID(ref.ProviderTaskID)
+	state, err := flovaStateForRef(ref)
 	if err != nil {
 		return nil, controlVideoProviderError(err)
 	}
 	if state.ResourceID == "" {
-		return nil, rejectedVideoProviderError("validation", "content_unavailable", "Flova task has no video resource yet", http.StatusConflict)
+		// Old completed tasks may predate private state persistence. Recover only
+		// from the original run using the side-effect-free Get; never guess a
+		// resumed stream or replay /chat. This access API intentionally does not
+		// mutate a terminal task or its financial state, so recovery may repeat.
+		observed, getErr := p.Get(ctx, account, ref)
+		if getErr != nil {
+			return nil, getErr
+		}
+		if observed == nil || observed.Status != VideoGenerationCompleted || observed.Control == nil ||
+			observed.Control.State == nil || observed.Control.State.ResourceID == "" {
+			return nil, rejectedVideoProviderError("validation", "content_unavailable", "Flova task has no verified completed video resource", http.StatusConflict)
+		}
+		ref.ProviderExecutionState = observed.Control.State
+		state, err = flovaStateForRef(ref)
+		if err != nil {
+			return nil, controlVideoProviderError(err)
+		}
 	}
 	result, err := p.do(ctx, account, "/resource_info", map[string]any{"project_id": state.ProjectID, "resource_id": state.ResourceID})
 	if err != nil {

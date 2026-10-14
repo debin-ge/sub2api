@@ -507,6 +507,8 @@ describe('EditAccountModal', () => {
     expect((wrapper.get('[data-testid="edit-flova-max-run-minutes"]').element as HTMLInputElement).value).toBe('30')
     expect((wrapper.get('[data-testid="edit-flova-price-drift-tolerance"]').element as HTMLInputElement).value).toBe('0.2')
     expect(wrapper.get('[data-testid="edit-flova-auto-confirm-high-cost"]').attributes('aria-checked')).toBe('false')
+    expect(wrapper.get('[data-testid="edit-flova-auto-confirm-high-cost"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="edit-flova-auto-confirm-credits-max"]').attributes('disabled')).toBeDefined()
 
     await wrapper.get('[data-testid="edit-flova-skill-id"]').setValue('')
     await wrapper.get('[data-testid="edit-flova-min-credits-reserve"]').setValue('150')
@@ -521,7 +523,7 @@ describe('EditAccountModal', () => {
       env_name: 'prod',
       skill_id: '',
       max_run_minutes: 30,
-      auto_confirm_high_cost: true,
+      auto_confirm_high_cost: false,
       price_drift_tolerance: 0.2,
       auto_confirm_credits_max: 500,
       round_fee_credits: 2,

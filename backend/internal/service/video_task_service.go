@@ -757,7 +757,7 @@ func (s *VideoTaskService) resolveSource(ctx context.Context, userID int64, oper
 	if source.GenerationState != VideoGenerationCompleted || source.BillingState != VideoBillingCaptured || source.DeleteState == VideoDeleteDeleted {
 		return nil, nil, 0, ErrVideoCapabilityUnsupported
 	}
-	ref := &ProviderTaskRef{Provider: source.Provider, AccountID: *source.AccountID, ProviderTaskID: *source.ProviderTaskID}
+	ref := &ProviderTaskRef{Provider: source.Provider, AccountID: *source.AccountID, ProviderTaskID: *source.ProviderTaskID, ProviderExecutionState: source.ProviderExecutionState}
 	return ref, source, *source.AccountID, nil
 }
 
@@ -1137,6 +1137,10 @@ func videoTerminalBillingFor(task *VideoTask, target string, providerTask *Provi
 			state: VideoBillingReleasePending, actualUnits: &zero, actualCost: &zero,
 		}
 	}
+	if providerTask != nil && providerTask.Control != nil && providerTask.Control.State != nil && providerTask.Control.State.Provider == VideoProviderFlova {
+		return videoFrozenQuoteBilling(task, "billing", "flova_output_unverified",
+			"Flova output measurements and provider spend are unverified; settled at the frozen customer quote")
+	}
 	metadata := task.ResponseMetadata
 	if providerTask != nil {
 		metadata = videoObservedMetadata(task, providerTask.Metadata)
@@ -1254,6 +1258,9 @@ func (s *VideoTaskService) ReconcileProviderObservation(ctx context.Context, tas
 		EventPayload:          map[string]any{"raw_status": rawStatus},
 		IncrementPollAttempts: eventType == "provider_polled",
 	}
+	if err := videoProviderControlTransition(task, observed, &transition); err != nil {
+		return nil, err
+	}
 	if IsVideoGenerationTerminal(target) {
 		decision := videoTerminalBillingFor(task, target, observed)
 		transition.BillingState = decision.state
@@ -1327,6 +1334,7 @@ func (s *VideoTaskService) RefreshProviderTask(ctx context.Context, task *VideoT
 	}
 	observed, err := provider.Get(ctx, account, ProviderTaskRef{
 		Provider: task.Provider, AccountID: *task.AccountID, ProviderTaskID: *task.ProviderTaskID,
+		ProviderExecutionState: task.ProviderExecutionState,
 	})
 	if err != nil {
 		observability.DefaultVideoMetrics().RecordProviderGet(task.Provider, "admin", "error")
@@ -1428,6 +1436,25 @@ func (s *VideoTaskService) GetForOwner(ctx context.Context, userID int64, public
 }
 
 func (s *VideoTaskService) ListForOwner(ctx context.Context, userID int64, filter VideoTaskFilter) (*VideoTaskPage, error) {
+	if err := ValidateVideoTaskListFilter(filter); err != nil {
+		return nil, err
+	}
+	if filter.ArkOnly {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, ArkVideoListQueryTimeout)
+		defer cancel()
+		limiter, ok := s.queue.(VideoTaskListLimiter)
+		if !ok {
+			return nil, ErrBillingServiceUnavailable
+		}
+		allowed, err := limiter.AllowVideoTaskList(ctx, userID)
+		if err != nil {
+			return nil, ErrBillingServiceUnavailable
+		}
+		if !allowed {
+			return nil, ErrVideoListRateLimited
+		}
+	}
 	return s.tasks.ListVideoTasksForOwner(ctx, userID, filter)
 }
 
@@ -1710,7 +1737,7 @@ func (s *VideoTaskService) OpenContentForTask(ctx context.Context, task *VideoTa
 	if !ok {
 		return nil, ErrVideoProviderUnsupported
 	}
-	request.TaskRef = ProviderTaskRef{Provider: task.Provider, AccountID: *task.AccountID, ProviderTaskID: *task.ProviderTaskID}
+	request.TaskRef = ProviderTaskRef{Provider: task.Provider, AccountID: *task.AccountID, ProviderTaskID: *task.ProviderTaskID, ProviderExecutionState: task.ProviderExecutionState}
 	request.UpstreamURL, err = s.decryptProviderVideoURL(task)
 	if err != nil {
 		return nil, err
@@ -1966,7 +1993,7 @@ func (s *VideoTaskService) RetryDeleteTask(ctx context.Context, task *VideoTask)
 			return nil, err
 		}
 	}
-	ref := ProviderTaskRef{Provider: task.Provider, AccountID: *task.AccountID, ProviderTaskID: *task.ProviderTaskID}
+	ref := ProviderTaskRef{Provider: task.Provider, AccountID: *task.AccountID, ProviderTaskID: *task.ProviderTaskID, ProviderExecutionState: task.ProviderExecutionState}
 	requestCtx, requestCancel := context.WithTimeout(ctx, videoWorkerRequestTimeout(s.cfg))
 	if task.Operation == VideoOperationCharacterCreate {
 		if characters, supported := provider.(VideoCharacterProvider); supported {

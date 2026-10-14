@@ -161,6 +161,10 @@ For URL responses, `image_url` mirrors the first `data[].url` for simple clients
 }
 ```
 
-All submit and poll responses include `Cache-Control: no-store`, preventing a CDN from caching the `processing` state. Tasks and results expire 24 hours after their latest state update. A task executes for at most 30 minutes.
+All submit and poll responses include `Cache-Control: no-store`, preventing a CDN from caching the `processing` state. Tasks and results expire 24 hours after their latest state update. A single 30-minute deadline covers request parsing, moderation, generation, upload, and result storage.
+
+`gateway.images_max_pending_per_user` defaults to 20. When enabled, admission atomically reserves a slot in shared Redis before reading the request body or running moderation. All API keys and instances share the user's limit. Exhaustion returns 429; Redis failure returns 503 rather than permitting an uncounted task. A non-positive setting explicitly disables the limit. Completion stores the terminal result and releases its reservation atomically.
+
+Before upgrading from process-local counting, stop new async submissions and drain old workers, then switch all instances together. Redis state loss also requires admission to remain stopped until old work is reconciled or drained. The current multi-key scripts use standalone Redis; Redis Cluster requires a same-slot key migration. See [media task security fixes](security/media-task-security-fixes.md) for rollout and historical-accounting boundaries.
 
 Task ownership is scoped to both user and API key. Unknown task IDs and IDs owned by another key both return `404`, avoiding task-existence disclosure. Polling remains available when the completed generation used the key's remaining balance; normal authentication, disabled-key, user, IP, and group checks still apply.

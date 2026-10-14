@@ -70,6 +70,20 @@ const videoTasksAccountActiveIndexMigration = "244_video_tasks_account_active_v2
 const videoTasksAccountActiveIndex = "idx_video_tasks_account_active_v2"
 const videoBudgetReservationsIndexRepairMigration = "272_repair_video_budget_reservations_index_notx.sql"
 const videoBudgetReservationsIndex = "idx_video_tasks_budget_reservations_v2"
+const arkVideoListIndexesMigration = "279_ark_video_list_indexes_notx.sql"
+const videoProviderCostIndexesMigration = "280_video_provider_cost_reconciliation_indexes_notx.sql"
+
+var videoProviderCostIndexNames = []string{
+	"idx_video_tasks_unknown_cost_user",
+	"idx_video_tasks_unknown_cost_account",
+}
+
+var arkVideoListIndexNames = []string{
+	"idx_video_tasks_ark_owner_status_created",
+	"idx_video_tasks_ark_owner_model_status_created",
+	"idx_video_tasks_ark_owner_created",
+	"idx_video_tasks_ark_owner_model_created",
+}
 
 var vipConcurrentIndexNames = []string{
 	"idx_users_is_vip",
@@ -372,6 +386,10 @@ func prepareNonTransactionalMigration(ctx context.Context, db migrationConnectio
 		return dropInvalidIndexIfPresent(ctx, db, videoTasksAccountActiveIndex)
 	case videoBudgetReservationsIndexRepairMigration:
 		return dropInvalidIndexIfPresent(ctx, db, videoBudgetReservationsIndex)
+	case arkVideoListIndexesMigration:
+		return dropInvalidIndexesIfPresent(ctx, db, arkVideoListIndexNames...)
+	case videoProviderCostIndexesMigration:
+		return dropInvalidIndexesIfPresent(ctx, db, videoProviderCostIndexNames...)
 	default:
 		return nil
 	}

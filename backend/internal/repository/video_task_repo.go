@@ -25,77 +25,78 @@ func NewVideoTaskRepository(db *sql.DB, billing *usageBillingRepository) service
 }
 
 type videoTaskRow struct {
-	ID                      int64                             `json:"id"`
-	PublicID                string                            `json:"public_id"`
-	Source                  string                            `json:"source"`
-	UserID                  *int64                            `json:"user_id"`
-	APIKeyID                *int64                            `json:"api_key_id"`
-	GroupID                 *int64                            `json:"group_id"`
-	ChannelID               *int64                            `json:"channel_id"`
-	AccountID               *int64                            `json:"account_id"`
-	AccountOwnerUserID      *int64                            `json:"account_owner_user_id"`
-	Provider                string                            `json:"provider"`
-	Operation               string                            `json:"operation"`
-	ParentTaskID            *int64                            `json:"parent_task_id"`
-	RootTaskID              *int64                            `json:"root_task_id"`
-	Endpoint                string                            `json:"endpoint"`
-	RequestedModel          string                            `json:"requested_model"`
-	PublicModel             string                            `json:"public_model"`
-	ChannelModel            string                            `json:"channel_model"`
-	UpstreamModel           string                            `json:"upstream_model"`
-	RequestHash             string                            `json:"request_hash"`
-	IdempotencyKey          *string                           `json:"idempotency_key"`
-	InputManifest           []service.VideoInputManifestEntry `json:"input_manifest"`
-	RequestAttributes       map[string]any                    `json:"request_attributes"`
-	ProviderTaskID          *string                           `json:"provider_task_id"`
-	ProviderStatus          *string                           `json:"provider_status"`
-	ProviderCreatedAt       *time.Time                        `json:"provider_created_at"`
-	ProviderFinishedAt      *time.Time                        `json:"provider_finished_at"`
-	StableClientToken       *string                           `json:"stable_client_token"`
-	GenerationState         string                            `json:"generation_state"`
-	BillingState            string                            `json:"billing_state"`
-	DeleteState             string                            `json:"delete_state"`
-	Version                 int64                             `json:"version"`
-	Progress                *float64                          `json:"progress"`
-	UsageSnapshot           map[string]any                    `json:"usage_snapshot"`
-	ResponseMetadata        map[string]any                    `json:"response_metadata"`
-	ContentVariants         []string                          `json:"content_variants"`
-	ContentExpiresAt        *time.Time                        `json:"content_expires_at"`
-	ProviderAccessKind      *string                           `json:"provider_access_kind"`
-	ProviderAccessScope     *string                           `json:"provider_access_scope"`
-	ProviderAccessEnc       *string                           `json:"provider_access_enc"`
-	ProviderAccessExpiresAt *time.Time                        `json:"provider_access_expires_at"`
-	ProviderVideoURLEnc     *string                           `json:"provider_video_url_enc"`
-	ProviderVideoProxyKey   *string                           `json:"provider_video_proxy_key"`
-	BillingUnit             *string                           `json:"billing_unit"`
-	EstimatedUnits          *float64                          `json:"estimated_units"`
-	ActualUnits             *float64                          `json:"actual_units"`
-	PriceSnapshot           map[string]any                    `json:"price_snapshot"`
-	ProviderCostSnapshot    map[string]any                    `json:"provider_cost_snapshot"`
-	Currency                string                            `json:"currency"`
-	HoldID                  *string                           `json:"hold_id"`
-	HoldAmount              *float64                          `json:"hold_amount"`
-	ActualCost              *float64                          `json:"actual_cost"`
-	CallbackURLEnc          *string                           `json:"callback_url_enc"`
-	CallbackIntentState     string                            `json:"callback_intent_state"`
-	NextActionAt            *time.Time                        `json:"next_action_at"`
-	PollAttempts            int                               `json:"poll_attempts"`
-	SubmitAttempts          int                               `json:"submit_attempts"`
-	LeaseOwner              *string                           `json:"lease_owner"`
-	LeaseEpoch              int64                             `json:"lease_epoch"`
-	LeaseExpiresAt          *time.Time                        `json:"lease_expires_at"`
-	LastErrorKind           *string                           `json:"last_error_kind"`
-	LastErrorCode           *string                           `json:"last_error_code"`
-	LastErrorMessage        *string                           `json:"last_error_message"`
-	CreatedAt               time.Time                         `json:"created_at"`
-	UpdatedAt               time.Time                         `json:"updated_at"`
-	SubmittedAt             *time.Time                        `json:"submitted_at"`
-	StartedAt               *time.Time                        `json:"started_at"`
-	FinishedAt              *time.Time                        `json:"finished_at"`
-	SettledAt               *time.Time                        `json:"settled_at"`
-	SubmissionUnknownAt     *time.Time                        `json:"submission_unknown_at"`
-	QuarantinedAt           *time.Time                        `json:"quarantined_at"`
-	DeletedAt               *time.Time                        `json:"deleted_at"`
+	ID                      int64                                `json:"id"`
+	PublicID                string                               `json:"public_id"`
+	Source                  string                               `json:"source"`
+	UserID                  *int64                               `json:"user_id"`
+	APIKeyID                *int64                               `json:"api_key_id"`
+	GroupID                 *int64                               `json:"group_id"`
+	ChannelID               *int64                               `json:"channel_id"`
+	AccountID               *int64                               `json:"account_id"`
+	AccountOwnerUserID      *int64                               `json:"account_owner_user_id"`
+	Provider                string                               `json:"provider"`
+	Operation               string                               `json:"operation"`
+	ParentTaskID            *int64                               `json:"parent_task_id"`
+	RootTaskID              *int64                               `json:"root_task_id"`
+	Endpoint                string                               `json:"endpoint"`
+	RequestedModel          string                               `json:"requested_model"`
+	PublicModel             string                               `json:"public_model"`
+	ChannelModel            string                               `json:"channel_model"`
+	UpstreamModel           string                               `json:"upstream_model"`
+	RequestHash             string                               `json:"request_hash"`
+	IdempotencyKey          *string                              `json:"idempotency_key"`
+	InputManifest           []service.VideoInputManifestEntry    `json:"input_manifest"`
+	RequestAttributes       map[string]any                       `json:"request_attributes"`
+	ProviderTaskID          *string                              `json:"provider_task_id"`
+	ProviderExecutionState  *service.VideoProviderExecutionState `json:"provider_execution_state"`
+	ProviderStatus          *string                              `json:"provider_status"`
+	ProviderCreatedAt       *time.Time                           `json:"provider_created_at"`
+	ProviderFinishedAt      *time.Time                           `json:"provider_finished_at"`
+	StableClientToken       *string                              `json:"stable_client_token"`
+	GenerationState         string                               `json:"generation_state"`
+	BillingState            string                               `json:"billing_state"`
+	DeleteState             string                               `json:"delete_state"`
+	Version                 int64                                `json:"version"`
+	Progress                *float64                             `json:"progress"`
+	UsageSnapshot           map[string]any                       `json:"usage_snapshot"`
+	ResponseMetadata        map[string]any                       `json:"response_metadata"`
+	ContentVariants         []string                             `json:"content_variants"`
+	ContentExpiresAt        *time.Time                           `json:"content_expires_at"`
+	ProviderAccessKind      *string                              `json:"provider_access_kind"`
+	ProviderAccessScope     *string                              `json:"provider_access_scope"`
+	ProviderAccessEnc       *string                              `json:"provider_access_enc"`
+	ProviderAccessExpiresAt *time.Time                           `json:"provider_access_expires_at"`
+	ProviderVideoURLEnc     *string                              `json:"provider_video_url_enc"`
+	ProviderVideoProxyKey   *string                              `json:"provider_video_proxy_key"`
+	BillingUnit             *string                              `json:"billing_unit"`
+	EstimatedUnits          *float64                             `json:"estimated_units"`
+	ActualUnits             *float64                             `json:"actual_units"`
+	PriceSnapshot           map[string]any                       `json:"price_snapshot"`
+	ProviderCostSnapshot    map[string]any                       `json:"provider_cost_snapshot"`
+	Currency                string                               `json:"currency"`
+	HoldID                  *string                              `json:"hold_id"`
+	HoldAmount              *float64                             `json:"hold_amount"`
+	ActualCost              *float64                             `json:"actual_cost"`
+	CallbackURLEnc          *string                              `json:"callback_url_enc"`
+	CallbackIntentState     string                               `json:"callback_intent_state"`
+	NextActionAt            *time.Time                           `json:"next_action_at"`
+	PollAttempts            int                                  `json:"poll_attempts"`
+	SubmitAttempts          int                                  `json:"submit_attempts"`
+	LeaseOwner              *string                              `json:"lease_owner"`
+	LeaseEpoch              int64                                `json:"lease_epoch"`
+	LeaseExpiresAt          *time.Time                           `json:"lease_expires_at"`
+	LastErrorKind           *string                              `json:"last_error_kind"`
+	LastErrorCode           *string                              `json:"last_error_code"`
+	LastErrorMessage        *string                              `json:"last_error_message"`
+	CreatedAt               time.Time                            `json:"created_at"`
+	UpdatedAt               time.Time                            `json:"updated_at"`
+	SubmittedAt             *time.Time                           `json:"submitted_at"`
+	StartedAt               *time.Time                           `json:"started_at"`
+	FinishedAt              *time.Time                           `json:"finished_at"`
+	SettledAt               *time.Time                           `json:"settled_at"`
+	SubmissionUnknownAt     *time.Time                           `json:"submission_unknown_at"`
+	QuarantinedAt           *time.Time                           `json:"quarantined_at"`
+	DeletedAt               *time.Time                           `json:"deleted_at"`
 }
 
 func (row videoTaskRow) task() *service.VideoTask {
@@ -110,7 +111,8 @@ func (row videoTaskRow) task() *service.VideoTask {
 		RequestHash: row.RequestHash, IdempotencyKey: row.IdempotencyKey,
 		InputManifest: row.InputManifest, RequestAttributes: row.RequestAttributes,
 		ProviderTaskID: row.ProviderTaskID, ProviderStatus: row.ProviderStatus,
-		ProviderCreatedAt: row.ProviderCreatedAt, ProviderFinishedAt: row.ProviderFinishedAt,
+		ProviderExecutionState: row.ProviderExecutionState,
+		ProviderCreatedAt:      row.ProviderCreatedAt, ProviderFinishedAt: row.ProviderFinishedAt,
 		StableClientToken: row.StableClientToken, GenerationState: row.GenerationState,
 		BillingState: row.BillingState, DeleteState: row.DeleteState, Version: row.Version,
 		Progress: row.Progress, UsageSnapshot: row.UsageSnapshot, ResponseMetadata: row.ResponseMetadata,
@@ -367,6 +369,9 @@ func (r *videoTaskRepository) CreateHeldVideoTask(ctx context.Context, params se
 	if err := checkVideoPlatformBudgetTx(ctx, tx, params, budgetTime); err != nil {
 		return nil, false, err
 	}
+	if err := checkVideoProviderCostExposureTx(ctx, tx, params.Owner.UserID, params.AccountID); err != nil {
+		return nil, false, err
+	}
 
 	inputManifest, err := videoJSON(params.InputManifest, []service.VideoInputManifestEntry{})
 	if err != nil {
@@ -616,6 +621,14 @@ func decodeVideoTaskCursor(value string) (*videoTaskCursor, error) {
 }
 
 func (r *videoTaskRepository) ListVideoTasksForOwner(ctx context.Context, userID int64, filter service.VideoTaskFilter) (*service.VideoTaskPage, error) {
+	if err := service.ValidateVideoTaskListFilter(filter); err != nil {
+		return nil, err
+	}
+	if filter.ArkOnly {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, service.ArkVideoListQueryTimeout)
+		defer cancel()
+	}
 	limit := filter.Limit
 	if limit <= 0 {
 		limit = 20
@@ -645,13 +658,21 @@ func (r *videoTaskRepository) ListVideoTasksForOwner(ctx context.Context, userID
 		args = append(args, value)
 		where = append(where, fmt.Sprintf(condition, len(args)))
 	}
+	if filter.ArkOnly {
+		// Literal server-owned predicates also let PostgreSQL use the partial
+		// Ark indexes with a generic prepared plan.
+		where = append(where, arkVideoProviderSQL, "operation = 'generate'")
+		if filter.ArkStatus != "" {
+			add("("+arkVideoStatusSQL+") = $%d", filter.ArkStatus)
+		}
+	}
 	if value := strings.TrimSpace(filter.Status); value != "" {
 		add("generation_state = $%d", value)
 	}
 	if value := strings.TrimSpace(filter.Model); value != "" {
 		add("public_model = $%d", value)
 	}
-	if value := strings.TrimSpace(filter.Operation); value != "" {
+	if value := strings.TrimSpace(filter.Operation); value != "" && !filter.ArkOnly {
 		add("operation = $%d", value)
 	}
 	if cursor != nil {
@@ -669,6 +690,10 @@ func (r *videoTaskRepository) ListVideoTasksForOwner(ctx context.Context, userID
 		ORDER BY created_at %s, id %s
 		LIMIT $%d
 	`, strings.Join(where, " AND "), strings.ToUpper(order), strings.ToUpper(order), len(args))
+	if filter.ArkOnly {
+		args = append(args, filter.Offset)
+		query += fmt.Sprintf(" OFFSET $%d", len(args))
+	}
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -724,6 +749,16 @@ func (r *videoTaskRepository) TransitionVideoTask(ctx context.Context, publicID 
 		return nil, err
 	}
 	leaseOwner, leaseEpoch := videoGuardLeaseValues(guard)
+	if transition.ProviderTaskID != nil || transition.ProviderExecutionState != nil || len(transition.BlockedProviderActions) > 0 {
+		if transition.ProviderTaskID == nil {
+			return nil, service.ErrVideoInvalidRequest
+		}
+		if err := service.ValidateVideoProviderControlTransition(task, *transition.ProviderTaskID, transition.ProviderExecutionState, transition.BlockedProviderActions); err != nil {
+			return nil, err
+		}
+		task.ProviderTaskID = transition.ProviderTaskID
+		task.ProviderExecutionState = transition.ProviderExecutionState
+	}
 	if transition.GenerationState != "" {
 		if !service.CanTransitionVideoGeneration(task.GenerationState, transition.GenerationState) {
 			return nil, service.ErrVideoInvalidTransition
@@ -784,6 +819,14 @@ func (r *videoTaskRepository) TransitionVideoTask(ctx context.Context, publicID 
 	usageJSON, _ := videoJSON(task.UsageSnapshot, map[string]any{})
 	metadataJSON, _ := videoJSON(task.ResponseMetadata, map[string]any{})
 	variantsJSON, _ := videoJSON(task.ContentVariants, []string{})
+	var executionJSON any
+	if transition.ProviderExecutionState != nil {
+		encoded, encodeErr := json.Marshal(transition.ProviderExecutionState)
+		if encodeErr != nil {
+			return nil, encodeErr
+		}
+		executionJSON = string(encoded)
+	}
 	result, err := tx.ExecContext(ctx, `
 		UPDATE video_tasks
 		SET generation_state = $2, billing_state = $3, delete_state = $4,
@@ -792,6 +835,8 @@ func (r *videoTaskRepository) TransitionVideoTask(ctx context.Context, publicID 
 			content_expires_at = $10, actual_units = $11, actual_cost = $12,
 			provider_video_url_enc = COALESCE(NULLIF($25, ''), provider_video_url_enc),
 			provider_video_proxy_key = COALESCE(NULLIF($26, ''), provider_video_proxy_key),
+			provider_task_id = COALESCE($27, provider_task_id),
+			provider_execution_state = COALESCE($28::jsonb, provider_execution_state),
 			provider_finished_at = COALESCE($13, provider_finished_at),
 			next_action_at = $14, last_error_kind = $15, last_error_code = $16,
 			last_error_message = $17,
@@ -811,11 +856,15 @@ func (r *videoTaskRepository) TransitionVideoTask(ctx context.Context, publicID 
 		transition.ProviderFinishedAt, task.NextActionAt,
 		task.LastErrorKind, task.LastErrorCode, task.LastErrorMessage, transition.Quarantine,
 		transition.SubmissionUnknown, transition.IncrementSubmitAttempts, transition.IncrementPollAttempts,
-		guard.Version, leaseOwner, leaseEpoch, transition.ProviderVideoURLEnc, transition.ProviderVideoProxyKey)
+		guard.Version, leaseOwner, leaseEpoch, transition.ProviderVideoURLEnc, transition.ProviderVideoProxyKey,
+		transition.ProviderTaskID, executionJSON)
 	if err != nil {
 		return nil, err
 	}
 	if err := videoGuardWriteResult(result, guard); err != nil {
+		return nil, err
+	}
+	if err := insertBlockedVideoProviderActionsTx(ctx, tx, task.ID, transition.BlockedProviderActions); err != nil {
 		return nil, err
 	}
 	if task.Operation == service.VideoOperationCharacterCreate && task.DeleteState == service.VideoDeleteDeleted {
