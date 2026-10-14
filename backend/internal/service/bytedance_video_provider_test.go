@@ -762,8 +762,12 @@ func TestByteDanceVideoProviderOpenAICompatibleRejectsArkOnlyFields(t *testing.T
 		"return_last_frame": {func(r *VideoCreateRequest) { r.ReturnLastFrame = &on }, nil, "unsupported_option"},
 		"service_tier":      {func(r *VideoCreateRequest) { r.ServiceTier = "flex" }, nil, "unsupported_option"},
 		// execution_expires_after 不再在此拒绝：中继模式下由本网关 worker 执行排队超时。
-		// 中继只认 https 引用：spool 字节没有可上传的通道。
-		"uploaded input": {func(r *VideoCreateRequest) {}, []VideoInput{*byteDanceSpoolImageForTest(VideoInputRoleFirstFrame, "image/png", "aaa")}, "unsupported_input"},
+		// spool 图片会内联成 data URI 转发，但仍受内联大小上限约束（能力表的 MaxInputBytes 先拦）。
+		"oversized uploaded input": {func(r *VideoCreateRequest) {}, []VideoInput{func() VideoInput {
+			input := *byteDanceSpoolImageForTest(VideoInputRoleFirstFrame, "image/png", "big")
+			input.Size = byteDanceMaxInlineImageBytes + 1
+			return input
+		}()}, "unsupported_capability"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -821,6 +825,37 @@ func TestByteDanceVideoProviderOpenAICompatibleMapsContentToReferenceFields(t *t
 	require.Equal(t, true, payload["camera_fixed"])
 	require.Equal(t, false, payload["watermark"])
 	request.AudioEnabled, request.Seed, request.CameraFixed, request.Watermark = nil, nil, nil, nil
+
+	// spool 字节（data: URI 内联或 multipart 上传）按角色内联成 data URI 放进兼容字段。
+	// 兼容字段的既有规则不变：首尾帧与 reference_* 不能同时出现，所以分两次提交。
+	spoolFirst := byteDanceSpoolImageForTest(VideoInputRoleFirstFrame, "image/png", "first")
+	inlined := VideoCreateRequest{
+		Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Prompt: "A tracking shot", Seconds: 10, Resolution: "720p",
+		Content: []VideoContentItem{
+			{Type: VideoContentTypeText, Text: "A tracking shot"},
+			{Type: VideoContentTypeImage, Role: VideoInputRoleFirstFrame, Input: spoolFirst},
+			{Type: VideoContentTypeImage, Role: VideoInputRoleLastFrame, URL: "https://media.example.com/last.png"},
+		},
+	}
+	_, err = provider.Create(context.Background(), byteDanceCompatibleVideoTestAccount(), inlined, []VideoInput{*spoolFirst})
+	require.NoError(t, err)
+	require.Equal(t, "data:image/png;base64,YWJj", payload["first_image_url"])
+	require.Equal(t, "https://media.example.com/last.png", payload["last_image_url"])
+	require.NotContains(t, payload, "reference_images")
+
+	spoolRef := byteDanceSpoolImageForTest(VideoInputRoleTaggedReferenceImage, "image/jpeg", "ref")
+	referenced := VideoCreateRequest{
+		Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Prompt: "A tracking shot", Seconds: 10, Resolution: "720p",
+		Content: []VideoContentItem{
+			{Type: VideoContentTypeText, Text: "A tracking shot"},
+			{Type: VideoContentTypeImage, Role: VideoInputRoleTaggedReferenceImage, Input: spoolRef},
+			{Type: VideoContentTypeImage, Role: VideoInputRoleTaggedReferenceImage, URL: "https://media.example.com/ref-2.png"},
+		},
+	}
+	_, err = provider.Create(context.Background(), byteDanceCompatibleVideoTestAccount(), referenced, []VideoInput{*spoolRef})
+	require.NoError(t, err)
+	require.Equal(t, []any{"https://media.example.com/ref-2.png", "data:image/jpeg;base64,YWJj"}, payload["reference_images"])
+	require.NotContains(t, payload, "first_image_url")
 
 	// adaptive 跟随首帧，中继没有对应字段，不送 ratio。
 	request.Ratio = ArkVideoRatioAdaptive

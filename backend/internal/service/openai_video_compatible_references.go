@@ -45,6 +45,12 @@ func isOfficialOpenAIVideoAccount(account *Account) bool {
 }
 
 func openAICompatibleVideoReferenceFields(references ProviderVideoReferenceMedia) (map[string]any, error) {
+	return openAICompatibleVideoReferenceFieldsBounded(references, openAIVideoMaxReferenceBytes)
+}
+
+// openAICompatibleVideoReferenceFieldsBounded 与上面相同，但单条引用的长度上限由调用方给出：
+// ByteDance 中继模式把 spool 图片内联成 data URI 转发，上限要容得下一张完整图片的 base64。
+func openAICompatibleVideoReferenceFieldsBounded(references ProviderVideoReferenceMedia, maxReferenceBytes int) (map[string]any, error) {
 	fields := make(map[string]any)
 	ratio := strings.ToLower(strings.TrimSpace(references.Ratio))
 	aspectRatio := strings.ToLower(strings.TrimSpace(references.AspectRatio))
@@ -67,15 +73,15 @@ func openAICompatibleVideoReferenceFields(references ProviderVideoReferenceMedia
 		fields["aspect_ratio"] = aspectRatio
 	}
 
-	imageURL, err := normalizeOpenAIVideoMediaReference(references.ImageURL, "image", true)
+	imageURL, err := normalizeOpenAIVideoMediaReferenceBounded(references.ImageURL, "image", true, maxReferenceBytes)
 	if err != nil {
 		return nil, err
 	}
-	firstImageURL, err := normalizeOpenAIVideoMediaReference(references.FirstImageURL, "image", true)
+	firstImageURL, err := normalizeOpenAIVideoMediaReferenceBounded(references.FirstImageURL, "image", true, maxReferenceBytes)
 	if err != nil {
 		return nil, err
 	}
-	lastImageURL, err := normalizeOpenAIVideoMediaReference(references.LastImageURL, "image", true)
+	lastImageURL, err := normalizeOpenAIVideoMediaReferenceBounded(references.LastImageURL, "image", true, maxReferenceBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -96,20 +102,20 @@ func openAICompatibleVideoReferenceFields(references ProviderVideoReferenceMedia
 		fields["last_image_url"] = lastImageURL
 	}
 
-	referenceImages, err := normalizeOpenAIVideoMediaReferences(
-		references.ReferenceImages, openAIVideoMaxReferenceImages, "image", true,
+	referenceImages, err := normalizeOpenAIVideoMediaReferencesBounded(
+		references.ReferenceImages, openAIVideoMaxReferenceImages, "image", true, maxReferenceBytes,
 	)
 	if err != nil {
 		return nil, err
 	}
-	referenceVideos, err := normalizeOpenAIVideoMediaReferences(
-		references.ReferenceVideos, openAIVideoMaxReferenceVideos, "video", false,
+	referenceVideos, err := normalizeOpenAIVideoMediaReferencesBounded(
+		references.ReferenceVideos, openAIVideoMaxReferenceVideos, "video", false, maxReferenceBytes,
 	)
 	if err != nil {
 		return nil, err
 	}
-	referenceAudios, err := normalizeOpenAIVideoMediaReferences(
-		references.ReferenceAudios, openAIVideoMaxReferenceAudios, "audio", true,
+	referenceAudios, err := normalizeOpenAIVideoMediaReferencesBounded(
+		references.ReferenceAudios, openAIVideoMaxReferenceAudios, "audio", true, maxReferenceBytes,
 	)
 	if err != nil {
 		return nil, err
@@ -147,6 +153,10 @@ func normalizeOpenAICompatibleVideoReferenceFraming(references ProviderVideoRefe
 }
 
 func normalizeOpenAIVideoMediaReferences(values []string, maximum int, kind string, allowData bool) ([]string, error) {
+	return normalizeOpenAIVideoMediaReferencesBounded(values, maximum, kind, allowData, openAIVideoMaxReferenceBytes)
+}
+
+func normalizeOpenAIVideoMediaReferencesBounded(values []string, maximum int, kind string, allowData bool, maxReferenceBytes int) ([]string, error) {
 	if len(values) == 0 {
 		return nil, nil
 	}
@@ -157,7 +167,7 @@ func normalizeOpenAIVideoMediaReferences(values []string, maximum int, kind stri
 	seen := make(map[string]struct{}, len(values))
 	for index, value := range values {
 		var err error
-		normalized[index], err = normalizeOpenAIVideoMediaReference(value, kind, allowData)
+		normalized[index], err = normalizeOpenAIVideoMediaReferenceBounded(value, kind, allowData, maxReferenceBytes)
 		if err != nil || normalized[index] == "" {
 			return nil, errors.New("invalid media reference")
 		}
@@ -170,11 +180,18 @@ func normalizeOpenAIVideoMediaReferences(values []string, maximum int, kind stri
 }
 
 func normalizeOpenAIVideoMediaReference(raw, kind string, allowData bool) (string, error) {
+	return normalizeOpenAIVideoMediaReferenceBounded(raw, kind, allowData, openAIVideoMaxReferenceBytes)
+}
+
+func normalizeOpenAIVideoMediaReferenceBounded(raw, kind string, allowData bool, maxReferenceBytes int) (string, error) {
 	value := strings.TrimSpace(raw)
 	if value == "" {
 		return "", nil
 	}
-	if len(value) > openAIVideoMaxReferenceBytes {
+	if maxReferenceBytes <= 0 {
+		maxReferenceBytes = openAIVideoMaxReferenceBytes
+	}
+	if len(value) > maxReferenceBytes {
 		return "", errors.New("media reference is too large")
 	}
 	lower := strings.ToLower(value)

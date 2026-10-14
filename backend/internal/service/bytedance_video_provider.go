@@ -175,10 +175,15 @@ func (p *ByteDanceVideoProvider) validateAccountAndRequest(account *Account, req
 		return rejectedVideoProviderError("validation", "unsupported_option", "ByteDance videos do not accept provider_options", http.StatusBadRequest)
 	}
 	if byteDanceProtocolMode(account) == byteDanceProtocolOpenAICompat {
-		if len(inputs) > 0 {
-			return rejectedVideoProviderError("validation", "unsupported_input", "ByteDance openai_compatible mode accepts https media references only", http.StatusBadRequest)
+		// spool 里的图片会内联成 data URI 放进兼容字段，这里先做角色与大小校验（不读字节）。
+		if _, err := byteDanceContentItems(context.Background(), request, inputs, false); err != nil {
+			return err
 		}
-		if _, err := openAICompatibleVideoReferenceFields(normalizeOpenAICompatibleVideoReferenceFraming(request.ReferenceMedia())); err != nil {
+		media, err := byteDanceCompatReferenceMedia(context.Background(), request, inputs, false)
+		if err != nil {
+			return err
+		}
+		if _, err := openAICompatibleVideoReferenceFieldsBounded(normalizeOpenAICompatibleVideoReferenceFraming(media), byteDanceInlineReferenceMaxBytes); err != nil {
 			return rejectedVideoProviderError("validation", "invalid_reference_media", "compatible video reference fields are invalid", http.StatusBadRequest)
 		}
 		return nil
@@ -265,6 +270,78 @@ func byteDanceContentItems(ctx context.Context, request VideoCreateRequest, inpu
 		content = append(content, byteDanceMediaContentItem(VideoContentTypeImage, value, string(role)))
 	}
 	return content, nil
+}
+
+// byteDanceInlineReferenceMaxBytes 是中继模式下单条内联引用（data URI 字符串）的长度上限：
+// 一张 byteDanceMaxInlineImageBytes 的图片 base64 后的长度再留出头部余量。
+const byteDanceInlineReferenceMaxBytes = (byteDanceMaxInlineImageBytes/3+1)*4 + 128
+
+// byteDanceCompatReferenceMedia 把 content[] 折成中继（OpenAI 形态）的参考字段：https 引用
+// 原样，spool 图片按角色内联成 data URI（first_frame → first_image_url、last_frame →
+// last_image_url、reference_image → reference_images、input_reference → image_url）。
+// resolve 为假时只占位不读字节，供校验用。
+func byteDanceCompatReferenceMedia(ctx context.Context, request VideoCreateRequest, inputs []VideoInput, resolve bool) (ProviderVideoReferenceMedia, error) {
+	media := request.ReferenceMedia()
+	inline := func(input VideoInput) (string, error) {
+		if !resolve {
+			return "data:" + strings.TrimSpace(input.MIMEType) + ";base64,AA==", nil
+		}
+		return byteDanceInlineImageDataURI(ctx, input)
+	}
+	place := func(role VideoInputRole, value string) error {
+		switch role {
+		case VideoInputRoleFirstFrame:
+			if media.FirstImageURL != "" {
+				return rejectedVideoProviderError("validation", "unsupported_reference_media", "only one first_frame image is accepted", http.StatusBadRequest)
+			}
+			media.FirstImageURL = value
+		case VideoInputRoleLastFrame:
+			if media.LastImageURL != "" {
+				return rejectedVideoProviderError("validation", "unsupported_reference_media", "only one last_frame image is accepted", http.StatusBadRequest)
+			}
+			media.LastImageURL = value
+		case VideoInputRoleTaggedReferenceImage:
+			media.ReferenceImages = append(media.ReferenceImages, value)
+		case VideoInputRoleReferenceImage:
+			if media.ImageURL == "" {
+				media.ImageURL = value
+			} else {
+				media.ReferenceImages = append(media.ReferenceImages, value)
+			}
+		default:
+			return rejectedVideoProviderError("validation", "unsupported_reference_media", fmt.Sprintf("content role %q cannot be inlined for the relay", role), http.StatusBadRequest)
+		}
+		return nil
+	}
+	for _, item := range request.Content {
+		if !item.IsMedia() || item.Input == nil {
+			continue
+		}
+		value, err := inline(*item.Input)
+		if err != nil {
+			return media, err
+		}
+		if err := place(item.Role, value); err != nil {
+			return media, err
+		}
+	}
+	for i := range inputs {
+		if byteDanceInputBoundToContent(request.Content, &inputs[i]) {
+			continue
+		}
+		value, err := inline(inputs[i])
+		if err != nil {
+			return media, err
+		}
+		role := inputs[i].Role
+		if role == VideoInputRoleReferenceImage {
+			role = VideoInputRoleFirstFrame
+		}
+		if err := place(role, value); err != nil {
+			return media, err
+		}
+	}
+	return media, nil
 }
 
 func byteDanceInputBoundToContent(content []VideoContentItem, input *VideoInput) bool {
@@ -773,10 +850,6 @@ func (p *ByteDanceVideoProvider) executeContent(ctx context.Context, request *ht
 // ---------------------------------------------------------------------------
 
 func (p *ByteDanceVideoProvider) createOpenAICompatible(ctx context.Context, account *Account, request VideoCreateRequest, inputs []VideoInput) (*ProviderVideoTask, error) {
-	if len(inputs) > 0 {
-		return nil, rejectedVideoProviderError("validation", "unsupported_input",
-			"ByteDance openai_compatible mode does not accept uploaded inputs", http.StatusBadRequest)
-	}
 	if request.SmartDuration || request.Frames > 0 {
 		return nil, rejectedVideoProviderError("validation", "unsupported_option",
 			"ByteDance openai_compatible mode requires an explicit duration", http.StatusBadRequest)
@@ -813,9 +886,12 @@ func (p *ByteDanceVideoProvider) createOpenAICompatible(ctx context.Context, acc
 	if ratio := strings.TrimSpace(request.Ratio); ratio != "" && ratio != ArkVideoRatioAdaptive {
 		payload["ratio"] = ratio
 	}
-	media := request.ReferenceMedia()
+	media, err := byteDanceCompatReferenceMedia(ctx, request, inputs, true)
+	if err != nil {
+		return nil, err
+	}
 	media.Ratio = ""
-	referenceFields, err := openAICompatibleVideoReferenceFields(normalizeOpenAICompatibleVideoReferenceFraming(media))
+	referenceFields, err := openAICompatibleVideoReferenceFieldsBounded(normalizeOpenAICompatibleVideoReferenceFraming(media), byteDanceInlineReferenceMaxBytes)
 	if err != nil {
 		return nil, rejectedVideoProviderError("validation", "invalid_reference_media",
 			"compatible video reference fields are invalid", http.StatusBadRequest)
