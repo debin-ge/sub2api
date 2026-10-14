@@ -115,10 +115,11 @@ func (p *ByteDanceVideoProvider) apiKey(account *Account) string {
 // stored value is not a mode this build understands. An unknown mode must fail
 // account support rather than silently fall back to a different protocol.
 // ArkParameterSupport：Ark 直连原样透传全部开关（含 execution_expires_after 由 Ark 执行）；
-// openai_compatible 中继没有任何 Ark 开关的落点。
+// openai_compatible 中继把 generate_audio / seed / camera_fixed / watermark 按 Ark 字段名
+// 转发给中继（能否生效取决于中继），尾帧与服务档没有落点，排队超时由本网关执行。
 func (p *ByteDanceVideoProvider) ArkParameterSupport(account *Account, _ VideoCreateRequest) VideoArkParameterSupport {
 	if byteDanceProtocolMode(account) == byteDanceProtocolOpenAICompat {
-		return VideoArkParameterSupport{}
+		return VideoArkParameterSupport{Seed: true, CameraFixed: true, Watermark: true, GenerateAudio: true}
 	}
 	return ArkNativeParameterSupport()
 }
@@ -776,16 +777,32 @@ func (p *ByteDanceVideoProvider) createOpenAICompatible(ctx context.Context, acc
 		return nil, rejectedVideoProviderError("validation", "unsupported_option",
 			"ByteDance openai_compatible mode requires an explicit duration", http.StatusBadRequest)
 	}
-	// 中继只认 OpenAI 形态的 seconds / resolution / ratio 与参考字段；Ark 独有的 seed、
-	// camera_fixed、watermark、generate_audio 没有对应字段，静默丢弃等于计费与产出不一致，
-	// 直接拒绝。
-	// 中性值已在任务服务里清掉；execution_expires_after 由本网关 worker 执行。
-	if request.Seed != nil || request.CameraFixed != nil || request.Watermark != nil || request.AudioEnabled != nil ||
-		request.ReturnLastFrame != nil || strings.TrimSpace(request.ServiceTier) != "" {
+	// 中继的请求体是 OpenAI 形态的信封（prompt / seconds / resolution / ratio / 参考字段）加
+	// Seedance 扩展：generate_audio、seed、camera_fixed、watermark 按 Ark 字段名原样转发，
+	// 是否生效取决于中继本身。return_last_frame 在任务服务里已按空操作清掉（中继回的是
+	// OpenAI 形态，没有尾帧链接）；service_tier 的默认档同样被清掉，到这里的只剩 flex。
+	// execution_expires_after 由本网关 worker 执行。
+	if tier := strings.TrimSpace(request.ServiceTier); tier != "" {
 		return nil, rejectedVideoProviderError("validation", "unsupported_option",
-			"ByteDance openai_compatible mode does not support seed, camera_fixed, watermark, generate_audio, return_last_frame or service_tier", http.StatusBadRequest)
+			fmt.Sprintf("ByteDance openai_compatible mode does not support service_tier %q", tier), http.StatusBadRequest)
+	}
+	if request.ReturnLastFrame != nil {
+		return nil, rejectedVideoProviderError("validation", "unsupported_option",
+			"ByteDance openai_compatible mode cannot return the last frame", http.StatusBadRequest)
 	}
 	payload := map[string]any{"model": strings.TrimSpace(request.Model), "prompt": request.Prompt}
+	if request.AudioEnabled != nil {
+		payload["generate_audio"] = *request.AudioEnabled
+	}
+	if request.Seed != nil {
+		payload["seed"] = *request.Seed
+	}
+	if request.CameraFixed != nil {
+		payload["camera_fixed"] = *request.CameraFixed
+	}
+	if request.Watermark != nil {
+		payload["watermark"] = *request.Watermark
+	}
 	if request.Seconds > 0 {
 		payload["seconds"] = byteDanceOpenAICompatibleSeconds(request)
 	}

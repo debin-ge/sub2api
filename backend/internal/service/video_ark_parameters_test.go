@@ -67,7 +67,9 @@ func TestVideoVendorArkParameterSupportFollowsProfile(t *testing.T) {
 
 	bytedance := &ByteDanceVideoProvider{}
 	require.Equal(t, ArkNativeParameterSupport(), bytedance.ArkParameterSupport(&Account{Credentials: map[string]any{}}, VideoCreateRequest{}))
-	require.Equal(t, VideoArkParameterSupport{}, bytedance.ArkParameterSupport(&Account{Credentials: map[string]any{byteDanceProtocolCredentialKey: byteDanceProtocolOpenAICompat}}, VideoCreateRequest{}))
+	// 中继模式转发四个开关；尾帧、服务档与排队超时没有落点。
+	require.Equal(t, VideoArkParameterSupport{Seed: true, CameraFixed: true, Watermark: true, GenerateAudio: true},
+		bytedance.ArkParameterSupport(&Account{Credentials: map[string]any{byteDanceProtocolCredentialKey: byteDanceProtocolOpenAICompat}}, VideoCreateRequest{}))
 }
 
 func TestVideoExecutionExpiryDeadlineAndObservation(t *testing.T) {

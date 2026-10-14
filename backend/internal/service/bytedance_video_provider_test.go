@@ -709,7 +709,6 @@ func TestByteDanceVideoProviderOpenAICompatibleRejectsArkOnlyFields(t *testing.T
 		return VideoCreateRequest{Operation: VideoOperationGenerate, Model: ByteDanceVideoModelSeedance10Pro, Prompt: "A tracking shot", Seconds: 10, Resolution: "720p"}
 	}
 	on := true
-	seed := int64(7)
 	cases := map[string]struct {
 		mutate func(*VideoCreateRequest)
 		inputs []VideoInput
@@ -722,12 +721,9 @@ func TestByteDanceVideoProviderOpenAICompatibleRejectsArkOnlyFields(t *testing.T
 			r.Model, r.Seconds, r.SmartDuration = "doubao-seedance-1-5-pro-251215", 0, true
 		}, nil, "unsupported_option"},
 		"frames unknown model": {func(r *VideoCreateRequest) { r.Model, r.Seconds, r.Frames = "doubao-seedance-1-5-pro-251215", 0, 29 }, nil, "unsupported_option"},
-		"seed":                 {func(r *VideoCreateRequest) { r.Seed = &seed }, nil, "unsupported_option"},
-		"camera_fixed":         {func(r *VideoCreateRequest) { r.CameraFixed = &on }, nil, "unsupported_option"},
-		"watermark":            {func(r *VideoCreateRequest) { r.Watermark = &on }, nil, "unsupported_option"},
-		"generate_audio":       {func(r *VideoCreateRequest) { r.AudioEnabled = &on }, nil, "unsupported_option"},
-		"return_last_frame":    {func(r *VideoCreateRequest) { r.ReturnLastFrame = &on }, nil, "unsupported_option"},
-		"service_tier":         {func(r *VideoCreateRequest) { r.ServiceTier = "flex" }, nil, "unsupported_option"},
+		// seed / camera_fixed / watermark / generate_audio 改为原样转发给中继，不再在此拒绝。
+		"return_last_frame": {func(r *VideoCreateRequest) { r.ReturnLastFrame = &on }, nil, "unsupported_option"},
+		"service_tier":      {func(r *VideoCreateRequest) { r.ServiceTier = "flex" }, nil, "unsupported_option"},
 		// execution_expires_after 不再在此拒绝：中继模式下由本网关 worker 执行排队超时。
 		// 中继只认 https 引用：spool 字节没有可上传的通道。
 		"uploaded input": {func(r *VideoCreateRequest) {}, []VideoInput{*byteDanceSpoolImageForTest(VideoInputRoleFirstFrame, "image/png", "aaa")}, "unsupported_input"},
@@ -773,6 +769,21 @@ func TestByteDanceVideoProviderOpenAICompatibleMapsContentToReferenceFields(t *t
 	require.NotContains(t, payload, "content")
 	require.NotContains(t, payload, "duration")
 	require.Equal(t, "9:16", task.Metadata["ratio"])
+	for _, absent := range []string{"generate_audio", "seed", "camera_fixed", "watermark"} {
+		require.NotContains(t, payload, absent, "未设置的开关不送")
+	}
+
+	// Seedance 扩展开关按 Ark 字段名原样转发给中继。
+	on, off := true, false
+	seed := int64(7)
+	request.AudioEnabled, request.Seed, request.CameraFixed, request.Watermark = &on, &seed, &on, &off
+	_, err = provider.Create(context.Background(), byteDanceCompatibleVideoTestAccount(), request, nil)
+	require.NoError(t, err)
+	require.Equal(t, true, payload["generate_audio"])
+	require.EqualValues(t, 7, payload["seed"])
+	require.Equal(t, true, payload["camera_fixed"])
+	require.Equal(t, false, payload["watermark"])
+	request.AudioEnabled, request.Seed, request.CameraFixed, request.Watermark = nil, nil, nil, nil
 
 	// adaptive 跟随首帧，中继没有对应字段，不送 ratio。
 	request.Ratio = ArkVideoRatioAdaptive
