@@ -804,7 +804,7 @@ func (p *ByteDanceVideoProvider) createOpenAICompatible(ctx context.Context, acc
 		payload["watermark"] = *request.Watermark
 	}
 	if request.Seconds > 0 {
-		payload["seconds"] = byteDanceOpenAICompatibleSeconds(request)
+		payload["seconds"] = byteDanceOpenAICompatibleSeconds(account, request)
 	}
 	if resolution := strings.TrimSpace(request.Resolution); resolution != "" {
 		payload["resolution"] = resolution

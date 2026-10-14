@@ -85,24 +85,44 @@ func TestHasByteDanceSeedanceModelRequiresArkPrefix(t *testing.T) {
 	}
 }
 
-func TestLegacyOpenAICompatibleSeedance20Request(t *testing.T) {
+func TestByteDanceRelayModelWithResolutionSuffix(t *testing.T) {
 	for _, model := range []string{
 		"doubao-seedance-2.0-mini-480p",
 		"doubao-seedance-2.0-fast-720p",
 		"doubao-seedance-2.0-pro-1080p",
 		"doubao-seedance-2.0-pro-4k",
+		"doubao-seedance-2.5-720p",
+		"doubao-seedance-1.5-pro-1080p",
 	} {
-		require.True(t, isLegacyOpenAICompatibleSeedance20Request(VideoCreateRequest{Model: model}), model)
+		require.True(t, byteDanceRelayModelWithResolutionSuffix(VideoCreateRequest{Model: model}), model)
 	}
 	for _, model := range []string{
 		"mini-480p",
-		"doubao-seedance-2.0-mini-4k",
 		"doubao-seedance-2.0-pro-1440p",
 		"Doubao-Seedance-2.0-Pro-720p",
+		"doubao-seedance-2.5",
 		ByteDanceVideoModelSeedance10Pro,
 	} {
-		require.False(t, isLegacyOpenAICompatibleSeedance20Request(VideoCreateRequest{Model: model}), model)
+		require.False(t, byteDanceRelayModelWithResolutionSuffix(VideoCreateRequest{Model: model}), model)
 	}
+	require.True(t, byteDanceRelayModelWithResolutionSuffix(VideoCreateRequest{Model: "ep-relay", RequestedModel: "doubao-seedance-2.5-720p"}), "公开模型名同样参与判断")
+}
+
+func TestByteDanceOpenAICompatibleSecondsEncoding(t *testing.T) {
+	relay := VideoCreateRequest{Model: "doubao-seedance-2.5-720p", Seconds: 4}
+	ark := VideoCreateRequest{Model: ByteDanceVideoModelSeedance10Pro, Seconds: 4}
+	plain := &Account{Credentials: map[string]any{}}
+	require.Equal(t, "4", byteDanceOpenAICompatibleSeconds(plain, relay), "分辨率写进模型名的中继用字符串")
+	require.Equal(t, 4, byteDanceOpenAICompatibleSeconds(plain, ark), "其余用数字")
+	require.Equal(t, 4, byteDanceOpenAICompatibleSeconds(nil, ark))
+	// 凭据显式指定时覆盖模型名推断。
+	asNumber := &Account{Credentials: map[string]any{byteDanceSecondsEncodingCredentialKey: "number"}}
+	asString := &Account{Credentials: map[string]any{byteDanceSecondsEncodingCredentialKey: "String"}}
+	require.Equal(t, 4, byteDanceOpenAICompatibleSeconds(asNumber, relay))
+	require.Equal(t, "4", byteDanceOpenAICompatibleSeconds(asString, ark))
+	// 未知取值回到推断。
+	unknown := &Account{Credentials: map[string]any{byteDanceSecondsEncodingCredentialKey: "float"}}
+	require.Equal(t, "4", byteDanceOpenAICompatibleSeconds(unknown, relay))
 }
 
 func TestOpenAICompatibleVideoReferenceFieldsRejectsInvalidCombinations(t *testing.T) {

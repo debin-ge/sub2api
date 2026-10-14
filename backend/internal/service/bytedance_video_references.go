@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -15,10 +16,13 @@ import (
 // be parsed back out of a model name.
 const byteDanceSeedanceModelPrefix = "doubao-seedance-"
 
-// Some legacy OpenAI-compatible Seedance 2.0 relays use model identifiers
-// that include the resolution and require seconds to be encoded as a JSON
-// string. Ark and newer compatible relays use numeric duration fields.
-const legacyOpenAICompatibleSeedance20Prefix = "doubao-seedance-2.0-"
+// OpenAI 形态的 Seedance 中继大多把分辨率写进模型名（doubao-seedance-2.5-720p、
+// doubao-seedance-2.0-pro-1080p），并要求 seconds 以 JSON 字符串传递；Ark 原生 ID 用连字符
+// 版本号加发布日期（doubao-seedance-1-0-pro-250528），seconds 是数字。模型名的写法是判断
+// 中继家族的依据；账号凭据 seconds_encoding 可显式指定，优先于模型名推断。
+const byteDanceSecondsEncodingCredentialKey = "seconds_encoding"
+
+var byteDanceRelayResolutionModelPattern = regexp.MustCompile(`^doubao-seedance-\d+\.\d+(?:-[a-z0-9]+)*-(?:480p|720p|1080p|2k|4k)$`)
 
 // Ark 请求参数的硬边界（创建任务文档）。各模型的实际子集由能力表收窄；这里只拦住
 // 明显越界、会在预扣后才被上游拒绝的值。
@@ -84,39 +88,31 @@ func hasByteDanceSeedanceModel(request VideoCreateRequest) bool {
 	return false
 }
 
-func byteDanceOpenAICompatibleSeconds(request VideoCreateRequest) any {
-	if isLegacyOpenAICompatibleSeedance20Request(request) {
+// byteDanceOpenAICompatibleSeconds 决定发给中继的 seconds 编码：凭据 seconds_encoding
+// （string / number）优先，否则「分辨率写进模型名」的中继用字符串，其余用数字。
+func byteDanceOpenAICompatibleSeconds(account *Account, request VideoCreateRequest) any {
+	if account != nil {
+		switch strings.ToLower(strings.TrimSpace(account.GetCredential(byteDanceSecondsEncodingCredentialKey))) {
+		case "string", "str":
+			return strconv.Itoa(request.Seconds)
+		case "number", "int", "integer":
+			return request.Seconds
+		}
+	}
+	if byteDanceRelayModelWithResolutionSuffix(request) {
 		return strconv.Itoa(request.Seconds)
 	}
 	return request.Seconds
 }
 
-func isLegacyOpenAICompatibleSeedance20Request(request VideoCreateRequest) bool {
+// byteDanceRelayModelWithResolutionSuffix 报告模型名是否属于「点号版本 + 分辨率后缀」的
+// 中继命名家族（大小写必须是小写原样）。
+func byteDanceRelayModelWithResolutionSuffix(request VideoCreateRequest) bool {
 	for _, candidate := range []string{request.Model, request.RequestedModel} {
 		model := strings.TrimSpace(candidate)
-		if model == strings.ToLower(model) && strings.HasPrefix(model, legacyOpenAICompatibleSeedance20Prefix) &&
-			validLegacyOpenAICompatibleSeedance20Model(model) {
+		if model != "" && model == strings.ToLower(model) && byteDanceRelayResolutionModelPattern.MatchString(model) {
 			return true
 		}
 	}
 	return false
-}
-
-func validLegacyOpenAICompatibleSeedance20Model(model string) bool {
-	parts := strings.Split(strings.TrimPrefix(model, legacyOpenAICompatibleSeedance20Prefix), "-")
-	if len(parts) != 2 {
-		return false
-	}
-	variant, resolution := parts[0], parts[1]
-	if variant != "mini" && variant != "fast" && variant != "pro" {
-		return false
-	}
-	switch resolution {
-	case "480p", "720p", "1080p":
-		return true
-	case "4k":
-		return variant == "pro"
-	default:
-		return false
-	}
 }
