@@ -308,25 +308,62 @@ func TestByteDanceVideoProviderOpenAICompatibleCreateRejectsHTTPVideoURL(t *test
 	require.False(t, providerErr.Retryable)
 }
 
-func TestByteDanceVideoProviderLegacySeedance20UsesStringSeconds(t *testing.T) {
+func TestByteDanceVideoProviderRelayAdaptsSecondsEncoding(t *testing.T) {
 	referenceURL := "https://media.example.com/reference.mp4?preview=1&auth_key=signed"
+	var sent []any
 	provider := NewByteDanceVideoProvider(&openAIVideoHTTPStub{do: func(req *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
 		var payload map[string]any
 		require.NoError(t, json.NewDecoder(req.Body).Decode(&payload))
-		require.Equal(t, "doubao-seedance-2.0-mini-480p", payload["model"])
-		require.Equal(t, "8", payload["seconds"])
+		require.Equal(t, "doubao-seedance-2.5-720p", payload["model"])
 		require.Equal(t, []any{referenceURL}, payload["reference_videos"])
-		return openAIVideoResponseForTest(http.StatusOK, `{"id":"video_seedance_20","status":"queued"}`, nil), nil
+		sent = append(sent, payload["seconds"])
+		if _, isString := payload["seconds"].(string); !isString {
+			// 这家中继把 seconds 定义成字符串：数字直接在反序列化阶段被拒，不会创建任务。
+			return openAIVideoResponseForTest(http.StatusBadRequest,
+				`{"error":{"code":"invalid_json","message":"json: cannot unmarshal number into Go struct field .Alias.seconds of type string"}}`, nil), nil
+		}
+		return openAIVideoResponseForTest(http.StatusOK, `{"id":"video_relay_25","status":"queued"}`, nil), nil
 	}}, nil)
-
-	task, err := provider.Create(context.Background(), byteDanceCompatibleVideoTestAccount(), VideoCreateRequest{
-		Operation: VideoOperationGenerate, Model: "doubao-seedance-2.0-mini-480p",
+	request := VideoCreateRequest{
+		Operation: VideoOperationGenerate, Model: "doubao-seedance-2.5-720p",
 		Prompt: "A couple walking on grass", Seconds: 8,
 		Content: []VideoContentItem{{Type: VideoContentTypeVideo, Role: VideoInputRoleReferenceVideo, URL: referenceURL}},
-	}, nil)
+	}
+	account := byteDanceCompatibleVideoTestAccount()
 
+	// 第一次：数字被拒，换字符串重发一次即成功。
+	task, err := provider.Create(context.Background(), account, request, nil)
 	require.NoError(t, err)
-	require.Equal(t, "video_seedance_20", task.ProviderTaskID)
+	require.Equal(t, "video_relay_25", task.ProviderTaskID)
+	require.Equal(t, []any{float64(8), "8"}, sent)
+
+	// 第二次：记住了这个账号要字符串，直接发字符串，不再多一次往返。
+	sent = nil
+	_, err = provider.Create(context.Background(), account, request, nil)
+	require.NoError(t, err)
+	require.Equal(t, []any{"8"}, sent)
+
+	// 凭据固定为数字时不探测：中继的类型错误原样返回。
+	pinned := byteDanceCompatibleVideoTestAccount()
+	pinned.ID = account.ID + 1
+	pinned.Credentials[byteDanceSecondsEncodingCredentialKey] = "number"
+	sent = nil
+	_, err = provider.Create(context.Background(), pinned, request, nil)
+	var providerErr *VideoProviderError
+	require.ErrorAs(t, err, &providerErr)
+	require.Equal(t, "invalid_json", providerErr.Code)
+	require.Equal(t, []any{float64(8)}, sent)
+
+	// 与类型无关的 400 不重发。
+	other := NewByteDanceVideoProvider(&openAIVideoHTTPStub{do: func(req *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
+		sent = append(sent, "call")
+		return openAIVideoResponseForTest(http.StatusBadRequest, `{"error":{"code":"invalid_request","message":"prompt is required"}}`, nil), nil
+	}}, nil)
+	sent = nil
+	_, err = other.Create(context.Background(), byteDanceCompatibleVideoTestAccount(), request, nil)
+	require.ErrorAs(t, err, &providerErr)
+	require.Equal(t, "invalid_request", providerErr.Code)
+	require.Len(t, sent, 1)
 }
 
 func TestByteDanceVideoProviderOpenAICompatibleRejectsInvalidReferenceMedia(t *testing.T) {

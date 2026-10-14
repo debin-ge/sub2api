@@ -3,7 +3,6 @@ package service
 import (
 	"errors"
 	"fmt"
-	"regexp"
 	"strconv"
 	"strings"
 )
@@ -16,13 +15,15 @@ import (
 // be parsed back out of a model name.
 const byteDanceSeedanceModelPrefix = "doubao-seedance-"
 
-// OpenAI 形态的 Seedance 中继大多把分辨率写进模型名（doubao-seedance-2.5-720p、
-// doubao-seedance-2.0-pro-1080p），并要求 seconds 以 JSON 字符串传递；Ark 原生 ID 用连字符
-// 版本号加发布日期（doubao-seedance-1-0-pro-250528），seconds 是数字。模型名的写法是判断
-// 中继家族的依据；账号凭据 seconds_encoding 可显式指定，优先于模型名推断。
+// OpenAI 形态的 Seedance 中继对 seconds 的解析类型不一：有的按数字，有的按字符串。网关
+// 不按模型名猜，而是先按数字（或该账号上次成功的编码）发，被中继以类型不匹配拒绝时换另
+// 一种重发一次，并记住结果；账号凭据 seconds_encoding（string / number）可显式固定。
 const byteDanceSecondsEncodingCredentialKey = "seconds_encoding"
 
-var byteDanceRelayResolutionModelPattern = regexp.MustCompile(`^doubao-seedance-\d+\.\d+(?:-[a-z0-9]+)*-(?:480p|720p|1080p|2k|4k)$`)
+const (
+	byteDanceSecondsAsNumber = "number"
+	byteDanceSecondsAsString = "string"
+)
 
 // Ark 请求参数的硬边界（创建任务文档）。各模型的实际子集由能力表收窄；这里只拦住
 // 明显越界、会在预扣后才被上游拒绝的值。
@@ -88,31 +89,60 @@ func hasByteDanceSeedanceModel(request VideoCreateRequest) bool {
 	return false
 }
 
-// byteDanceOpenAICompatibleSeconds 决定发给中继的 seconds 编码：凭据 seconds_encoding
-// （string / number）优先，否则「分辨率写进模型名」的中继用字符串，其余用数字。
-func byteDanceOpenAICompatibleSeconds(account *Account, request VideoCreateRequest) any {
+// relaySecondsEncoding 返回本次首选的 seconds 编码；pinned 为真表示由凭据固定，不再探测。
+func (p *ByteDanceVideoProvider) relaySecondsEncoding(account *Account) (encoding string, pinned bool) {
 	if account != nil {
 		switch strings.ToLower(strings.TrimSpace(account.GetCredential(byteDanceSecondsEncodingCredentialKey))) {
 		case "string", "str":
-			return strconv.Itoa(request.Seconds)
+			return byteDanceSecondsAsString, true
 		case "number", "int", "integer":
-			return request.Seconds
+			return byteDanceSecondsAsNumber, true
+		}
+		if p != nil {
+			if remembered, ok := p.relaySecondsEncodings.Load(account.ID); ok {
+				if value, ok := remembered.(string); ok && value != "" {
+					return value, false
+				}
+			}
 		}
 	}
-	if byteDanceRelayModelWithResolutionSuffix(request) {
-		return strconv.Itoa(request.Seconds)
-	}
-	return request.Seconds
+	return byteDanceSecondsAsNumber, false
 }
 
-// byteDanceRelayModelWithResolutionSuffix 报告模型名是否属于「点号版本 + 分辨率后缀」的
-// 中继命名家族（大小写必须是小写原样）。
-func byteDanceRelayModelWithResolutionSuffix(request VideoCreateRequest) bool {
-	for _, candidate := range []string{request.Model, request.RequestedModel} {
-		model := strings.TrimSpace(candidate)
-		if model != "" && model == strings.ToLower(model) && byteDanceRelayResolutionModelPattern.MatchString(model) {
-			return true
-		}
+func (p *ByteDanceVideoProvider) rememberRelaySecondsEncoding(account *Account, encoding string) {
+	if p == nil || account == nil || account.ID == 0 || encoding == "" {
+		return
 	}
-	return false
+	p.relaySecondsEncodings.Store(account.ID, encoding)
+}
+
+func byteDanceEncodeRelaySeconds(seconds int, encoding string) any {
+	if encoding == byteDanceSecondsAsString {
+		return strconv.Itoa(seconds)
+	}
+	return seconds
+}
+
+func byteDanceOppositeSecondsEncoding(encoding string) string {
+	if encoding == byteDanceSecondsAsString {
+		return byteDanceSecondsAsNumber
+	}
+	return byteDanceSecondsAsString
+}
+
+// byteDanceRelaySecondsTypeMismatch 识别中继「seconds 类型不对」的拒绝：4xx 且文案同时提到
+// seconds 与反序列化/类型。这种错误发生在解析阶段，上游没有创建任务。
+func byteDanceRelaySecondsTypeMismatch(status int, err error) bool {
+	if status < 400 || status >= 500 || err == nil {
+		return false
+	}
+	var providerErr *VideoProviderError
+	if !errors.As(err, &providerErr) || providerErr == nil {
+		return false
+	}
+	message := strings.ToLower(providerErr.Message)
+	if !strings.Contains(message, "seconds") {
+		return false
+	}
+	return strings.Contains(message, "unmarshal") || strings.Contains(message, "type") || strings.Contains(message, "string") || strings.Contains(message, "number")
 }

@@ -14,6 +14,7 @@ import (
 	"net/netip"
 	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -49,6 +50,9 @@ type ByteDanceVideoProvider struct {
 	catalog      *VideoCapabilityCatalog
 	resolver     videoCallbackIPResolver
 	redirect     videoContentRedirectExecutor
+	// relaySecondsEncodings 记住每个中继账号成功过的 seconds 编码（account ID → encoding），
+	// 进程内有效；换账号或重启后重新探测。
+	relaySecondsEncodings sync.Map
 }
 
 func NewByteDanceVideoProvider(httpUpstream HTTPUpstream, tlsProfiles *TLSFingerprintProfileService) *ByteDanceVideoProvider {
@@ -803,9 +807,6 @@ func (p *ByteDanceVideoProvider) createOpenAICompatible(ctx context.Context, acc
 	if request.Watermark != nil {
 		payload["watermark"] = *request.Watermark
 	}
-	if request.Seconds > 0 {
-		payload["seconds"] = byteDanceOpenAICompatibleSeconds(account, request)
-	}
 	if resolution := strings.TrimSpace(request.Resolution); resolution != "" {
 		payload["resolution"] = resolution
 	}
@@ -822,21 +823,42 @@ func (p *ByteDanceVideoProvider) createOpenAICompatible(ctx context.Context, acc
 	for key, value := range referenceFields {
 		payload[key] = value
 	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return nil, rejectedVideoProviderError("validation", "invalid_payload", "video payload could not be encoded", http.StatusBadRequest)
+	// seconds 的编码两种中继都有：有的按数字解析，有的按字符串。不按模型名猜，先用上次对
+	// 这个账号成功过的编码（缺省数字）发；中继以 400 报 seconds 类型不匹配时换另一种重发
+	// 一次。类型错误发生在反序列化阶段，上游不会创建任务，重发不会重复计费。
+	encoding, pinned := p.relaySecondsEncoding(account)
+	var task *ProviderVideoTask
+	for attempt := 0; attempt < 2; attempt++ {
+		if request.Seconds > 0 {
+			payload["seconds"] = byteDanceEncodeRelaySeconds(request.Seconds, encoding)
+		}
+		body, err := json.Marshal(payload)
+		if err != nil {
+			return nil, rejectedVideoProviderError("validation", "invalid_payload", "video payload could not be encoded", http.StatusBadRequest)
+		}
+		response, err := p.do(ctx, account, http.MethodPost, openAIVideosEndpoint, strings.NewReader(string(body)), "application/json", request.ClientToken)
+		if err != nil {
+			return nil, unknownVideoProviderError("transport", "request_failed", "ByteDance video submission transport failed", err)
+		}
+		if response.StatusCode < 200 || response.StatusCode >= 300 {
+			submitErr := p.responseError(response, account, true, request.Prompt)
+			_ = response.Body.Close()
+			if attempt == 0 && !pinned && request.Seconds > 0 && byteDanceRelaySecondsTypeMismatch(response.StatusCode, submitErr) {
+				encoding = byteDanceOppositeSecondsEncoding(encoding)
+				continue
+			}
+			return nil, submitErr
+		}
+		task, err = decodeOpenAIVideoTask(response.Body, true)
+		_ = response.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+		p.rememberRelaySecondsEncoding(account, encoding)
+		break
 	}
-	response, err := p.do(ctx, account, http.MethodPost, openAIVideosEndpoint, strings.NewReader(string(body)), "application/json", request.ClientToken)
-	if err != nil {
-		return nil, unknownVideoProviderError("transport", "request_failed", "ByteDance video submission transport failed", err)
-	}
-	defer func() { _ = response.Body.Close() }()
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, p.responseError(response, account, true, request.Prompt)
-	}
-	task, err := decodeOpenAIVideoTask(response.Body, true)
-	if err != nil {
-		return nil, err
+	if task == nil {
+		return nil, unknownVideoProviderError("upstream", "invalid_response", "ByteDance video response could not be decoded", nil)
 	}
 	if task, err = validateByteDanceCompatibleVideoTask(task, true); err != nil {
 		return nil, err

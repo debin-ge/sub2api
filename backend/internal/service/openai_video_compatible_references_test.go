@@ -85,44 +85,48 @@ func TestHasByteDanceSeedanceModelRequiresArkPrefix(t *testing.T) {
 	}
 }
 
-func TestByteDanceRelayModelWithResolutionSuffix(t *testing.T) {
-	for _, model := range []string{
-		"doubao-seedance-2.0-mini-480p",
-		"doubao-seedance-2.0-fast-720p",
-		"doubao-seedance-2.0-pro-1080p",
-		"doubao-seedance-2.0-pro-4k",
-		"doubao-seedance-2.5-720p",
-		"doubao-seedance-1.5-pro-1080p",
-	} {
-		require.True(t, byteDanceRelayModelWithResolutionSuffix(VideoCreateRequest{Model: model}), model)
-	}
-	for _, model := range []string{
-		"mini-480p",
-		"doubao-seedance-2.0-pro-1440p",
-		"Doubao-Seedance-2.0-Pro-720p",
-		"doubao-seedance-2.5",
-		ByteDanceVideoModelSeedance10Pro,
-	} {
-		require.False(t, byteDanceRelayModelWithResolutionSuffix(VideoCreateRequest{Model: model}), model)
-	}
-	require.True(t, byteDanceRelayModelWithResolutionSuffix(VideoCreateRequest{Model: "ep-relay", RequestedModel: "doubao-seedance-2.5-720p"}), "公开模型名同样参与判断")
+func TestByteDanceRelaySecondsEncodingSelection(t *testing.T) {
+	provider := &ByteDanceVideoProvider{}
+	plain := &Account{ID: 7, Credentials: map[string]any{}}
+	encoding, pinned := provider.relaySecondsEncoding(plain)
+	require.Equal(t, byteDanceSecondsAsNumber, encoding, "缺省先按数字发")
+	require.False(t, pinned)
+
+	// 成功过的编码按账号记住；别的账号不受影响。
+	provider.rememberRelaySecondsEncoding(plain, byteDanceSecondsAsString)
+	encoding, pinned = provider.relaySecondsEncoding(plain)
+	require.Equal(t, byteDanceSecondsAsString, encoding)
+	require.False(t, pinned)
+	encoding, _ = provider.relaySecondsEncoding(&Account{ID: 8, Credentials: map[string]any{}})
+	require.Equal(t, byteDanceSecondsAsNumber, encoding)
+
+	// 凭据显式指定时固定，不再探测。
+	asNumber := &Account{ID: 7, Credentials: map[string]any{byteDanceSecondsEncodingCredentialKey: "number"}}
+	encoding, pinned = provider.relaySecondsEncoding(asNumber)
+	require.Equal(t, byteDanceSecondsAsNumber, encoding)
+	require.True(t, pinned)
+	asString := &Account{ID: 9, Credentials: map[string]any{byteDanceSecondsEncodingCredentialKey: "String"}}
+	encoding, pinned = provider.relaySecondsEncoding(asString)
+	require.Equal(t, byteDanceSecondsAsString, encoding)
+	require.True(t, pinned)
+
+	require.Equal(t, "4", byteDanceEncodeRelaySeconds(4, byteDanceSecondsAsString))
+	require.Equal(t, 4, byteDanceEncodeRelaySeconds(4, byteDanceSecondsAsNumber))
+	require.Equal(t, byteDanceSecondsAsString, byteDanceOppositeSecondsEncoding(byteDanceSecondsAsNumber))
+	require.Equal(t, byteDanceSecondsAsNumber, byteDanceOppositeSecondsEncoding(byteDanceSecondsAsString))
 }
 
-func TestByteDanceOpenAICompatibleSecondsEncoding(t *testing.T) {
-	relay := VideoCreateRequest{Model: "doubao-seedance-2.5-720p", Seconds: 4}
-	ark := VideoCreateRequest{Model: ByteDanceVideoModelSeedance10Pro, Seconds: 4}
-	plain := &Account{Credentials: map[string]any{}}
-	require.Equal(t, "4", byteDanceOpenAICompatibleSeconds(plain, relay), "分辨率写进模型名的中继用字符串")
-	require.Equal(t, 4, byteDanceOpenAICompatibleSeconds(plain, ark), "其余用数字")
-	require.Equal(t, 4, byteDanceOpenAICompatibleSeconds(nil, ark))
-	// 凭据显式指定时覆盖模型名推断。
-	asNumber := &Account{Credentials: map[string]any{byteDanceSecondsEncodingCredentialKey: "number"}}
-	asString := &Account{Credentials: map[string]any{byteDanceSecondsEncodingCredentialKey: "String"}}
-	require.Equal(t, 4, byteDanceOpenAICompatibleSeconds(asNumber, relay))
-	require.Equal(t, "4", byteDanceOpenAICompatibleSeconds(asString, ark))
-	// 未知取值回到推断。
-	unknown := &Account{Credentials: map[string]any{byteDanceSecondsEncodingCredentialKey: "float"}}
-	require.Equal(t, "4", byteDanceOpenAICompatibleSeconds(unknown, relay))
+func TestByteDanceRelaySecondsTypeMismatch(t *testing.T) {
+	mismatch := func(status int, message string) bool {
+		return byteDanceRelaySecondsTypeMismatch(status, rejectedVideoProviderError("validation", "invalid_json", message, status))
+	}
+	require.True(t, mismatch(400, "json: cannot unmarshal number into Go struct field .Alias.seconds of type string"))
+	require.True(t, mismatch(400, "json: cannot unmarshal string into Go struct field Request.seconds of type int"))
+	require.True(t, mismatch(422, "seconds must be a string"))
+	require.False(t, mismatch(400, "prompt is required"))
+	require.False(t, mismatch(400, "seconds exceeds the supported range"), "取值越界不是类型问题")
+	require.False(t, mismatch(500, "json: cannot unmarshal number into Go struct field .Alias.seconds of type string"))
+	require.False(t, byteDanceRelaySecondsTypeMismatch(400, nil))
 }
 
 func TestOpenAICompatibleVideoReferenceFieldsRejectsInvalidCombinations(t *testing.T) {
