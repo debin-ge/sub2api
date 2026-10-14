@@ -311,7 +311,7 @@ func applyMigrationsFS(ctx context.Context, db *sql.DB, fsys fs.FS) error {
 				if trimmed == "" {
 					continue
 				}
-				if stripSQLLineComment(trimmed) == "" {
+				if stripMigrationSQLComments(trimmed) == "" {
 					continue
 				}
 				if _, err := lockConn.ExecContext(ctx, trimmed); err != nil {
@@ -608,7 +608,7 @@ func validateMigrationExecutionMode(name, content string) (bool, error) {
 
 	statements := splitSQLStatements(content)
 	for _, stmt := range statements {
-		normalizedStmt := strings.ToUpper(stripSQLLineComment(strings.TrimSpace(stmt)))
+		normalizedStmt := strings.ToUpper(stripMigrationSQLComments(strings.TrimSpace(stmt)))
 		if normalizedStmt == "" {
 			continue
 		}
@@ -632,28 +632,6 @@ func validateMigrationExecutionMode(name, content string) (bool, error) {
 	}
 
 	return true, nil
-}
-
-func splitSQLStatements(content string) []string {
-	parts := strings.Split(content, ";")
-	out := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if strings.TrimSpace(part) == "" {
-			continue
-		}
-		out = append(out, part)
-	}
-	return out
-}
-
-func stripSQLLineComment(s string) string {
-	lines := strings.Split(s, "\n")
-	for i, line := range lines {
-		if idx := strings.Index(line, "--"); idx >= 0 {
-			lines[i] = line[:idx]
-		}
-	}
-	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
 
 // pgAdvisoryLock 获取 PostgreSQL Advisory Lock。

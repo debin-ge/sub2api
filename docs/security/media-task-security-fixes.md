@@ -69,3 +69,18 @@
 - 创建/编辑账号和语言键完整性测试共 147 项通过；`vue-tsc --noEmit` 通过。
 - 仓储集成测试已通过 `go test -c -tags integration` 编译，未执行 TestMain 或连接数据库。
 - 未请求真实供应商，未连接项目数据库，未运行任何数据库迁移，未提交或部署。
+
+### CI 迁移失败修复与隔离验证（2026-10-13）
+
+迁移 `280_video_provider_cost_reconciliation_indexes_notx.sql` 的注释包含分号。原迁移器直接按分号拆分语句，把注释后半句作为 SQL 执行，导致两套集成测试在共用的数据库初始化阶段失败。在临时 PostgreSQL 16 容器中已复现 `non-tx statement 2: syntax error at or near "build"`。
+
+迁移器现仅按注释和引用内容之外的分号分句，保留传给 PostgreSQL 的原始内容；已提交迁移文件和校验和未改动。回归覆盖行注释、嵌套块注释、普通/E/Dollar 字符串、引用标识符、真实迁移 280 的两条完整语句，以及重复执行后的索引有效性。
+
+本地使用临时 PostgreSQL 16 和 Redis 容器，实际执行全部初始化迁移及以下 CI 对应套件，均通过：
+
+```sh
+SUB2API_TEST_POSTGRES_IMAGE=postgres:16-alpine go test -tags=integration ./internal/repository -run 'Test(VIP|AuthCacheInvalidationTriggers|GroupRepoSuite|MigrationsRunner)' -count=1
+SUB2API_TEST_POSTGRES_IMAGE=postgres:16-alpine go test -tags=integration ./internal/repository -run 'Video|BalanceHold|UsageBilling' -count=1
+```
+
+迁移分句、执行模式和校验和的针对性单元测试也通过。临时容器已清理；未连接项目或生产数据库，未调用真实供应商，未部署。该记录是本地验证结果，不表示远端 CI 已重新执行。
