@@ -3,18 +3,13 @@ package service
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"log"
-	"mime/multipart"
 	"net"
 	"net/http"
 	"net/netip"
-	"net/textproto"
 	"net/url"
 	"strconv"
 	"strings"
@@ -34,10 +29,8 @@ import (
 // 存量任务一任务一项目。上游不回传可信用量，结算按冻结报价；所有协议形状来自 CLI v0.0.10 抓包与
 // 2026-10-07 实测，见《Flova 平台接入实施方案》第 5 节。
 const (
-	flovaDefaultBaseURL       = "https://service.flova.ai/api/agent/v2"
-	flovaDefaultUploadURL     = "https://gcp.service.flova.ai/api/agent/v2/upload"
-	flovaDefaultUserAgent     = "flova-cli/v0.0.10 (linux; amd64)"
-	flovaDefaultClientVersion = "v0.0.10"
+	flovaDefaultBaseURL   = "https://service.flova.ai/api/agent/v2"
+	flovaDefaultUserAgent = "flova-cli/v0.0.10 (linux; amd64)"
 
 	flovaMaxJSONResponse  = 1 << 20
 	flovaMaxErrorResponse = 64 << 10
@@ -50,21 +43,14 @@ const (
 
 	flovaDefaultMaxRunMinutes     = 60
 	flovaDefaultMinCreditsReserve = 60.0
-	flovaDefaultPriceDrift        = 0.10
 	flovaAssistantTextLimit       = 500
 
-	flovaCredentialAPIKey              = "api_key"
-	flovaCredentialBaseURL             = "base_url"
-	flovaCredentialUploadURL           = "upload_url"
-	flovaCredentialEnvName             = "env_name"
-	flovaCredentialSkillID             = "skill_id"
-	flovaCredentialMaxRunMinutes       = "max_run_minutes"
-	flovaCredentialAutoConfirmHighCost = "auto_confirm_high_cost"
-	flovaCredentialPriceDriftTolerance = "price_drift_tolerance"
-	flovaCredentialAutoConfirmMax      = "auto_confirm_credits_max"
-	flovaCredentialRoundFeeCredits     = "round_fee_credits"
-	flovaCredentialMinCreditsReserve   = "min_credits_reserve"
-	flovaCredentialClientVersion       = "client_version"
+	flovaCredentialAPIKey            = "api_key"
+	flovaCredentialBaseURL           = "base_url"
+	flovaCredentialEnvName           = "env_name"
+	flovaCredentialSkillID           = "skill_id"
+	flovaCredentialMaxRunMinutes     = "max_run_minutes"
+	flovaCredentialMinCreditsReserve = "min_credits_reserve"
 
 	// accounts.extra 里的积分快照键（FlovaCreditsSyncService 写、SupportsAccount 读）。
 	FlovaExtraCredits          = "flova_credits"
@@ -89,11 +75,9 @@ type FlovaVideoProvider struct {
 	capabilities VideoCapabilities
 	catalog      *VideoCapabilityCatalog
 	cfg          config.GatewayFlovaConfig
-	// accounts 用于首次提交时自动创建私有 Skill 并回填 skill_id（可为 nil：仅跳过回填）。
-	accounts AccountRepository
-	resolver videoCallbackIPResolver
-	redirect videoContentRedirectExecutor
-	now      func() time.Time
+	resolver     videoCallbackIPResolver
+	redirect     videoContentRedirectExecutor
+	now          func() time.Time
 }
 
 func NewFlovaVideoProvider(httpUpstream HTTPUpstream, tlsProfiles *TLSFingerprintProfileService, cfg config.GatewayFlovaConfig) *FlovaVideoProvider {
@@ -120,7 +104,7 @@ func (p *FlovaVideoProvider) Capabilities() VideoCapabilities {
 
 // SupportsAccount：平台 / 类型 / Key 齐全，且积分快照（若有）不低于低水位。
 // skill_id 不是存量任务读取的前置条件；新提交由 ValidateSubmission 拒绝。
-// 快照过滤不发网络请求；提交前还会 live 查一次余额。
+// 快照过滤不发网络请求。
 func (p *FlovaVideoProvider) SupportsAccount(account *Account) bool {
 	if p == nil || account == nil {
 		return false
@@ -156,28 +140,11 @@ func (p *FlovaVideoProvider) baseURL(account *Account) string {
 	return flovaDefaultBaseURL
 }
 
-func (p *FlovaVideoProvider) uploadURL(account *Account) string {
-	if v := strings.TrimSpace(account.GetCredential(flovaCredentialUploadURL)); v != "" {
-		return v
-	}
-	return flovaDefaultUploadURL
-}
-
 func (p *FlovaVideoProvider) userAgent() string {
 	if v := strings.TrimSpace(p.cfg.UserAgent); v != "" {
 		return v
 	}
 	return flovaDefaultUserAgent
-}
-
-func (p *FlovaVideoProvider) clientVersion(account *Account) string {
-	if v := strings.TrimSpace(account.GetCredential(flovaCredentialClientVersion)); v != "" {
-		return v
-	}
-	if v := strings.TrimSpace(p.cfg.ClientVersion); v != "" {
-		return v
-	}
-	return flovaDefaultClientVersion
 }
 
 func (p *FlovaVideoProvider) maxRunDuration(account *Account) time.Duration {
@@ -196,38 +163,6 @@ func (p *FlovaVideoProvider) minCreditsReserve(account *Account) float64 {
 	return v
 }
 
-func (p *FlovaVideoProvider) roundFeeCredits(account *Account) float64 {
-	v := flovaCredentialFloat(account, flovaCredentialRoundFeeCredits, 0)
-	if v < 0 {
-		return 0
-	}
-	return v
-}
-
-func (p *FlovaVideoProvider) priceDriftTolerance(account *Account) float64 {
-	fallback := p.cfg.PriceDriftToleranceDefault
-	if fallback <= 0 {
-		fallback = flovaDefaultPriceDrift
-	}
-	v := flovaCredentialFloat(account, flovaCredentialPriceDriftTolerance, fallback)
-	if v < 0 || v > 1 {
-		return fallback
-	}
-	return v
-}
-
-func (p *FlovaVideoProvider) autoConfirmHighCost(account *Account) bool {
-	return flovaCredentialBool(account, flovaCredentialAutoConfirmHighCost, true)
-}
-
-func (p *FlovaVideoProvider) autoConfirmCreditsMax(account *Account) float64 {
-	v := flovaCredentialFloat(account, flovaCredentialAutoConfirmMax, 0)
-	if v < 0 {
-		return 0
-	}
-	return v
-}
-
 func flovaCredentialFloat(account *Account, key string, fallback float64) float64 {
 	if account == nil || account.Credentials == nil {
 		return fallback
@@ -238,24 +173,6 @@ func flovaCredentialFloat(account *Account, key string, fallback float64) float6
 	}
 	if f, ok := flovaToFloat(v); ok {
 		return f
-	}
-	return fallback
-}
-
-func flovaCredentialBool(account *Account, key string, fallback bool) bool {
-	if account == nil || account.Credentials == nil {
-		return fallback
-	}
-	switch v := account.Credentials[key].(type) {
-	case bool:
-		return v
-	case string:
-		switch strings.ToLower(strings.TrimSpace(v)) {
-		case "true", "1", "yes", "on":
-			return true
-		case "false", "0", "no", "off":
-			return false
-		}
 	}
 	return fallback
 }
@@ -721,207 +638,6 @@ func (p *FlovaVideoProvider) Create(ctx context.Context, account *Account, reque
 	return nil, p.ValidateSubmission(account, request, inputs)
 }
 
-// ensureSkill：账号没有 skill_id 时创建私有 Skill 并回填凭据（D9 的懒加载形态，测试连接
-// 没跑过也能直接提交）。创建成功但回填失败时仍继续本次提交，下一次会再建一个。
-func (p *FlovaVideoProvider) ensureSkill(ctx context.Context, account *Account) error {
-	if p.skillID(account) != "" {
-		return nil
-	}
-	skillID, err := p.CreateSkill(ctx, account)
-	if err != nil {
-		var typed *VideoProviderError
-		if errors.As(err, &typed) {
-			typed.Certainty = VideoSubmissionRejected
-		}
-		return err
-	}
-	if account.Credentials == nil {
-		account.Credentials = map[string]any{}
-	}
-	account.Credentials[flovaCredentialSkillID] = skillID
-	if p.accounts != nil {
-		if err := p.accounts.Update(context.WithoutCancel(ctx), account); err != nil {
-			log.Printf("[Flova] account %d: skill %s created but could not be saved: %v", account.ID, skillID, err)
-		}
-	}
-	return nil
-}
-
-// preflightCredits：余额不足时 Flova 不报错而是静默不生成，所以提交前必须 live 查一次。
-func (p *FlovaVideoProvider) preflightCredits(ctx context.Context, account *Account, plan *flovaPlan) error {
-	user, err := p.FetchUser(ctx, account)
-	if err != nil {
-		var typed *VideoProviderError
-		if errors.As(err, &typed) {
-			typed.Certainty = VideoSubmissionRejected
-		}
-		return err
-	}
-	perSecond, ok := flovaCreditsPerSecond(plan.profile.ID, plan.resolution)
-	if !ok {
-		return rejectedVideoProviderError("validation", "unsupported_size", fmt.Sprintf("%s %s has no price on Flova", plan.profile.DisplayName, plan.resolution), http.StatusBadRequest)
-	}
-	need := perSecond*float64(plan.seconds) + p.roundFeeCredits(account)
-	if user.CreditsBalance < need {
-		observability.DefaultVideoMetrics().RecordFlovaOutcome("insufficient_balance")
-		return &VideoProviderError{
-			Kind: "upstream", Code: videoInsufficientBalanceCode,
-			Message:   fmt.Sprintf("Flova account has %.0f credits, %s %s %ds needs %.0f", user.CreditsBalance, plan.profile.DisplayName, plan.resolution, plan.seconds, need),
-			Retryable: false, Certainty: VideoSubmissionRejected, StatusCode: http.StatusPaymentRequired,
-		}
-	}
-	return nil
-}
-
-// uploadInput 把参考图 multipart 上传到 Flova 存储（字段名 file），换取 file_url。
-func (p *FlovaVideoProvider) uploadInput(ctx context.Context, account *Account, input VideoInput) (flovaFile, error) {
-	var empty flovaFile
-	if input.Open == nil {
-		return empty, rejectedVideoProviderError("validation", "input_unavailable", "reference image payload is unavailable", http.StatusBadRequest)
-	}
-	reader, err := input.Open(ctx)
-	if err != nil {
-		return empty, rejectedVideoProviderError("validation", "input_unavailable", "reference image could not be read", http.StatusBadRequest)
-	}
-	defer func() { _ = reader.Close() }()
-	limit := p.Capabilities().MaxInputBytes[VideoInputRoleReferenceImage]
-	if limit <= 0 {
-		limit = flovaMaxReferenceImageBytes
-	}
-	data, err := io.ReadAll(io.LimitReader(reader, limit+1))
-	if err != nil {
-		return empty, rejectedVideoProviderError("validation", "input_unavailable", "reference image could not be read", http.StatusBadRequest)
-	}
-	if int64(len(data)) > limit {
-		return empty, rejectedVideoProviderError("validation", "input_too_large", "reference image exceeds the Flova size limit", http.StatusBadRequest)
-	}
-	name := strings.TrimSpace(input.FileName)
-	if name == "" {
-		name = "reference" + flovaExtensionFor(input.MIMEType)
-	}
-	var body bytes.Buffer
-	writer := multipart.NewWriter(&body)
-	header := make(textproto.MIMEHeader)
-	header.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename="%s"`, strings.ReplaceAll(name, `"`, "")))
-	header.Set("Content-Type", input.MIMEType)
-	part, err := writer.CreatePart(header)
-	if err != nil {
-		return empty, controlVideoProviderError(err)
-	}
-	if _, err := part.Write(data); err != nil {
-		return empty, controlVideoProviderError(err)
-	}
-	if err := writer.Close(); err != nil {
-		return empty, controlVideoProviderError(err)
-	}
-	req, err := p.newRequest(ctx, account, http.MethodPost, p.uploadURL(account), bytes.NewReader(body.Bytes()), writer.FormDataContentType())
-	if err != nil {
-		return empty, controlVideoProviderError(err)
-	}
-	response, err := p.execute(req, account)
-	if err != nil {
-		return empty, &VideoProviderError{Kind: "transport", Code: "upload_failed", Message: "Flova image upload transport failed", Retryable: true, Certainty: VideoSubmissionRejected, Cause: err}
-	}
-	defer func() { _ = response.Body.Close() }()
-	result, err := p.readResult(response)
-	if err != nil {
-		return empty, controlVideoProviderError(err)
-	}
-	if err := p.resultError(result, account, false); err != nil {
-		var typed *VideoProviderError
-		if errors.As(err, &typed) {
-			typed.Certainty = VideoSubmissionRejected
-			if typed.Code == "" || typed.Code == "upstream_error" {
-				typed.Code = "upload_failed"
-			}
-		}
-		return empty, err
-	}
-	var data2 struct {
-		FileName string `json:"file_name"`
-		FileType string `json:"file_type"`
-		FileURL  string `json:"file_url"`
-	}
-	if err := p.decodeData(result, &data2); err != nil {
-		return empty, controlVideoProviderError(err)
-	}
-	fileURL := strings.TrimSpace(data2.FileURL)
-	if !strings.HasPrefix(strings.ToLower(fileURL), "https://") {
-		return empty, rejectedVideoProviderError("upstream", "upload_failed", "Flova image upload returned an invalid url", http.StatusBadGateway)
-	}
-	fileType := strings.TrimSpace(data2.FileType)
-	if fileType == "" {
-		fileType = "image"
-	}
-	fileName := strings.TrimSpace(data2.FileName)
-	if fileName == "" {
-		fileName = name
-	}
-	sum := sha256.Sum256([]byte(fileURL))
-	return flovaFile{ID: "file_" + hex.EncodeToString(sum[:6]), Name: fileName, Type: fileType, URL: fileURL}, nil
-}
-
-func flovaExtensionFor(mimeType string) string {
-	switch strings.ToLower(strings.TrimSpace(mimeType)) {
-	case "image/jpeg":
-		return ".jpg"
-	case "image/webp":
-		return ".webp"
-	default:
-		return ".png"
-	}
-}
-
-func (p *FlovaVideoProvider) createProject(ctx context.Context, account *Account, request VideoCreateRequest) (string, error) {
-	name := "sub2api-" + strings.TrimSpace(request.TaskID)
-	if strings.TrimSpace(request.TaskID) == "" {
-		name = "sub2api-" + strings.ReplaceAll(uuid.NewString(), "-", "")[:16]
-	}
-	result, err := p.do(ctx, account, "/create", map[string]any{"name": name, "description": "sub2api relay", "project_type": 0})
-	if err != nil {
-		return "", &VideoProviderError{Kind: "transport", Code: "request_failed", Message: "Flova project creation transport failed", Retryable: true, Certainty: VideoSubmissionRejected, Cause: err}
-	}
-	if err := p.resultError(result, account, false); err != nil {
-		return "", err
-	}
-	var data struct {
-		ProjectID string `json:"project_id"`
-	}
-	if err := p.decodeData(result, &data); err != nil || !validVideoProviderIdentifier(data.ProjectID) || strings.ContainsAny(data.ProjectID, ":|;=") {
-		return "", controlVideoProviderError(errors.New("flova: project creation returned no usable project_id"))
-	}
-	return strings.TrimSpace(data.ProjectID), nil
-}
-
-func (p *FlovaVideoProvider) startRun(ctx context.Context, account *Account, projectID, content string, files []flovaFile) (string, error) {
-	payload := map[string]any{
-		"project_id": projectID,
-		"content":    content,
-		"extra_data": map[string]any{
-			"client": "flova-cli", "client_version": p.clientVersion(account), "os": "linux", "arch": "amd64", "source": "cli",
-			"skill_id": p.skillID(account),
-		},
-	}
-	if len(files) > 0 {
-		payload["files"] = files
-	}
-	result, err := p.do(ctx, account, "/chat", payload)
-	if err != nil {
-		// /chat 的结果未知：回合可能已经开始。
-		return "", unknownVideoProviderError("transport", "request_failed", "Flova run submission transport failed", err)
-	}
-	if err := p.resultError(result, account, true); err != nil {
-		return "", err
-	}
-	var data struct {
-		StreamChatID string `json:"stream_chat_id"`
-	}
-	if err := p.decodeData(result, &data); err != nil || !validVideoProviderIdentifier(data.StreamChatID) || strings.ContainsAny(data.StreamChatID, ":|;=") {
-		return "", unknownVideoProviderError("upstream", "missing_stream_chat_id", "Flova run submission returned no stream_chat_id", errors.New("missing stream_chat_id"))
-	}
-	return strings.TrimSpace(data.StreamChatID), nil
-}
-
 // ---------------------------------------------------------------------------
 // Get：run_result 状态机
 // ---------------------------------------------------------------------------
@@ -1003,7 +719,7 @@ func (p *FlovaVideoProvider) Get(ctx context.Context, account *Account, ref Prov
 		}
 		if (run.ProjectID != "" && run.ProjectID != state.ProjectID) ||
 			(run.StreamChatID != "" && run.StreamChatID != state.StreamChatID) {
-			return nil, controlVideoProviderError(errors.New("Flova observation belongs to another project or run"))
+			return nil, controlVideoProviderError(errors.New("flova observation belongs to another project or run"))
 		}
 		task, err = p.evaluateRun(ctx, account, state, &run)
 		if err != nil {
@@ -1094,11 +810,11 @@ func (p *FlovaVideoProvider) evaluateRun(ctx context.Context, account *Account, 
 			}
 		}
 		if !found {
-			return nil, controlVideoProviderError(errors.New("Flova observation no longer contains the stored resource"))
+			return nil, controlVideoProviderError(errors.New("flova observation no longer contains the stored resource"))
 		}
 	}
 	if !validVideoProviderIdentifier(video.ResourceID) || strings.ContainsAny(video.ResourceID, ":|;=") {
-		return nil, controlVideoProviderError(errors.New("Flova video has no valid resource identity"))
+		return nil, controlVideoProviderError(errors.New("flova video has no valid resource identity"))
 	}
 	state.ResourceID = video.ResourceID
 	now := p.now().UTC()

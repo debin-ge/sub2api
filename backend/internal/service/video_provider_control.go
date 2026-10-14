@@ -60,21 +60,21 @@ func validFlovaControlState(state *VideoProviderExecutionState) bool {
 // so an otherwise valid 255-byte provider identifier never needs to grow.
 func flovaStateForRef(ref ProviderTaskRef) (flovaTaskState, error) {
 	if !validVideoProviderIdentifier(ref.ProviderTaskID) {
-		return flovaTaskState{}, errors.New("Flova task identity is invalid")
+		return flovaTaskState{}, errors.New("flova task identity is invalid")
 	}
 	state, err := parseFlovaTaskID(ref.ProviderTaskID)
 	if err != nil {
 		return state, err
 	}
 	if state.ResourceID != "" && (!validVideoProviderIdentifier(state.ResourceID) || strings.ContainsAny(state.ResourceID, ":|;=")) {
-		return flovaTaskState{}, errors.New("Flova legacy resource identity is invalid")
+		return flovaTaskState{}, errors.New("flova legacy resource identity is invalid")
 	}
 	// Migration 278 uses {} for legacy rows; JSON decoding produces a non-nil
 	// zero struct. Only this exact empty value is equivalent to absent state.
 	if control := ref.ProviderExecutionState; control != nil && *control != (VideoProviderExecutionState{}) {
 		if !validFlovaControlState(control) || control.ProjectID != state.ProjectID || control.StreamChatID != state.StreamChatID ||
 			(state.ResourceID != "" && state.ResourceID != control.ResourceID) {
-			return flovaTaskState{}, errors.New("Flova recovery state does not match its task identity")
+			return flovaTaskState{}, errors.New("flova recovery state does not match its task identity")
 		}
 		state.ResourceID = control.ResourceID
 	}

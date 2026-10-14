@@ -126,7 +126,7 @@ func (r *videoTaskRepository) ClaimVideoProviderCosts(ctx context.Context, worke
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]*service.VideoProviderCost, 0, limit)
 	for rows.Next() {
 		item, err := scanVideoProviderCost(rows)
@@ -170,7 +170,7 @@ func (r *videoTaskRepository) ListVideoProviderCosts(ctx context.Context, state 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	page := &service.VideoProviderCostPage{Items: make([]*service.VideoProviderCost, 0, limit)}
 	for rows.Next() {
 		item, err := scanVideoProviderCost(rows)
@@ -202,7 +202,7 @@ func (r *videoTaskRepository) ResolveVideoProviderCost(ctx context.Context, id i
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	item, err := scanVideoProviderCost(tx.QueryRowContext(ctx, `SELECT to_jsonb(c) FROM video_provider_costs c WHERE id = $1 FOR UPDATE`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, service.ErrVideoTaskNotFound

@@ -224,7 +224,6 @@ func ProvideFlovaVideoProvider(httpUpstream HTTPUpstream, tlsProfiles *TLSFinger
 	}
 	provider := NewFlovaVideoProvider(httpUpstream, tlsProfiles, flovaCfg)
 	provider.catalog = catalog
-	provider.accounts = accountRepo
 	return provider
 }
 

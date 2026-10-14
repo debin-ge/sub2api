@@ -152,10 +152,6 @@ func normalizeOpenAICompatibleVideoReferenceFraming(references ProviderVideoRefe
 	return references
 }
 
-func normalizeOpenAIVideoMediaReferences(values []string, maximum int, kind string, allowData bool) ([]string, error) {
-	return normalizeOpenAIVideoMediaReferencesBounded(values, maximum, kind, allowData, openAIVideoMaxReferenceBytes)
-}
-
 func normalizeOpenAIVideoMediaReferencesBounded(values []string, maximum int, kind string, allowData bool, maxReferenceBytes int) ([]string, error) {
 	if len(values) == 0 {
 		return nil, nil
@@ -177,10 +173,6 @@ func normalizeOpenAIVideoMediaReferencesBounded(values []string, maximum int, ki
 		seen[normalized[index]] = struct{}{}
 	}
 	return normalized, nil
-}
-
-func normalizeOpenAIVideoMediaReference(raw, kind string, allowData bool) (string, error) {
-	return normalizeOpenAIVideoMediaReferenceBounded(raw, kind, allowData, openAIVideoMaxReferenceBytes)
 }
 
 func normalizeOpenAIVideoMediaReferenceBounded(raw, kind string, allowData bool, maxReferenceBytes int) (string, error) {

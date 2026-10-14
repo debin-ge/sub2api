@@ -90,16 +90,6 @@ func (s *flovaStubServer) lastBody(path string) map[string]any {
 	return decoded
 }
 
-func (s *flovaStubServer) lastRequest(path string) *http.Request {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	requests := s.requests[path]
-	if len(requests) == 0 {
-		return nil
-	}
-	return requests[len(requests)-1]
-}
-
 func newFlovaTestProvider(stub *flovaStubServer) *FlovaVideoProvider {
 	provider := NewFlovaVideoProvider(stub.upstream(), nil, config.GatewayFlovaConfig{
 		UserAgent: "flova-cli/v0.0.10 (linux; amd64)", ClientVersion: "v0.0.10",
@@ -132,7 +122,7 @@ func TestFlovaVideoProviderIdentityAndSupportsAccount(t *testing.T) {
 
 	noSkill := flovaVideoTestAccount()
 	delete(noSkill.Credentials, "skill_id")
-	require.True(t, provider.SupportsAccount(noSkill), "skill_id is provisioned lazily on first submit")
+	require.True(t, provider.SupportsAccount(noSkill), "skill_id is not required to read legacy tasks")
 	require.False(t, provider.SupportsAccount(byteDanceVideoTestAccount()))
 	require.False(t, provider.SupportsAccount(&Account{Platform: PlatformFlova, Type: AccountTypeOAuth, Credentials: map[string]any{"api_key": "x", "skill_id": "y"}}))
 

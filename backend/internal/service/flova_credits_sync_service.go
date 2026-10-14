@@ -12,8 +12,8 @@ import (
 // FlovaCreditsSyncService 周期性拉取 Flova 账号积分（POST /user）写入 accounts.extra，
 // 低于账号的 min_credits_reserve 时临时移出调度；余额恢复后只清除本服务写入的停调。
 //
-// 为什么必须有它：余额不足时 Flova 不报错，而是收回合费（免费档）后静默不生成；
-// 选账号阶段靠这里的快照过滤，提交前再 live 查一次（FlovaVideoProvider.preflightCredits）。
+// 积分快照供账户管理与低余额调度过滤使用；新建任务仍由 ValidateSubmission 拒绝，
+// 余额快照不能替代任务级硬预算。
 const (
 	flovaCreditsLowReasonPrefix   = "flova credits below reserve"
 	flovaCreditsPauseCooldown     = 30 * time.Minute

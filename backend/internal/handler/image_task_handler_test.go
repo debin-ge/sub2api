@@ -11,12 +11,9 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/repository"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
-	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 )
 
@@ -152,10 +149,7 @@ func TestAsyncImageHandlerDisabledReturns404(t *testing.T) {
 // 拒绝并给出 Retry-After，而不是继续 go h.run 无界并发。
 func TestAsyncImageHandlerSubmitRejectsWhenPendingLimitReached(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	mr := miniredis.RunT(t)
-	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	t.Cleanup(func() { _ = rdb.Close() })
-	store := repository.NewImageTaskStore(rdb)
+	store := newAsyncImageAdmissionStore()
 	tasks := service.NewImageTaskServiceWithUploader(store, nil, time.Hour, time.Minute)
 	release := make(chan struct{})
 	h := &AsyncImageHandler{
@@ -200,7 +194,7 @@ func TestAsyncImageHandlerSubmitRejectsWhenPendingLimitReached(t *testing.T) {
 	require.Equal(t, "5", second.Header().Get("Retry-After"))
 	require.Equal(t, "no-store", second.Header().Get("Cache-Control"))
 	require.Contains(t, second.Body.String(), "IMAGE_TASKS_PENDING_LIMIT")
-	require.Equal(t, int64(1), rdb.ZCard(context.Background(), "image_task:pending:7").Val(), "rejected submission must not reserve a second slot")
+	require.Equal(t, 1, store.pendingCount(7), "rejected submission must not reserve a second slot")
 
 	// 首个任务终结后配额释放，再次提交应被接受。
 	close(release)

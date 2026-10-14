@@ -40,13 +40,13 @@ func stripMigrationSQLComments(content string) string {
 			continue
 		}
 		if comment {
-			result.WriteString(content[start:i])
-			result.WriteByte(' ') // Comments separate tokens, even without spaces.
+			_, _ = result.WriteString(content[start:i])
+			_ = result.WriteByte(' ') // Comments separate tokens, even without spaces.
 			start = end
 		}
 		i = end
 	}
-	result.WriteString(content[start:])
+	_, _ = result.WriteString(content[start:])
 	return strings.TrimSpace(result.String())
 }
 
