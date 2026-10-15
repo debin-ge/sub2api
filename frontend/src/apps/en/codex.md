@@ -1,6 +1,6 @@
 # Codex CLI
 
-> OpenAI's official CLI. The IDE extension and the CLI share `~/.codex/config.toml` — once you configure it, both work.
+> OpenAI's official CLI. The IDE extension, the Codex desktop app and the CLI all share `~/.codex/config.toml` — configure it once and all three work.
 
 ```client
 name: Codex CLI
@@ -49,6 +49,13 @@ wire_api = "responses"                # keep as responses
 request_max_retries    = 4
 stream_max_retries     = 5
 stream_idle_timeout_ms = 300000
+# For image generation, uncomment the next two lines (see section 4; your group must allow image generation)
+# requires_openai_auth = false
+# http_headers = { "x-openai-actor-authorization" = "{{BASE_URL}}" }
+
+# The image switch belongs to the [features] table and must come after the provider table (already on by default)
+# [features]
+# image_generation = true
 ```
 
 - `model` — pick a GPT/Codex model name returned by `/v1/models`.
@@ -86,5 +93,35 @@ A reply means success.
 **Persist the env var** so you don't re-export on every terminal launch: append `export API_KEY="..."` to `~/.zshrc` (macOS) or `~/.bashrc` (Linux) and `source` it once. On Windows PowerShell: `[Environment]::SetEnvironmentVariable("API_KEY", "value", "User")` then reopen the window.
 
 **Nginx reverse proxy**: the admin must add `underscores_in_headers on;` to the `http` block, otherwise Codex's `session_id` header is stripped and multi-account sticky sessions break.
+
+</details>
+
+## 4. Image generation (optional)
+
+Codex's built-in `image_gen` tool is only offered to ChatGPT sign-ins by default. With a third-party API such as {{SITE_NAME}}, you must declare an extra `x-openai-actor-authorization` header in the provider table before Codex attaches the tool to a session (requires Codex ≥ 0.143.0). The three keys live in two different tables; in the wrong table they do nothing:
+
+```toml
+[model_providers."{{SITE_NAME}}"]
+# ...keep name / base_url / env_key / wire_api from section 2, and append inside the same table:
+requires_openai_auth = false          # must stay false: keep authenticating with the API key above
+http_headers = { "x-openai-actor-authorization" = "{{BASE_URL}}" }   # any non-empty value works (the site URL is used for clarity); {{SITE_NAME}} never forwards it upstream
+
+[features]                            # its own table, placed after the provider table
+image_generation = true               # on by default in recent versions; set explicitly so it can't be turned off
+```
+
+- `requires_openai_auth` and `http_headers` are only read from `[model_providers."{{SITE_NAME}}"]`; `image_generation` is only read from `[features]` and is ignored inside the provider table. In TOML every key after a table header belongs to that table, so `[features]` must come after the last provider key.
+- Image requests go to `{{BASE_URL}}v1/images/generations`, which requires the admin to enable "allow image generation" on your group. **Once this section is configured, Codex declares the `image_gen` tool on every request; if your group lacks image permission, every request returns 403** — remove the `http_headers` line until it is enabled.
+- `model` must accept image input (e.g. `gpt-5.5`); `gpt-5.3-codex-spark` cannot generate images.
+- Older Codex (< 0.143.0) has no such switch, and the legacy `[features]` key `imagegenext` has been replaced by `image_generation`. Upgrade first: `npm install -g @openai/codex@latest`.
+
+**Verify**: `codex "Generate an image of a cat wearing a hat"`. Success means Codex calls `image_gen` and returns the image (with its saved path).
+
+<details>
+<summary>Image generation troubleshooting</summary>
+
+- **The model says there is no `image_gen` tool** — check that each key sits in its own table, that `codex --version` is ≥ 0.143.0, and that `model` accepts image input.
+- **Every request returns 403 `Image generation is not enabled for this group`** — your group lacks image permission; ask the admin to enable it, or temporarily remove the `http_headers` line to go back to text-only use.
+- **401 / 404 during image generation** — `/v1/images/generations` uses the same key and `base_url` as chat; troubleshoot as in section 3.
 
 </details>
