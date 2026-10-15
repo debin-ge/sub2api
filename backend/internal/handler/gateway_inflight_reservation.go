@@ -61,6 +61,22 @@ func reserveInflightBalance(
 	return done, nil
 }
 
+// reserveInflightBalanceForInjected 供依赖以接口注入的专用网关 handler（Kimi / DeepSeek /
+// MiniMax）使用：生产环境注入的是 *service.BillingCacheService 与实现估算接口的
+// GatewayService；测试替身不满足时退化为 no-op，与开关关闭时的行为一致。
+func reserveInflightBalanceForInjected(
+	c *gin.Context,
+	billing any,
+	estimator any,
+	apiKey *service.APIKey,
+	subscription *service.UserSubscription,
+	req service.InflightEstimateRequest,
+) (func(), error) {
+	billingService, _ := billing.(*service.BillingCacheService)
+	inflightEstimator, _ := estimator.(inflightReservationEstimator)
+	return reserveInflightBalance(c, billingService, inflightEstimator, apiKey, subscription, req)
+}
+
 // reserveInflightBalanceCtx 同 reserveInflightBalance，但返回携带预留句柄的新 context
 // （供 WebSocket 等自管 context 的路径）。
 func reserveInflightBalanceCtx(

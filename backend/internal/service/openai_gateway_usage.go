@@ -997,6 +997,13 @@ func (s *OpenAIGatewayService) calculateOpenAIImageCostFromPlan(
 		resolver = NewModelPricingResolver(s.channelService, s.billingService)
 	}
 
+	// Same reasoning-effort multiplier as the other image/video/audio entries,
+	// so one request prices identically whichever path settles it.
+	reasoningEffort := ""
+	if result != nil {
+		reasoningEffort = optionalStringValue(result.ReasoningEffort)
+	}
+
 	switch plan.Mode {
 	case BillingModeToken:
 		if err := validateOpenAIImageTokenUsage(plan, result, tokens); err != nil {
@@ -1014,6 +1021,7 @@ func (s *OpenAIGatewayService) calculateOpenAIImageCostFromPlan(
 			RequestCount:              1,
 			RateMultiplier:            tokenMultiplier,
 			ServiceTier:               serviceTier,
+			ReasoningEffort:           reasoningEffort,
 			Resolver:                  resolver,
 			Resolved:                  plan.Resolved,
 			LongContextBillingEnabled: &longContextBillingEnabled,
@@ -1028,13 +1036,14 @@ func (s *OpenAIGatewayService) calculateOpenAIImageCostFromPlan(
 			return nil, fmt.Errorf("%w: billable image count is missing", ErrModelPricingUnavailable)
 		}
 		cost, err := s.billingService.CalculateCostUnified(CostInput{
-			Ctx:            ctx,
-			Model:          plan.Model,
-			RequestCount:   result.ImageCount,
-			SizeTier:       plan.SizeTier,
-			RateMultiplier: imageMultiplier,
-			Resolver:       resolver,
-			Resolved:       plan.Resolved,
+			Ctx:             ctx,
+			Model:           plan.Model,
+			RequestCount:    result.ImageCount,
+			SizeTier:        plan.SizeTier,
+			RateMultiplier:  imageMultiplier,
+			ReasoningEffort: reasoningEffort,
+			Resolver:        resolver,
+			Resolved:        plan.Resolved,
 		})
 		if err != nil {
 			return nil, err

@@ -202,3 +202,30 @@ func TestWebSearch_RejectsWhenInflightExceedsBalance(t *testing.T) {
 	require.Contains(t, w.Body.String(), "balance")
 	require.Equal(t, 1, cache.count(), "rejected request must not leave a reservation behind")
 }
+
+// Kimi / DeepSeek / MiniMax inject their billing and gateway deps as interfaces;
+// production values must still reserve, while test doubles degrade to no-op.
+func TestReserveInflightBalanceForInjected(t *testing.T) {
+	cache := newHandlerInflightCache(1)
+	cfg := &config.Config{}
+	cfg.Billing.InflightReservation = config.InflightReservationConfig{Enabled: true, TTLSeconds: 60}
+	billing := service.NewBillingCacheService(cache, nil, nil, nil, nil, nil, cfg, nil)
+	t.Cleanup(billing.Stop)
+	apiKey := &service.APIKey{User: &service.User{ID: 1, Balance: 1}}
+
+	var injectedBilling kimiBillingEligibilityChecker = billing
+	est := &countingEstimator{cost: 0.6, priced: true}
+	done, err := reserveInflightBalanceForInjected(newInflightTestGinContext(), injectedBilling, est, apiKey, nil, tokenInflightEstimate("kimi-k2", nil))
+	require.NoError(t, err)
+	require.Equal(t, 1, cache.count())
+
+	_, err = reserveInflightBalanceForInjected(newInflightTestGinContext(), injectedBilling, est, apiKey, nil, tokenInflightEstimate("kimi-k2", nil))
+	require.ErrorIs(t, err, service.ErrInsufficientBalance, "concurrent request must not overdraw the shared balance")
+	done()
+	require.Equal(t, 0, cache.count())
+
+	noopDone, err := reserveInflightBalanceForInjected(newInflightTestGinContext(), struct{}{}, est, apiKey, nil, tokenInflightEstimate("kimi-k2", nil))
+	require.NoError(t, err)
+	noopDone()
+	require.Equal(t, 0, cache.count())
+}
