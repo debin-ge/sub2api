@@ -915,33 +915,50 @@ func TestFilterValidRequestTiers(t *testing.T) {
 // 9. ImageOutputPriceExplicit tests
 // ===========================================================================
 
-func TestApplyTokenOverrides_FlatNilImageOutputFallsBackToTextOutput(t *testing.T) {
-	r := newResolverWithChannel(t, []ChannelModelPricing{{
+// withCatalogImagePrices 给测试基础价补上目录图片价（$8 输入 / $30 输出 per MTok）。
+func withCatalogImagePrices(r *ModelPricingResolver) *ModelPricingResolver {
+	base := r.billingService.fallbackPrices["claude-sonnet-4"]
+	base.ImageInputPricePerToken = 8e-6
+	base.ImageOutputPricePerToken = 30e-6
+	return r
+}
+
+func TestApplyTokenOverrides_FlatUnsetImagePricesInheritCatalog(t *testing.T) {
+	r := withCatalogImagePrices(newResolverWithChannel(t, []ChannelModelPricing{{
 		Platform:    "anthropic",
 		Models:      []string{"claude-sonnet-4"},
 		BillingMode: BillingModeToken,
 		InputPrice:  testPtrFloat64(3e-6),
 		OutputPrice: testPtrFloat64(15e-6),
-		// ImageOutputPrice intentionally nil
-	}})
+		// ImageInputPrice / ImageOutputPrice intentionally nil
+	}}))
 	resolved := r.Resolve(context.Background(), PricingInput{
 		Model:   "claude-sonnet-4",
 		GroupID: groupIDPtr(),
 	})
 
 	require.Equal(t, PricingSourceChannel, resolved.Source)
-	require.False(t, resolved.BasePricing.ImageOutputPriceExplicit)
-	require.Equal(t, 0.0, resolved.BasePricing.ImageOutputPricePerToken)
+	require.False(t, resolved.BasePricing.ImageOutputPriceExplicit, "留空不应标记显式")
+	require.InDelta(t, 30e-6, resolved.BasePricing.ImageOutputPricePerToken, 1e-12)
+	require.InDelta(t, 8e-6, resolved.BasePricing.ImageInputPricePerToken, 1e-12)
+}
 
-	cost, err := r.billingService.CalculateCostUnified(CostInput{
-		Model:          "claude-sonnet-4",
-		Tokens:         UsageTokens{OutputTokens: 10, ImageOutputTokens: 10},
-		RateMultiplier: 1,
-		Resolver:       r,
-		Resolved:       resolved,
+func TestApplyTokenOverrides_ExplicitZeroImageOutputPriceStaysZero(t *testing.T) {
+	// 渠道显式填 0 仍表示图片输出免费，不回退目录价，也不回退文本输出价。
+	r := withCatalogImagePrices(newResolverWithChannel(t, []ChannelModelPricing{{
+		Platform:         "anthropic",
+		Models:           []string{"claude-sonnet-4"},
+		BillingMode:      BillingModeToken,
+		ImageOutputPrice: testPtrFloat64(0),
+	}}))
+	resolved := r.Resolve(context.Background(), PricingInput{
+		Model:   "claude-sonnet-4",
+		GroupID: groupIDPtr(),
 	})
-	require.NoError(t, err)
-	require.InDelta(t, 10*15e-6, cost.ImageOutputCost, 1e-12)
+
+	require.True(t, resolved.BasePricing.ImageOutputPriceExplicit)
+	require.Equal(t, 0.0, resolved.BasePricing.ImageOutputPricePerToken)
+	require.InDelta(t, 8e-6, resolved.BasePricing.ImageInputPricePerToken, 1e-12, "图片输入留空仍沿用目录价")
 }
 
 func TestApplyTokenOverrides_FlatWithImageOutputPriceSetsExplicit(t *testing.T) {
@@ -962,39 +979,72 @@ func TestApplyTokenOverrides_FlatWithImageOutputPriceSetsExplicit(t *testing.T) 
 	require.InDelta(t, 50e-6, resolved.BasePricing.ImageOutputPricePerToken, 1e-12)
 }
 
-func TestApplyTokenOverrides_IntervalNilImageOutputFallsBackToIntervalOutput(t *testing.T) {
-	r := newResolverWithChannel(t, []ChannelModelPricing{{
+func TestApplyTokenOverrides_IntervalUnsetImagePricesInheritCatalog(t *testing.T) {
+	r := withCatalogImagePrices(newResolverWithChannel(t, []ChannelModelPricing{{
 		Platform:    "anthropic",
 		Models:      []string{"claude-sonnet-4"},
 		BillingMode: BillingModeToken,
-		// No ImageOutputPrice
+		// No ImageInputPrice / ImageOutputPrice
 		Intervals: []PricingInterval{
 			{MinTokens: 0, MaxTokens: testPtrInt(100000), InputPrice: testPtrFloat64(3e-6), OutputPrice: testPtrFloat64(15e-6)},
 		},
-	}})
+	}}))
 	resolved := r.Resolve(context.Background(), PricingInput{
 		Model:   "claude-sonnet-4",
 		GroupID: groupIDPtr(),
 	})
 
-	// nil 表示未配置，不能被解释为显式免费。
 	require.False(t, resolved.BasePricing.ImageOutputPriceExplicit)
-	require.Equal(t, 0.0, resolved.BasePricing.ImageOutputPricePerToken)
+	require.InDelta(t, 30e-6, resolved.BasePricing.ImageOutputPricePerToken, 1e-12)
 
-	// interval price keeps the fallback-to-output semantics.
+	// 区间命中时同样沿用目录图片价
 	pricing := r.GetIntervalPricing(resolved, 50000)
 	require.False(t, pricing.ImageOutputPriceExplicit)
-	require.Equal(t, 0.0, pricing.ImageOutputPricePerToken)
+	require.InDelta(t, 30e-6, pricing.ImageOutputPricePerToken, 1e-12)
+	require.InDelta(t, 8e-6, pricing.ImageInputPricePerToken, 1e-12)
+}
 
+func TestApplyTokenOverrides_IntervalExplicitImageOutputPrice(t *testing.T) {
+	r := withCatalogImagePrices(newResolverWithChannel(t, []ChannelModelPricing{{
+		Platform:         "anthropic",
+		Models:           []string{"claude-sonnet-4"},
+		BillingMode:      BillingModeToken,
+		ImageOutputPrice: testPtrFloat64(50e-6),
+		Intervals: []PricingInterval{
+			{MinTokens: 0, MaxTokens: testPtrInt(100000), InputPrice: testPtrFloat64(3e-6), OutputPrice: testPtrFloat64(15e-6)},
+		},
+	}}))
+	resolved := r.Resolve(context.Background(), PricingInput{
+		Model:   "claude-sonnet-4",
+		GroupID: groupIDPtr(),
+	})
+
+	pricing := r.GetIntervalPricing(resolved, 50000)
+	require.True(t, pricing.ImageOutputPriceExplicit)
+	require.InDelta(t, 50e-6, pricing.ImageOutputPricePerToken, 1e-12)
+}
+
+func TestCalculateCostUnified_EmptyChannelEntryBillsCatalogImagePrices(t *testing.T) {
+	// 常见配置：图片模型只建了空价卡（token 模式、价格全留空）。图片输出此前按 0 计费。
+	r := withCatalogImagePrices(newResolverWithChannel(t, []ChannelModelPricing{{
+		Platform:    "anthropic",
+		Models:      []string{"claude-sonnet-4"},
+		BillingMode: BillingModeToken,
+	}}))
+	tokens := UsageTokens{InputTokens: 1000, ImageInputTokens: 600, OutputTokens: 500, ImageOutputTokens: 500}
 	cost, err := r.billingService.CalculateCostUnified(CostInput{
+		Ctx:            context.Background(),
 		Model:          "claude-sonnet-4",
-		Tokens:         UsageTokens{InputTokens: 1, OutputTokens: 10, ImageOutputTokens: 10},
+		GroupID:        groupIDPtr(),
+		Tokens:         tokens,
 		RateMultiplier: 1,
 		Resolver:       r,
-		Resolved:       resolved,
 	})
 	require.NoError(t, err)
-	require.InDelta(t, 10*15e-6, cost.ImageOutputCost, 1e-12)
+	require.InDelta(t, 500*30e-6, cost.ImageOutputCost, 1e-12)
+	require.InDelta(t, 600*8e-6, cost.ImageInputCost, 1e-12)
+	require.InDelta(t, 400*3e-6, cost.InputCost, 1e-12)
+	require.InDelta(t, 0, cost.OutputCost, 1e-12, "输出全部是图片 token")
 }
 
 // ===========================================================================
@@ -1048,7 +1098,7 @@ func TestApplyTokenOverrides_IntervalDoesNotPolluteFallbackPrices(t *testing.T) 
 	})
 
 	require.NotNil(t, resolved)
-	require.False(t, resolved.BasePricing.ImageOutputPriceExplicit)
+	require.False(t, resolved.BasePricing.ImageOutputPriceExplicit, "渠道未填图片价，不应标记显式")
 
 	// Global fallbackPrices must NOT be polluted
 	fp := r.billingService.fallbackPrices["claude-sonnet-4"]
@@ -1119,3 +1169,75 @@ func TestCalculateCostUnified_UsesContinuousMediaUnits(t *testing.T) {
 	require.NoError(t, err)
 	require.InDelta(t, 0.12, cost.TotalCost, 1e-12)
 }
+
+func TestApplyTokenOverrides_FlatNilImageOutputFallsBackToTextOutput(t *testing.T) {
+	r := newResolverWithChannel(t, []ChannelModelPricing{{
+		Platform:    "anthropic",
+		Models:      []string{"claude-sonnet-4"},
+		BillingMode: BillingModeToken,
+		InputPrice:  testPtrFloat64(3e-6),
+		OutputPrice: testPtrFloat64(15e-6),
+		// ImageOutputPrice intentionally nil
+	}})
+	resolved := r.Resolve(context.Background(), PricingInput{
+		Model:   "claude-sonnet-4",
+		GroupID: groupIDPtr(),
+	})
+
+	require.Equal(t, PricingSourceChannel, resolved.Source)
+	require.False(t, resolved.BasePricing.ImageOutputPriceExplicit)
+	require.Equal(t, 0.0, resolved.BasePricing.ImageOutputPricePerToken)
+
+	cost, err := r.billingService.CalculateCostUnified(CostInput{
+		Model:          "claude-sonnet-4",
+		Tokens:         UsageTokens{OutputTokens: 10, ImageOutputTokens: 10},
+		RateMultiplier: 1,
+		Resolver:       r,
+		Resolved:       resolved,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 10*15e-6, cost.ImageOutputCost, 1e-12)
+}
+
+func TestApplyTokenOverrides_IntervalNilImageOutputFallsBackToIntervalOutput(t *testing.T) {
+	r := newResolverWithChannel(t, []ChannelModelPricing{{
+		Platform:    "anthropic",
+		Models:      []string{"claude-sonnet-4"},
+		BillingMode: BillingModeToken,
+		// No ImageOutputPrice
+		Intervals: []PricingInterval{
+			{MinTokens: 0, MaxTokens: testPtrInt(100000), InputPrice: testPtrFloat64(3e-6), OutputPrice: testPtrFloat64(15e-6)},
+		},
+	}})
+	resolved := r.Resolve(context.Background(), PricingInput{
+		Model:   "claude-sonnet-4",
+		GroupID: groupIDPtr(),
+	})
+
+	// nil 表示未配置，不能被解释为显式免费。
+	require.False(t, resolved.BasePricing.ImageOutputPriceExplicit)
+	require.Equal(t, 0.0, resolved.BasePricing.ImageOutputPricePerToken)
+
+	// interval price keeps the fallback-to-output semantics.
+	pricing := r.GetIntervalPricing(resolved, 50000)
+	require.False(t, pricing.ImageOutputPriceExplicit)
+	require.Equal(t, 0.0, pricing.ImageOutputPricePerToken)
+
+	cost, err := r.billingService.CalculateCostUnified(CostInput{
+		Model:          "claude-sonnet-4",
+		Tokens:         UsageTokens{InputTokens: 1, OutputTokens: 10, ImageOutputTokens: 10},
+		RateMultiplier: 1,
+		Resolver:       r,
+		Resolved:       resolved,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 10*15e-6, cost.ImageOutputCost, 1e-12)
+}
+
+// ===========================================================================
+// 10. Regression: channel overrides must not pollute fallbackPrices
+// ===========================================================================
+
+// TestApplyTokenOverrides_FlatDoesNotPolluteFallbackPrices verifies that the
+// flat-override path in applyTokenOverrides clones the BasePricing struct
+// before mutation, so the shared fallbackPrices map entry is not written through.

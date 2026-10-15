@@ -421,6 +421,34 @@ func (_c *UsageLogCreate) SetNillableBillingType(v *int8) *UsageLogCreate {
 	return _c
 }
 
+// SetCacheStorageTokenHours sets the "cache_storage_token_hours" field.
+func (_c *UsageLogCreate) SetCacheStorageTokenHours(v float64) *UsageLogCreate {
+	_c.mutation.SetCacheStorageTokenHours(v)
+	return _c
+}
+
+// SetNillableCacheStorageTokenHours sets the "cache_storage_token_hours" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableCacheStorageTokenHours(v *float64) *UsageLogCreate {
+	if v != nil {
+		_c.SetCacheStorageTokenHours(*v)
+	}
+	return _c
+}
+
+// SetCacheStorageCost sets the "cache_storage_cost" field.
+func (_c *UsageLogCreate) SetCacheStorageCost(v float64) *UsageLogCreate {
+	_c.mutation.SetCacheStorageCost(v)
+	return _c
+}
+
+// SetNillableCacheStorageCost sets the "cache_storage_cost" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableCacheStorageCost(v *float64) *UsageLogCreate {
+	if v != nil {
+		_c.SetCacheStorageCost(*v)
+	}
+	return _c
+}
+
 // SetUsageSource sets the "usage_source" field.
 func (_c *UsageLogCreate) SetUsageSource(v int8) *UsageLogCreate {
 	_c.mutation.SetUsageSource(v)
@@ -799,6 +827,14 @@ func (_c *UsageLogCreate) defaults() {
 		v := usagelog.DefaultBillingType
 		_c.mutation.SetBillingType(v)
 	}
+	if _, ok := _c.mutation.CacheStorageTokenHours(); !ok {
+		v := usagelog.DefaultCacheStorageTokenHours
+		_c.mutation.SetCacheStorageTokenHours(v)
+	}
+	if _, ok := _c.mutation.CacheStorageCost(); !ok {
+		v := usagelog.DefaultCacheStorageCost
+		_c.mutation.SetCacheStorageCost(v)
+	}
 	if _, ok := _c.mutation.UsageSource(); !ok {
 		v := usagelog.DefaultUsageSource
 		_c.mutation.SetUsageSource(v)
@@ -930,6 +966,12 @@ func (_c *UsageLogCreate) check() error {
 	}
 	if _, ok := _c.mutation.BillingType(); !ok {
 		return &ValidationError{Name: "billing_type", err: errors.New(`ent: missing required field "UsageLog.billing_type"`)}
+	}
+	if _, ok := _c.mutation.CacheStorageTokenHours(); !ok {
+		return &ValidationError{Name: "cache_storage_token_hours", err: errors.New(`ent: missing required field "UsageLog.cache_storage_token_hours"`)}
+	}
+	if _, ok := _c.mutation.CacheStorageCost(); !ok {
+		return &ValidationError{Name: "cache_storage_cost", err: errors.New(`ent: missing required field "UsageLog.cache_storage_cost"`)}
 	}
 	if _, ok := _c.mutation.UsageSource(); !ok {
 		return &ValidationError{Name: "usage_source", err: errors.New(`ent: missing required field "UsageLog.usage_source"`)}
@@ -1131,6 +1173,14 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.BillingType(); ok {
 		_spec.SetField(usagelog.FieldBillingType, field.TypeInt8, value)
 		_node.BillingType = value
+	}
+	if value, ok := _c.mutation.CacheStorageTokenHours(); ok {
+		_spec.SetField(usagelog.FieldCacheStorageTokenHours, field.TypeFloat64, value)
+		_node.CacheStorageTokenHours = value
+	}
+	if value, ok := _c.mutation.CacheStorageCost(); ok {
+		_spec.SetField(usagelog.FieldCacheStorageCost, field.TypeFloat64, value)
+		_node.CacheStorageCost = value
 	}
 	if value, ok := _c.mutation.UsageSource(); ok {
 		_spec.SetField(usagelog.FieldUsageSource, field.TypeInt8, value)
@@ -1876,6 +1926,42 @@ func (u *UsageLogUpsert) UpdateBillingType() *UsageLogUpsert {
 // AddBillingType adds v to the "billing_type" field.
 func (u *UsageLogUpsert) AddBillingType(v int8) *UsageLogUpsert {
 	u.Add(usagelog.FieldBillingType, v)
+	return u
+}
+
+// SetCacheStorageTokenHours sets the "cache_storage_token_hours" field.
+func (u *UsageLogUpsert) SetCacheStorageTokenHours(v float64) *UsageLogUpsert {
+	u.Set(usagelog.FieldCacheStorageTokenHours, v)
+	return u
+}
+
+// UpdateCacheStorageTokenHours sets the "cache_storage_token_hours" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateCacheStorageTokenHours() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldCacheStorageTokenHours)
+	return u
+}
+
+// AddCacheStorageTokenHours adds v to the "cache_storage_token_hours" field.
+func (u *UsageLogUpsert) AddCacheStorageTokenHours(v float64) *UsageLogUpsert {
+	u.Add(usagelog.FieldCacheStorageTokenHours, v)
+	return u
+}
+
+// SetCacheStorageCost sets the "cache_storage_cost" field.
+func (u *UsageLogUpsert) SetCacheStorageCost(v float64) *UsageLogUpsert {
+	u.Set(usagelog.FieldCacheStorageCost, v)
+	return u
+}
+
+// UpdateCacheStorageCost sets the "cache_storage_cost" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateCacheStorageCost() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldCacheStorageCost)
+	return u
+}
+
+// AddCacheStorageCost adds v to the "cache_storage_cost" field.
+func (u *UsageLogUpsert) AddCacheStorageCost(v float64) *UsageLogUpsert {
+	u.Add(usagelog.FieldCacheStorageCost, v)
 	return u
 }
 
@@ -2874,6 +2960,48 @@ func (u *UsageLogUpsertOne) AddBillingType(v int8) *UsageLogUpsertOne {
 func (u *UsageLogUpsertOne) UpdateBillingType() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.UpdateBillingType()
+	})
+}
+
+// SetCacheStorageTokenHours sets the "cache_storage_token_hours" field.
+func (u *UsageLogUpsertOne) SetCacheStorageTokenHours(v float64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetCacheStorageTokenHours(v)
+	})
+}
+
+// AddCacheStorageTokenHours adds v to the "cache_storage_token_hours" field.
+func (u *UsageLogUpsertOne) AddCacheStorageTokenHours(v float64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddCacheStorageTokenHours(v)
+	})
+}
+
+// UpdateCacheStorageTokenHours sets the "cache_storage_token_hours" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateCacheStorageTokenHours() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateCacheStorageTokenHours()
+	})
+}
+
+// SetCacheStorageCost sets the "cache_storage_cost" field.
+func (u *UsageLogUpsertOne) SetCacheStorageCost(v float64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetCacheStorageCost(v)
+	})
+}
+
+// AddCacheStorageCost adds v to the "cache_storage_cost" field.
+func (u *UsageLogUpsertOne) AddCacheStorageCost(v float64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddCacheStorageCost(v)
+	})
+}
+
+// UpdateCacheStorageCost sets the "cache_storage_cost" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateCacheStorageCost() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateCacheStorageCost()
 	})
 }
 
@@ -4093,6 +4221,48 @@ func (u *UsageLogUpsertBulk) AddBillingType(v int8) *UsageLogUpsertBulk {
 func (u *UsageLogUpsertBulk) UpdateBillingType() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.UpdateBillingType()
+	})
+}
+
+// SetCacheStorageTokenHours sets the "cache_storage_token_hours" field.
+func (u *UsageLogUpsertBulk) SetCacheStorageTokenHours(v float64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetCacheStorageTokenHours(v)
+	})
+}
+
+// AddCacheStorageTokenHours adds v to the "cache_storage_token_hours" field.
+func (u *UsageLogUpsertBulk) AddCacheStorageTokenHours(v float64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddCacheStorageTokenHours(v)
+	})
+}
+
+// UpdateCacheStorageTokenHours sets the "cache_storage_token_hours" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateCacheStorageTokenHours() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateCacheStorageTokenHours()
+	})
+}
+
+// SetCacheStorageCost sets the "cache_storage_cost" field.
+func (u *UsageLogUpsertBulk) SetCacheStorageCost(v float64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetCacheStorageCost(v)
+	})
+}
+
+// AddCacheStorageCost adds v to the "cache_storage_cost" field.
+func (u *UsageLogUpsertBulk) AddCacheStorageCost(v float64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddCacheStorageCost(v)
+	})
+}
+
+// UpdateCacheStorageCost sets the "cache_storage_cost" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateCacheStorageCost() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateCacheStorageCost()
 	})
 }
 

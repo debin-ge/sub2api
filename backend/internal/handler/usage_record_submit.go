@@ -59,7 +59,8 @@ func runUsageRecordTaskInline(
 		return
 	}
 
-	task = wrapUsageRecordTaskContext(parent, task)
+	task, abandon := wrapUsageRecordTaskContext(parent, task)
+	defer abandon()
 	if timeout <= 0 {
 		timeout = usageRecordSyncFallbackTimeout
 	}

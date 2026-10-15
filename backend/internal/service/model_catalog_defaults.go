@@ -7,6 +7,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/typesafe"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 )
 
@@ -27,6 +28,12 @@ func DefaultModelCatalogIDs(platform string) []string {
 		for _, model := range antigravity.DefaultModels() {
 			ids = append(ids, model.ID)
 		}
+	case PlatformCommandCode:
+		ids = []string{DefaultCommandCodeTestModel}
+	case PlatformCline:
+		ids = []string{DefaultClineTestModel, DefaultClinePassTestModel}
+	case PlatformTypeSafe:
+		ids = []string{typesafe.JevLatestModel}
 	case PlatformGrok:
 		ids = xai.DefaultModelIDs()
 	case PlatformByteDance:

@@ -24,6 +24,7 @@ func registerPaymentRoutesForTest(router *gin.Engine) {
 		nil,
 		nil,
 		nil,
+		nil,
 	)
 }
 
@@ -81,6 +82,7 @@ func TestRegisterPaymentRoutesIncludesWiseWebhook(t *testing.T) {
 		admin.NewPaymentHandler(nil, nil),
 		middleware.JWTAuthMiddleware(func(c *gin.Context) { c.Next() }),
 		middleware.AdminAuthMiddleware(func(c *gin.Context) { c.Next() }),
+		nil,
 		nil,
 		nil,
 		nil,

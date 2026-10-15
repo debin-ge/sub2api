@@ -43,7 +43,7 @@ const props = withDefaults(defineProps<Props>(), {
 
         <div class="lg:col-span-7">
           <div class="grid h-full grid-cols-1 content-center gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <div v-for="i in 6" :key="i" class="h-20 animate-pulse rounded-2xl zt-surface-2"></div>
+            <div v-for="i in 7" :key="i" class="h-20 animate-pulse rounded-2xl zt-surface-2"></div>
           </div>
         </div>
       </div>

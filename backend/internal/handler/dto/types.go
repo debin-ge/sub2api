@@ -116,6 +116,10 @@ type Group struct {
 	VIPOnly        bool    `json:"vip_only"`
 	Status         string  `json:"status"`
 
+	// I18n 名称与描述的各语言译文。只有管理端输出；用户侧接口经 Localized 把
+	// name/description 换成请求语言的版本后清空本字段。
+	I18n domain.GroupI18n `json:"i18n,omitempty"`
+
 	SubscriptionType          string   `json:"subscription_type"`
 	DailyLimitUSD             *float64 `json:"daily_limit_usd"`
 	WeeklyLimitUSD            *float64 `json:"weekly_limit_usd"`
@@ -272,6 +276,7 @@ type Account struct {
 	AutoPauseOnExpired         bool                           `json:"auto_pause_on_expired"`
 	CreatedAt                  time.Time                      `json:"created_at"`
 	UpdatedAt                  time.Time                      `json:"updated_at"`
+	OpenCodeGoUsage            *service.OpenCodeGoUsageState  `json:"opencode_go_usage,omitempty"`
 
 	Schedulable bool `json:"schedulable"`
 
@@ -382,6 +387,7 @@ type AccountListItem struct {
 	CredentialsStatus map[string]bool                `json:"credentials_status,omitempty"`
 	Extra             map[string]any                 `json:"extra,omitempty"`
 	OllamaCloudUsage  *service.OllamaCloudUsageState `json:"ollama_cloud_usage,omitempty"`
+	OpenCodeGoUsage   *service.OpenCodeGoUsageState  `json:"opencode_go_usage,omitempty"`
 
 	ProxyID                 *int64     `json:"proxy_id"`
 	ProxyFallbackOriginID   *int64     `json:"proxy_fallback_origin_id"`
@@ -668,12 +674,14 @@ type UsageLog struct {
 	RateMultiplier            float64 `json:"rate_multiplier"`
 	LongContextBillingApplied bool    `json:"long_context_billing_applied"`
 
-	BillingType           int8   `json:"billing_type"`
-	UsageSource           int8   `json:"usage_source"`
-	UsageEstimationMethod string `json:"usage_estimation_method,omitempty"`
-	RequestType           string `json:"request_type"`
-	Stream                bool   `json:"stream"`
-	OpenAIWSMode          bool   `json:"openai_ws_mode"`
+	BillingType            int8    `json:"billing_type"`
+	UsageSource            int8    `json:"usage_source"`
+	UsageEstimationMethod  string  `json:"usage_estimation_method,omitempty"`
+	CacheStorageTokenHours float64 `json:"cache_storage_token_hours,omitempty"`
+	CacheStorageCost       float64 `json:"cache_storage_cost,omitempty"`
+	RequestType            string  `json:"request_type"`
+	Stream                 bool    `json:"stream"`
+	OpenAIWSMode           bool    `json:"openai_ws_mode"`
 	// NativeCompactionV2 is true only for requests positively identified at
 	// runtime as the native OpenAI remote compaction v2 wire.
 	NativeCompactionV2 bool `json:"native_compaction_v2"`

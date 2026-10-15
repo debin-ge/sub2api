@@ -37,7 +37,18 @@ func cnProviderOfficialQuotaProbeSupported(account *Account) bool {
 	var officialHosts []string
 	switch account.GetCodingPlanProvider() {
 	case PlatformKimi:
-		officialHosts = []string{"api.kimi.com"}
+		// Provider identity is independent of relay URLs; official quota probes
+		// still require the strict upstream host and path boundary.
+		protocols := []string{account.GetAPIProtocol()}
+		if account.IsAdaptiveAPIProtocol() {
+			protocols = []string{APIProtocolChatCompletions, APIProtocolAnthropic}
+		}
+		for _, protocol := range protocols {
+			if !isKimiCodingBaseURL(ResolveCompatibleGatewayBaseURL(account, protocol)) {
+				return false
+			}
+		}
+		officialHosts = []string{"api.kimi.com", "api.kimi.ai"}
 	case PlatformZhipu:
 		officialHosts = []string{"open.bigmodel.cn", "api.z.ai"}
 	case PlatformMiniMax:

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
@@ -69,12 +70,13 @@ type channelModelPricingRequest struct {
 	CacheReadPrice               *float64                   `json:"cache_read_price" binding:"omitempty,min=0"`
 	FastMultiplier               *float64                   `json:"fast_multiplier" binding:"omitempty,gt=0"`
 	FlexMultiplier               *float64                   `json:"flex_multiplier" binding:"omitempty,gt=0"`
-	MaxReasoningEffortMultiplier *float64                   `json:"max_reasoning_effort_multiplier" binding:"omitempty,gt=0"`
+	MaxReasoningEffortMultiplier *float64                   `json:"max_reasoning_effort_multiplier,omitempty" binding:"omitempty,gt=0"`
 	ImageInputPrice              *float64                   `json:"image_input_price" binding:"omitempty,min=0"`
 	ImageOutputPrice             *float64                   `json:"image_output_price" binding:"omitempty,min=0"`
 	PerRequestPrice              *float64                   `json:"per_request_price" binding:"omitempty,min=0"`
 	Intervals                    []pricingIntervalRequest   `json:"intervals"`
 	TimePricing                  *channelTimePricingRequest `json:"time_pricing"`
+	ReasoningEffortMultipliers   map[string]float64         `json:"reasoning_effort_multipliers"`
 }
 
 type channelTimePricingRequest struct {
@@ -150,7 +152,8 @@ type channelModelPricingResponse struct {
 	CacheReadPrice               *float64                    `json:"cache_read_price"`
 	FastMultiplier               *float64                    `json:"fast_multiplier"`
 	FlexMultiplier               *float64                    `json:"flex_multiplier"`
-	MaxReasoningEffortMultiplier *float64                    `json:"max_reasoning_effort_multiplier"`
+	ReasoningEffortMultipliers   map[string]float64          `json:"reasoning_effort_multipliers"`
+	MaxReasoningEffortMultiplier *float64                    `json:"max_reasoning_effort_multiplier,omitempty" binding:"omitempty,gt=0"`
 	ImageInputPrice              *float64                    `json:"image_input_price"`
 	ImageOutputPrice             *float64                    `json:"image_output_price"`
 	PerRequestPrice              *float64                    `json:"per_request_price"`
@@ -285,6 +288,7 @@ func pricingToResponse(p *service.ChannelModelPricing) channelModelPricingRespon
 		CacheReadPrice:               p.CacheReadPrice,
 		FastMultiplier:               p.FastMultiplier,
 		FlexMultiplier:               p.FlexMultiplier,
+		ReasoningEffortMultipliers:   p.ReasoningEffortMultipliers,
 		MaxReasoningEffortMultiplier: p.MaxReasoningEffortMultiplier,
 		ImageInputPrice:              p.ImageInputPrice,
 		ImageOutputPrice:             p.ImageOutputPrice,
@@ -377,11 +381,10 @@ func pricingRequestToService(reqs []channelModelPricingRequest, allowChannelMult
 				SortOrder:            iv.SortOrder,
 			})
 		}
-		var fastMultiplier, flexMultiplier, maxReasoningEffortMultiplier *float64
+		var fastMultiplier, flexMultiplier *float64
 		if allowChannelMultipliers {
 			fastMultiplier = r.FastMultiplier
 			flexMultiplier = r.FlexMultiplier
-			maxReasoningEffortMultiplier = r.MaxReasoningEffortMultiplier
 		}
 		result = append(result, service.ChannelModelPricing{
 			Platform:                     platform,
@@ -394,7 +397,8 @@ func pricingRequestToService(reqs []channelModelPricingRequest, allowChannelMult
 			CacheReadPrice:               r.CacheReadPrice,
 			FastMultiplier:               fastMultiplier,
 			FlexMultiplier:               flexMultiplier,
-			MaxReasoningEffortMultiplier: maxReasoningEffortMultiplier,
+			ReasoningEffortMultipliers:   r.ReasoningEffortMultipliers,
+			MaxReasoningEffortMultiplier: r.MaxReasoningEffortMultiplier,
 			ImageInputPrice:              r.ImageInputPrice,
 			ImageOutputPrice:             r.ImageOutputPrice,
 			PerRequestPrice:              r.PerRequestPrice,
@@ -649,34 +653,26 @@ func (h *ChannelHandler) GetModelDefaultPricing(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{
-		"found":                           true,
-		"input_price":                     pricing.InputPricePerToken,
-		"output_price":                    pricing.OutputPricePerToken,
-		"cache_write_price":               cacheWritePrice,
-		"cache_write_1h_price":            cacheWrite1hPrice,
-		"cache_read_price":                pricing.CacheReadPricePerToken,
-		"max_reasoning_effort_multiplier": pricing.MaxReasoningEffortMultiplier,
-		"image_input_price":               pricing.ImageInputPricePerToken,
-		"image_output_price":              pricing.ImageOutputPricePerToken,
+		"found":                        true,
+		"input_price":                  pricing.InputPricePerToken,
+		"output_price":                 pricing.OutputPricePerToken,
+		"cache_write_price":            cacheWritePrice,
+		"cache_write_1h_price":         cacheWrite1hPrice,
+		"cache_read_price":             pricing.CacheReadPricePerToken,
+		"reasoning_effort_multipliers": pricing.ReasoningEffortMultipliers,
+		"image_input_price":            pricing.ImageInputPricePerToken,
+		"image_output_price":           pricing.ImageOutputPricePerToken,
 	})
 }
 
-// platformToPricingCatalogProvider maps a channel platform name to the
-// provider string used by the configured pricing catalog's litellm_provider
-// field. kimi/zhipu 等平台在同步目录里通常没有条目，映射仍必须存在，这样
-// SyncPricingModels 会返回空列表而不是 UNSUPPORTED_PLATFORM。
-var platformToPricingCatalogProvider = map[string]string{
-	service.PlatformAnthropic:   "anthropic",
-	service.PlatformOpenAI:      "openai",
-	service.PlatformGemini:      "gemini",
-	service.PlatformAntigravity: "anthropic",
-	service.PlatformGrok:        "xai",
-	service.PlatformKimi:        "moonshot",
-	service.PlatformZhipu:       "zhipu",
-	service.PlatformGLM:         "zhipu",
-	service.PlatformDeepseek:    "deepseek",
-	service.PlatformMiniMax:     "minimax",
-	service.PlatformOpenCodeGo:  "opencode-go",
+// platformLiteLLMProvider maps a channel platform name to the corresponding
+// LiteLLM provider string used as the key in the pricing catalog (platform list).
+func platformLiteLLMProvider(platform string) (string, bool) {
+	spec, ok := domain.LookupPlatform(service.CanonicalCNPlatform(platform))
+	if !ok || spec.LiteLLMProvider == "" {
+		return "", false
+	}
+	return spec.LiteLLMProvider, true
 }
 
 // SyncPricingModels 返回配置化模型价格目录中指定平台的最新模型列表。
@@ -689,7 +685,7 @@ func (h *ChannelHandler) SyncPricingModels(c *gin.Context) {
 		return
 	}
 
-	provider, ok := platformToPricingCatalogProvider[platform]
+	provider, ok := platformLiteLLMProvider(platform)
 	if !ok {
 		response.ErrorFrom(c, infraerrors.BadRequest("UNSUPPORTED_PLATFORM",
 			fmt.Sprintf("unsupported platform: %s", platform)).

@@ -26,7 +26,7 @@ func (r *dashboardUsageRepoLimitProbe) GetUserUsageTrend(
 	_, _ time.Time,
 	_ string,
 	_ string,
-	limit int,
+	limit int, _ string,
 ) ([]usagestats.UserUsageTrendPoint, error) {
 	r.lastUsersLimit.Store(int64(limit))
 	return []usagestats.UserUsageTrendPoint{}, nil

@@ -61,7 +61,7 @@ func (s *BillingCacheService) CheckVideoAdmission(ctx context.Context, key *APIK
 		if err != nil || data == nil {
 			return ErrBillingServiceUnavailable
 		}
-		if err := s.evaluateRateLimits(ctx, key, data.Usage5h, data.Usage1d, data.Usage7d, data.Window5hStart, data.Window1dStart, data.Window7dStart); err != nil {
+		if err := s.evaluateRateLimits(ctx, key, data.Usage5h, data.Usage1d, data.Usage7d, data.Window5hStart, data.Window1dStart, data.Window7dStart, 0); err != nil {
 			return err
 		}
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -22,6 +23,7 @@ import (
 // 字段要覆盖 total_cost 的每一个加数（见 CalculateCost 里 TotalCost 的求和式），
 // 少写一个，写回后 usage_logs 上的分项之和就对不上总额，对账时会当成数据损坏。
 type SettlementCost struct {
+	CacheStorageCost  float64
 	InputCost         float64
 	ImageInputCost    float64
 	OutputCost        float64
@@ -42,6 +44,7 @@ func settlementCostFromBreakdown(cost *CostBreakdown) SettlementCost {
 		mode = string(BillingModeToken)
 	}
 	return SettlementCost{
+		CacheStorageCost:  cost.CacheStorageCost,
 		InputCost:         cost.InputCost,
 		ImageInputCost:    cost.ImageInputCost,
 		OutputCost:        cost.OutputCost,
@@ -358,7 +361,14 @@ func (s *BillingRecoveryService) RunOnce(ctx context.Context) (BillingRecoveryRe
 		}
 
 		settlement := settlementCostFromBreakdown(cost)
-		settlement.AccountStatsCost = s.recomputeAccountStatsCost(ctx, log, model, cost.TotalCost, account)
+		settlement.AccountStatsCost = s.recomputeAccountStatsCost(ctx, log, model, cost.TotalCost-cost.CacheStorageCost, account)
+		if log.CacheStorageTokenHours > 0 {
+			if log.TotalTokens() == 0 {
+				settlement.AccountStatsCost = nil
+			} else if settlement.AccountStatsCost != nil {
+				*settlement.AccountStatsCost += cost.CacheStorageCost
+			}
+		}
 		if report.Mode == config.PricingGuardModeEnforce {
 			updated, err := s.usageLogRepo.MarkSettlementRecovered(ctx, log.ID, settlement)
 			if err != nil {
@@ -424,6 +434,9 @@ func (s *BillingRecoveryService) recomputeAccountStatsCost(
 		totalCost,
 		stringOrEmpty(log.ServiceTier),
 		accountPlatform,
+		log.CreatedAt,
+		stringOrEmpty(log.ReasoningEffort),
+		accountStatsLongContextPricingEnabled(openAILongContextBillingGate(account)) && !openAISubscriptionLongContextExempt(account, &OpenAIForwardResult{Model: log.RequestedModel, UpstreamModel: stringOrEmpty(log.UpstreamModel)}),
 	)
 }
 
@@ -498,6 +511,12 @@ func (s *BillingRecoveryService) recoverableBillingModel(
 		return "", false
 	}
 
+	if log.CacheStorageTokenHours > 0 && log.TotalTokens() == 0 {
+		gateway := &GatewayService{billingService: s.billingService}
+		result := &ForwardResult{Model: log.RequestedModel, UpstreamModel: stringOrEmpty(log.UpstreamModel), CacheStorageTokenHours: log.CacheStorageTokenHours}
+		price, known := gateway.cacheStoragePrice(result, log.Model, log.CreatedAt)
+		return log.Model, known && price >= 0 && !math.IsNaN(price) && !math.IsInf(price, 0)
+	}
 	kind, _, _ := recoveryBillingKindAndTier(log)
 	upstreamModel := stringOrEmpty(log.UpstreamModel)
 	if kind == BillingKindToken && upstreamModel != "" {
@@ -809,7 +828,38 @@ func (s *BillingRecoveryService) recomputeCost(
 	apiKey *APIKey,
 	account *Account,
 ) (*CostBreakdown, error) {
+	gateway := &GatewayService{billingService: s.billingService}
+	result := &ForwardResult{Model: log.RequestedModel, UpstreamModel: stringOrEmpty(log.UpstreamModel), CacheStorageTokenHours: log.CacheStorageTokenHours}
+	storage := gateway.cacheStorageCost(result, billingModel, log.CreatedAt)
+	storagePrice, storagePriced := gateway.cacheStoragePrice(result, billingModel, log.CreatedAt)
+	if log.CacheStorageTokenHours > 0 && (!storagePriced || storagePrice < 0 || math.IsNaN(storagePrice) || math.IsInf(storagePrice, 0) || math.IsNaN(storage) || math.IsInf(storage, 0)) {
+		return nil, ErrModelPricingUnavailable
+	}
+	var cost *CostBreakdown
+	if log.CacheStorageTokenHours > 0 && log.TotalTokens() == 0 {
+		cost = &CostBreakdown{BillingMode: string(BillingModeToken)}
+	} else {
+		var err error
+		cost, err = s.recomputeBaseCost(ctx, log, billingModel, apiKey, account)
+		if err != nil {
+			return nil, err
+		}
+	}
+	cost.CacheStorageCost = storage
+	cost.TotalCost += storage
+	cost.ActualCost += storage * math.Max(0, log.RateMultiplier)
+	return cost, nil
+}
+
+func (s *BillingRecoveryService) recomputeBaseCost(
+	ctx context.Context,
+	log *UsageLog,
+	billingModel string,
+	apiKey *APIKey,
+	account *Account,
+) (*CostBreakdown, error) {
 	platforms := pricingPlatformCandidates(apiKey, account)
+	modelLongContextExempt := openAISubscriptionLongContextExempt(account, &OpenAIForwardResult{Model: log.RequestedModel, UpstreamModel: stringOrEmpty(log.UpstreamModel)})
 	multiplier := log.RateMultiplier
 	if multiplier < 0 {
 		multiplier = 0
@@ -834,16 +884,17 @@ func (s *BillingRecoveryService) recomputeCost(
 		}
 		if resolved := s.resolveRecoveryChannelMediaPricing(ctx, billingModel, log.GroupID); resolved != nil {
 			cost, err := s.billingService.CalculateCostUnified(CostInput{
-				Ctx:            ctx,
-				Model:          billingModel,
-				GroupID:        log.GroupID,
-				Group:          recoveryPricingGroup(log, apiKey),
-				RequestCount:   log.VideoCount,
-				SizeTier:       resolution,
-				RateMultiplier: multiplier,
-				PricingAt:      log.CreatedAt,
-				Resolver:       s.resolver,
-				Resolved:       resolved,
+				Ctx:             ctx,
+				Model:           billingModel,
+				GroupID:         log.GroupID,
+				Group:           recoveryPricingGroup(log, apiKey),
+				RequestCount:    log.VideoCount,
+				SizeTier:        resolution,
+				RateMultiplier:  multiplier,
+				PricingAt:       log.CreatedAt,
+				ReasoningEffort: stringOrEmpty(log.ReasoningEffort),
+				Resolver:        s.resolver,
+				Resolved:        resolved,
 			})
 			if err == nil {
 				cost.BillingMode = string(BillingModeVideo)
@@ -865,16 +916,17 @@ func (s *BillingRecoveryService) recomputeCost(
 		}
 		if resolved := s.resolveRecoveryChannelMediaPricing(ctx, billingModel, log.GroupID); resolved != nil {
 			cost, err := s.billingService.CalculateCostUnified(CostInput{
-				Ctx:            ctx,
-				Model:          billingModel,
-				GroupID:        log.GroupID,
-				Group:          recoveryPricingGroup(log, apiKey),
-				RequestCount:   log.ImageCount,
-				SizeTier:       sizeTier,
-				RateMultiplier: multiplier,
-				PricingAt:      log.CreatedAt,
-				Resolver:       s.resolver,
-				Resolved:       resolved,
+				Ctx:             ctx,
+				Model:           billingModel,
+				GroupID:         log.GroupID,
+				Group:           recoveryPricingGroup(log, apiKey),
+				RequestCount:    log.ImageCount,
+				SizeTier:        sizeTier,
+				RateMultiplier:  multiplier,
+				PricingAt:       log.CreatedAt,
+				ReasoningEffort: stringOrEmpty(log.ReasoningEffort),
+				Resolver:        s.resolver,
+				Resolved:        resolved,
 			})
 			if err == nil {
 				return cost, nil
@@ -913,18 +965,20 @@ func (s *BillingRecoveryService) recomputeCost(
 		}
 		longContextBillingEnabled := true
 		return s.billingService.CalculateCostUnified(CostInput{
-			Ctx:                       ctx,
-			Model:                     billingModel,
-			GroupID:                   log.GroupID,
-			Group:                     recoveryPricingGroup(log, apiKey),
-			Tokens:                    tokens,
-			RequestCount:              1,
-			RateMultiplier:            multiplier,
-			PricingAt:                 log.CreatedAt,
-			ServiceTier:               stringOrEmpty(log.ServiceTier),
-			Resolver:                  resolver,
-			Resolved:                  resolved,
-			LongContextBillingEnabled: &longContextBillingEnabled,
+			Ctx:                            ctx,
+			Model:                          billingModel,
+			GroupID:                        log.GroupID,
+			Group:                          recoveryPricingGroup(log, apiKey),
+			Tokens:                         tokens,
+			RequestCount:                   1,
+			RateMultiplier:                 multiplier,
+			PricingAt:                      log.CreatedAt,
+			ServiceTier:                    stringOrEmpty(log.ServiceTier),
+			ReasoningEffort:                stringOrEmpty(log.ReasoningEffort),
+			Resolver:                       resolver,
+			Resolved:                       resolved,
+			LongContextBillingEnabled:      &longContextBillingEnabled,
+			DisableModelLongContextPricing: modelLongContextExempt,
 		})
 	}
 	if s.resolver != nil && log.GroupID != nil {
@@ -937,24 +991,26 @@ func (s *BillingRecoveryService) recomputeCost(
 		if err != nil {
 			return nil, err
 		}
-		longContextBillingEnabled := true
+		longContextBillingEnabled := usageLongContextPricingEnabled(recoveryPricingGroup(log, apiKey), openAILongContextBillingGate(account))
 		return s.billingService.CalculateCostUnified(CostInput{
-			Ctx:                       ctx,
-			Model:                     billingModel,
-			GroupID:                   log.GroupID,
-			Group:                     recoveryPricingGroup(log, apiKey),
-			Tokens:                    tokens,
-			RequestCount:              1,
-			SizeTier:                  stringOrEmpty(log.BillingTier),
-			RateMultiplier:            multiplier,
-			PricingAt:                 log.CreatedAt,
-			ServiceTier:               stringOrEmpty(log.ServiceTier),
-			Resolver:                  s.resolver,
-			Resolved:                  resolved,
-			LongContextBillingEnabled: &longContextBillingEnabled,
+			Ctx:                            ctx,
+			Model:                          billingModel,
+			GroupID:                        log.GroupID,
+			Group:                          recoveryPricingGroup(log, apiKey),
+			Tokens:                         tokens,
+			RequestCount:                   1,
+			SizeTier:                       stringOrEmpty(log.BillingTier),
+			RateMultiplier:                 multiplier,
+			PricingAt:                      log.CreatedAt,
+			ServiceTier:                    stringOrEmpty(log.ServiceTier),
+			ReasoningEffort:                stringOrEmpty(log.ReasoningEffort),
+			Resolver:                       s.resolver,
+			Resolved:                       resolved,
+			LongContextBillingEnabled:      &longContextBillingEnabled,
+			DisableModelLongContextPricing: modelLongContextExempt,
 		})
 	}
-	pricing, err := s.billingService.GetModelPricingStrictForPlatforms(platforms, billingModel)
+	pricing, err := s.billingService.getModelPricingForPlatforms(platforms, billingModel, false, log.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -964,11 +1020,12 @@ func (s *BillingRecoveryService) recomputeCost(
 		tokens,
 		multiplier,
 		stringOrEmpty(log.ServiceTier),
-		true,
+		usageLongContextPricingEnabled(recoveryPricingGroup(log, apiKey), openAILongContextBillingGate(account)) && !modelLongContextExempt,
 	)
 	if err != nil {
 		return nil, err
 	}
+	applyCostBreakdownMultiplier(cost, maxReasoningEffortBillingMultiplier(billingModel, stringOrEmpty(log.ReasoningEffort), pricing))
 	cost.BillingMode = string(BillingModeToken)
 	return cost, nil
 }

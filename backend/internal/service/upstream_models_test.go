@@ -364,7 +364,7 @@ func TestUpstreamModelDiscoverer_AntigravityUpstreamUsesConfiguredCompatibleEndp
 	require.Equal(t, "application/json", upstream.req.Header.Get("Accept"))
 	require.Equal(t, "2023-06-01", upstream.req.Header.Get("anthropic-version"))
 	require.Equal(t, claude.APIKeyBetaHeader, upstream.req.Header.Get("anthropic-beta"))
-	require.Equal(t, claude.DefaultHeaders["User-Agent"], upstream.req.Header.Get("User-Agent"))
+	require.Equal(t, claude.DefaultHeaders()["User-Agent"], upstream.req.Header.Get("User-Agent"))
 	// Header overrides are deliberately unavailable to AccountTypeUpstream, matching ForwardUpstream.
 	require.Empty(t, upstream.req.Header.Get("x-test-marker"))
 	require.Equal(t, "http://proxy.test:3128", upstream.proxyURL)

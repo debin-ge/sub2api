@@ -17,6 +17,7 @@ import (
 
 const (
 	EndpointMessages             = "/v1/messages"
+	EndpointSystemOne            = "/v1/systemone"
 	EndpointChatCompletions      = "/v1/chat/completions"
 	EndpointEmbeddings           = "/v1/embeddings"
 	EndpointAlphaSearch          = "/v1/alpha/search"
@@ -32,8 +33,10 @@ const (
 	EndpointVideosExtensions     = "/v1/videos/extensions"
 	EndpointVideos               = "/v1/videos"
 	// EndpointVideoTasks 是五家托管视频平台的 Ark 任务协议入口（含 /v3、/v1、无前缀别名）。
-	EndpointVideoTasks   = "/api/v3/contents/generations/tasks"
-	EndpointGeminiModels = "/v1beta/models"
+	EndpointVideoTasks           = "/api/v3/contents/generations/tasks"
+	EndpointGeminiModels         = "/v1beta/models"
+	EndpointSeedanceTasks        = EndpointVideoTasks
+	EndpointGeminiCachedContents = "/v1beta/cachedContents"
 )
 
 const EndpointAntigravityGenerateContent = "/v1internal:streamGenerateContent"
@@ -55,6 +58,34 @@ const (
 //	"/v1/chat/completions"       → "/v1/chat/completions"
 //	"/openai/v1/responses/foo"   → "/v1/responses"
 //	"/v1beta/models/gemini:gen"  → "/v1beta/models"
+//	"/v1beta/cachedContents/abc" → "/v1beta/cachedContents"
+//
+// The OpenAI Responses API is also exposed via a few bare/alias
+// routes that do not carry a "/v1/" prefix (top-level bare route and
+// the Codex direct route). "/responses/compact" (and "/backend-api/
+// codex/responses/compact") is a distinct client endpoint — the
+// "compact" client — and is normalized to its OWN canonical inbound
+// endpoint, EndpointResponsesCompact, rather than being folded into
+// the root Responses endpoint. Any other subpath under the bare/alias
+// roots (i.e. not "compact" itself or nested under it) remains a
+// subresource suffix of the root Responses endpoint:
+//
+//	"/v1/responses/compact"                         → EndpointResponsesCompact
+//	"/v1/responses/compact/detail"                  → EndpointResponsesCompact
+//	"/openai/v1/responses/compact"                  → EndpointResponsesCompact
+//	"/openai/v1/responses/compact/detail"           → EndpointResponsesCompact
+//	"/responses/compact"                            → EndpointResponsesCompact
+//	"/responses/compact/detail"                     → EndpointResponsesCompact
+//	"/backend-api/codex/responses/compact"          → EndpointResponsesCompact
+//	"/backend-api/codex/responses/compact/detail"   → EndpointResponsesCompact
+//	"/v1/responses"                                 → EndpointResponses
+//	"/openai/v1/responses"                          → EndpointResponses
+//	"/responses"                                    → EndpointResponses
+//	"/backend-api/codex/responses"                  → EndpointResponses
+//
+// The compact check MUST be evaluated before the root Responses check,
+// otherwise "/v1/responses" (a prefix of "/v1/responses/compact")
+// would erroneously match first.
 func NormalizeInboundEndpoint(path string) string {
 	path = strings.TrimSpace(path)
 	switch {
@@ -70,6 +101,8 @@ func NormalizeInboundEndpoint(path string) string {
 		return EndpointChatCompletions
 	case strings.Contains(path, EndpointMessages):
 		return EndpointMessages
+	case strings.Contains(path, EndpointSystemOne):
+		return EndpointSystemOne
 	case strings.Contains(path, EndpointImagesGenerations) || strings.Contains(path, "/images/generations"):
 		return EndpointImagesGenerations
 	case strings.Contains(path, EndpointImagesEdits) || strings.Contains(path, "/images/edits"):
@@ -92,6 +125,8 @@ func NormalizeInboundEndpoint(path string) string {
 		return EndpointResponses
 	case strings.Contains(path, EndpointGeminiModels):
 		return EndpointGeminiModels
+	case strings.Contains(path, EndpointGeminiCachedContents):
+		return EndpointGeminiCachedContents
 	default:
 		return path
 	}
@@ -171,7 +206,7 @@ func isBareOrSubpathOf(path, root string) bool {
 //     retain their paths. Grok raw Chat requests override this through the
 //     forwarding result consumed by resolveOpenAIUpstreamEndpoint.
 //   - Anthropic  → /v1/messages
-//   - Gemini     → /v1beta/models
+//   - Gemini     → /v1beta/models（显式缓存管理接口保留 /v1beta/cachedContents）
 //   - Antigravity → /v1/messages (Claude) or gemini (Gemini)
 //   - Antigravity routes may target either Claude or Gemini, so the
 //     inbound endpoint is used to distinguish.
@@ -196,7 +231,13 @@ func DeriveUpstreamEndpoint(inbound, rawRequestPath, platform string) string {
 	case service.PlatformAnthropic:
 		return EndpointMessages
 
+	case service.PlatformTypeSafe:
+		return EndpointSystemOne
+
 	case service.PlatformGemini:
+		if inbound == EndpointGeminiCachedContents {
+			return EndpointGeminiCachedContents
+		}
 		return EndpointGeminiModels
 
 	case service.PlatformAntigravity:

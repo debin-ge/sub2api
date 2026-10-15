@@ -76,6 +76,10 @@ const (
 	FieldAccountRateMultiplier = "account_rate_multiplier"
 	// FieldBillingType holds the string denoting the billing_type field in the database.
 	FieldBillingType = "billing_type"
+	// FieldCacheStorageTokenHours holds the string denoting the cache_storage_token_hours field in the database.
+	FieldCacheStorageTokenHours = "cache_storage_token_hours"
+	// FieldCacheStorageCost holds the string denoting the cache_storage_cost field in the database.
+	FieldCacheStorageCost = "cache_storage_cost"
 	// FieldUsageSource holds the string denoting the usage_source field in the database.
 	FieldUsageSource = "usage_source"
 	// FieldUsageEstimationMethod holds the string denoting the usage_estimation_method field in the database.
@@ -197,6 +201,8 @@ var Columns = []string{
 	FieldLongContextBillingApplied,
 	FieldAccountRateMultiplier,
 	FieldBillingType,
+	FieldCacheStorageTokenHours,
+	FieldCacheStorageCost,
 	FieldUsageSource,
 	FieldUsageEstimationMethod,
 	FieldBillingState,
@@ -275,6 +281,10 @@ var (
 	DefaultLongContextBillingApplied bool
 	// DefaultBillingType holds the default value on creation for the "billing_type" field.
 	DefaultBillingType int8
+	// DefaultCacheStorageTokenHours holds the default value on creation for the "cache_storage_token_hours" field.
+	DefaultCacheStorageTokenHours float64
+	// DefaultCacheStorageCost holds the default value on creation for the "cache_storage_cost" field.
+	DefaultCacheStorageCost float64
 	// DefaultUsageSource holds the default value on creation for the "usage_source" field.
 	DefaultUsageSource int8
 	// UsageEstimationMethodValidator is a validator for the "usage_estimation_method" field. It is called by the builders before save.
@@ -468,6 +478,16 @@ func ByAccountRateMultiplier(opts ...sql.OrderTermOption) OrderOption {
 // ByBillingType orders the results by the billing_type field.
 func ByBillingType(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldBillingType, opts...).ToFunc()
+}
+
+// ByCacheStorageTokenHours orders the results by the cache_storage_token_hours field.
+func ByCacheStorageTokenHours(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCacheStorageTokenHours, opts...).ToFunc()
+}
+
+// ByCacheStorageCost orders the results by the cache_storage_cost field.
+func ByCacheStorageCost(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCacheStorageCost, opts...).ToFunc()
 }
 
 // ByUsageSource orders the results by the usage_source field.

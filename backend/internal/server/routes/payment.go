@@ -1,12 +1,25 @@
 package routes
 
 import (
+	"time"
+
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	"github.com/Wei-Shaw/sub2api/internal/handler/admin"
+	ratelimit "github.com/Wei-Shaw/sub2api/internal/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
+)
+
+// publicOrderVerifyRateLimit caps anonymous legacy out_trade_no lookups per
+// client IP. The payment result page polls at most a handful of times per
+// order, so this leaves ample headroom for real users while making
+// out_trade_no enumeration impractical.
+const (
+	publicOrderVerifyRateLimit       = 20
+	publicOrderVerifyRateLimitWindow = time.Minute
 )
 
 // RegisterPaymentRoutes registers all payment-related routes:
@@ -21,6 +34,7 @@ func RegisterPaymentRoutes(
 	auditLog middleware.AuditLogMiddleware,
 	settingService *service.SettingService,
 	panelRateLimiter *middleware.PanelRateLimiter,
+	redisClient *redis.Client,
 ) {
 	// --- User-facing payment endpoints (authenticated) ---
 	authenticated := v1.Group("/payment")
@@ -50,21 +64,16 @@ func RegisterPaymentRoutes(
 	// Signed resume-token recovery is the preferred public lookup path.
 	// The legacy anonymous out_trade_no verify endpoint remains available as a
 	// persisted-state compatibility path for staggered upgrades.
-	//
-	// SEC-018：这两个端点匿名可达且每次都查库（verify 还能按 out_trade_no 枚举订单），
-	// 必须带按客户端 IP 的兜底限流。PanelRateLimiter.PublicIP 走系统设置里的公开接口
-	// RPM（Redis 异常 fail-open，反代内网地址跳过）。
-	// TODO(SEC-018): /orders/verify 还应叠加一层固定阈值、Redis 故障 fail-close 的
-	// internal/middleware.RateLimiter.LimitWithOptions("payment-public-verify", 30, time.Minute,
-	// RateLimitOptions{FailureMode: RateLimitFailClose})，与 routes/auth.go 的注册/登录入口
-	// 一致；这需要 RegisterPaymentRoutes 新增 *internal/middleware.RateLimiter（或 *redis.Client）
-	// 参数并同步修改 server/router.go 调用点。
-	// 请求体同样只包含 out_trade_no / resume_token，沿用匿名接口 64KiB 上限（SEC-012）。
+	// Keep anonymous body limits and panel IP controls, plus the upstream
+	// fixed verify limiter (fail-open during Redis outages).
+	publicRateLimiter := ratelimit.NewRateLimiter(redisClient)
 	public := v1.Group("/payment/public")
 	public.Use(publicBodyLimit(publicJSONBodyLimit)...)
 	public.Use(panelRateLimiter.PublicIP())
 	{
-		public.POST("/orders/verify", paymentHandler.VerifyOrderPublic)
+		public.POST("/orders/verify",
+			publicRateLimiter.Limit("payment-public-order-verify", publicOrderVerifyRateLimit, publicOrderVerifyRateLimitWindow),
+			paymentHandler.VerifyOrderPublic)
 		public.POST("/orders/resolve", paymentHandler.ResolveOrderPublicByResumeToken)
 	}
 

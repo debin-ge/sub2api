@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"golang.org/x/sync/singleflight"
 )
@@ -28,45 +29,8 @@ const (
 	modelCatalogFallbackOther         = "other"
 )
 
-var modelCatalogPlatforms = [...]string{
-	PlatformAnthropic,
-	PlatformOpenAI,
-	PlatformGemini,
-	PlatformAntigravity,
-	PlatformGrok,
-	PlatformMiniMax,
-	PlatformZhipu,
-	PlatformKimi,
-	PlatformDeepSeek,
-	PlatformWindsurf,
-	PlatformOpenCodeGo,
-	PlatformByteDance,
-	PlatformFal,
-	PlatformWaveSpeed,
-	PlatformRunware,
-	PlatformFlova,
-	PlatformComposite,
-	modelCatalogPlatformUnknown,
-}
-
-var compositeModelCatalogPlatforms = [...]string{
-	PlatformAnthropic,
-	PlatformGemini,
-	PlatformOpenAI,
-	PlatformAntigravity,
-	PlatformGrok,
-	PlatformKimi,
-	PlatformZhipu,
-	PlatformDeepSeek,
-	PlatformMiniMax,
-	PlatformWindsurf,
-	PlatformOpenCodeGo,
-	PlatformByteDance,
-	PlatformFal,
-	PlatformWaveSpeed,
-	PlatformRunware,
-	PlatformFlova,
-}
+var modelCatalogPlatforms = append(domain.ConcretePlatformIDs(), PlatformComposite, modelCatalogPlatformUnknown)
+var compositeModelCatalogPlatforms = domain.CompositePrecedencePlatformIDs()
 
 var modelCatalogFallbackReasons = [...]string{
 	modelCatalogFallbackUnsupported,
@@ -538,7 +502,13 @@ func (s *ModelCatalogService) ListForPlatform(ctx context.Context, groupID *int6
 		accounts []Account
 		err      error
 	)
-	if groupID != nil {
+	if platform == PlatformGemini {
+		if groupID != nil {
+			accounts, err = s.accountRepo.ListSchedulableByGroupID(ctx, *groupID)
+		} else {
+			accounts, err = s.accountRepo.ListSchedulable(ctx)
+		}
+	} else if groupID != nil {
 		accounts, err = s.accountRepo.ListSchedulableByGroupIDAndPlatform(ctx, *groupID, platform)
 	} else {
 		accounts, err = s.accountRepo.ListSchedulableByPlatform(ctx, platform)
@@ -553,14 +523,18 @@ func (s *ModelCatalogService) listFromAccounts(ctx context.Context, accounts []A
 	models := make([]string, 0)
 	for i := range accounts {
 		account := &accounts[i]
-		if account.Status != StatusActive || !account.Schedulable || account.Platform != platform {
+		if account.Status != StatusActive || !account.Schedulable || (account.Platform != platform && !mixedListingAccountAllowed(platform, account)) {
 			continue
 		}
 		accountModels, err := s.ListForAccount(ctx, account, waitForLive)
 		if err != nil {
 			continue
 		}
-		models = append(models, accountModels...)
+		for _, model := range accountModels {
+			if account.Platform == platform || mixedListingModelAllowed(platform, model) {
+				models = append(models, model)
+			}
+		}
 	}
 	return normalizeCatalogModelIDs(models), nil
 }
@@ -634,19 +608,28 @@ func (s *ModelCatalogService) listGroupCandidatesWithMemo(ctx context.Context, g
 		}
 		return models, group, nil
 	}
-	accounts, err := s.accountRepo.ListSchedulableByGroupIDAndPlatform(ctx, groupID, platform)
+	var accounts []Account
+	if platform == PlatformGemini {
+		accounts, err = s.accountRepo.ListSchedulableByGroupID(ctx, groupID)
+	} else {
+		accounts, err = s.accountRepo.ListSchedulableByGroupIDAndPlatform(ctx, groupID, platform)
+	}
 	if err != nil {
 		return nil, nil, err
 	}
 	models := make([]string, 0)
 	for i := range accounts {
 		account := &accounts[i]
-		if account.Status != StatusActive || !account.Schedulable || account.Platform != platform {
+		if account.Status != StatusActive || !account.Schedulable || (account.Platform != platform && !mixedListingAccountAllowed(platform, account)) {
 			continue
 		}
 		resolved, resolveErr := s.resolveAccountOnce(ctx, memo, account, waitForLive)
 		if resolveErr == nil {
-			models = append(models, resolved...)
+			for _, model := range resolved {
+				if account.Platform == platform || mixedListingModelAllowed(platform, model) {
+					models = append(models, model)
+				}
+			}
 		}
 	}
 	if s.channelService != nil {
@@ -801,7 +784,7 @@ func (s *ModelCatalogService) listForGroupPassive(
 	}
 	var accounts []Account
 	var err error
-	if group.Platform == PlatformComposite {
+	if group.Platform == PlatformComposite || group.Platform == PlatformGemini {
 		accounts, err = s.accountRepo.ListSchedulableByGroupID(ctx, group.ID)
 	} else {
 		accounts, err = s.accountRepo.ListSchedulableByGroupIDAndPlatform(ctx, group.ID, group.Platform)
@@ -819,7 +802,7 @@ func (s *ModelCatalogService) listForGroupPassive(
 			if !isCompositeCatalogPlatform(account.Platform) {
 				continue
 			}
-		} else if account.Platform != group.Platform {
+		} else if account.Platform != group.Platform && !mixedListingAccountAllowed(group.Platform, account) {
 			continue
 		}
 		models, ok := memo[account.ID]
@@ -827,7 +810,11 @@ func (s *ModelCatalogService) listForGroupPassive(
 			models = s.listForAccountPassive(account)
 			memo[account.ID] = cloneStringSlice(models)
 		}
-		candidates = append(candidates, models...)
+		for _, model := range models {
+			if group.Platform == PlatformComposite || account.Platform == group.Platform || mixedListingModelAllowed(group.Platform, model) {
+				candidates = append(candidates, model)
+			}
+		}
 	}
 	if s.channelService != nil {
 		channel, channelErr := s.channelService.GetChannelForGroup(ctx, group.ID)
@@ -922,7 +909,7 @@ func configuredAccountModelPatterns(account *Account) []string {
 	}
 	// 透传账号的 model_mapping 是惰性的，不能拿它的 key 当对外模型清单：
 	// 实时发现失败时应回落到 provider 默认型号，而不是账号里残留的旧映射。
-	if account.IsProviderPassthroughEnabled() {
+	if account.IsProviderPassthroughEnabled() || account.IsOpenAIPassthroughEnabled() || account.IsAnthropicAPIKeyPassthroughEnabled() {
 		return nil
 	}
 

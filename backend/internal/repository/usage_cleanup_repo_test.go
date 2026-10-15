@@ -592,6 +592,12 @@ func TestDashboardAggregationCleanupUsageLogsSkipsPartitionWithPendingSettlement
 	mock.ExpectExec(`DROP TABLE IF EXISTS "usage_logs_202502"`).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectCommit()
+	// Retained pending rows force an exact boundary cleanup; settled rows can
+	// be removed without discarding the pending settlement.
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT id FROM usage_group_rollup_state.*FOR UPDATE`).WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1))
+	mock.ExpectQuery(`(?s)SELECT tableoid, ctid.*billing_state <> \$3.*RETURNING created_at`).WithArgs(cutoff, usageLogsCleanupBatchSize, int16(service.BillingStatePricingUnavailable)).WillReturnRows(sqlmock.NewRows([]string{"created_at"}))
+	mock.ExpectCommit()
 	expectGroupUsageRollupSyncAlreadyClosed(mock, todayStart)
 
 	err := repo.CleanupUsageLogs(context.Background(), cutoff)

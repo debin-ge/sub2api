@@ -644,6 +644,48 @@ func (_u *UsageLogUpdate) AddBillingType(v int8) *UsageLogUpdate {
 	return _u
 }
 
+// SetCacheStorageTokenHours sets the "cache_storage_token_hours" field.
+func (_u *UsageLogUpdate) SetCacheStorageTokenHours(v float64) *UsageLogUpdate {
+	_u.mutation.ResetCacheStorageTokenHours()
+	_u.mutation.SetCacheStorageTokenHours(v)
+	return _u
+}
+
+// SetNillableCacheStorageTokenHours sets the "cache_storage_token_hours" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableCacheStorageTokenHours(v *float64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetCacheStorageTokenHours(*v)
+	}
+	return _u
+}
+
+// AddCacheStorageTokenHours adds value to the "cache_storage_token_hours" field.
+func (_u *UsageLogUpdate) AddCacheStorageTokenHours(v float64) *UsageLogUpdate {
+	_u.mutation.AddCacheStorageTokenHours(v)
+	return _u
+}
+
+// SetCacheStorageCost sets the "cache_storage_cost" field.
+func (_u *UsageLogUpdate) SetCacheStorageCost(v float64) *UsageLogUpdate {
+	_u.mutation.ResetCacheStorageCost()
+	_u.mutation.SetCacheStorageCost(v)
+	return _u
+}
+
+// SetNillableCacheStorageCost sets the "cache_storage_cost" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableCacheStorageCost(v *float64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetCacheStorageCost(*v)
+	}
+	return _u
+}
+
+// AddCacheStorageCost adds value to the "cache_storage_cost" field.
+func (_u *UsageLogUpdate) AddCacheStorageCost(v float64) *UsageLogUpdate {
+	_u.mutation.AddCacheStorageCost(v)
+	return _u
+}
+
 // SetUsageSource sets the "usage_source" field.
 func (_u *UsageLogUpdate) SetUsageSource(v int8) *UsageLogUpdate {
 	_u.mutation.ResetUsageSource()
@@ -1354,6 +1396,18 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.AddedBillingType(); ok {
 		_spec.AddField(usagelog.FieldBillingType, field.TypeInt8, value)
+	}
+	if value, ok := _u.mutation.CacheStorageTokenHours(); ok {
+		_spec.SetField(usagelog.FieldCacheStorageTokenHours, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedCacheStorageTokenHours(); ok {
+		_spec.AddField(usagelog.FieldCacheStorageTokenHours, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.CacheStorageCost(); ok {
+		_spec.SetField(usagelog.FieldCacheStorageCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedCacheStorageCost(); ok {
+		_spec.AddField(usagelog.FieldCacheStorageCost, field.TypeFloat64, value)
 	}
 	if value, ok := _u.mutation.UsageSource(); ok {
 		_spec.SetField(usagelog.FieldUsageSource, field.TypeInt8, value)
@@ -2243,6 +2297,48 @@ func (_u *UsageLogUpdateOne) AddBillingType(v int8) *UsageLogUpdateOne {
 	return _u
 }
 
+// SetCacheStorageTokenHours sets the "cache_storage_token_hours" field.
+func (_u *UsageLogUpdateOne) SetCacheStorageTokenHours(v float64) *UsageLogUpdateOne {
+	_u.mutation.ResetCacheStorageTokenHours()
+	_u.mutation.SetCacheStorageTokenHours(v)
+	return _u
+}
+
+// SetNillableCacheStorageTokenHours sets the "cache_storage_token_hours" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableCacheStorageTokenHours(v *float64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetCacheStorageTokenHours(*v)
+	}
+	return _u
+}
+
+// AddCacheStorageTokenHours adds value to the "cache_storage_token_hours" field.
+func (_u *UsageLogUpdateOne) AddCacheStorageTokenHours(v float64) *UsageLogUpdateOne {
+	_u.mutation.AddCacheStorageTokenHours(v)
+	return _u
+}
+
+// SetCacheStorageCost sets the "cache_storage_cost" field.
+func (_u *UsageLogUpdateOne) SetCacheStorageCost(v float64) *UsageLogUpdateOne {
+	_u.mutation.ResetCacheStorageCost()
+	_u.mutation.SetCacheStorageCost(v)
+	return _u
+}
+
+// SetNillableCacheStorageCost sets the "cache_storage_cost" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableCacheStorageCost(v *float64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetCacheStorageCost(*v)
+	}
+	return _u
+}
+
+// AddCacheStorageCost adds value to the "cache_storage_cost" field.
+func (_u *UsageLogUpdateOne) AddCacheStorageCost(v float64) *UsageLogUpdateOne {
+	_u.mutation.AddCacheStorageCost(v)
+	return _u
+}
+
 // SetUsageSource sets the "usage_source" field.
 func (_u *UsageLogUpdateOne) SetUsageSource(v int8) *UsageLogUpdateOne {
 	_u.mutation.ResetUsageSource()
@@ -2983,6 +3079,18 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	}
 	if value, ok := _u.mutation.AddedBillingType(); ok {
 		_spec.AddField(usagelog.FieldBillingType, field.TypeInt8, value)
+	}
+	if value, ok := _u.mutation.CacheStorageTokenHours(); ok {
+		_spec.SetField(usagelog.FieldCacheStorageTokenHours, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedCacheStorageTokenHours(); ok {
+		_spec.AddField(usagelog.FieldCacheStorageTokenHours, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.CacheStorageCost(); ok {
+		_spec.SetField(usagelog.FieldCacheStorageCost, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedCacheStorageCost(); ok {
+		_spec.AddField(usagelog.FieldCacheStorageCost, field.TypeFloat64, value)
 	}
 	if value, ok := _u.mutation.UsageSource(); ok {
 		_spec.SetField(usagelog.FieldUsageSource, field.TypeInt8, value)

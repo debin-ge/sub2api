@@ -18,5 +18,9 @@ func TestAllPlatformsIncludesEveryConcretePlatform(t *testing.T) {
 		"deepseek",
 		"minimax",
 		"opencode_go",
+		"typesafe",
+		"command_code",
+		"cline",
+		"windsurf", "bytedance", "fal", "wavespeed", "runware", "flova",
 	}, AllPlatforms())
 }

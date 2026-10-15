@@ -219,8 +219,10 @@ type UsageLog struct {
 
 	BillingType int8
 	// UsageSource records whether billing used upstream usage or a local fallback.
-	UsageSource           UsageSource
-	UsageEstimationMethod string
+	UsageSource            UsageSource
+	UsageEstimationMethod  string
+	CacheStorageTokenHours float64
+	CacheStorageCost       float64
 	// BillingState 结算状态，取值见 BillingStateSettled / BillingStatePricingUnavailable /
 	// BillingStatePricingRecovered。零值即"已结算"，历史行天然兼容。
 	BillingState       int8

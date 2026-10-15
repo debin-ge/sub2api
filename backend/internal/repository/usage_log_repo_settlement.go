@@ -50,7 +50,8 @@ func (r *usageLogRepository) MarkSettlementRecovered(ctx context.Context, id int
 			actual_cost = 0,
 			account_stats_cost = $9,
 			billing_mode = $10,
-			billing_state = $11
+			billing_state = $11,
+			cache_storage_cost = $13
 		WHERE id = $1 AND billing_state = $12`
 	res, err := r.sql.ExecContext(ctx, query,
 		id,
@@ -65,6 +66,7 @@ func (r *usageLogRepository) MarkSettlementRecovered(ctx context.Context, id int
 		cost.BillingMode,
 		int16(service.BillingStatePricingRecovered),
 		int16(service.BillingStatePricingUnavailable),
+		cost.CacheStorageCost,
 	)
 	if err != nil {
 		return false, err

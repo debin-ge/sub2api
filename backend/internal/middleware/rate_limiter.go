@@ -87,6 +87,9 @@ type AllowResult struct {
 // Allow 对给定 key（不含 "rate_limit:" 前缀）执行一次固定窗口计数判定。
 // 供需要自定义限流维度（如按用户 ID）的调用方使用；Redis 错误由调用方决定 fail-open/close。
 func (r *RateLimiter) Allow(ctx context.Context, key string, limit int, window time.Duration) (AllowResult, error) {
+	if r == nil || r.redis == nil {
+		return AllowResult{}, fmt.Errorf("rate limit Redis client is unavailable")
+	}
 	redisKey := r.prefix + key
 	windowMillis := windowTTLMillis(window)
 

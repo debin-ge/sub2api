@@ -35,7 +35,9 @@ type AvailableGroupRef struct {
 	VideoPrice720P       *float64
 	VideoPrice1080P      *float64
 	VideoModelPrices     map[string]map[string]float64
+	ModelPricing         []ChannelModelPricing
 	ModelsListConfig     GroupModelsListConfig
+	I18n                 GroupI18n
 }
 
 // AvailableChannel 可用渠道视图：用于「可用渠道」页面展示渠道基础信息 +
@@ -127,7 +129,9 @@ func (s *ChannelService) listAvailable(ctx context.Context, opts availableListOp
 			VideoPrice720P:       g.VideoPrice720P,
 			VideoPrice1080P:      g.VideoPrice1080P,
 			VideoModelPrices:     NormalizeVideoModelPrices(g.VideoModelPrices),
+			ModelPricing:         g.ModelPricing,
 			ModelsListConfig:     g.ModelsListConfig,
+			I18n:                 g.I18n,
 		}
 		groupByID[g.ID] = ref
 		allGroupRefs = append(allGroupRefs, ref)
@@ -264,7 +268,8 @@ func (s *ChannelService) FillGlobalPricingFallback(models []SupportedModel) {
 //  1. Pricing == nil（渠道完全没声明该模型的定价条目）
 //  2. Pricing 非 nil 但所有价格字段为空（admin UI 建了条目但没填价格）
 //
-// 当 pricingService 为 nil（测试场景），跳过回落。可用渠道与模型广场共用。
+// 当 pricingService 为 nil（测试场景），跳过价格回落。
+// 可用渠道与模型广场共用。
 func fillGlobalPricingFallback(pricingService *PricingService, models []SupportedModel) {
 	for i := range models {
 		if pricingService != nil {
@@ -277,7 +282,6 @@ func fillGlobalPricingFallback(pricingService *PricingService, models []Supporte
 				}
 			}
 		}
-		models[i].Pricing = withDefaultMaxReasoningEffortMultiplier(models[i].Pricing, models[i].Name)
 	}
 }
 
@@ -350,23 +354,23 @@ func synthesizePricingFromModelPrice(lp *ModelPriceEntry, existing *ChannelModel
 
 	if mode == BillingModeImage || mode == BillingModePerRequest {
 		return &ChannelModelPricing{
-			BillingMode:                  mode,
-			PerRequestPrice:              nonZeroPtr(lp.OutputCostPerImage),
-			ImageOutputPrice:             nonZeroPtr(lp.OutputCostPerImageToken),
-			InputPrice:                   nonZeroPtr(lp.InputCostPerToken),
-			OutputPrice:                  nonZeroPtr(lp.OutputCostPerToken),
-			MaxReasoningEffortMultiplier: maxReasoningEffortMultiplierFromPricing(existing),
+			BillingMode:                mode,
+			PerRequestPrice:            nonZeroPtr(lp.OutputCostPerImage),
+			ImageOutputPrice:           nonZeroPtr(lp.OutputCostPerImageToken),
+			InputPrice:                 nonZeroPtr(lp.InputCostPerToken),
+			OutputPrice:                nonZeroPtr(lp.OutputCostPerToken),
+			ReasoningEffortMultipliers: reasoningEffortMultipliersFromPricing(existing),
 		}
 	}
 	return &ChannelModelPricing{
-		BillingMode:                  mode,
-		InputPrice:                   nonZeroPtr(lp.InputCostPerToken),
-		OutputPrice:                  nonZeroPtr(lp.OutputCostPerToken),
-		CacheWritePrice:              nonZeroPtr(lp.CacheCreationInputTokenCost),
-		CacheWrite1hPrice:            nonZeroPtr(lp.CacheCreationInputTokenCostAbove1hr),
-		CacheReadPrice:               nonZeroPtr(lp.CacheReadInputTokenCost),
-		ImageOutputPrice:             nonZeroPtr(lp.OutputCostPerImageToken),
-		MaxReasoningEffortMultiplier: maxReasoningEffortMultiplierFromPricing(existing),
+		BillingMode:                mode,
+		InputPrice:                 nonZeroPtr(lp.InputCostPerToken),
+		OutputPrice:                nonZeroPtr(lp.OutputCostPerToken),
+		CacheWritePrice:            nonZeroPtr(lp.CacheCreationInputTokenCost),
+		CacheWrite1hPrice:          nonZeroPtr(lp.CacheCreationInputTokenCostAbove1hr),
+		CacheReadPrice:             nonZeroPtr(lp.CacheReadInputTokenCost),
+		ImageOutputPrice:           nonZeroPtr(lp.OutputCostPerImageToken),
+		ReasoningEffortMultipliers: reasoningEffortMultipliersFromPricing(existing),
 	}
 }
 
@@ -377,22 +381,27 @@ func nonZeroPtr(v float64) *float64 {
 	return &v
 }
 
-func maxReasoningEffortMultiplierFromPricing(pricing *ChannelModelPricing) *float64 {
+func reasoningEffortMultipliersFromPricing(pricing *ChannelModelPricing) map[string]float64 {
 	if pricing == nil {
 		return nil
 	}
-	return pricing.MaxReasoningEffortMultiplier
+	return pricing.EffectiveReasoningEffortMultipliers()
 }
 
-func withDefaultMaxReasoningEffortMultiplier(pricing *ChannelModelPricing, model string) *ChannelModelPricing {
-	if pricing == nil || pricing.MaxReasoningEffortMultiplier != nil {
-		return pricing
+// ResolveDisplayReasoningEffortMultipliers mirrors billing precedence without changing the catalog display prices.
+func ResolveDisplayReasoningEffortMultipliers(model string, groupPricing []ChannelModelPricing, channelPricing *ChannelModelPricing) map[string]float64 {
+	pricing := channelPricing
+	if override := matchGroupModelPricing(&Group{ModelPricing: groupPricing}, model); override != nil {
+		pricing = override
 	}
-	defaultMultiplier := defaultMaxReasoningEffortMultiplier(model)
-	if defaultMultiplier == nil {
-		return pricing
+	out := reasoningEffortMultipliersFromPricing(pricing)
+	if _, explicit := out["max"]; !explicit {
+		if fallback := defaultMaxReasoningEffortMultiplier(model); fallback != nil {
+			if out == nil {
+				out = make(map[string]float64)
+			}
+			out["max"] = *fallback
+		}
 	}
-	clone := *pricing
-	clone.MaxReasoningEffortMultiplier = defaultMultiplier
-	return &clone
+	return out
 }

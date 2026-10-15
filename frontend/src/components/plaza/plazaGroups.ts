@@ -12,6 +12,7 @@ export interface PlazaGroupSummary {
   vip: boolean
   rate: number
   channels: string[]
+  reasoning: [string, number][]
   /** 独立的图片 / 视频倍率，只在对应计费类型下给出。 */
   mediaRate?: { kind: 'image' | 'video'; rate: number }
   peakWindow?: string
@@ -37,7 +38,8 @@ export function summarizePlazaGroups(
         name: group.name,
         vip: group.vip_only === true,
         rate: group.rate_multiplier || 1,
-        channels: []
+        channels: [],
+        reasoning: Object.entries(item.pricing?.reasoning_effort_multipliers ?? {}).filter(([, value]) => Number.isFinite(value) && value > 0)
       }
       if (billingKind === 'image' && group.image_rate_independent === true) {
         summary.mediaRate = { kind: 'image', rate: imageTierRateMultiplier(group) }

@@ -907,3 +907,7 @@ func TestModelCatalogAPIKeyScopeRequiresLoadedGroup(t *testing.T) {
 	_, err = catalog.ListForAPIKey(context.Background(), &APIKey{GroupID: &groupID})
 	require.Error(t, err)
 }
+
+func (s *modelCatalogAccountRepoStub) ListSchedulable(context.Context) ([]Account, error) {
+	return append([]Account(nil), s.all...), nil
+}

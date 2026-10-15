@@ -502,7 +502,7 @@ func (d *UpstreamModelDiscoverer) buildAnthropicUpstreamModelsRequest(ctx contex
 	if err != nil {
 		return nil, newUpstreamModelSyncConfigError("Invalid Anthropic model list URL", err)
 	}
-	for key, value := range claude.DefaultHeaders {
+	for key, value := range claude.DefaultHeaders() {
 		req.Header.Set(key, value)
 	}
 	req.Header.Set("Accept", "application/json")
@@ -548,7 +548,7 @@ func (d *UpstreamModelDiscoverer) buildAntigravityAPIKeyModelsRequest(ctx contex
 	if err != nil {
 		return nil, newUpstreamModelSyncConfigError("Invalid Antigravity model list URL", err)
 	}
-	for key, value := range claude.DefaultHeaders {
+	for key, value := range claude.DefaultHeaders() {
 		req.Header.Set(key, value)
 	}
 	req.Header.Set("Accept", "application/json")
@@ -582,7 +582,7 @@ func (d *UpstreamModelDiscoverer) buildAntigravityUpstreamModelsRequest(ctx cont
 	if err != nil {
 		return nil, newUpstreamModelSyncConfigError("Invalid Antigravity upstream model list URL", err)
 	}
-	for key, value := range claude.DefaultHeaders {
+	for key, value := range claude.DefaultHeaders() {
 		req.Header.Set(key, value)
 	}
 	req.Header.Set("Accept", "application/json")
