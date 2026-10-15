@@ -26,6 +26,7 @@ Model availability is usually determined by these factors:
 | `deepseek` | Usually accessed through OpenAI compatible paths or mappings | Commonly used with Chat Completions compatible clients. |
 | `windsurf` | Usually for specific clients or compatible entry points | Requires the admin to configure the corresponding channel, model, and authentication. |
 | `opencode` | Usually through `/v1/responses` or OpenAI compatible paths | Suitable for coding clients that support the Responses API or OpenAI-style configuration. |
+| `bytedance`, `fal`, `wavespeed`, `runware`, `flova` | `/api/v3/contents/generations/tasks` | Video only. Called with the Volcengine Ark task protocol; see [Video Tasks API](/docs/videos-api). |
 
 ## Confirming Model Availability
 

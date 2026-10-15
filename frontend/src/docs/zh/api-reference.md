@@ -27,8 +27,9 @@ curl "{{BASE_URL}}v1/models" \
 | POST | `/v1/chat/completions` | Chat Completions | 适合 OpenAI SDK 和大量兼容客户端。 |
 | POST | `/v1/responses` | Responses API | 适合 Codex 或支持 Responses API 的客户端。 |
 | POST | `/v1/embeddings` | 文本向量 | 需要部署启用可用 embedding 模型。 |
-| POST | `/v1/images/generations` | 图片生成 | 需要部署启用图片生成渠道和模型。 |
-| POST | `/v1/images/edits` | 图片编辑 | 需要客户端按上游要求提交图片和参数。 |
+| POST | `/v1/images/generations` | 图片生成 | 字段、响应与示例见[图片生成 API](/docs/images-api)。 |
+| POST | `/v1/images/edits` | 图片编辑 | 支持 JSON 与 multipart 两种写法，见[图片生成 API](/docs/images-api)。 |
+| POST | `/v1/images/generations/async`、`/v1/images/edits/async` | 异步提交图片任务 | 需要部署启用对象存储；用 `GET /v1/images/tasks/{task_id}` 查询。 |
 
 ## Anthropic 兼容端点
 
@@ -57,6 +58,20 @@ curl "{{BASE_URL}}v1/models" \
 | GET | `/antigravity/v1beta/models` | Antigravity Gemini 模型列表 | 面向 Gemini 风格的 Antigravity 接入。 |
 | ANY | `/antigravity/v1beta/models/*` | Antigravity Gemini 兼容转发 | 覆盖模型详情、生成和流式生成等子路径。 |
 
+## 视频任务端点（Ark 协议）
+
+ByteDance、fal、WaveSpeed、Runware、Flova 分组按火山方舟 Ark 任务协议调用视频，路径前缀推荐 `/api/v3`。
+
+| 方法 | 路径 | 用途 | 备注 |
+| --- | --- | --- | --- |
+| POST | `/api/v3/contents/generations/tasks` | 创建视频任务 | 请求体为 Ark 的 `model` 加 `content[]` 结构。 |
+| GET | `/api/v3/contents/generations/tasks/{id}` | 查询任务 | 成功后 `content.video_url` 为签名直链。 |
+| GET | `/api/v3/contents/generations/tasks` | 列出本人任务 | 支持 `page_num`、`page_size`、`filter.status`、`filter.model`。 |
+| DELETE | `/api/v3/contents/generations/tasks/{id}` | 取消或删除任务 | 不退款。 |
+| GET | `/api/v3/contents/generations/models` | 视频模型能力目录 | {{SITE_NAME}} 扩展。 |
+
+字段、状态与示例见[视频任务 API](/docs/videos-api)。OpenAI（Sora）与 Grok 分组的视频仍走 `/v1/videos`。
+
 ## 请求格式注意事项
 
 | 接口族 | 消息字段 | 常见模型来源 |
@@ -65,6 +80,8 @@ curl "{{BASE_URL}}v1/models" \
 | OpenAI Responses | `input` 或 Responses API 支持的输入结构 | `/v1/models` 或 Codex 客户端配置。 |
 | Anthropic Messages | `messages`、`max_tokens`，可包含系统提示和工具字段 | Anthropic 兼容模型或映射名。 |
 | Gemini Native | `contents`、`parts` | `/v1beta/models` 或管理员提供的 Gemini 模型名。 |
+| OpenAI Images | `prompt`，可带 `model`、`size`、`n`；编辑时带 `images[]` 或 multipart 文件 | `/v1/models` 返回的图片模型名，默认 `gpt-image-2`。 |
+| 视频任务（Ark） | `model`、`content[]`，`content` 至少含一个 `text` 项 | `/v1/models` 或能力目录返回的视频模型名。 |
 
 ## 响应和错误
 

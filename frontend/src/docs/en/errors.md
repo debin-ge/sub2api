@@ -62,6 +62,8 @@ Common causes:
 
 403 is not the same as a wrong Base URL, and it is not always a typo in the key. Focus on permissions and group policy.
 
+Two dedicated messages: the image endpoints return `Image generation is not enabled for this group` when the group lacks image permission, and the video endpoints return `video_ark_platform_unsupported` when the group platform is not a video platform.
+
 ## 404 Not Found
 
 404 often means path, endpoint, or model name mismatch:
@@ -73,6 +75,7 @@ Common causes:
 | Missing `/antigravity` | Antigravity clients need the corresponding path. |
 | Model name exists | Use results from `/v1/models` or `/v1beta/models`. |
 | Endpoint is enabled | Some deployments may not expose images, embeddings, or Responses. |
+| Video group calling `/v1/videos` | When `use_contents_generations_tasks` is returned, switch to `/api/v3/contents/generations/tasks`. |
 
 ## Model Unavailable
 

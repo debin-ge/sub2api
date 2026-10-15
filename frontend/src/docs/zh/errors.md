@@ -62,6 +62,8 @@ curl -i "{{BASE_URL}}v1/models" \
 
 403 不等于 Base URL 错误，也不一定是密钥拼写错误。重点查权限和分组策略。
 
+两个专用提示：图片接口返回 `Image generation is not enabled for this group`，表示分组未开启生图权限；视频接口返回 `video_ark_platform_unsupported`，表示分组平台不是视频平台。
+
 ## 404 未找到
 
 404 常见于路径、端点或模型名不匹配：
@@ -73,6 +75,7 @@ curl -i "{{BASE_URL}}v1/models" \
 | 是否缺少 `/antigravity` | Antigravity 客户端需要对应路径。 |
 | 模型名是否存在 | 使用 `/v1/models` 或 `/v1beta/models` 返回结果。 |
 | 端点是否启用 | 有些部署可能未开放图片、embedding 或 Responses。 |
+| 视频分组是否误用 `/v1/videos` | 返回 `use_contents_generations_tasks` 时，改用 `/api/v3/contents/generations/tasks`。 |
 
 ## 模型不可用
 

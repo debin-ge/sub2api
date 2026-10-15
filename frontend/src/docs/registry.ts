@@ -3,6 +3,8 @@ import quickstartContent from './zh/quickstart.md?raw'
 import apiKeysContent from './zh/api-keys.md?raw'
 import apiReferenceContent from './zh/api-reference.md?raw'
 import endpointSelectionContent from './zh/endpoint-selection.md?raw'
+import imagesApiContent from './zh/images-api.md?raw'
+import videosApiContent from './zh/videos-api.md?raw'
 import modelsContent from './zh/models.md?raw'
 import billingUsageContent from './zh/billing-usage.md?raw'
 import errorsContent from './zh/errors.md?raw'
@@ -13,6 +15,8 @@ import quickstartContentEn from './en/quickstart.md?raw'
 import apiKeysContentEn from './en/api-keys.md?raw'
 import apiReferenceContentEn from './en/api-reference.md?raw'
 import endpointSelectionContentEn from './en/endpoint-selection.md?raw'
+import imagesApiContentEn from './en/images-api.md?raw'
+import videosApiContentEn from './en/videos-api.md?raw'
 import modelsContentEn from './en/models.md?raw'
 import billingUsageContentEn from './en/billing-usage.md?raw'
 import errorsContentEn from './en/errors.md?raw'
@@ -67,6 +71,20 @@ export const userDocsByLocale: Record<UserDocLocale, UserDocEntry[]> = {
       description: '根据客户端、请求格式和模型能力选择正确的 API 端点。',
       category: '接口',
       content: endpointSelectionContent,
+    },
+    {
+      slug: 'images-api',
+      title: '图片生成 API',
+      description: '通过 OpenAI Images 兼容接口生成和编辑图片，了解字段、响应、异步任务与常见错误。',
+      category: '接口',
+      content: imagesApiContent,
+    },
+    {
+      slug: 'videos-api',
+      title: '视频任务 API',
+      description: '按火山方舟 Ark 任务协议提交、轮询和下载视频，了解字段、状态、回调与常见错误。',
+      category: '接口',
+      content: videosApiContent,
     },
     {
       slug: 'models',
@@ -139,6 +157,20 @@ export const userDocsByLocale: Record<UserDocLocale, UserDocEntry[]> = {
       description: 'Choose the right API endpoint based on client, request format, and model capability.',
       category: 'API',
       content: endpointSelectionContentEn,
+    },
+    {
+      slug: 'images-api',
+      title: 'Image Generation API',
+      description: 'Generate and edit images through the OpenAI Images compatible endpoints: fields, responses, async tasks, and common errors.',
+      category: 'API',
+      content: imagesApiContentEn,
+    },
+    {
+      slug: 'videos-api',
+      title: 'Video Tasks API',
+      description: 'Submit, poll, and download videos with the Volcengine Ark task protocol: fields, statuses, callbacks, and common errors.',
+      category: 'API',
+      content: videosApiContentEn,
     },
     {
       slug: 'models',

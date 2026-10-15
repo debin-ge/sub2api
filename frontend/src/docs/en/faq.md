@@ -50,7 +50,8 @@ Some compatible clients may use `api-key`, `x-api-key`, or SDK configuration fie
 | Gemini native client | `/v1beta/models/{model}:generateContent` |
 | Antigravity compatible client | `/antigravity/...` |
 | Embeddings | `/v1/embeddings` |
-| Image generation or editing | `/v1/images/generations`, `/v1/images/edits` |
+| Image generation or editing | `/v1/images/generations`, `/v1/images/edits`; see [Image Generation API](/docs/images-api) |
+| Video generation (ByteDance and other video groups) | `/api/v3/contents/generations/tasks`; see [Video Tasks API](/docs/videos-api) |
 
 > [!WARNING]
 > The endpoint and request body format must match. Do not send an OpenAI `messages` body directly to a Gemini native endpoint, and do not send a Gemini `contents` body to OpenAI Chat Completions.

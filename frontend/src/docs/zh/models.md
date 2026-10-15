@@ -26,6 +26,7 @@
 | `deepseek` | 通常经 OpenAI 兼容层或模型映射访问 | 常用于 Chat Completions 兼容客户端。 |
 | `windsurf` | 通常面向特定客户端或兼容入口 | 需要管理员配置对应渠道、模型和鉴权。 |
 | `opencode` | 通常经 `/v1/responses` 或 OpenAI 兼容入口访问 | 适合支持 Responses API 或 OpenAI 风格配置的编码客户端。 |
+| `bytedance`、`fal`、`wavespeed`、`runware`、`flova` | `/api/v3/contents/generations/tasks` | 仅视频。按火山方舟 Ark 任务协议调用，见[视频任务 API](/docs/videos-api)。 |
 
 ## 如何确认模型可用
 

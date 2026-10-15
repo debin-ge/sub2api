@@ -14,7 +14,8 @@
 | Gemini 原生非流式 | `POST /v1beta/models/{model}:generateContent` | `contents`、`parts`。 |
 | Gemini 原生流式 | `POST /v1beta/models/{model}:streamGenerateContent?alt=sse` | `contents`、`parts`，SSE 返回。 |
 | Embedding | `POST /v1/embeddings` | `input` 和 embedding 模型。 |
-| 图片生成 | `POST /v1/images/generations` | 图片生成参数。 |
+| 图片生成或编辑 | `POST /v1/images/generations`、`POST /v1/images/edits` | `prompt` 等图片参数，见[图片生成 API](/docs/images-api)。 |
+| 视频生成（ByteDance、fal、WaveSpeed、Runware、Flova 分组） | `POST /api/v3/contents/generations/tasks` | Ark 的 `model` 加 `content[]`，见[视频任务 API](/docs/videos-api)。 |
 | Antigravity 兼容客户端 | `/antigravity/...` | 以管理员提供的客户端配置为准。 |
 
 ## 选择流程
@@ -48,6 +49,7 @@ SDK 通常要求更具体的地址：
 | Anthropic 兼容客户端 | `{{BASE_URL}}` 或客户端要求的 Anthropic Base URL。 |
 | Gemini 原生客户端 | `{{BASE_URL}}`，请求路径包含 `/v1beta`。 |
 | Antigravity 客户端 | `{{BASE_URL}}antigravity` |
+| 火山 Ark SDK / 视频任务 | `{{BASE_URL}}api/v3` |
 
 如果出现 `/v1/v1`、`//v1` 或缺少 `/v1beta` 的路径，通常是 Base URL 和客户端自动拼接规则不匹配。
 
@@ -109,6 +111,6 @@ Gemini 原生示例：
 | --- | --- |
 | 返回 401 | 请求头是否包含 `Authorization: Bearer ${API_KEY}`。 |
 | 返回 403 | 当前密钥分组是否有模型和端点权限。 |
-| 返回 404 | 路径是否存在，Base URL 是否重复拼接，模型名是否正确。 |
+| 返回 404 | 路径是否存在，Base URL 是否重复拼接，模型名是否正确。视频分组返回 `use_contents_generations_tasks` 时，改用 `/api/v3/contents/generations/tasks`。 |
 | 返回模型格式错误 | 请求体是否属于对应接口族。 |
 | 流式不输出 | 客户端、代理和端点是否都支持 SSE 或流式读取。 |

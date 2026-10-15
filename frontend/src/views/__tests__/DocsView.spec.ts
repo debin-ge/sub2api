@@ -659,6 +659,19 @@ describe('DocsView', () => {
     }
   })
 
+  it('renders the image and video API pages with code tab groups', async () => {
+    for (const [slug, marker] of [
+      ['images-api', '/v1/images/generations'],
+      ['videos-api', '/contents/generations/tasks'],
+    ] as const) {
+      const wrapper = await mountDocs(`/docs/${slug}`)
+      expect(wrapper.text()).toContain(marker)
+      expect(wrapper.find('.doc-tabs').exists()).toBe(true)
+      expect(wrapper.text()).not.toContain('tiktoken')
+      wrapper.unmount()
+    }
+  })
+
   it('renders collapsible details blocks on app pages', async () => {
     const wrapper = await mountDocs('/apps/claude-code')
 

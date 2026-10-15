@@ -14,7 +14,8 @@ Choose endpoints based on your client and request format first, then the model. 
 | Gemini native non-streaming | `POST /v1beta/models/{model}:generateContent` | `contents`, `parts`. |
 | Gemini native streaming | `POST /v1beta/models/{model}:streamGenerateContent?alt=sse` | `contents`, `parts`, SSE response. |
 | Embeddings | `POST /v1/embeddings` | `input` and an embedding model. |
-| Image generation | `POST /v1/images/generations` | Image generation parameters. |
+| Image generation or editing | `POST /v1/images/generations`, `POST /v1/images/edits` | `prompt` and image parameters; see [Image Generation API](/docs/images-api). |
+| Video generation (ByteDance, fal, WaveSpeed, Runware, Flova groups) | `POST /api/v3/contents/generations/tasks` | Ark `model` plus `content[]`; see [Video Tasks API](/docs/videos-api). |
 | Antigravity compatible clients | `/antigravity/...` | Follow the admin-provided client configuration. |
 
 ## Selection Flow
@@ -48,6 +49,7 @@ SDKs often need a more specific URL:
 | Anthropic compatible clients | `{{BASE_URL}}` or the Anthropic Base URL required by the client. |
 | Gemini native clients | `{{BASE_URL}}`, with `/v1beta` in request paths. |
 | Antigravity clients | `{{BASE_URL}}antigravity` |
+| Volcengine Ark SDK / video tasks | `{{BASE_URL}}api/v3` |
 
 If you see `/v1/v1`, `//v1`, or a missing `/v1beta`, the Base URL and the client's automatic path joining probably do not match.
 
@@ -109,6 +111,6 @@ Use `/antigravity/...` only when an admin provides an Antigravity compatible ent
 | --- | --- |
 | 401 | The header includes `Authorization: Bearer ${API_KEY}`. |
 | 403 | The current key group has permission for the model and endpoint. |
-| 404 | The path exists, Base URL is not duplicated, and the model name is correct. |
+| 404 | The path exists, Base URL is not duplicated, and the model name is correct. When a video group gets `use_contents_generations_tasks`, switch to `/api/v3/contents/generations/tasks`. |
 | Model format error | The request body belongs to the selected API family. |
 | Streaming has no output | Client, proxy, and endpoint all support SSE or streaming reads. |

@@ -50,7 +50,8 @@ curl "{{BASE_URL}}v1/models" \
 | Gemini 原生客户端 | `/v1beta/models/{model}:generateContent` |
 | Antigravity 兼容客户端 | `/antigravity/...` |
 | Embedding | `/v1/embeddings` |
-| 图片生成或编辑 | `/v1/images/generations`、`/v1/images/edits` |
+| 图片生成或编辑 | `/v1/images/generations`、`/v1/images/edits`，见[图片生成 API](/docs/images-api) |
+| 视频生成（ByteDance 等视频分组） | `/api/v3/contents/generations/tasks`，见[视频任务 API](/docs/videos-api) |
 
 > [!WARNING]
 > 端点和请求体格式需要匹配。不要把 OpenAI `messages` 请求体直接发到 Gemini 原生端点，也不要把 Gemini `contents` 请求体发到 OpenAI Chat Completions 端点。
