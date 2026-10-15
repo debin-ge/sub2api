@@ -692,11 +692,23 @@ func validateCompatibleImagesModel(model string) error {
 
 // RequiredCapabilityForModel also applies the API-key-only fence when channel
 // mapping introduces a compatible provider model after request parsing.
+// Parse-time capability was derived from the client-facing model; when mapping
+// changes the model, reclassify so an alias mapped onto gpt-image-* stays
+// schedulable on OAuth accounts instead of inheriting the alias's API-key fence.
 func (req *OpenAIImagesRequest) RequiredCapabilityForModel(model string) OpenAIImagesCapability {
+	if req == nil {
+		return OpenAIImagesCapabilityNative
+	}
+	model = strings.TrimSpace(model)
+	if model == "" || strings.EqualFold(model, strings.TrimSpace(req.Model)) {
+		return req.RequiredCapability
+	}
 	if !isOpenAIImageGenerationModel(model) {
 		return OpenAIImagesCapabilityAPIKey
 	}
-	return req.RequiredCapability
+	mapped := *req
+	mapped.Model = model
+	return classifyOpenAIImagesCapability(&mapped)
 }
 
 func normalizeOpenAIImagesEndpointPath(path string) string {

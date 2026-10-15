@@ -40,7 +40,7 @@ func legacyIsCNProvider(platform string) bool {
 }
 
 func legacyIsOpenAICompatible(platform string) bool {
-	return platform == PlatformOpenAI || platform == PlatformGrok || platform == PlatformWindsurf || legacyIsCNProvider(platform) || platform == PlatformOpenCodeGo || platform == PlatformCommandCode || platform == PlatformCline
+	return platform == PlatformOpenAI || platform == PlatformGrok || legacyIsCNProvider(platform) || platform == PlatformOpenCodeGo || platform == PlatformCommandCode || platform == PlatformCline
 }
 
 func legacyNormalizeOpenAICompatiblePlatform(platform string) string {
@@ -48,7 +48,7 @@ func legacyNormalizeOpenAICompatiblePlatform(platform string) string {
 		return PlatformZhipu
 	}
 	switch platform {
-	case PlatformWindsurf, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo, PlatformCommandCode, PlatformCline:
+	case PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo, PlatformCommandCode, PlatformCline:
 		return platform
 	}
 	return PlatformOpenAI

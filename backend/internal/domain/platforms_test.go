@@ -24,7 +24,7 @@ var (
 		PlatformByteDance, PlatformFal, PlatformWaveSpeed, PlatformRunware, PlatformFlova,
 	}
 	legacyOpenAIGateway = []string{
-		PlatformOpenAI, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformWindsurf, PlatformOpenCodeGo,
+		PlatformOpenAI, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformOpenCodeGo,
 		PlatformCommandCode,
 		PlatformCline,
 	}
@@ -84,4 +84,13 @@ func TestLocalVideoPlatformsStayOnManagedVideoGateway(t *testing.T) {
 		require.False(t, UsesOpenAIGateway(id), id)
 		require.False(t, IsCNProviderPlatform(id), id)
 	}
+}
+
+// Windsurf is served by its dedicated gateway; registering it under the OpenAI
+// family would let composite routing and the OpenAI scheduler pick its accounts.
+func TestWindsurfStaysOnDedicatedGateway(t *testing.T) {
+	spec, ok := LookupPlatform(PlatformWindsurf)
+	require.True(t, ok)
+	require.Equal(t, PlatformGatewayWindsurf, spec.Gateway)
+	require.False(t, UsesOpenAIGateway(PlatformWindsurf))
 }

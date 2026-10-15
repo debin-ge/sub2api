@@ -263,3 +263,25 @@ func TestLegacySchedulerDecision_PreviousResponseRouting(t *testing.T) {
 		require.True(t, decision.StickyPreviousHit)
 	})
 }
+
+// The legacy previous_response_id hit returns early; it must still pass the
+// selected-account pricing gate and release the slot it acquired on rejection.
+func TestLegacySchedulerDecision_PreviousResponseHitAppliesPricingGuard(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+	ctx := context.Background()
+	groupID := int64(38120)
+	responseID := "resp_legacy_unpriced"
+
+	released := make([]int64, 0)
+	svc := newLegacySchedulerDecisionTestService(newLegacySchedulerDecisionTestAccounts(groupID, true), true, schedulerTestConcurrencyCache{releasedIDs: &released})
+	svc.billingService = NewBillingService(svc.cfg, nil)
+	require.NoError(t, svc.getOpenAIWSStateStore().BindResponseAccount(ctx, groupID, responseID, 38102, time.Hour))
+
+	selection, _, err := svc.SelectAccountWithSchedulerForCapability(
+		ctx, &groupID, responseID, "legacy-prev-unpriced", "gpt-future-unpriced-v99", nil,
+		OpenAIUpstreamTransportAny, OpenAIEndpointCapabilityChatCompletions, false, true, BillingKindToken,
+	)
+	require.Nil(t, selection)
+	require.ErrorIs(t, err, ErrModelPricingUnavailable)
+	require.Contains(t, released, int64(38102), "rejected previous_response owner must release its slot")
+}

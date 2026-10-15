@@ -2505,7 +2505,7 @@ func (s *OpenAIGatewayService) selectAccountWithSchedulerOnce(
 			decision.StickyPreviousHit = true
 			decision.SelectedAccountID = selection.Account.ID
 			decision.SelectedAccountType = selection.Account.Type
-			return selection, decision, nil
+			return finishSelection(selection, decision, nil)
 		}
 		if guardianParentAccountID > 0 {
 			if s.checkChannelPricingRestriction(ctx, groupID, requestedModel) {

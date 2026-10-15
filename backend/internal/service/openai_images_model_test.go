@@ -124,3 +124,23 @@ func TestGPTImage25UsagePreservesImageInputTokens(t *testing.T) {
 	require.Equal(t, 1521, usage.ImageInputTokens)
 	require.Equal(t, 515, usage.ImageOutputTokens)
 }
+
+// A client alias mapped onto gpt-image-* must be reclassified from the mapped
+// model, otherwise the alias's API-key fence excludes OAuth accounts.
+func TestOpenAIImagesRequiredCapabilityForMappedAlias(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"model":"pub-image","prompt":"draw"}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, openAIImagesGenerationsEndpoint, strings.NewReader(string(body)))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	parsed, err := (&OpenAIGatewayService{}).ParseOpenAIImagesRequest(c, body)
+	require.NoError(t, err)
+	require.Equal(t, OpenAIImagesCapabilityAPIKey, parsed.RequiredCapability)
+
+	require.Equal(t, OpenAIImagesCapabilityNative, parsed.RequiredCapabilityForModel("gpt-image-2"))
+	require.Equal(t, OpenAIImagesCapabilityAPIKey, parsed.RequiredCapabilityForModel("pub-image"))
+	require.Equal(t, OpenAIImagesCapabilityAPIKey, parsed.RequiredCapabilityForModel(""))
+	require.Equal(t, OpenAIImagesCapabilityAPIKey, parsed.RequiredCapabilityForModel("gemini-3-pro-image"))
+}

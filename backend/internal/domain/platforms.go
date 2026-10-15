@@ -21,6 +21,8 @@ const (
 	PlatformGatewayAntigravity PlatformGateway = "antigravity"
 	// PlatformGatewayVideo uses the managed video task API, not a chat compatibility gateway.
 	PlatformGatewayVideo PlatformGateway = "video"
+	// PlatformGatewayWindsurf 由独立的 WindsurfGateway 处理，不属于 OpenAI 兼容网关族。
+	PlatformGatewayWindsurf PlatformGateway = "windsurf"
 )
 
 // PlatformSpec 描述一个具体（非 composite）平台。
@@ -46,7 +48,7 @@ var platformList = []PlatformSpec{
 	{ID: PlatformZhipu, DisplayName: "Zhipu GLM", Gateway: PlatformGatewayOpenAI, CNProvider: true, LiteLLMProvider: "zhipu"},
 	{ID: PlatformDeepseek, DisplayName: "DeepSeek", Gateway: PlatformGatewayOpenAI, CNProvider: true, LiteLLMProvider: "deepseek"},
 	{ID: PlatformMiniMax, DisplayName: "MiniMax", Gateway: PlatformGatewayOpenAI, CNProvider: true, LiteLLMProvider: "minimax"},
-	{ID: PlatformWindsurf, DisplayName: "Windsurf", Gateway: PlatformGatewayOpenAI},
+	{ID: PlatformWindsurf, DisplayName: "Windsurf", Gateway: PlatformGatewayWindsurf},
 	{ID: PlatformOpenCodeGo, DisplayName: "OpenCode", Gateway: PlatformGatewayOpenAI, LiteLLMProvider: "opencode-go"},
 	{ID: PlatformTypeSafe, DisplayName: "TypeSafe / Jev", Gateway: PlatformGatewayAnthropic, LiteLLMProvider: "typesafe"},
 	{ID: PlatformCommandCode, DisplayName: "Command Code", Gateway: PlatformGatewayOpenAI},

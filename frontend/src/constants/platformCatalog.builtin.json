@@ -145,7 +145,7 @@
     {
       "id": "windsurf",
       "display_name": "Windsurf",
-      "gateway": "openai",
+      "gateway": "windsurf",
       "cn_provider": false
     },
     {
