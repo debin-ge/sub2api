@@ -62,6 +62,7 @@ type UsageBillingCommand struct {
 	PlatformQuotaSnapshotNeeded bool
 	ActualCost                  float64
 	TotalCost                   float64
+	SimpleModeKeyRateLimitOnly  bool
 	IsSubscriptionBilling       bool
 	OccurredAt                  time.Time
 	QuotaTime                   *UsageBillingQuotaTime
@@ -164,6 +165,9 @@ func buildUsageBillingFingerprint(c *UsageBillingCommand) string {
 		c.APIKeyRateLimitCost,
 		c.AccountQuotaCost,
 	)
+	if c.SimpleModeKeyRateLimitOnly {
+		raw += "|simple-key-windows"
+	}
 	if payloadHash := strings.TrimSpace(c.RequestPayloadHash); payloadHash != "" {
 		raw += "|" + payloadHash
 	}

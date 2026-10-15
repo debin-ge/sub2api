@@ -114,6 +114,7 @@ func TestGatewayModelListProviderOpenCodeDefaultsAndAccountMappings(t *testing.T
 		"gpt-5",
 		"gpt-5.6-luna",
 		"grok-4.6",
+		"grok-4.7",
 		"hy3",
 		"hy4-preview",
 		"kimi-k2.6",

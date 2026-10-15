@@ -23289,6 +23289,7 @@ type GroupMutation struct {
 	deleted_at                              *time.Time
 	name                                    *string
 	description                             *string
+	i18n                                    *domain.GroupI18n
 	rate_multiplier                         *float64
 	addrate_multiplier                      *float64
 	peak_rate_enabled                       *bool
@@ -23709,6 +23710,42 @@ func (m *GroupMutation) DescriptionCleared() bool {
 func (m *GroupMutation) ResetDescription() {
 	m.description = nil
 	delete(m.clearedFields, group.FieldDescription)
+}
+
+// SetI18n sets the "i18n" field.
+func (m *GroupMutation) SetI18n(di domain.GroupI18n) {
+	m.i18n = &di
+}
+
+// I18n returns the value of the "i18n" field in the mutation.
+func (m *GroupMutation) I18n() (r domain.GroupI18n, exists bool) {
+	v := m.i18n
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldI18n returns the old "i18n" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldI18n(ctx context.Context) (v domain.GroupI18n, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldI18n is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldI18n requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldI18n: %w", err)
+	}
+	return oldValue.I18n, nil
+}
+
+// ResetI18n resets all changes to the "i18n" field.
+func (m *GroupMutation) ResetI18n() {
+	m.i18n = nil
 }
 
 // SetRateMultiplier sets the "rate_multiplier" field.
@@ -27248,7 +27285,7 @@ func (m *GroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *GroupMutation) Fields() []string {
-	fields := make([]string, 0, 69)
+	fields := make([]string, 0, 70)
 	if m.created_at != nil {
 		fields = append(fields, group.FieldCreatedAt)
 	}
@@ -27263,6 +27300,9 @@ func (m *GroupMutation) Fields() []string {
 	}
 	if m.description != nil {
 		fields = append(fields, group.FieldDescription)
+	}
+	if m.i18n != nil {
+		fields = append(fields, group.FieldI18n)
 	}
 	if m.rate_multiplier != nil {
 		fields = append(fields, group.FieldRateMultiplier)
@@ -27474,6 +27514,8 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.Name()
 	case group.FieldDescription:
 		return m.Description()
+	case group.FieldI18n:
+		return m.I18n()
 	case group.FieldRateMultiplier:
 		return m.RateMultiplier()
 	case group.FieldPeakRateEnabled:
@@ -27621,6 +27663,8 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldName(ctx)
 	case group.FieldDescription:
 		return m.OldDescription(ctx)
+	case group.FieldI18n:
+		return m.OldI18n(ctx)
 	case group.FieldRateMultiplier:
 		return m.OldRateMultiplier(ctx)
 	case group.FieldPeakRateEnabled:
@@ -27792,6 +27836,13 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetDescription(v)
+		return nil
+	case group.FieldI18n:
+		v, ok := value.(domain.GroupI18n)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetI18n(v)
 		return nil
 	case group.FieldRateMultiplier:
 		v, ok := value.(float64)
@@ -28772,6 +28823,9 @@ func (m *GroupMutation) ResetField(name string) error {
 		return nil
 	case group.FieldDescription:
 		m.ResetDescription()
+		return nil
+	case group.FieldI18n:
+		m.ResetI18n()
 		return nil
 	case group.FieldRateMultiplier:
 		m.ResetRateMultiplier()
@@ -32406,6 +32460,8 @@ type PaymentOrderMutation struct {
 	addpay_amount            *float64
 	fee_rate                 *float64
 	addfee_rate              *float64
+	bonus_amount             *float64
+	addbonus_amount          *float64
 	recharge_code            *string
 	out_trade_no             *string
 	payment_type             *string
@@ -32871,6 +32927,62 @@ func (m *PaymentOrderMutation) AddedFeeRate() (r float64, exists bool) {
 func (m *PaymentOrderMutation) ResetFeeRate() {
 	m.fee_rate = nil
 	m.addfee_rate = nil
+}
+
+// SetBonusAmount sets the "bonus_amount" field.
+func (m *PaymentOrderMutation) SetBonusAmount(f float64) {
+	m.bonus_amount = &f
+	m.addbonus_amount = nil
+}
+
+// BonusAmount returns the value of the "bonus_amount" field in the mutation.
+func (m *PaymentOrderMutation) BonusAmount() (r float64, exists bool) {
+	v := m.bonus_amount
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBonusAmount returns the old "bonus_amount" field's value of the PaymentOrder entity.
+// If the PaymentOrder object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentOrderMutation) OldBonusAmount(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBonusAmount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBonusAmount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBonusAmount: %w", err)
+	}
+	return oldValue.BonusAmount, nil
+}
+
+// AddBonusAmount adds f to the "bonus_amount" field.
+func (m *PaymentOrderMutation) AddBonusAmount(f float64) {
+	if m.addbonus_amount != nil {
+		*m.addbonus_amount += f
+	} else {
+		m.addbonus_amount = &f
+	}
+}
+
+// AddedBonusAmount returns the value that was added to the "bonus_amount" field in this mutation.
+func (m *PaymentOrderMutation) AddedBonusAmount() (r float64, exists bool) {
+	v := m.addbonus_amount
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetBonusAmount resets all changes to the "bonus_amount" field.
+func (m *PaymentOrderMutation) ResetBonusAmount() {
+	m.bonus_amount = nil
+	m.addbonus_amount = nil
 }
 
 // SetRechargeCode sets the "recharge_code" field.
@@ -34416,7 +34528,7 @@ func (m *PaymentOrderMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *PaymentOrderMutation) Fields() []string {
-	fields := make([]string, 0, 39)
+	fields := make([]string, 0, 40)
 	if m.user != nil {
 		fields = append(fields, paymentorder.FieldUserID)
 	}
@@ -34437,6 +34549,9 @@ func (m *PaymentOrderMutation) Fields() []string {
 	}
 	if m.fee_rate != nil {
 		fields = append(fields, paymentorder.FieldFeeRate)
+	}
+	if m.bonus_amount != nil {
+		fields = append(fields, paymentorder.FieldBonusAmount)
 	}
 	if m.recharge_code != nil {
 		fields = append(fields, paymentorder.FieldRechargeCode)
@@ -34556,6 +34671,8 @@ func (m *PaymentOrderMutation) Field(name string) (ent.Value, bool) {
 		return m.PayAmount()
 	case paymentorder.FieldFeeRate:
 		return m.FeeRate()
+	case paymentorder.FieldBonusAmount:
+		return m.BonusAmount()
 	case paymentorder.FieldRechargeCode:
 		return m.RechargeCode()
 	case paymentorder.FieldOutTradeNo:
@@ -34643,6 +34760,8 @@ func (m *PaymentOrderMutation) OldField(ctx context.Context, name string) (ent.V
 		return m.OldPayAmount(ctx)
 	case paymentorder.FieldFeeRate:
 		return m.OldFeeRate(ctx)
+	case paymentorder.FieldBonusAmount:
+		return m.OldBonusAmount(ctx)
 	case paymentorder.FieldRechargeCode:
 		return m.OldRechargeCode(ctx)
 	case paymentorder.FieldOutTradeNo:
@@ -34764,6 +34883,13 @@ func (m *PaymentOrderMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetFeeRate(v)
+		return nil
+	case paymentorder.FieldBonusAmount:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBonusAmount(v)
 		return nil
 	case paymentorder.FieldRechargeCode:
 		v, ok := value.(string)
@@ -35006,6 +35132,9 @@ func (m *PaymentOrderMutation) AddedFields() []string {
 	if m.addfee_rate != nil {
 		fields = append(fields, paymentorder.FieldFeeRate)
 	}
+	if m.addbonus_amount != nil {
+		fields = append(fields, paymentorder.FieldBonusAmount)
+	}
 	if m.addplan_id != nil {
 		fields = append(fields, paymentorder.FieldPlanID)
 	}
@@ -35032,6 +35161,8 @@ func (m *PaymentOrderMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedPayAmount()
 	case paymentorder.FieldFeeRate:
 		return m.AddedFeeRate()
+	case paymentorder.FieldBonusAmount:
+		return m.AddedBonusAmount()
 	case paymentorder.FieldPlanID:
 		return m.AddedPlanID()
 	case paymentorder.FieldSubscriptionGroupID:
@@ -35069,6 +35200,13 @@ func (m *PaymentOrderMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddFeeRate(v)
+		return nil
+	case paymentorder.FieldBonusAmount:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddBonusAmount(v)
 		return nil
 	case paymentorder.FieldPlanID:
 		v, ok := value.(int64)
@@ -35268,6 +35406,9 @@ func (m *PaymentOrderMutation) ResetField(name string) error {
 		return nil
 	case paymentorder.FieldFeeRate:
 		m.ResetFeeRate()
+		return nil
+	case paymentorder.FieldBonusAmount:
+		m.ResetBonusAmount()
 		return nil
 	case paymentorder.FieldRechargeCode:
 		m.ResetRechargeCode()
@@ -48715,6 +48856,10 @@ type UsageLogMutation struct {
 	addaccount_rate_multiplier   *float64
 	billing_type                 *int8
 	addbilling_type              *int8
+	cache_storage_token_hours    *float64
+	addcache_storage_token_hours *float64
+	cache_storage_cost           *float64
+	addcache_storage_cost        *float64
 	usage_source                 *int8
 	addusage_source              *int8
 	usage_estimation_method      *string
@@ -50436,6 +50581,118 @@ func (m *UsageLogMutation) ResetBillingType() {
 	m.addbilling_type = nil
 }
 
+// SetCacheStorageTokenHours sets the "cache_storage_token_hours" field.
+func (m *UsageLogMutation) SetCacheStorageTokenHours(f float64) {
+	m.cache_storage_token_hours = &f
+	m.addcache_storage_token_hours = nil
+}
+
+// CacheStorageTokenHours returns the value of the "cache_storage_token_hours" field in the mutation.
+func (m *UsageLogMutation) CacheStorageTokenHours() (r float64, exists bool) {
+	v := m.cache_storage_token_hours
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCacheStorageTokenHours returns the old "cache_storage_token_hours" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldCacheStorageTokenHours(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCacheStorageTokenHours is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCacheStorageTokenHours requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCacheStorageTokenHours: %w", err)
+	}
+	return oldValue.CacheStorageTokenHours, nil
+}
+
+// AddCacheStorageTokenHours adds f to the "cache_storage_token_hours" field.
+func (m *UsageLogMutation) AddCacheStorageTokenHours(f float64) {
+	if m.addcache_storage_token_hours != nil {
+		*m.addcache_storage_token_hours += f
+	} else {
+		m.addcache_storage_token_hours = &f
+	}
+}
+
+// AddedCacheStorageTokenHours returns the value that was added to the "cache_storage_token_hours" field in this mutation.
+func (m *UsageLogMutation) AddedCacheStorageTokenHours() (r float64, exists bool) {
+	v := m.addcache_storage_token_hours
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCacheStorageTokenHours resets all changes to the "cache_storage_token_hours" field.
+func (m *UsageLogMutation) ResetCacheStorageTokenHours() {
+	m.cache_storage_token_hours = nil
+	m.addcache_storage_token_hours = nil
+}
+
+// SetCacheStorageCost sets the "cache_storage_cost" field.
+func (m *UsageLogMutation) SetCacheStorageCost(f float64) {
+	m.cache_storage_cost = &f
+	m.addcache_storage_cost = nil
+}
+
+// CacheStorageCost returns the value of the "cache_storage_cost" field in the mutation.
+func (m *UsageLogMutation) CacheStorageCost() (r float64, exists bool) {
+	v := m.cache_storage_cost
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCacheStorageCost returns the old "cache_storage_cost" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldCacheStorageCost(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCacheStorageCost is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCacheStorageCost requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCacheStorageCost: %w", err)
+	}
+	return oldValue.CacheStorageCost, nil
+}
+
+// AddCacheStorageCost adds f to the "cache_storage_cost" field.
+func (m *UsageLogMutation) AddCacheStorageCost(f float64) {
+	if m.addcache_storage_cost != nil {
+		*m.addcache_storage_cost += f
+	} else {
+		m.addcache_storage_cost = &f
+	}
+}
+
+// AddedCacheStorageCost returns the value that was added to the "cache_storage_cost" field in this mutation.
+func (m *UsageLogMutation) AddedCacheStorageCost() (r float64, exists bool) {
+	v := m.addcache_storage_cost
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCacheStorageCost resets all changes to the "cache_storage_cost" field.
+func (m *UsageLogMutation) ResetCacheStorageCost() {
+	m.cache_storage_cost = nil
+	m.addcache_storage_cost = nil
+}
+
 // SetUsageSource sets the "usage_source" field.
 func (m *UsageLogMutation) SetUsageSource(i int8) {
 	m.usage_source = &i
@@ -51588,7 +51845,7 @@ func (m *UsageLogMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UsageLogMutation) Fields() []string {
-	fields := make([]string, 0, 50)
+	fields := make([]string, 0, 52)
 	if m.user != nil {
 		fields = append(fields, usagelog.FieldUserID)
 	}
@@ -51681,6 +51938,12 @@ func (m *UsageLogMutation) Fields() []string {
 	}
 	if m.billing_type != nil {
 		fields = append(fields, usagelog.FieldBillingType)
+	}
+	if m.cache_storage_token_hours != nil {
+		fields = append(fields, usagelog.FieldCacheStorageTokenHours)
+	}
+	if m.cache_storage_cost != nil {
+		fields = append(fields, usagelog.FieldCacheStorageCost)
 	}
 	if m.usage_source != nil {
 		fields = append(fields, usagelog.FieldUsageSource)
@@ -51809,6 +52072,10 @@ func (m *UsageLogMutation) Field(name string) (ent.Value, bool) {
 		return m.AccountRateMultiplier()
 	case usagelog.FieldBillingType:
 		return m.BillingType()
+	case usagelog.FieldCacheStorageTokenHours:
+		return m.CacheStorageTokenHours()
+	case usagelog.FieldCacheStorageCost:
+		return m.CacheStorageCost()
 	case usagelog.FieldUsageSource:
 		return m.UsageSource()
 	case usagelog.FieldUsageEstimationMethod:
@@ -51918,6 +52185,10 @@ func (m *UsageLogMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldAccountRateMultiplier(ctx)
 	case usagelog.FieldBillingType:
 		return m.OldBillingType(ctx)
+	case usagelog.FieldCacheStorageTokenHours:
+		return m.OldCacheStorageTokenHours(ctx)
+	case usagelog.FieldCacheStorageCost:
+		return m.OldCacheStorageCost(ctx)
 	case usagelog.FieldUsageSource:
 		return m.OldUsageSource(ctx)
 	case usagelog.FieldUsageEstimationMethod:
@@ -52182,6 +52453,20 @@ func (m *UsageLogMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetBillingType(v)
 		return nil
+	case usagelog.FieldCacheStorageTokenHours:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCacheStorageTokenHours(v)
+		return nil
+	case usagelog.FieldCacheStorageCost:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCacheStorageCost(v)
+		return nil
 	case usagelog.FieldUsageSource:
 		v, ok := value.(int8)
 		if !ok {
@@ -52371,6 +52656,12 @@ func (m *UsageLogMutation) AddedFields() []string {
 	if m.addbilling_type != nil {
 		fields = append(fields, usagelog.FieldBillingType)
 	}
+	if m.addcache_storage_token_hours != nil {
+		fields = append(fields, usagelog.FieldCacheStorageTokenHours)
+	}
+	if m.addcache_storage_cost != nil {
+		fields = append(fields, usagelog.FieldCacheStorageCost)
+	}
 	if m.addusage_source != nil {
 		fields = append(fields, usagelog.FieldUsageSource)
 	}
@@ -52432,6 +52723,10 @@ func (m *UsageLogMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedAccountRateMultiplier()
 	case usagelog.FieldBillingType:
 		return m.AddedBillingType()
+	case usagelog.FieldCacheStorageTokenHours:
+		return m.AddedCacheStorageTokenHours()
+	case usagelog.FieldCacheStorageCost:
+		return m.AddedCacheStorageCost()
 	case usagelog.FieldUsageSource:
 		return m.AddedUsageSource()
 	case usagelog.FieldBillingState:
@@ -52566,6 +52861,20 @@ func (m *UsageLogMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddBillingType(v)
+		return nil
+	case usagelog.FieldCacheStorageTokenHours:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCacheStorageTokenHours(v)
+		return nil
+	case usagelog.FieldCacheStorageCost:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCacheStorageCost(v)
 		return nil
 	case usagelog.FieldUsageSource:
 		v, ok := value.(int8)
@@ -52876,6 +53185,12 @@ func (m *UsageLogMutation) ResetField(name string) error {
 		return nil
 	case usagelog.FieldBillingType:
 		m.ResetBillingType()
+		return nil
+	case usagelog.FieldCacheStorageTokenHours:
+		m.ResetCacheStorageTokenHours()
+		return nil
+	case usagelog.FieldCacheStorageCost:
+		m.ResetCacheStorageCost()
 		return nil
 	case usagelog.FieldUsageSource:
 		m.ResetUsageSource()

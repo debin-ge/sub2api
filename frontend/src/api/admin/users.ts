@@ -5,6 +5,7 @@
 
 import { apiClient } from '../client'
 import type {
+  AccountPlatform,
   AdminGroupCatalogEntry,
   AdminUser,
   ApiKey,
@@ -16,6 +17,7 @@ import type {
   VIPReconcileJob,
   VIPReconcilePreview
 } from '@/types'
+import { listPlatformIds } from '@/constants/platformCatalog'
 
 export interface AdminBindAuthIdentityChannelRequest {
   channel: string
@@ -410,7 +412,11 @@ export async function bindUserAuthIdentity(
 /**
  * Platform quota types
  */
-export type PlatformQuotaPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'grok'
+// 与后端 AllowedQuotaPlatforms 同源：平台清单中的全部具体平台。
+export function platformQuotaPlatforms(): PlatformQuotaPlatform[] {
+  return listPlatformIds()
+}
+export type PlatformQuotaPlatform = AccountPlatform
 export type PlatformQuotaWindow = 'daily' | 'weekly' | 'monthly'
 
 export interface PlatformQuotaItem {

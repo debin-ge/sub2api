@@ -560,3 +560,32 @@ func TestNativeResponsesImageGuardDoesNotBorrowImageTokenPlan(t *testing.T) {
 	)
 	require.ErrorIs(t, err, ErrModelPricingUnavailable)
 }
+
+// Images API settles through the billing plan; it must apply the same channel
+// reasoning-effort multiplier as the other per-request/image entries.
+func TestCalculateOpenAIImageCostFromPlanAppliesReasoningEffortMultiplier(t *testing.T) {
+	svc := newOpenAIImageBillingPlanTestService(t)
+	groupID := int64(74)
+	price := 0.2
+	setOpenAIImageChannelPricingForTest(t, svc, groupID, "gpt-image-2", &ChannelModelPricing{
+		BillingMode:                BillingModeImage,
+		ReasoningEffortMultipliers: map[string]float64{"max": 2},
+		Intervals: []PricingInterval{{
+			TierLabel:       ImageBillingSize1K,
+			PerRequestPrice: &price,
+		}},
+	})
+	apiKey := &APIKey{GroupID: &groupID}
+	plan, err := svc.resolveOpenAIImageBillingPlan(context.Background(), apiKey, &groupID, "gpt-image-2", ImageBillingSize1K, false)
+	require.NoError(t, err)
+
+	costFor := func(effort *string) *CostBreakdown {
+		result := &OpenAIForwardResult{ImageBillingPlan: plan, ImageCount: 1, ImageSize: ImageBillingSize1K, ReasoningEffort: effort}
+		cost, err := svc.calculateOpenAIImageCostFromPlan(context.Background(), result, plan, apiKey, UsageTokens{}, 1, 1, "", false)
+		require.NoError(t, err)
+		return cost
+	}
+	max := "max"
+	require.InDelta(t, price, costFor(nil).TotalCost, 1e-12)
+	require.InDelta(t, 2*price, costFor(&max).TotalCost, 1e-12)
+}

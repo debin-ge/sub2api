@@ -210,6 +210,16 @@ func BillingType(v int8) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldBillingType, v))
 }
 
+// CacheStorageTokenHours applies equality check predicate on the "cache_storage_token_hours" field. It's identical to CacheStorageTokenHoursEQ.
+func CacheStorageTokenHours(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldCacheStorageTokenHours, v))
+}
+
+// CacheStorageCost applies equality check predicate on the "cache_storage_cost" field. It's identical to CacheStorageCostEQ.
+func CacheStorageCost(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldCacheStorageCost, v))
+}
+
 // UsageSource applies equality check predicate on the "usage_source" field. It's identical to UsageSourceEQ.
 func UsageSource(v int8) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldUsageSource, v))
@@ -1688,6 +1698,86 @@ func BillingTypeLT(v int8) predicate.UsageLog {
 // BillingTypeLTE applies the LTE predicate on the "billing_type" field.
 func BillingTypeLTE(v int8) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldLTE(FieldBillingType, v))
+}
+
+// CacheStorageTokenHoursEQ applies the EQ predicate on the "cache_storage_token_hours" field.
+func CacheStorageTokenHoursEQ(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldCacheStorageTokenHours, v))
+}
+
+// CacheStorageTokenHoursNEQ applies the NEQ predicate on the "cache_storage_token_hours" field.
+func CacheStorageTokenHoursNEQ(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldCacheStorageTokenHours, v))
+}
+
+// CacheStorageTokenHoursIn applies the In predicate on the "cache_storage_token_hours" field.
+func CacheStorageTokenHoursIn(vs ...float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldCacheStorageTokenHours, vs...))
+}
+
+// CacheStorageTokenHoursNotIn applies the NotIn predicate on the "cache_storage_token_hours" field.
+func CacheStorageTokenHoursNotIn(vs ...float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldCacheStorageTokenHours, vs...))
+}
+
+// CacheStorageTokenHoursGT applies the GT predicate on the "cache_storage_token_hours" field.
+func CacheStorageTokenHoursGT(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldCacheStorageTokenHours, v))
+}
+
+// CacheStorageTokenHoursGTE applies the GTE predicate on the "cache_storage_token_hours" field.
+func CacheStorageTokenHoursGTE(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldCacheStorageTokenHours, v))
+}
+
+// CacheStorageTokenHoursLT applies the LT predicate on the "cache_storage_token_hours" field.
+func CacheStorageTokenHoursLT(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldCacheStorageTokenHours, v))
+}
+
+// CacheStorageTokenHoursLTE applies the LTE predicate on the "cache_storage_token_hours" field.
+func CacheStorageTokenHoursLTE(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldCacheStorageTokenHours, v))
+}
+
+// CacheStorageCostEQ applies the EQ predicate on the "cache_storage_cost" field.
+func CacheStorageCostEQ(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldCacheStorageCost, v))
+}
+
+// CacheStorageCostNEQ applies the NEQ predicate on the "cache_storage_cost" field.
+func CacheStorageCostNEQ(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldCacheStorageCost, v))
+}
+
+// CacheStorageCostIn applies the In predicate on the "cache_storage_cost" field.
+func CacheStorageCostIn(vs ...float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldCacheStorageCost, vs...))
+}
+
+// CacheStorageCostNotIn applies the NotIn predicate on the "cache_storage_cost" field.
+func CacheStorageCostNotIn(vs ...float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldCacheStorageCost, vs...))
+}
+
+// CacheStorageCostGT applies the GT predicate on the "cache_storage_cost" field.
+func CacheStorageCostGT(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldCacheStorageCost, v))
+}
+
+// CacheStorageCostGTE applies the GTE predicate on the "cache_storage_cost" field.
+func CacheStorageCostGTE(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldCacheStorageCost, v))
+}
+
+// CacheStorageCostLT applies the LT predicate on the "cache_storage_cost" field.
+func CacheStorageCostLT(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldCacheStorageCost, v))
+}
+
+// CacheStorageCostLTE applies the LTE predicate on the "cache_storage_cost" field.
+func CacheStorageCostLTE(v float64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldCacheStorageCost, v))
 }
 
 // UsageSourceEQ applies the EQ predicate on the "usage_source" field.

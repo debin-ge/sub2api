@@ -1,51 +1,33 @@
+import { reactive, watchSyncEffect } from 'vue'
 import type { AccountPlatform, GroupPlatform } from '@/types'
+import { listPlatforms } from './platformCatalog'
 
-export interface PlatformOption<T extends string = string> {
+// type 别名（而非 interface）以便赋给 Select 组件的 Record<string, unknown>[] 选项类型。
+export type PlatformOption<T extends string = string> = {
   value: T
   label: string
 }
 
 /**
  * Concrete upstream platforms supported by accounts and request routing.
- * Keep platform selectors derived from this catalog so newly added providers
- * do not silently disappear from list filters.
+ * Derived from the platform catalog (backend platform list, see platformCatalog.ts),
+ * so newly registered providers show up in every selector without frontend
+ * changes. Reactive so that tests replacing the catalog see the update.
  */
-export const CONCRETE_PLATFORM_OPTIONS = [
-  { value: 'anthropic', label: 'Anthropic' },
-  { value: 'openai', label: 'OpenAI' },
-  { value: 'gemini', label: 'Gemini' },
-  { value: 'antigravity', label: 'Antigravity' },
-  { value: 'grok', label: 'Grok' },
-  { value: 'minimax', label: 'MiniMax' },
-  { value: 'kimi', label: 'Kimi' },
-  { value: 'zhipu', label: 'Zhipu GLM' },
-  { value: 'glm', label: 'GLM (Legacy)' },
-  { value: 'deepseek', label: 'DeepSeek' },
-  { value: 'windsurf', label: 'Windsurf' },
-  { value: 'opencode_go', label: 'OpenCode' },
-  { value: 'bytedance', label: 'ByteDance' },
-  { value: 'fal', label: 'fal.ai' },
-  { value: 'wavespeed', label: 'WaveSpeed' },
-  { value: 'runware', label: 'Runware' },
-  { value: 'flova', label: 'Flova' }
-] as const satisfies readonly PlatformOption<AccountPlatform>[]
+export const CONCRETE_PLATFORM_OPTIONS: PlatformOption<AccountPlatform>[] = reactive([])
 
 /** Platforms that can own a group. */
-export const GROUP_PLATFORM_OPTIONS = [
-  ...CONCRETE_PLATFORM_OPTIONS,
-  { value: 'composite', label: 'Composite' }
-] as const satisfies readonly PlatformOption<GroupPlatform>[]
+export const GROUP_PLATFORM_OPTIONS: PlatformOption<GroupPlatform>[] = reactive([])
 
-/**
- * glm 是 zhipu 的历史平台 ID：仅保留在按 ID 精确查找历史行的场景（如禁用态的编辑框回显）中，
- * 新建、筛选等一切"可交互选择"场景一律用此过滤后的清单，避免它作为一个可选、可展示的独立平台出现。
- */
-export const CREATABLE_PLATFORM_OPTIONS = CONCRETE_PLATFORM_OPTIONS.filter(
-  option => option.value !== 'glm'
-)
+watchSyncEffect(() => {
+  const concrete = listPlatforms().map(spec => ({ value: spec.id, label: spec.display_name }))
+  CONCRETE_PLATFORM_OPTIONS.splice(0, CONCRETE_PLATFORM_OPTIONS.length, ...concrete)
+  GROUP_PLATFORM_OPTIONS.splice(0, GROUP_PLATFORM_OPTIONS.length, ...concrete, {
+    value: 'composite',
+    label: 'Composite'
+  })
+})
 
-/** Platforms that can own a group, excluding the legacy glm alias — for create/filter pickers. */
-export const CREATABLE_GROUP_PLATFORM_OPTIONS = [
-  ...CREATABLE_PLATFORM_OPTIONS,
-  { value: 'composite', label: 'Composite' }
-] as const satisfies readonly PlatformOption<GroupPlatform>[]
+// Legacy aliases are normalized when reading historical rows, never offered for new objects.
+export const CREATABLE_PLATFORM_OPTIONS = CONCRETE_PLATFORM_OPTIONS
+export const CREATABLE_GROUP_PLATFORM_OPTIONS = GROUP_PLATFORM_OPTIONS

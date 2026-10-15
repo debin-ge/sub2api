@@ -204,6 +204,20 @@ func (h *MiniMaxGatewayHandler) Messages(c *gin.Context) {
 		return
 	}
 
+	// 余额模式在途预留：防止并发请求在预检时看到同一份余额而集体透支。
+	inflightRelease, err := reserveInflightBalanceForInjected(c, h.billingCacheService, h.gatewayService, apiKey, subscription, tokenInflightEstimate(reqModel, body))
+	if err != nil {
+		status, code, message, retryAfter := billingErrorDetails(err)
+		if retryAfter > 0 {
+			c.Header("Retry-After", strconv.Itoa(retryAfter))
+		}
+		if !streamStarted {
+			h.errorResponse(c, status, code, message)
+		}
+		return
+	}
+	defer inflightRelease()
+
 	usageCtx := minimaxForwardUsageContext{
 		component:      "handler.minimax_gateway.messages",
 		apiKey:         apiKey,
@@ -399,6 +413,20 @@ func (h *MiniMaxGatewayHandler) ChatCompletions(c *gin.Context) {
 		}
 		return
 	}
+
+	// 余额模式在途预留：防止并发请求在预检时看到同一份余额而集体透支。
+	inflightRelease, err := reserveInflightBalanceForInjected(c, h.billingCacheService, h.gatewayService, apiKey, subscription, tokenInflightEstimate(reqModel, body))
+	if err != nil {
+		status, code, message, retryAfter := billingErrorDetails(err)
+		if retryAfter > 0 {
+			c.Header("Retry-After", strconv.Itoa(retryAfter))
+		}
+		if !streamStarted {
+			h.errorResponse(c, status, code, message)
+		}
+		return
+	}
+	defer inflightRelease()
 
 	usageCtx := minimaxForwardUsageContext{
 		component:      "handler.minimax_gateway.chat_completions",
@@ -609,6 +637,20 @@ func (h *MiniMaxGatewayHandler) Responses(c *gin.Context) {
 		}
 		return
 	}
+
+	// 余额模式在途预留：防止并发请求在预检时看到同一份余额而集体透支。
+	inflightRelease, err := reserveInflightBalanceForInjected(c, h.billingCacheService, h.gatewayService, apiKey, subscription, tokenInflightEstimate(reqModel, body))
+	if err != nil {
+		status, code, message, retryAfter := billingErrorDetails(err)
+		if retryAfter > 0 {
+			c.Header("Retry-After", strconv.Itoa(retryAfter))
+		}
+		if !streamStarted {
+			h.errorResponse(c, status, code, message)
+		}
+		return
+	}
+	defer inflightRelease()
 
 	usageCtx := minimaxForwardUsageContext{
 		component:      "handler.minimax_gateway.responses",

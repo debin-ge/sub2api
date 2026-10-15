@@ -181,6 +181,8 @@ func TestDetectModelPlatform(t *testing.T) {
 		{name: "minimax prefix", model: "minimax/MiniMax-M2.5", platform: PlatformMiniMax, ok: true},
 		{name: "abab legacy", model: "abab6.5-chat", platform: PlatformMiniMax, ok: true},
 		{name: "abab7 legacy", model: "abab7-chat-preview", platform: PlatformMiniMax, ok: true},
+		{name: "jev", model: "jev-latest", platform: PlatformTypeSafe, ok: true},
+		{name: "typesafe prefix", model: "typesafe/jev-latest", platform: PlatformTypeSafe, ok: true},
 		{name: "abab unrelated namespace", model: "abab-other", ok: false},
 		{name: "unknown k3 alias", model: "k3-preview", ok: false},
 		{name: "unknown", model: "llama-4-maverick", ok: false},
@@ -217,19 +219,7 @@ func TestSchedulerHasAllCanonicalPlatformBuckets(t *testing.T) {
 		platforms = append(platforms, platform)
 	}
 	require.ElementsMatch(t,
-		[]string{
-			PlatformAnthropic,
-			PlatformGemini,
-			PlatformOpenAI,
-			PlatformAntigravity,
-			PlatformGrok,
-			PlatformMiniMax,
-			PlatformZhipu,
-			PlatformKimi,
-			PlatformDeepSeek,
-			PlatformWindsurf,
-			PlatformOpenCodeGo,
-		},
+		[]string{PlatformAnthropic, PlatformGemini, PlatformOpenAI, PlatformAntigravity, PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformWindsurf, PlatformOpenCodeGo, PlatformTypeSafe, PlatformCommandCode, PlatformCline, PlatformByteDance, PlatformFal, PlatformWaveSpeed, PlatformRunware, PlatformFlova},
 		platforms,
 	)
 }
@@ -239,7 +229,7 @@ func TestCompositeCatalogPlatformsIncludeAllSupportedProviders(t *testing.T) {
 		[]string{
 			PlatformAnthropic, PlatformGemini, PlatformOpenAI, PlatformAntigravity, PlatformGrok,
 			PlatformKimi, PlatformZhipu, PlatformDeepSeek, PlatformMiniMax, PlatformWindsurf, PlatformOpenCodeGo,
-			PlatformByteDance, PlatformFal, PlatformWaveSpeed, PlatformRunware, PlatformFlova,
+			PlatformByteDance, PlatformFal, PlatformWaveSpeed, PlatformRunware, PlatformFlova, PlatformTypeSafe, PlatformCommandCode, PlatformCline,
 		},
 		compositeModelCatalogPlatforms,
 	)
@@ -249,7 +239,7 @@ func TestCompositeConcretePlatformsIncludeCNAndLocalProviders(t *testing.T) {
 	for _, platform := range []string{
 		PlatformKimi, PlatformZhipu, PlatformGLM, PlatformDeepseek,
 		PlatformMiniMax, PlatformWindsurf, PlatformOpenCodeGo, PlatformByteDance,
-		PlatformFal, PlatformWaveSpeed, PlatformRunware, PlatformFlova,
+		PlatformFal, PlatformWaveSpeed, PlatformRunware, PlatformFlova, PlatformTypeSafe, PlatformCommandCode, PlatformCline,
 	} {
 		require.True(t, isConcreteRequestPlatform(platform))
 		require.True(t, canCopyAccountsFromGroupPlatform(PlatformComposite, platform))

@@ -90,6 +90,7 @@ func TestMarkSettlementRecoveredKeepsActualCostZero(t *testing.T) {
 			cost.BillingMode,
 			int16(service.BillingStatePricingRecovered),
 			int16(service.BillingStatePricingUnavailable),
+			cost.CacheStorageCost,
 		).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 

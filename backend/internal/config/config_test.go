@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 )
@@ -522,6 +523,15 @@ func TestLoadServerTimingConfig(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, cfg.Server.EnableServerTiming)
 	})
+}
+
+func TestLoadSimpleModeKeyRateLimitEnabledFromEnvironment(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("SIMPLE_MODE_KEY_RATE_LIMIT_ENABLED", "true")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.True(t, cfg.SimpleModeKeyRateLimitEnabled)
 }
 
 func TestLoadRedisUsernameFromEnvironment(t *testing.T) {
@@ -1452,6 +1462,7 @@ func TestLoadDefaultSecurityToggles(t *testing.T) {
 
 	wantHosts := []string{
 		"api.kimi.com",
+		"api.kimi.ai",
 		"api.moonshot.ai",
 		"api.moonshot.cn",
 	}
@@ -1463,6 +1474,19 @@ func TestLoadDefaultSecurityToggles(t *testing.T) {
 		if _, ok := hostSet[want]; !ok {
 			t.Fatalf("URLAllowlist.UpstreamHosts missing %q; got %v", want, cfg.Security.URLAllowlist.UpstreamHosts)
 		}
+	}
+	opts := urlvalidator.ValidationOptions{
+		AllowedHosts:     cfg.Security.URLAllowlist.UpstreamHosts,
+		RequireAllowlist: true,
+		AllowPrivate:     cfg.Security.URLAllowlist.AllowPrivateHosts,
+	}
+	for _, host := range []string{"api.kimi.com", "api.kimi.ai"} {
+		target := "https://" + host + "/coding/v1/usages"
+		normalized, err := urlvalidator.ValidateHTTPSURL(target, opts)
+		require.NoError(t, err)
+		require.Equal(t, target, normalized)
+		_, err = urlvalidator.ValidateHTTPSURL("https://"+host+".attacker.example/coding/v1/usages", opts)
+		require.Error(t, err)
 	}
 }
 
@@ -3292,4 +3316,43 @@ func TestLoadAndValidateVideoWorkerBatchSize(t *testing.T) {
 	require.ErrorContains(t, cfg.Validate(), "gateway.video.worker_request_timeout_seconds")
 	cfg.Gateway.Video.WorkerRequestTimeoutSeconds = 30
 	require.NoError(t, cfg.Validate())
+}
+
+func TestLoadSimpleModeAutoCreateDefaultGroups(t *testing.T) {
+	for _, loader := range []struct {
+		name string
+		load func() (*Config, error)
+	}{{"Load", Load}, {"LoadForBootstrap", LoadForBootstrap}} {
+		t.Run(loader.name, func(t *testing.T) {
+			for _, tt := range []struct {
+				name  string
+				yaml  string
+				env   string
+				unset bool
+				want  bool
+			}{
+				{name: "unset env uses application default", unset: true, want: true},
+				{name: "empty env uses application default", want: true},
+				{name: "unset env preserves yaml false", unset: true, yaml: "simple_mode:\n  auto_create_default_groups: false\n", want: false},
+				{name: "empty env preserves yaml false", yaml: "simple_mode:\n  auto_create_default_groups: false\n", want: false},
+				{name: "env false overrides yaml true", yaml: "simple_mode:\n  auto_create_default_groups: true\n", env: "false", want: false},
+				{name: "env false without yaml", env: "false", want: false},
+				{name: "env true overrides yaml false", yaml: "simple_mode:\n  auto_create_default_groups: false\n", env: "true", want: true},
+			} {
+				t.Run(tt.name, func(t *testing.T) {
+					resetViperWithJWTSecret(t)
+					t.Setenv("SIMPLE_MODE_AUTO_CREATE_DEFAULT_GROUPS", tt.env)
+					if tt.unset {
+						require.NoError(t, os.Unsetenv("SIMPLE_MODE_AUTO_CREATE_DEFAULT_GROUPS"))
+					}
+					path := filepath.Join(t.TempDir(), "config.yaml")
+					require.NoError(t, os.WriteFile(path, []byte("run_mode: simple\n"+tt.yaml), 0o600))
+					t.Setenv("CONFIG_FILE", path)
+					cfg, err := loader.load()
+					require.NoError(t, err)
+					require.Equal(t, tt.want, cfg.SimpleMode.AutoCreateDefaultGroups)
+				})
+			}
+		})
+	}
 }

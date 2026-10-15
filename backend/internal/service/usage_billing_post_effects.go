@@ -324,8 +324,12 @@ func (s *UsageBillingPostEffectsService) finalize(
 			p.AccountRateMultiplier = cmd.AccountQuotaCost / cmd.TotalCost
 		}
 		deps := &billingDeps{balanceNotifyService: s.balanceNotifyService}
-		go notifyBalanceLow(p, deps, result)
-		go notifyAccountQuota(p, deps, result)
+		if cmd.BalanceCost > 0 {
+			go notifyBalanceLow(p, deps, result)
+		}
+		if cmd.AccountQuotaCost > 0 {
+			go notifyAccountQuota(p, deps, result)
+		}
 	}
 	return nil
 }

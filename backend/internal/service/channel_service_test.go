@@ -2154,13 +2154,13 @@ func TestMatchingPlatforms(t *testing.T) {
 		{"anthropic returns itself", PlatformAnthropic, []string{PlatformAnthropic}},
 		{"gemini returns itself", PlatformGemini, []string{PlatformGemini}},
 		{"openai returns itself", PlatformOpenAI, []string{PlatformOpenAI}},
-		{"composite returns concrete platforms", PlatformComposite, append([]string(nil), compositeModelCatalogPlatforms[:]...)},
+		{"composite returns concrete platforms", PlatformComposite, AllowedQuotaPlatforms},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := matchingPlatforms(tt.groupPlatform)
-			require.Equal(t, tt.want, result)
+			require.ElementsMatch(t, tt.want, result)
 		})
 	}
 }

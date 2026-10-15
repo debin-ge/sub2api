@@ -291,9 +291,10 @@ func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, t
 		result.BalanceOverdrafted = !sufficient
 	}
 
+	// Key 已不存在时跳过其自身的额度/限速计数，其余结算项不受影响。
 	if cmd.APIKeyQuotaCost > 0 {
 		exhausted, err := incrementUsageBillingAPIKeyQuota(ctx, tx, cmd.APIKeyID, cmd.APIKeyQuotaCost)
-		if err != nil {
+		if err != nil && !errors.Is(err, service.ErrAPIKeyNotFound) {
 			return err
 		}
 		result.APIKeyQuotaExhausted = exhausted
@@ -306,7 +307,7 @@ func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, t
 		} else {
 			err = incrementUsageBillingAPIKeyQuotaAtEvent(ctx, tx, quotaCommand)
 		}
-		if err != nil {
+		if err != nil && !errors.Is(err, service.ErrAPIKeyNotFound) {
 			return err
 		}
 	}

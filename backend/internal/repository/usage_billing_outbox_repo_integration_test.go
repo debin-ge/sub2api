@@ -637,3 +637,148 @@ func TestUsageBillingOutbox_LegacyDedupWithoutLogRepairsAfterRestartWithoutRecha
 	require.Equal(t, 1, usageCount)
 	require.Zero(t, outboxCount)
 }
+
+func TestUsageBillingOutbox_CacheStorageSurvivesRestartExactlyOnce(t *testing.T) {
+	for _, simple := range []bool{false, true} {
+		t.Run(fmt.Sprintf("simple=%v", simple), func(t *testing.T) {
+			ctx := context.Background()
+			client := testEntClient(t)
+
+			user := mustCreateUser(t, client, &service.User{
+				Email:        fmt.Sprintf("usage-billing-recovery-%s@example.com", uuid.NewString()),
+				PasswordHash: "hash",
+				Balance:      100,
+			})
+			apiKey := mustCreateApiKey(t, client, &service.APIKey{
+				UserID: user.ID,
+				Key:    "sk-usage-billing-recovery-" + uuid.NewString(),
+				Name:   "billing-recovery",
+			})
+			account := mustCreateAccount(t, client, &service.Account{
+				Name: "usage-billing-recovery-" + uuid.NewString(),
+				Type: service.AccountTypeAPIKey,
+			})
+
+			requestID := "req-" + uuid.NewString() + strings.Repeat("x", 160)
+			require.Greater(t, len(requestID), 64)
+			require.LessOrEqual(t, len(requestID), 255)
+			cmd := &service.UsageBillingCommand{
+				RequestID:   requestID,
+				APIKeyID:    apiKey.ID,
+				UserID:      user.ID,
+				AccountID:   account.ID,
+				AccountType: account.Type,
+				Model:       "priced-model",
+				InputTokens: 10,
+				BalanceCost: 1.25,
+				ActualCost:  1.25,
+				TotalCost:   1.25,
+				OccurredAt:  time.Now().UTC(),
+			}
+			usageLog := &service.UsageLog{
+				UserID:                 user.ID,
+				APIKeyID:               apiKey.ID,
+				AccountID:              account.ID,
+				RequestID:              requestID,
+				Model:                  cmd.Model,
+				InputTokens:            cmd.InputTokens,
+				InputCost:              0.25,
+				CacheStorageTokenHours: 20000,
+				CacheStorageCost:       1.0,
+				TotalCost:              1.25,
+				ActualCost:             1.25,
+				CreatedAt:              time.Now().UTC(),
+			}
+			cmd.APIKeyRateLimitCost = 1.25
+			if simple {
+				cmd.SimpleModeKeyRateLimitOnly = true
+				cmd.BalanceCost = 0
+			}
+			wantBalance := 98.75
+			if simple {
+				wantBalance = 100
+			}
+			commandJSON, usageLogJSON, err := marshalUsageBillingOutboxPayload(cmd, usageLog)
+			require.NoError(t, err)
+
+			// Process one persists the intent and exits before applying it.
+			firstProcessRepo := NewUsageBillingRepository(client, integrationDB)
+			event, err := firstProcessRepo.enqueueAndClaimUsageBillingOutbox(
+				ctx, "dead-process", cmd, commandJSON, usageLogJSON,
+			)
+			require.NoError(t, err)
+			require.Positive(t, event.ID)
+			_, err = integrationDB.ExecContext(ctx, `
+		UPDATE usage_billing_outbox
+		SET claimed_at = NOW() - INTERVAL '5 minutes', available_at = NOW()
+		WHERE id = $1
+	`, event.ID)
+			require.NoError(t, err)
+
+			// A fresh repository instance represents a restarted process. Its worker
+			// claims and commits the retained intent.
+			restartedRepo := NewUsageBillingRepository(client, integrationDB)
+			events, err := restartedRepo.ClaimUsageBillingOutbox(ctx, "restart-worker", 10, 2*time.Minute)
+			require.NoError(t, err)
+			require.Len(t, events, 1)
+			result, err := restartedRepo.CompleteUsageBillingOutbox(ctx, "restart-worker", events[0])
+			require.NoError(t, err)
+			require.True(t, result.Applied)
+			require.True(t, result.UsageLogRecorded)
+			require.NotNil(t, result.OutboxReceipt)
+			require.NoError(t, restartedRepo.AcknowledgeUsageBillingOutbox(
+				ctx, result.OutboxReceipt.WorkerID, result.OutboxReceipt.ID,
+			))
+
+			assertBillingState := func(wantBalance float64) {
+				t.Helper()
+				var balance float64
+				require.NoError(t, integrationDB.QueryRowContext(ctx,
+					"SELECT balance FROM users WHERE id = $1", user.ID,
+				).Scan(&balance))
+				require.InDelta(t, wantBalance, balance, 0.000001)
+
+				var usageCount, dedupCount, outboxCount int
+				require.NoError(t, integrationDB.QueryRowContext(ctx,
+					"SELECT COUNT(*) FROM usage_logs WHERE request_id = $1 AND api_key_id = $2",
+					requestID, apiKey.ID,
+				).Scan(&usageCount))
+				require.NoError(t, integrationDB.QueryRowContext(ctx,
+					"SELECT COUNT(*) FROM usage_billing_dedup WHERE request_id = $1 AND api_key_id = $2",
+					requestID, apiKey.ID,
+				).Scan(&dedupCount))
+				require.NoError(t, integrationDB.QueryRowContext(ctx,
+					"SELECT COUNT(*) FROM usage_billing_outbox WHERE request_id = $1 AND api_key_id = $2",
+					requestID, apiKey.ID,
+				).Scan(&outboxCount))
+				require.Equal(t, 1, usageCount)
+				require.Equal(t, 1, dedupCount)
+				require.Zero(t, outboxCount)
+			}
+			assertBillingState(wantBalance)
+
+			// Retrying after an ambiguous client outcome creates a fresh intent, but
+			// both database idempotency keys already exist. It only acknowledges the
+			// intent and cannot debit the user twice.
+			duplicateResult, err := restartedRepo.ApplyAndRecord(ctx, cmd, usageLog)
+			require.NoError(t, err)
+			require.False(t, duplicateResult.Applied)
+			require.True(t, duplicateResult.UsageLogRecorded)
+			require.NotNil(t, duplicateResult.OutboxReceipt)
+			require.NoError(t, restartedRepo.AcknowledgeUsageBillingOutbox(
+				ctx, duplicateResult.OutboxReceipt.WorkerID, duplicateResult.OutboxReceipt.ID,
+			))
+			assertBillingState(wantBalance)
+			var quantity, storage float64
+			require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT cache_storage_token_hours, cache_storage_cost FROM usage_logs WHERE request_id=$1 AND api_key_id=$2", requestID, apiKey.ID).Scan(&quantity, &storage))
+			require.Equal(t, 20000.0, quantity)
+			require.Equal(t, 1.0, storage)
+
+			var window, quota float64
+			require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT usage_5h, quota_used FROM api_keys WHERE id=$1", apiKey.ID).Scan(&window, &quota))
+			require.Equal(t, 1.25, window, "window accounting must survive replay without duplication")
+			require.Zero(t, quota, "key financial quota is not part of this command")
+		})
+	}
+
+}

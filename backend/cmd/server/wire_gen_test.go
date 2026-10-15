@@ -296,12 +296,14 @@ func cleanupWithRadarTestDependencies(rdb *redis.Client, radarRunner *service.Ra
 		nil, // cnProviderBalanceCheck
 		nil, // flovaCreditsSync
 		nil, // codexVersionSync
+		nil, // claudeCodeVersionSync
 		service.NewProxyExpiryService(nil, time.Second),
 		service.NewSubscriptionExpiryService(nil, time.Second),
 		nil, // vipReconcile
 		nil, // vipIncrementalReconcile
 		nil, // usageCleanup
 		nil, // idempotencyCleanup
+		nil, // geminiCachedContent
 		nil, // batchImageCleanup
 		nil, // batchImageWorker
 		nil, // videoSpoolRuntime
@@ -331,6 +333,7 @@ func cleanupWithRadarTestDependencies(rdb *redis.Client, radarRunner *service.Ra
 		nil, // quotaFlusher
 		nil, // upstreamBillingProbe
 		nil, // ollamaCloudUsage
+		nil, // openCodeGoUsage
 		nil, // auditLog
 		nil, // openAIAutoReset
 		nil, // promptAudit
@@ -397,6 +400,7 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 	)
 	accountExpirySvc := service.NewAccountExpiryService(nil, time.Second)
 	codexVersionSyncSvc := service.NewOpenAICodexVersionSyncService(nil, nil, nil, time.Second)
+	claudeCodeVersionSyncSvc := service.NewClaudeCodeVersionSyncService(nil, nil, nil, time.Second)
 	proxyExpirySvc := service.NewProxyExpiryService(nil, time.Second)
 	subscriptionExpirySvc := service.NewSubscriptionExpiryService(nil, time.Second)
 	pricingSvc := service.NewPricingService(cfg, nil)
@@ -450,12 +454,14 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		nil, // cnProviderBalanceCheck
 		nil, // flovaCreditsSync
 		codexVersionSyncSvc,
+		claudeCodeVersionSyncSvc,
 		proxyExpirySvc,
 		subscriptionExpirySvc,
 		nil, // vipReconcile
 		nil, // vipIncrementalReconcile
 		&service.UsageCleanupService{},
 		idempotencyCleanupSvc,
+		service.NewGeminiCachedContentService(nil, nil, cfg),
 		&service.BatchImageCleanupService{},
 		nil, // batchImageWorker
 		nil, // videoSpoolRuntime
@@ -485,6 +491,7 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		nil, // quotaFlusher
 		nil, // upstreamBillingProbe
 		nil, // ollamaCloudUsage
+		nil, // openCodeGoUsage
 		nil, // auditLog
 		nil, // openAIAutoReset
 		nil, // promptAudit

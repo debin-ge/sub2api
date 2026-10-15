@@ -147,6 +147,7 @@ func TestGatewayServiceGetAvailableModelsOpenCodeDefaultsWhenNoAccounts(t *testi
 		"glm-5.3-flash",
 		"gpt-5.6-luna",
 		"grok-4.6",
+		"grok-4.7",
 		"hy3",
 		"hy4-preview",
 		"kimi-k2.6",

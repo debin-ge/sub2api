@@ -85,6 +85,10 @@ type UsageLog struct {
 	AccountRateMultiplier *float64 `json:"account_rate_multiplier,omitempty"`
 	// BillingType holds the value of the "billing_type" field.
 	BillingType int8 `json:"billing_type,omitempty"`
+	// CacheStorageTokenHours holds the value of the "cache_storage_token_hours" field.
+	CacheStorageTokenHours float64 `json:"cache_storage_token_hours,omitempty"`
+	// CacheStorageCost holds the value of the "cache_storage_cost" field.
+	CacheStorageCost float64 `json:"cache_storage_cost,omitempty"`
 	// 用量来源：0=未知 1=上游 2=本地估算 3=最低兜底
 	UsageSource int8 `json:"usage_source,omitempty"`
 	// 用量估算方式：upstream/tokenizer/heuristic/minimum
@@ -210,7 +214,7 @@ func (*UsageLog) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case usagelog.FieldUpstreamModelMismatch, usagelog.FieldLongContextBillingApplied, usagelog.FieldStream, usagelog.FieldCacheTTLOverridden:
 			values[i] = new(sql.NullBool)
-		case usagelog.FieldInputCost, usagelog.FieldOutputCost, usagelog.FieldCacheCreationCost, usagelog.FieldCacheReadCost, usagelog.FieldTotalCost, usagelog.FieldActualCost, usagelog.FieldRateMultiplier, usagelog.FieldAccountRateMultiplier:
+		case usagelog.FieldInputCost, usagelog.FieldOutputCost, usagelog.FieldCacheCreationCost, usagelog.FieldCacheReadCost, usagelog.FieldTotalCost, usagelog.FieldActualCost, usagelog.FieldRateMultiplier, usagelog.FieldAccountRateMultiplier, usagelog.FieldCacheStorageTokenHours, usagelog.FieldCacheStorageCost:
 			values[i] = new(sql.NullFloat64)
 		case usagelog.FieldID, usagelog.FieldUserID, usagelog.FieldAPIKeyID, usagelog.FieldAccountID, usagelog.FieldChannelID, usagelog.FieldGroupID, usagelog.FieldSubscriptionID, usagelog.FieldInputTokens, usagelog.FieldOutputTokens, usagelog.FieldCacheCreationTokens, usagelog.FieldCacheReadTokens, usagelog.FieldCacheCreation5mTokens, usagelog.FieldCacheCreation1hTokens, usagelog.FieldBillingType, usagelog.FieldUsageSource, usagelog.FieldBillingState, usagelog.FieldDurationMs, usagelog.FieldFirstTokenMs, usagelog.FieldImageCount, usagelog.FieldVideoCount, usagelog.FieldVideoDurationSeconds:
 			values[i] = new(sql.NullInt64)
@@ -435,6 +439,18 @@ func (_m *UsageLog) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field billing_type", values[i])
 			} else if value.Valid {
 				_m.BillingType = int8(value.Int64)
+			}
+		case usagelog.FieldCacheStorageTokenHours:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field cache_storage_token_hours", values[i])
+			} else if value.Valid {
+				_m.CacheStorageTokenHours = value.Float64
+			}
+		case usagelog.FieldCacheStorageCost:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field cache_storage_cost", values[i])
+			} else if value.Valid {
+				_m.CacheStorageCost = value.Float64
 			}
 		case usagelog.FieldUsageSource:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -737,6 +753,12 @@ func (_m *UsageLog) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("billing_type=")
 	builder.WriteString(fmt.Sprintf("%v", _m.BillingType))
+	builder.WriteString(", ")
+	builder.WriteString("cache_storage_token_hours=")
+	builder.WriteString(fmt.Sprintf("%v", _m.CacheStorageTokenHours))
+	builder.WriteString(", ")
+	builder.WriteString("cache_storage_cost=")
+	builder.WriteString(fmt.Sprintf("%v", _m.CacheStorageCost))
 	builder.WriteString(", ")
 	builder.WriteString("usage_source=")
 	builder.WriteString(fmt.Sprintf("%v", _m.UsageSource))

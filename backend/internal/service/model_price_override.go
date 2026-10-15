@@ -339,6 +339,9 @@ func rawOf(entry *ModelPriceEntry) *RawModelPriceEntry {
 	if entry == nil {
 		return raw
 	}
+	if entry.CacheStoragePriceExplicit || (!entry.PricePresenceKnown && entry.CacheStorageCostPerTokenPerHour != 0) {
+		raw.CacheStorageCostPerTokenPerHour = catalogPriceFloat64(entry.CacheStorageCostPerTokenPerHour)
+	}
 	raw.Currency = modelPriceEntryCurrency(entry)
 	if entry.InputPriceExplicit || (!entry.PricePresenceKnown && entry.InputCostPerToken != 0) {
 		raw.InputCostPerToken = catalogPriceFloat64(entry.InputCostPerToken)
@@ -495,6 +498,10 @@ func buildOverrideModelPriceEntry(model string, base *ModelPriceEntry, row *Mode
 	raw := mergeRawPriceEntry(overrideBaseRaw(base, currency, modelPriceOverrideBillingModeOrToken(row.BillingMode)), &row.Payload)
 	raw.Currency = currency
 	entry := buildModelPriceEntry(model, raw)
+	if base != nil {
+		entry.CacheStorageCostPerTokenPerHour = base.CacheStorageCostPerTokenPerHour
+		entry.CacheStoragePriceExplicit = base.CacheStoragePriceExplicit
+	}
 	// OperatorOverride 表示 token 价由运营者定死，不再套 DeepSeek 官方峰谷翻倍。只有
 	// payload 真的改了 token 价才算：空 payload（全部继承）或只改图片/视频价的行，
 	// token 价仍是目录里的官方空闲价，必须照常按北京时间高峰翻倍，否则高峰少收一半。
@@ -531,6 +538,10 @@ func buildModelPriceEntry(model string, raw *RawModelPriceEntry) *ModelPriceEntr
 		LongContextPricingExplicit: raw.LongContextInputTokenThreshold != nil ||
 			raw.LongContextInputCostMultiplier != nil ||
 			raw.LongContextOutputCostMultiplier != nil,
+	}
+	if raw.CacheStorageCostPerTokenPerHour != nil {
+		entry.CacheStorageCostPerTokenPerHour = *raw.CacheStorageCostPerTokenPerHour
+		entry.CacheStoragePriceExplicit = true
 	}
 	entry.VideoPricing = cloneVideoPricingConfig(raw.VideoPricing)
 	if raw.InputCostPerToken != nil {

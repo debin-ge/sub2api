@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
@@ -77,6 +78,79 @@ var (
 		PricingCatalogProvider:              "openai",
 		Mode:                                "chat",
 		SupportsPromptCaching:               true,
+	}
+	openAIGPT61SolFallbackPricing = &LiteLLMModelPricing{
+		InputCostPerToken:                   2e-6,
+		InputCostPerTokenPriority:           4e-6,
+		OutputCostPerToken:                  10e-6,
+		OutputCostPerTokenPriority:          20e-6,
+		CacheCreationInputTokenCost:         2.5e-6,
+		CacheCreationInputTokenCostPriority: 5e-6,
+		CacheReadInputTokenCost:             0.1e-6,
+		CacheReadInputTokenCostPriority:     0.2e-6,
+		LongContextInputTokenThreshold:      272_000,
+		LongContextInputCostMultiplier:      2,
+		LongContextOutputCostMultiplier:     1.5,
+		SupportsServiceTier:                 true,
+		PricingCatalogProvider:              "openai",
+		Mode:                                "chat",
+		SupportsPromptCaching:               true,
+	}
+	openAIGPT6SolFallbackPricing = &LiteLLMModelPricing{
+		InputCostPerToken:                   2e-6,
+		InputCostPerTokenPriority:           4e-6,
+		OutputCostPerToken:                  10e-6,
+		OutputCostPerTokenPriority:          20e-6,
+		CacheCreationInputTokenCost:         2.5e-6,
+		CacheCreationInputTokenCostPriority: 5e-6,
+		CacheReadInputTokenCost:             0.2e-6,
+		CacheReadInputTokenCostPriority:     0.4e-6,
+		LongContextInputTokenThreshold:      272_000,
+		LongContextInputCostMultiplier:      2,
+		LongContextOutputCostMultiplier:     1.5,
+		SupportsServiceTier:                 true,
+		PricingCatalogProvider:              "openai",
+		Mode:                                "chat",
+		SupportsPromptCaching:               true,
+	}
+	openAIGPT6LunaFallbackPricing = &LiteLLMModelPricing{
+		InputCostPerToken:                   0.1e-6,
+		InputCostPerTokenPriority:           0.2e-6,
+		OutputCostPerToken:                  0.5e-6,
+		OutputCostPerTokenPriority:          1e-6,
+		CacheCreationInputTokenCost:         0.125e-6,
+		CacheCreationInputTokenCostPriority: 0.25e-6,
+		CacheReadInputTokenCost:             0.01e-6,
+		CacheReadInputTokenCostPriority:     0.02e-6,
+		LongContextInputTokenThreshold:      272_000,
+		LongContextInputCostMultiplier:      2,
+		LongContextOutputCostMultiplier:     1.5,
+		SupportsServiceTier:                 true,
+		PricingCatalogProvider:              "openai",
+		Mode:                                "chat",
+		SupportsPromptCaching:               true,
+	}
+	claudeOpus55FallbackPricing = &LiteLLMModelPricing{
+		InputCostPerToken: 4e-6, OutputCostPerToken: 20e-6,
+		CacheCreationInputTokenCost: 5e-6, CacheCreationInputTokenCostAbove1hr: 8e-6,
+		CacheReadInputTokenCost:   0.2e-6,
+		InputCostPerTokenPriority: 8e-6, OutputCostPerTokenPriority: 40e-6,
+		CacheCreationInputTokenCostPriority: 10e-6, CacheReadInputTokenCostPriority: 0.4e-6,
+		SupportsServiceTier: true, PricingCatalogProvider: "anthropic", Mode: "chat", SupportsPromptCaching: true,
+	}
+	claudeSonnet55FallbackPricing = &LiteLLMModelPricing{
+		InputCostPerToken: 2e-6, OutputCostPerToken: 10e-6,
+		CacheCreationInputTokenCost: 2.5e-6, CacheCreationInputTokenCostAbove1hr: 4e-6,
+		CacheReadInputTokenCost: 0.2e-6,
+		PricingCatalogProvider:  "anthropic", Mode: "chat", SupportsPromptCaching: true,
+	}
+	claudeHaiku55FallbackPricing = &LiteLLMModelPricing{
+		InputCostPerToken: 1e-7, OutputCostPerToken: 5e-7,
+		CacheCreationInputTokenCost: 1.25e-7, CacheCreationInputTokenCostAbove1hr: 2e-7,
+		CacheReadInputTokenCost:        1e-8,
+		LongContextInputTokenThreshold: 100000,
+		LongContextInputCostMultiplier: 5, LongContextOutputCostMultiplier: 5,
+		PricingCatalogProvider: "anthropic", Mode: "chat", SupportsPromptCaching: true,
 	}
 	openAIGPT56SolFallbackPricing = &LiteLLMModelPricing{
 		InputCostPerToken:                   5e-06,
@@ -188,6 +262,9 @@ type ModelPriceEntry struct {
 	// image 档不改动 VideoPricing 本身——渠道/分组视频定价仍要用它的 estimator 与
 	// resolution 归一化——只由 catalogVideoPricingActive 屏蔽目录视频价兜底。
 	BillingMode BillingMode `json:"-"`
+	// Cache storage is independently priced in USD per token-hour.
+	CacheStorageCostPerTokenPerHour float64 `json:"cache_storage_cost_per_token_per_hour"`
+	CacheStoragePriceExplicit       bool    `json:"-"`
 
 	// TokenPricingAbsent 表示源数据缺少一组完整、自洽的 token 价格：
 	// input/output 必须同时存在；声明 cache、priority 或 long-context 时，
@@ -210,6 +287,7 @@ type PricingRemoteClient interface {
 // RawModelPriceEntry parses raw JSON while preserving whether optional price
 // fields were present.
 type RawModelPriceEntry struct {
+	CacheStorageCostPerTokenPerHour     *float64            `json:"cache_storage_cost_per_token_per_hour"`
 	Currency                            string              `json:"currency"`
 	InputCostPerToken                   *float64            `json:"input_cost_per_token"`
 	InputCostPerTokenPriority           *float64            `json:"input_cost_per_token_priority"`
@@ -918,7 +996,7 @@ func (s *PricingService) parsePricingData(body []byte) (map[string]*ModelPriceEn
 		}
 
 		// 只保留有有效价格的条目
-		if entry.InputCostPerToken == nil && entry.OutputCostPerToken == nil && entry.OutputCostPerImage == nil && entry.OutputCostPerImageToken == nil && entry.InputCostPerImageToken == nil && entry.VideoPricing == nil {
+		if entry.InputCostPerToken == nil && entry.OutputCostPerToken == nil && entry.OutputCostPerImage == nil && entry.OutputCostPerImageToken == nil && entry.InputCostPerImageToken == nil && entry.VideoPricing == nil && entry.CacheStorageCostPerTokenPerHour == nil {
 			continue
 		}
 		if normalized, err := NormalizeModelPriceCurrency(entry.Currency); err != nil {
@@ -1725,6 +1803,9 @@ func normalizeModelNameForPricing(model string) string {
 
 	model = strings.TrimLeft(model, "/")
 	if canonical := canonicalizeOpenAIModelAliasSpelling(model); canonical != "" {
+		if openai.IsGPT61SolModelSpelling(canonical) || openai.IsGPT6SolOrLunaModelSpelling(canonical) {
+			return normalizeKnownOpenAICodexModel(canonical)
+		}
 		if canonical == "gpt-6" {
 			return "gpt-6-astra"
 		}
@@ -1735,6 +1816,9 @@ func normalizeModelNameForPricing(model string) string {
 			return "gpt-5.6-sol"
 		}
 		return canonical
+	}
+	if model == "claude-opus-5-5-thinking" {
+		return "claude-opus-5-5"
 	}
 	return normalizeGeminiThinkingTierAlias(model)
 }
@@ -1763,6 +1847,24 @@ func lastSegment(model string) string {
 
 // matchByModelFamily 基于模型系列匹配
 func (s *PricingService) matchByModelFamily(model string) *ModelPriceEntry {
+	if claude.IsOpus55(model) {
+		if pricing, ok := s.pricingData["claude-opus-5-5"]; ok {
+			return pricing
+		}
+		return claudeOpus55FallbackPricing
+	}
+	if claude.IsSonnet55(model) {
+		if pricing, ok := s.pricingData["claude-sonnet-5-5"]; ok {
+			return pricing
+		}
+		return claudeSonnet55FallbackPricing
+	}
+	if claude.IsHaiku55(model) {
+		if pricing, ok := s.pricingData["claude-haiku-5-5"]; ok {
+			return pricing
+		}
+		return claudeHaiku55FallbackPricing
+	}
 	// modelFamily 定义一个模型系列的匹配和定价查找规则。
 	type modelFamily struct {
 		name    string   // 系列名称
@@ -1863,6 +1965,9 @@ func (s *PricingService) matchByModelFamily(model string) *ModelPriceEntry {
 	for _, pattern := range lookups {
 		for key, pricing := range s.pricingData {
 			keyLower := strings.ToLower(key)
+			if matched.name == "opus-5" && claude.IsOpus55(keyLower) {
+				continue
+			}
 			if strings.Contains(keyLower, pattern) {
 				logger.LegacyPrintf("service.pricing", "[Pricing] Fuzzy matched %s -> %s", model, key)
 				return pricing
@@ -1889,6 +1994,22 @@ func (s *PricingService) matchOpenAIModel(model string) *ModelPriceEntry {
 				Info(fmt.Sprintf("[Pricing] OpenAI fallback matched %s -> %s", model, "gpt-5.1-codex"))
 			return pricing
 		}
+	}
+
+	if openai.IsGPT61SolModelSpelling(model) {
+		if pricing, ok := s.pricingData["gpt-6.1-sol"]; ok {
+			return pricing
+		}
+		return openAIGPT61SolFallbackPricing
+	}
+	if openai.IsGPT6SolOrLunaModelSpelling(model) {
+		if pricing, ok := s.pricingData[normalizeKnownOpenAICodexModel(model)]; ok {
+			return pricing
+		}
+		if strings.HasPrefix(model, "gpt-6-sol") {
+			return openAIGPT6SolFallbackPricing
+		}
+		return openAIGPT6LunaFallbackPricing
 	}
 
 	// 尝试的回退变体

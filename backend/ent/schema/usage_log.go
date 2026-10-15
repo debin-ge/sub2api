@@ -124,6 +124,8 @@ func (UsageLog) Fields() []ent.Field {
 		// 其他字段
 		field.Int8("billing_type").
 			Default(0),
+		field.Float("cache_storage_token_hours").Default(0).SchemaType(map[string]string{dialect.Postgres: "numeric(30,10)"}),
+		field.Float("cache_storage_cost").Default(0).SchemaType(map[string]string{dialect.Postgres: "numeric(20,8)"}),
 		field.Int8("usage_source").
 			Default(0).
 			Comment("用量来源：0=未知 1=上游 2=本地估算 3=最低兜底"),

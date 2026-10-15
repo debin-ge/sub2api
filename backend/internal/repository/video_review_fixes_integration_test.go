@@ -99,6 +99,10 @@ func TestVideoCharacterSettlementAndAtomicDeletion(t *testing.T) {
 	require.ErrorIs(t, taskService.DeleteCharacterForOwner(ctx, user.ID, resource.PublicID), service.ErrVideoDeletePending)
 	_, err = taskService.GetCharacterForOwner(ctx, user.ID, resource.PublicID)
 	require.ErrorIs(t, err, service.ErrVideoDeletePending)
+	// Make the scheduled deletion due using the database clock; this test
+	// exercises atomic retirement, not host/container clock skew.
+	_, err = integrationDB.ExecContext(ctx, `UPDATE video_tasks SET next_action_at=NOW()-INTERVAL '1 second' WHERE public_id=$1`, task.PublicID)
+	require.NoError(t, err)
 	task, err = repo.ClaimVideoTask(ctx, task.PublicID, "character-delete-worker", time.Minute)
 	require.NoError(t, err)
 	require.NotNil(t, task)

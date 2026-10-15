@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math"
 	"sort"
 	"strings"
@@ -101,7 +102,8 @@ type ChannelModelPricing struct {
 	CacheReadPrice               *float64            `json:"cache_read_price"`
 	FastMultiplier               *float64            `json:"fast_multiplier"`
 	FlexMultiplier               *float64            `json:"flex_multiplier"`
-	MaxReasoningEffortMultiplier *float64            `json:"max_reasoning_effort_multiplier"`
+	MaxReasoningEffortMultiplier *float64            `json:"max_reasoning_effort_multiplier,omitempty"`
+	ReasoningEffortMultipliers   map[string]float64  `json:"reasoning_effort_multipliers,omitempty"`
 	ImageInputPrice              *float64            `json:"image_input_price"`
 	ImageOutputPrice             *float64            `json:"image_output_price"`
 	PerRequestPrice              *float64            `json:"per_request_price"`
@@ -215,9 +217,11 @@ func (p *ChannelModelPricing) GetTierByLabel(label string) *PricingInterval {
 	return nil
 }
 
-// Clone 返回 ChannelModelPricing 的拷贝（切片独立，指针字段共享，调用方只读安全）
+// Clone 返回 ChannelModelPricing 的拷贝（切片和映射独立，价格指针字段共享，调用方只读安全）
 func (p ChannelModelPricing) Clone() ChannelModelPricing {
 	cp := p
+	cp.MaxReasoningEffortMultiplier = cloneFloat(p.MaxReasoningEffortMultiplier)
+	cp.ReasoningEffortMultipliers = maps.Clone(p.ReasoningEffortMultipliers)
 	if p.Models != nil {
 		cp.Models = make([]string, len(p.Models))
 		copy(cp.Models, p.Models)

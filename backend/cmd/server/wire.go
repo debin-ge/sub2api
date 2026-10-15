@@ -214,12 +214,14 @@ func provideCleanup(
 	cnProviderBalanceCheck *service.CNProviderBalanceCheckService,
 	flovaCreditsSync *service.FlovaCreditsSyncService,
 	codexVersionSync *service.OpenAICodexVersionSyncService,
+	claudeCodeVersionSync *service.ClaudeCodeVersionSyncService,
 	proxyExpiry *service.ProxyExpiryService,
 	subscriptionExpiry *service.SubscriptionExpiryService,
 	vipReconcile *service.VIPReconcileService,
 	vipIncrementalReconcile *service.VIPIncrementalReconcileService,
 	usageCleanup *service.UsageCleanupService,
 	idempotencyCleanup *service.IdempotencyCleanupService,
+	geminiCachedContent *service.GeminiCachedContentService,
 	batchImageCleanup *service.BatchImageCleanupService,
 	batchImageWorker *service.BatchImageWorkerRuntime,
 	videoSpoolRuntime *service.VideoSpoolRuntime,
@@ -249,6 +251,7 @@ func provideCleanup(
 	quotaFlusher *service.UserPlatformQuotaUsageFlusher,
 	upstreamBillingProbe *service.UpstreamBillingProbeService,
 	ollamaCloudUsage *service.OllamaCloudUsageService,
+	opencodeGoUsage *service.OpenCodeGoUsageService,
 	auditLog *service.AuditLogService,
 	openAIAutoReset *service.OpenAIQuotaAutoResetService,
 	promptAudit *securityaudit.PromptService,
@@ -277,12 +280,14 @@ func provideCleanup(
 			cnProviderBalanceCheck,
 			flovaCreditsSync,
 			codexVersionSync,
+			claudeCodeVersionSync,
 			proxyExpiry,
 			subscriptionExpiry,
 			vipReconcile,
 			vipIncrementalReconcile,
 			usageCleanup,
 			idempotencyCleanup,
+			geminiCachedContent,
 			batchImageCleanup,
 			batchImageWorker,
 			videoSpoolRuntime,
@@ -312,6 +317,7 @@ func provideCleanup(
 			quotaFlusher,
 			upstreamBillingProbe,
 			ollamaCloudUsage,
+			opencodeGoUsage,
 			auditLog,
 			openAIAutoReset,
 			promptAudit,
@@ -343,12 +349,14 @@ func provideFinalCleanup(
 	cnProviderBalanceCheck *service.CNProviderBalanceCheckService,
 	flovaCreditsSync *service.FlovaCreditsSyncService,
 	codexVersionSync *service.OpenAICodexVersionSyncService,
+	claudeCodeVersionSync *service.ClaudeCodeVersionSyncService,
 	proxyExpiry *service.ProxyExpiryService,
 	subscriptionExpiry *service.SubscriptionExpiryService,
 	vipReconcile *service.VIPReconcileService,
 	vipIncrementalReconcile *service.VIPIncrementalReconcileService,
 	usageCleanup *service.UsageCleanupService,
 	idempotencyCleanup *service.IdempotencyCleanupService,
+	geminiCachedContent *service.GeminiCachedContentService,
 	batchImageCleanup *service.BatchImageCleanupService,
 	batchImageWorker *service.BatchImageWorkerRuntime,
 	videoSpoolRuntime *service.VideoSpoolRuntime,
@@ -378,6 +386,7 @@ func provideFinalCleanup(
 	quotaFlusher *service.UserPlatformQuotaUsageFlusher,
 	upstreamBillingProbe *service.UpstreamBillingProbeService,
 	ollamaCloudUsage *service.OllamaCloudUsageService,
+	opencodeGoUsage *service.OpenCodeGoUsageService,
 	auditLog *service.AuditLogService,
 	openAIAutoReset *service.OpenAIQuotaAutoResetService,
 	promptAudit *securityaudit.PromptService,
@@ -512,6 +521,12 @@ func provideFinalCleanup(
 				}
 				return nil
 			}},
+			{"GeminiCachedContentService", func() error {
+				if geminiCachedContent != nil {
+					geminiCachedContent.Stop()
+				}
+				return nil
+			}},
 			{"BatchImageCleanupService", func() error {
 				if batchImageCleanup != nil {
 					batchImageCleanup.Stop()
@@ -570,6 +585,10 @@ func provideFinalCleanup(
 			}},
 			{"OpenAICodexVersionSyncService", func() error {
 				codexVersionSync.Stop()
+				return nil
+			}},
+			{"ClaudeCodeVersionSyncService", func() error {
+				claudeCodeVersionSync.Stop()
 				return nil
 			}},
 			{"ProxyExpiryService", func() error {
@@ -701,6 +720,12 @@ func provideFinalCleanup(
 			{"OllamaCloudUsageService", func() error {
 				if ollamaCloudUsage != nil {
 					ollamaCloudUsage.Stop()
+				}
+				return nil
+			}},
+			{"OpenCodeGoUsageService", func() error {
+				if opencodeGoUsage != nil {
+					opencodeGoUsage.Stop()
 				}
 				return nil
 			}},

@@ -231,6 +231,7 @@ func groupFromServiceBase(g *service.Group) Group {
 		ID:                              g.ID,
 		Name:                            g.Name,
 		Description:                     g.Description,
+		I18n:                            g.I18n,
 		Platform:                        g.Platform,
 		RateMultiplier:                  g.RateMultiplier,
 		IsExclusive:                     g.IsExclusive,
@@ -292,6 +293,10 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 	if state := service.OllamaCloudUsageStateFromAccount(a); state.Eligible {
 		ollamaCloudUsage = state
 	}
+	var openCodeGoUsage *service.OpenCodeGoUsageState
+	if state := service.OpenCodeGoUsageStateFromAccount(a); state.Eligible {
+		openCodeGoUsage = state
+	}
 	out := &Account{
 		ID:                         a.ID,
 		Name:                       a.Name,
@@ -336,6 +341,7 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 		GroupIDs:                   a.GroupIDs,
 		ParentAccountID:            a.ParentAccountID,
 		QuotaDimension:             a.QuotaDimension,
+		OpenCodeGoUsage:            openCodeGoUsage,
 	}
 
 	// 提取 5h 窗口费用控制和会话数量控制配置（仅 Anthropic OAuth/SetupToken 账号有效）
@@ -476,7 +482,9 @@ func redactAccountManagedExtra(extra map[string]any) map[string]any {
 		switch key {
 		case service.OllamaCloudUsageSessionExtraKey,
 			service.OllamaCloudUsageAutoRefreshExtraKey,
-			service.OllamaCloudUsageSnapshotExtraKey:
+			service.OllamaCloudUsageSnapshotExtraKey,
+			service.OpenCodeGoUsageAutoRefreshExtraKey,
+			service.OpenCodeGoUsageSnapshotExtraKey:
 			continue
 		default:
 			redacted[key] = value
@@ -517,8 +525,8 @@ func AccountListItemFromAccount(a *Account) *AccountListItem {
 	return &AccountListItem{
 		ID: a.ID, Name: a.Name, Notes: a.Notes, Platform: a.Platform, Type: a.Type,
 		Credentials: a.Credentials, CredentialsStatus: a.CredentialsStatus, Extra: a.Extra,
-		OllamaCloudUsage: a.OllamaCloudUsage,
-		ProxyID:          a.ProxyID, ProxyFallbackOriginID: a.ProxyFallbackOriginID, ProxyFallbackOriginName: a.ProxyFallbackOriginName,
+		OllamaCloudUsage: a.OllamaCloudUsage, OpenCodeGoUsage: a.OpenCodeGoUsage,
+		ProxyID: a.ProxyID, ProxyFallbackOriginID: a.ProxyFallbackOriginID, ProxyFallbackOriginName: a.ProxyFallbackOriginName,
 		Concurrency: a.Concurrency, LoadFactor: a.LoadFactor, Priority: a.Priority, RateMultiplier: a.RateMultiplier,
 		Status: a.Status, ErrorMessage: a.ErrorMessage, LastUsedAt: a.LastUsedAt, ExpiresAt: a.ExpiresAt,
 		AutoPauseOnExpired: a.AutoPauseOnExpired, CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt,
@@ -778,6 +786,8 @@ func usageLogFromServiceUser(l *service.UsageLog) UsageLog {
 		BillingType:               l.BillingType,
 		UsageSource:               int8(l.UsageSource),
 		UsageEstimationMethod:     l.UsageEstimationMethod,
+		CacheStorageTokenHours:    l.CacheStorageTokenHours,
+		CacheStorageCost:          l.CacheStorageCost,
 		RequestType:               requestType.String(),
 		Stream:                    stream,
 		OpenAIWSMode:              openAIWSMode,

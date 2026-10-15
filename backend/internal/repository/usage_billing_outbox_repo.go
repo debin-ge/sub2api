@@ -35,10 +35,11 @@ const (
 )
 
 type usageBillingCommandPayloadV1 struct {
-	RequestID          string `json:"request_id"`
-	APIKeyID           int64  `json:"api_key_id"`
-	RequestFingerprint string `json:"request_fingerprint"`
-	RequestPayloadHash string `json:"request_payload_hash,omitempty"`
+	SimpleModeKeyRateLimitOnly bool   `json:"simple_mode_key_rate_limit_only,omitempty"`
+	RequestID                  string `json:"request_id"`
+	APIKeyID                   int64  `json:"api_key_id"`
+	RequestFingerprint         string `json:"request_fingerprint"`
+	RequestPayloadHash         string `json:"request_payload_hash,omitempty"`
 
 	UserID              int64  `json:"user_id"`
 	AccountID           int64  `json:"account_id"`
@@ -103,11 +104,13 @@ type usageBillingNumericIssueV1 struct {
 }
 
 type usageLogPayloadV1 struct {
-	UserID    int64  `json:"user_id"`
-	APIKeyID  int64  `json:"api_key_id"`
-	AccountID int64  `json:"account_id"`
-	RequestID string `json:"request_id"`
-	Model     string `json:"model"`
+	CacheStorageTokenHours float64 `json:"cache_storage_token_hours,omitempty"`
+	CacheStorageCost       float64 `json:"cache_storage_cost,omitempty"`
+	UserID                 int64   `json:"user_id"`
+	APIKeyID               int64   `json:"api_key_id"`
+	AccountID              int64   `json:"account_id"`
+	RequestID              string  `json:"request_id"`
+	Model                  string  `json:"model"`
 
 	RequestedModel    string  `json:"requested_model,omitempty"`
 	UpstreamModel     *string `json:"upstream_model,omitempty"`
@@ -180,7 +183,8 @@ type usageLogPayloadV1 struct {
 
 func commandToUsageBillingPayloadV1(cmd *service.UsageBillingCommand) usageBillingCommandPayloadV1 {
 	payload := usageBillingCommandPayloadV1{
-		RequestID: cmd.RequestID, APIKeyID: cmd.APIKeyID,
+		SimpleModeKeyRateLimitOnly: cmd.SimpleModeKeyRateLimitOnly,
+		RequestID:                  cmd.RequestID, APIKeyID: cmd.APIKeyID,
 		RequestFingerprint: cmd.RequestFingerprint, RequestPayloadHash: cmd.RequestPayloadHash,
 		UserID: cmd.UserID, AccountID: cmd.AccountID, SubscriptionID: cmd.SubscriptionID,
 		AccountType: cmd.AccountType, Model: cmd.Model, ServiceTier: cmd.ServiceTier,
@@ -203,7 +207,8 @@ func commandToUsageBillingPayloadV1(cmd *service.UsageBillingCommand) usageBilli
 
 func (p usageBillingCommandPayloadV1) command() *service.UsageBillingCommand {
 	return &service.UsageBillingCommand{
-		RequestID: canonicalizeUsageBillingIdentity(p.RequestID, 255), APIKeyID: p.APIKeyID,
+		SimpleModeKeyRateLimitOnly: p.SimpleModeKeyRateLimitOnly,
+		RequestID:                  canonicalizeUsageBillingIdentity(p.RequestID, 255), APIKeyID: p.APIKeyID,
 		RequestFingerprint: p.RequestFingerprint, RequestPayloadHash: p.RequestPayloadHash,
 		UserID: p.UserID, AccountID: p.AccountID, SubscriptionID: p.SubscriptionID,
 		AccountType: p.AccountType, Model: canonicalizeUsageBillingIdentity(p.Model, 100), ServiceTier: p.ServiceTier,
@@ -285,6 +290,7 @@ func usageLogToPayloadV1(log *service.UsageLog) usageLogPayloadV1 {
 		copyLog.CreatedAt = time.Now().UTC()
 	}
 	return sanitizeUsageBillingLogPayloadV1(usageLogPayloadV1{
+		CacheStorageTokenHours: copyLog.CacheStorageTokenHours, CacheStorageCost: copyLog.CacheStorageCost,
 		UserID: copyLog.UserID, APIKeyID: copyLog.APIKeyID, AccountID: copyLog.AccountID,
 		RequestID: copyLog.RequestID, Model: copyLog.Model, RequestedModel: copyLog.RequestedModel,
 		UpstreamModel: copyLog.UpstreamModel, ChannelID: copyLog.ChannelID,
@@ -322,6 +328,7 @@ func usageLogToPayloadV1(log *service.UsageLog) usageLogPayloadV1 {
 func (p usageLogPayloadV1) usageLog() *service.UsageLog {
 	p = sanitizeUsageBillingLogPayloadV1(p)
 	return &service.UsageLog{
+		CacheStorageTokenHours: p.CacheStorageTokenHours, CacheStorageCost: p.CacheStorageCost,
 		UserID: p.UserID, APIKeyID: p.APIKeyID, AccountID: p.AccountID,
 		RequestID: p.RequestID, Model: p.Model, RequestedModel: p.RequestedModel,
 		UpstreamModel: p.UpstreamModel, ChannelID: p.ChannelID,
@@ -555,6 +562,8 @@ func sanitizeUsageBillingCommandPayloadV1(p usageBillingCommandPayloadV1) usageB
 // fields such as User-Agent must never turn an already-successful upstream
 // request into a permanently quarantined, unbilled event.
 func sanitizeUsageBillingLogPayloadV1(p usageLogPayloadV1) usageLogPayloadV1 {
+	p.CacheStorageTokenHours = usageBillingJSONSafeFloat(p.CacheStorageTokenHours, "cache_storage_token_hours", &p.InvalidNumerics)
+	p.CacheStorageCost = usageBillingJSONSafeFloat(p.CacheStorageCost, "cache_storage_cost", &p.InvalidNumerics)
 	p.RequestID = canonicalizeUsageBillingIdentity(p.RequestID, 255)
 	p.Model = canonicalizeUsageBillingIdentity(p.Model, 100)
 	p.RequestedModel = truncateUsageBillingUTF8(
@@ -666,11 +675,13 @@ func (p usageBillingResultPayloadV1) result() *service.UsageBillingApplyResult {
 }
 
 type usageLogBillingComparableV1 struct {
-	UserID    int64
-	APIKeyID  int64
-	AccountID int64
-	RequestID string
-	Model     string
+	CacheStorageTokenHours float64
+	CacheStorageCost       float64
+	UserID                 int64
+	APIKeyID               int64
+	AccountID              int64
+	RequestID              string
+	Model                  string
 
 	RequestedModel    string
 	UpstreamModel     string
@@ -770,6 +781,7 @@ func usageLogPayloadBillingComparable(p usageLogPayloadV1) usageLogBillingCompar
 		requestType = service.RequestTypeFromLegacy(p.Stream, p.OpenAIWSMode)
 	}
 	return usageLogBillingComparableV1{
+		CacheStorageTokenHours: canonicalUsageBillingNumeric(p.CacheStorageTokenHours, 10), CacheStorageCost: canonicalUsageBillingNumeric(p.CacheStorageCost, 8),
 		UserID: p.UserID, APIKeyID: p.APIKeyID, AccountID: p.AccountID,
 		RequestID: strings.TrimSpace(p.RequestID), Model: strings.TrimSpace(p.Model),
 		RequestedModel: requestedModel, UpstreamModel: optionalStringValue(p.UpstreamModel),
@@ -909,10 +921,17 @@ func validateUsageBillingOutboxPayload(cmd *service.UsageBillingCommand, log *se
 		valueOrZeroInt64(cmd.GroupID) != valueOrZeroInt64(log.GroupID) {
 		return fmt.Errorf("%w: command and usage log billing facts differ", service.ErrUsageBillingPayloadInvalid)
 	}
+	if math.IsNaN(log.CacheStorageTokenHours) || math.IsInf(log.CacheStorageTokenHours, 0) || log.CacheStorageTokenHours < 0 || log.CacheStorageTokenHours >= 1e20 {
+		return fmt.Errorf("%w: invalid cache storage token hours", service.ErrUsageBillingPayloadInvalid)
+	}
 	if cmd.IsSubscriptionBilling != (log.BillingType == service.BillingTypeSubscription) {
 		return fmt.Errorf("%w: billing mode and billing_type differ", service.ErrUsageBillingPayloadInvalid)
 	}
-	if cmd.IsSubscriptionBilling {
+	if cmd.SimpleModeKeyRateLimitOnly {
+		if cmd.IsSubscriptionBilling || cmd.BalanceCost != 0 || cmd.SubscriptionCost != 0 || cmd.APIKeyQuotaCost != 0 || cmd.AccountQuotaCost != 0 || cmd.PlatformQuotaCost != 0 || cmd.APIKeyRateLimitCost != cmd.ActualCost {
+			return fmt.Errorf("%w: invalid simple-mode key window allocation", service.ErrUsageBillingPayloadInvalid)
+		}
+	} else if cmd.IsSubscriptionBilling {
 		if cmd.SubscriptionID == nil || cmd.GroupID == nil || cmd.BalanceCost != 0 ||
 			cmd.SubscriptionCost != cmd.ActualCost {
 			return fmt.Errorf("%w: invalid subscription billing allocation", service.ErrUsageBillingPayloadInvalid)
@@ -1020,6 +1039,7 @@ func validateUsageBillingOutboxPayload(cmd *service.UsageBillingCommand, log *se
 		{"command.api_key_quota_cost", cmd.APIKeyQuotaCost},
 		{"command.api_key_rate_limit_cost", cmd.APIKeyRateLimitCost},
 		{"command.account_quota_cost", cmd.AccountQuotaCost},
+		{"usage_log.cache_storage_cost", log.CacheStorageCost},
 		{"usage_log.input_cost", log.InputCost},
 		{"usage_log.output_cost", log.OutputCost},
 		{"usage_log.cache_creation_cost", log.CacheCreationCost},

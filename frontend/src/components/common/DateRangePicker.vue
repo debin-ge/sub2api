@@ -43,7 +43,7 @@
             <input
               type="date"
               v-model="localStartDate"
-              :max="localEndDate || tomorrow"
+              :max="localEndDate || tomorrow()"
               class="date-picker-input"
               @change="onDateChange"
             />
@@ -57,7 +57,7 @@
               type="date"
               v-model="localEndDate"
               :min="localStartDate"
-              :max="tomorrow"
+              :max="tomorrow()"
               class="date-picker-input"
               @change="onDateChange"
             />
@@ -135,23 +135,22 @@ const localEndTime = ref<string | undefined>(undefined)
 // flashes a preset the parent did not actually select.
 const activePreset = ref<string | null>(null)
 
-// Use local timezone to avoid UTC timezone issues
-const today = computed(() => formatLocalDate(new Date()))
+const today = () => formatLocalDate(new Date())
 
 // Tomorrow's date - used for max date to handle timezone differences
 // When user is in a timezone behind the server, "today" on server might be "tomorrow" locally
-const tomorrow = computed(() => {
+const tomorrow = () => {
   const d = new Date()
   d.setDate(d.getDate() + 1)
   return formatLocalDate(d)
-})
+}
 
 const presets: DatePreset[] = [
   {
     labelKey: 'dates.today',
     value: 'today',
     getRange: () => {
-      const t = today.value
+      const t = today()
       return { start: t, end: t }
     }
   },
@@ -176,7 +175,7 @@ const presets: DatePreset[] = [
     labelKey: 'dates.last7Days',
     value: '7days',
     getRange: () => {
-      const end = today.value
+      const end = today()
       const d = new Date()
       d.setDate(d.getDate() - 6)
       const start = formatLocalDate(d)
@@ -187,7 +186,7 @@ const presets: DatePreset[] = [
     labelKey: 'dates.last14Days',
     value: '14days',
     getRange: () => {
-      const end = today.value
+      const end = today()
       const d = new Date()
       d.setDate(d.getDate() - 13)
       const start = formatLocalDate(d)
@@ -198,7 +197,7 @@ const presets: DatePreset[] = [
     labelKey: 'dates.last30Days',
     value: '30days',
     getRange: () => {
-      const end = today.value
+      const end = today()
       const d = new Date()
       d.setDate(d.getDate() - 29)
       const start = formatLocalDate(d)
@@ -211,7 +210,7 @@ const presets: DatePreset[] = [
     getRange: () => {
       const now = new Date()
       const start = formatLocalDate(new Date(now.getFullYear(), now.getMonth(), 1))
-      return { start, end: today.value }
+      return { start, end: today() }
     }
   },
   {
@@ -322,6 +321,17 @@ const handleEscape = (event: KeyboardEvent) => {
   }
 }
 
+// Restore the applied range after dismissal, including parent updates from Apply.
+watch(isOpen, (open) => {
+  if (open) return
+  if (localStartDate.value === props.startDate && localEndDate.value === props.endDate) return
+  localStartDate.value = props.startDate
+  localEndDate.value = props.endDate
+  detectPreset(true)
+  adoptExternalInstants()
+}, { flush: 'post' })
+
+// Sync local state with props
 // Sync local state with props. A prop that already matches is the parent
 // echoing back our own apply() — re-running detection there would discard the
 // instants we just emitted.

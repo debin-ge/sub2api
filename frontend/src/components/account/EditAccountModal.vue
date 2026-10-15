@@ -193,10 +193,10 @@
             @select="editBaseUrl = $event"
           />
           <CnBaseUrlPresets
-            v-if="isCNApiKeyAccount && account.platform !== 'opencode_go'"
+            v-if="isCNApiKeyAccount && isCNProviderPlatform(account.platform)"
             class="mt-2"
             :platform="cnPresetPlatform"
-            :mode="editAccountMode"
+            :mode="cnPresetMode"
             :protocol="editApiProtocol"
             :current-url="editBaseUrl"
             @select="onCnPresetSelect"
@@ -212,7 +212,7 @@
               <input v-model="editAdaptiveBaseUrls[item.value]" type="text" class="input" />
             </div>
           </div>
-          <p v-if="!cnSupportsNativeResponses(account.platform)" class="input-hint">
+          <p v-if="!cnSupportsNativeResponses(account.platform, currentOpenCodeOrCNMode())" class="input-hint">
             {{ t('admin.accounts.cnProviders.apiProtocol.responsesFallbackDesc') }}
           </p>
         </div>
@@ -268,8 +268,28 @@
             </button>
           </div>
         </div>
+        <!-- Account Mode Selection (providers using the generic form) -->
+        <div v-if="isGenericMultiProtocolAccount && genericAccountModes.length > 1" data-testid="edit-generic-account-mode">
+          <label class="input-label">{{ t('admin.accounts.cnProviders.accountMode.title') }}</label>
+          <div class="mt-2 flex flex-wrap gap-2">
+            <button
+              v-for="mode in genericAccountModes"
+              :key="mode"
+              type="button"
+              :class="[
+                'rounded-lg border-2 px-3 py-1.5 text-xs transition-all',
+                editAccountMode === mode
+                  ? 'border-primary-500 bg-primary-50 font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
+                  : 'border-gray-200 text-gray-700 hover:border-gray-400 dark:border-dark-600 dark:text-gray-300 dark:hover:border-gray-600'
+              ]"
+              @click="editAccountMode = mode"
+            >
+              {{ providerModeLabel(mode, t) }}
+            </button>
+          </div>
+        </div>
         <!-- Account Mode Selection (CN providers) -->
-        <div v-if="isCNApiKeyAccount && account.platform !== 'opencode_go'">
+        <div v-if="isCNApiKeyAccount && isCNProviderPlatform(account.platform)">
           <label class="input-label">{{ t('admin.accounts.cnProviders.accountMode.title') }}</label>
           <div class="mt-2 flex flex-wrap gap-2">
             <button
@@ -311,9 +331,10 @@
           <p class="input-hint">{{ t(`admin.accounts.cnProviders.apiProtocol.${cnProtocolDescKey}Desc`) }}</p>
         </div>
         <OpenCodeGoProtocolRulesEditor
-          v-if="account.platform === 'opencode_go' && editApiProtocol === 'adaptive'"
+          v-if="isCNApiKeyAccount && providerRoutesByModel(account.platform) && editApiProtocol === 'adaptive'"
           v-model:rows="editOpenCodeGoProtocolRules"
-          :plan="editOpenCodeAccountMode"
+          :platform="account.platform"
+          :plan="currentOpenCodeOrCNMode()"
         />
         <!-- Zhipu 团队版 Coding Plan：组织/项目 ID（可选，填写后用量查询走团队版端点）。
              glm 是 zhipu 的历史平台 ID，后端 GetCodingPlanProvider() 已按 CanonicalCNPlatform
@@ -361,7 +382,7 @@
               account.platform === 'openai'
                 ? 'sk-proj-...'
                 : account.platform === 'gemini'
-                  ? 'AIza...'
+                  ? 'AQ.Ab...'
                   : account.platform === 'antigravity'
                     ? 'sk-...'
                     : account.platform === 'grok'
@@ -568,7 +589,7 @@
 
             <!-- Whitelist Mode -->
             <div v-if="modelRestrictionMode === 'whitelist'">
-              <ModelWhitelistSelector v-model="allowedModels" :platform="account?.platform || 'anthropic'" :account-id="account?.id" :sync-credentials="editSyncCredentials" :load-related-models="loadAccountAvailableModelIDs" />
+              <ModelWhitelistSelector v-model="allowedModels" :model-mappings="modelMappings" :platform="account?.platform || 'anthropic'" :account-id="account?.id" :sync-credentials="editSyncCredentials" :load-related-models="loadAccountAvailableModelIDs" />
               <p class="text-xs zt-ink-3">
                 {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
                 <span v-if="allowedModels.length === 0 && modelMappings.length === 0">{{
@@ -744,6 +765,48 @@
             />
             <p class="mt-1 text-xs zt-ink-3">
               {{ t('admin.accounts.poolModeRetryStatusCodesHint', { default: DEFAULT_POOL_MODE_RETRY_STATUS_CODES.join(', ') }) }}
+            </p>
+          </div>
+        </div>
+
+        <!-- Gemini 显式缓存上游开关：仅自定义地址的 Gemini API Key 账号 -->
+        <div
+          v-if="account.platform === 'gemini' && !isOfficialGeminiBaseUrl(editBaseUrl)"
+          class="border-t border-gray-200 pt-4 dark:border-dark-600"
+          data-testid="explicit-cache-upstream-section"
+        >
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <label class="input-label mb-0">{{ t('admin.accounts.explicitCacheUpstream') }}</label>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.accounts.explicitCacheUpstreamHint') }}
+              </p>
+            </div>
+            <Toggle
+              v-model="explicitCacheUpstreamEnabled"
+              data-testid="explicit-cache-upstream-toggle"
+              :aria-label="t('admin.accounts.explicitCacheUpstream')"
+            />
+          </div>
+          <div v-if="explicitCacheUpstreamEnabled" class="mt-3 rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
+            <p class="text-xs text-blue-700 dark:text-blue-400">
+              <Icon name="exclamationCircle" size="sm" class="mr-1 inline" :stroke-width="2" />
+              {{ t('admin.accounts.explicitCacheUpstreamInfo') }}
+            </p>
+          </div>
+          <div v-if="explicitCacheUpstreamEnabled" class="mt-3">
+            <label class="input-label">{{ t('admin.accounts.explicitCacheUpstreamMaxTTL') }}</label>
+            <input
+              v-model="explicitCacheUpstreamMaxTTL"
+              data-testid="explicit-cache-upstream-max-ttl"
+              type="number"
+              min="1"
+              step="1"
+              class="input"
+              placeholder="86400"
+            />
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.explicitCacheUpstreamMaxTTLHint') }}
             </p>
           </div>
         </div>
@@ -1050,7 +1113,7 @@
 
           <!-- Whitelist Mode -->
           <div v-if="modelRestrictionMode === 'whitelist'">
-            <ModelWhitelistSelector v-model="allowedModels" :platform="account?.platform || 'anthropic'" :account-id="account?.id" :load-related-models="loadAccountAvailableModelIDs" />
+            <ModelWhitelistSelector v-model="allowedModels" :model-mappings="modelMappings" :platform="account?.platform || 'anthropic'" :account-id="account?.id" :load-related-models="loadAccountAvailableModelIDs" />
             <p class="text-xs zt-ink-3">
               {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
               <span v-if="allowedModels.length === 0 && modelMappings.length === 0">{{
@@ -1165,8 +1228,30 @@
 
       <!-- Vertex Service Account -->
       <div v-if="(account.platform === 'gemini' || account.platform === 'anthropic') && account.type === 'service_account'" class="space-y-4">
+        <div v-if="isVertexAPIKeyMode">
+          <label class="input-label">API Key</label>
+          <input
+            v-model="editVertexApiKey"
+            type="password"
+            class="input font-mono"
+            data-testid="edit-vertex-api-key-input"
+            :placeholder="t('admin.accounts.leaveEmptyToKeep')"
+          />
+          <p class="input-hint">{{ t('admin.accounts.vertexApiKeyHint') }}</p>
+        </div>
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div>
+          <div v-if="isVertexAPIKeyMode">
+            <label class="input-label">Project ID</label>
+            <input
+              v-model="editVertexProjectId"
+              type="text"
+              class="input font-mono"
+              data-testid="edit-vertex-api-key-project-id-input"
+              :placeholder="t('admin.accounts.vertexApiKeyProjectIdPlaceholder')"
+            />
+            <p class="input-hint">{{ t('admin.accounts.vertexApiKeyProjectIdHint') }}</p>
+          </div>
+          <div v-else>
             <label class="input-label">Project ID</label>
             <input
               v-model="editVertexProjectId"
@@ -1177,7 +1262,7 @@
             />
             <p class="input-hint">{{ t('admin.accounts.vertexSaJsonEditHint') }}</p>
           </div>
-          <div>
+          <div v-if="!isVertexAPIKeyMode || editVertexProjectId.trim()">
             <label class="input-label">Location</label>
             <select
               v-model="editVertexLocation"
@@ -1262,7 +1347,7 @@
 
           <!-- Whitelist Mode -->
           <div v-if="modelRestrictionMode === 'whitelist'">
-            <ModelWhitelistSelector v-model="allowedModels" :platform="account?.platform || 'anthropic'" :account-id="account?.id" :load-related-models="loadAccountAvailableModelIDs" />
+            <ModelWhitelistSelector v-model="allowedModels" :model-mappings="modelMappings" :platform="account?.platform || 'anthropic'" :account-id="account?.id" :load-related-models="loadAccountAvailableModelIDs" />
             <p class="text-xs zt-ink-3">
               {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
               <span v-if="allowedModels.length === 0 && modelMappings.length === 0">{{
@@ -1484,7 +1569,7 @@
 
           <!-- Whitelist Mode -->
           <div v-if="modelRestrictionMode === 'whitelist'">
-            <ModelWhitelistSelector v-model="allowedModels" platform="anthropic" />
+            <ModelWhitelistSelector v-model="allowedModels" :model-mappings="modelMappings" platform="anthropic" />
             <p class="text-xs zt-ink-3">
               {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
               <span v-if="allowedModels.length === 0 && modelMappings.length === 0">{{ t('admin.accounts.supportsAllModels') }}</span>
@@ -1806,6 +1891,44 @@
                     class="input"
                     :placeholder="t('admin.accounts.tempUnschedulable.durationPlaceholder')"
                   />
+                </div>
+                <div class="sm:col-span-2">
+                  <label class="input-label">{{ t('admin.accounts.tempUnschedulable.scope') }}</label>
+                  <div
+                    class="grid grid-cols-1 gap-2 sm:grid-cols-2"
+                    role="radiogroup"
+                    :aria-label="t('admin.accounts.tempUnschedulable.scope')"
+                  >
+                    <button
+                      v-for="option in tempUnschedScopeOptions"
+                      :key="option.value"
+                      type="button"
+                      role="radio"
+                      :aria-checked="rule.scope === option.value"
+                      :data-testid="`temp-unsched-scope-${option.value}`"
+                      @click="rule.scope = option.value"
+                      :class="[
+                        'flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all',
+                        rule.scope === option.value
+                          ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                          : 'border-gray-200 hover:border-gray-400 dark:border-dark-600 dark:hover:border-gray-600'
+                      ]"
+                    >
+                      <span
+                        :class="[
+                          'flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2',
+                          rule.scope === option.value ? 'border-primary-500' : 'border-gray-300 dark:border-dark-500'
+                        ]"
+                      >
+                        <span v-if="rule.scope === option.value" class="h-1.5 w-1.5 rounded-full bg-primary-500" />
+                      </span>
+                      <span>
+                        <span class="block text-sm font-medium text-gray-900 dark:text-white">{{ option.label }}</span>
+                        <span class="text-xs text-gray-500 dark:text-gray-400">{{ option.description }}</span>
+                      </span>
+                    </button>
+                  </div>
+                  <p class="input-hint">{{ t('admin.accounts.tempUnschedulable.scopeHint') }}</p>
                 </div>
                 <div class="sm:col-span-2">
                   <label class="input-label">{{ t('admin.accounts.tempUnschedulable.keywords') }}</label>
@@ -2369,6 +2492,90 @@
           </button>
         </div>
       </div>
+      <section
+        v-if="account?.opencode_go_usage?.eligible"
+        class="space-y-4 border-t zt-border-c2 pt-4"
+        data-testid="opencode-go-usage-settings"
+      >
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <h3 class="text-sm font-semibold zt-ink">
+              {{ t('admin.accounts.opencodeGo.title') }}
+            </h3>
+            <p class="mt-1 text-xs zt-ink-3">
+              {{ t('admin.accounts.opencodeGo.panelHint') }}
+            </p>
+          </div>
+          <span
+            class="whitespace-nowrap rounded px-2 py-1 text-xs font-medium"
+            :class="opencodeGoStatusOk
+              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+              : 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300'"
+          >
+            {{ opencodeGoStatusLabel }}
+          </span>
+        </div>
+
+        <div v-if="opencodeGoLoading" class="flex h-20 items-center justify-center text-gray-400">
+          <Icon name="refresh" size="sm" class="animate-spin" />
+        </div>
+        <template v-else>
+          <div
+            v-if="opencodeGoSnapshot"
+            class="border-y border-gray-100 py-3 dark:border-dark-700"
+            data-testid="opencode-go-usage-details"
+          >
+            <div class="grid grid-cols-[minmax(4rem,auto)_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-xs">
+              <span class="zt-ink-3">{{ t('admin.accounts.opencodeGo.rolling') }}</span>
+              <span class="break-words zt-ink">{{ opencodeGoWindowSummary(opencodeGoSnapshot.data?.rolling) }}</span>
+              <span class="zt-ink-3">{{ t('admin.accounts.opencodeGo.weekly') }}</span>
+              <span class="break-words zt-ink">{{ opencodeGoWindowSummary(opencodeGoSnapshot.data?.weekly) }}</span>
+              <span class="zt-ink-3">{{ t('admin.accounts.opencodeGo.monthly') }}</span>
+              <span class="break-words zt-ink">{{ opencodeGoWindowSummary(opencodeGoSnapshot.data?.monthly) }}</span>
+              <span class="zt-ink-3">{{ t('admin.accounts.opencodeGo.status') }}</span>
+              <span class="break-words font-medium zt-ink">{{ opencodeGoStatusLabel }}</span>
+              <span class="zt-ink-3">{{ t('admin.accounts.opencodeGo.updatedAt') }}</span>
+              <span class="break-words zt-ink">{{ opencodeGoFormatDate(opencodeGoSnapshot.fetched_at || opencodeGoSnapshot.last_attempt_at) }}</span>
+            </div>
+            <p
+              v-if="opencodeGoSnapshot.last_error"
+              class="mt-2 break-words border-t border-gray-100 pt-2 text-xs text-amber-700 dark:border-dark-700 dark:text-amber-300"
+            >
+              {{ t(`admin.accounts.opencodeGo.errors.${opencodeGoSnapshot.last_error}`, opencodeGoSnapshot.last_error) }}
+            </p>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              class="btn btn-secondary btn-sm"
+              :disabled="opencodeGoRefreshing"
+              data-testid="opencode-go-refresh"
+              @click="refreshOpenCodeGoUsage"
+            >
+              <Icon name="refresh" size="xs" class="mr-1.5" :class="{ 'animate-spin': opencodeGoRefreshing }" />
+              {{ t('admin.accounts.opencodeGo.refreshNow') }}
+            </button>
+          </div>
+
+          <div class="flex items-center justify-between gap-4 border-t border-gray-100 pt-4 dark:border-dark-700">
+            <div>
+              <label class="text-sm font-medium zt-ink">
+                {{ t('admin.accounts.opencodeGo.autoRefresh') }}
+              </label>
+              <p class="mt-1 text-xs zt-ink-3">
+                {{ t('admin.accounts.opencodeGo.autoRefreshHint') }}
+              </p>
+            </div>
+            <Toggle
+              :model-value="opencodeGoState?.auto_refresh_enabled ?? false"
+              :disabled="opencodeGoSaving"
+              data-testid="opencode-go-auto-refresh"
+              @update:model-value="setOpenCodeGoAutoRefresh"
+            />
+          </div>
+        </template>
+      </section>
 
       <!-- Anthropic API Key 自动透传开关 -->
       <div
@@ -3442,7 +3649,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, nextTick } from 'vue'
+import { ref, reactive, computed, watch, nextTick, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 
@@ -3461,7 +3668,10 @@ import type {
   VideoDisclosurePolicy,
   OllamaCloudUsageState,
   GrokMediaEligibilityMode,
-  GrokMediaEligibilityState
+  GrokMediaEligibilityState,
+  OpenCodeGoUsageState,
+  OpenCodeGoUsageWindow,
+  TempUnschedulableScope
 } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -3476,6 +3686,11 @@ import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.
 import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
 import GrokBaseUrlPresets from '@/components/account/GrokBaseUrlPresets.vue'
 import CnBaseUrlPresets from '@/components/account/CnBaseUrlPresets.vue'
+import {
+  applyExplicitCacheUpstreamCredentials,
+  isOfficialGeminiBaseUrl,
+  normalizeExplicitCacheUpstreamMaxTTL
+} from '@/utils/geminiExplicitCache'
 import OpenCodeGoProtocolRulesEditor from '@/components/account/OpenCodeGoProtocolRulesEditor.vue'
 import HeaderOverrideEditor from '@/components/account/HeaderOverrideEditor.vue'
 import OllamaCloudUsageSettings from '@/components/account/OllamaCloudUsageSettings.vue'
@@ -3492,7 +3707,14 @@ import {
   buildPlanTypeOptions,
   cloneOpenCodeGoProtocolRules,
   defaultOpenCodeProtocolRules,
+  defaultProviderProtocolRules,
+  isMultiProtocolApiKeyPlatform,
   parseOpenCodeGoProtocolRules,
+  providerAccountModes,
+  providerModeLabel,
+  providerNativeProtocols,
+  providerRoutesByModel,
+  resolveProviderAccountMode,
   readPlanType,
   resolveOpenCodeAccountMode,
   isCustomGrokBaseUrl,
@@ -3533,6 +3755,7 @@ import {
   getBrowserTimeZone,
   parseDateTimeLocalInput
 } from '@/utils/format'
+import { extractApiErrorMessage, extractI18nErrorMessage } from '@/utils/apiError'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
 import { getAccountExpiryTimestamp } from '@/components/account/accountExpiry'
 import {
@@ -3614,6 +3837,88 @@ const handleProviderIdentityChanged = (state: AccountProviderIdentityState) => {
   })
 }
 
+// OpenCode Go usage panel state
+const opencodeGoState = ref<OpenCodeGoUsageState | null>(props.account?.opencode_go_usage ?? null)
+const opencodeGoLoading = ref(false)
+const opencodeGoSaving = ref(false)
+const opencodeGoRefreshing = ref(false)
+const opencodeGoSnapshot = computed(() => opencodeGoState.value?.snapshot)
+const opencodeGoStatusOk = computed(() => opencodeGoSnapshot.value?.status === 'ok')
+const opencodeGoStatusLabel = computed(() => {
+  if (!opencodeGoSnapshot.value) return t('admin.accounts.opencodeGo.notRefreshed')
+  if (opencodeGoSnapshot.value.status === 'unauthorized') return t('admin.accounts.opencodeGo.unauthorized')
+  if (opencodeGoSnapshot.value.status === 'failed') return t('admin.accounts.opencodeGo.failed')
+  return t('admin.accounts.opencodeGo.ok')
+})
+const opencodeGoFormatPercent = (value?: number) => typeof value === 'number' && Number.isFinite(value)
+  ? `${value.toFixed(value % 1 ? 1 : 0)}%`
+  : '-'
+const opencodeGoFormatDate = (value?: string) => {
+  if (!value) return '-'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
+}
+const opencodeGoWindowSummary = (window?: OpenCodeGoUsageWindow) => {
+  if (!window) return '-'
+  const reset = window.resets_at ? opencodeGoFormatDate(window.resets_at) : null
+  return reset
+    ? t('admin.accounts.opencodeGo.windowWithReset', { percent: opencodeGoFormatPercent(window.percent), reset })
+    : opencodeGoFormatPercent(window.percent)
+}
+
+const applyOpenCodeGoState = (next: OpenCodeGoUsageState) => {
+  opencodeGoState.value = next
+  if (props.account) emit('updated', { ...props.account, opencode_go_usage: next })
+}
+
+const loadOpenCodeGoUsage = async () => {
+  opencodeGoLoading.value = true
+  try {
+    applyOpenCodeGoState(await adminAPI.accounts.getOpenCodeGoUsage(props.account!.id))
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('admin.accounts.opencodeGo.loadFailed')))
+  } finally {
+    opencodeGoLoading.value = false
+  }
+}
+
+const setOpenCodeGoAutoRefresh = async (enabled: boolean) => {
+  opencodeGoSaving.value = true
+  try {
+    applyOpenCodeGoState(await adminAPI.accounts.setOpenCodeGoUsageAutoRefresh(props.account!.id, enabled))
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('admin.accounts.opencodeGo.autoRefreshFailed')))
+  } finally {
+    opencodeGoSaving.value = false
+  }
+}
+
+const refreshOpenCodeGoUsage = async () => {
+  opencodeGoRefreshing.value = true
+  try {
+    applyOpenCodeGoState(await adminAPI.accounts.refreshOpenCodeGoUsage(props.account!.id))
+    appStore.showSuccess(t('admin.accounts.opencodeGo.refreshSuccess'))
+  } catch (error) {
+    appStore.showError(extractI18nErrorMessage(
+      error,
+      t,
+      'admin.accounts.opencodeGo.errors',
+      t('admin.accounts.opencodeGo.refreshFailed')
+    ))
+  } finally {
+    opencodeGoRefreshing.value = false
+  }
+}
+
+watch(() => props.account?.id, () => {
+  opencodeGoState.value = props.account?.opencode_go_usage ?? null
+  if (opencodeGoState.value && !opencodeGoState.value.snapshot) void loadOpenCodeGoUsage()
+})
+
+onMounted(() => {
+  if (opencodeGoState.value && !opencodeGoState.value.snapshot) void loadOpenCodeGoUsage()
+})
+
 // Platform-specific hint for Base URL
 const baseUrlHint = computed(() => {
   if (!props.account) return t('admin.accounts.baseUrlHint')
@@ -3642,6 +3947,8 @@ interface TempUnschedRuleForm {
   keywords: string
   duration_minutes: number | null
   description: string
+  // 作用范围：account 暂停整个账号，model 只冷却本次请求的模型。
+  scope: TempUnschedulableScope
 }
 
 // State
@@ -3705,13 +4012,18 @@ const editSyncCredentials = computed(() => {
 // ── 国产供应商（Kimi / Zhipu / DeepSeek）account_mode / api_protocol 编辑 ──
 // account_mode 决定额度/余额监控路径，api_protocol 决定转发端点与格式；
 // 二者均可修正（早期创建的账号可能存错默认值），切换时重置 base_url 预置。
+// 覆盖全部多协议 API Key 供应商（国产厂商、OpenCode 与走通用表单的供应商）。
 const isCNApiKeyAccount = computed(
-  () =>
-    props.account?.type === 'apikey' &&
-    (props.account.platform === 'glm' ||
-      props.account.platform === 'opencode_go' ||
-      isCNProviderPlatform(props.account.platform))
+  () => props.account?.type === 'apikey' && isMultiProtocolApiKeyPlatform(props.account.platform)
 )
+// 前端没有专属界面、走通用表单的多协议供应商：模式 / 协议 / 默认端点来自 profile。
+const isGenericMultiProtocolAccount = computed(
+  () =>
+    isCNApiKeyAccount.value &&
+    !isCNProviderPlatform(props.account?.platform ?? '') &&
+    props.account?.platform !== 'opencode_go'
+)
+const genericAccountModes = computed(() => providerAccountModes(props.account?.platform ?? ''))
 // CnBaseUrlPresets 的 platform prop 是平台字面量联合类型，模板里不能写
 // `as` 断言（其中的 `|` 会被 eslint 误判为 Vue2 filter 语法），经此 computed 传递。
 const cnPresetPlatform = computed<CnProviderPlatform>(() => {
@@ -3722,15 +4034,18 @@ const cnPresetPlatform = computed<CnProviderPlatform>(() => {
   }
   return 'kimi'
 })
-const adaptivePresetPlatform = computed<CnProviderPlatform | 'opencode_go'>(() => {
-  if (props.account?.platform === 'opencode_go') return 'opencode_go'
+const adaptivePresetPlatform = computed<string>(() => {
+  if (isCNApiKeyAccount.value) return props.account!.platform
   return cnPresetPlatform.value
 })
 const editApiProtocol = ref<CnApiProtocol>('adaptive')
 const editOpenCodeGoProtocolRules = ref<OpenCodeGoProtocolRule[]>(cloneOpenCodeGoProtocolRules())
-const editAccountMode = ref<CnAccountMode>('payg')
+// 多协议供应商（国产厂商与走通用表单的供应商）的接入模式；OpenCode 用 editOpenCodeAccountMode。
+const editAccountMode = ref<string>('payg')
 const editOpenCodeAccountMode = ref<OpenCodeAccountMode>('go')
-function currentOpenCodeOrCNMode(): CnAccountMode | OpenCodeAccountMode {
+// 国产厂商的接入模式只有 payg / coding。
+const cnPresetMode = computed<CnAccountMode>(() => (editAccountMode.value === 'coding' ? 'coding' : 'payg'))
+function currentOpenCodeOrCNMode(): string {
   return props.account?.platform === 'opencode_go' ? editOpenCodeAccountMode.value : editAccountMode.value
 }
 // 智谱团队版 Coding Plan：组织/项目 ID，写入 credentials 供额度探测切换团队端点
@@ -3758,25 +4073,22 @@ const cnAccountModeOptions = computed<Array<{ value: CnAccountMode; labelKey: 'p
     ]
   }
 )
-const cnProtocolOptions = computed<Array<{ value: CnApiProtocol; labelKey: string }>>(() => {
-  const opts: Array<{ value: CnApiProtocol; labelKey: string }> = [
-    { value: 'adaptive', labelKey: 'adaptive' },
-    { value: 'chat_completions', labelKey: 'chatCompletions' },
-    { value: 'anthropic', labelKey: 'anthropic' }
-  ]
-  if (cnSupportsNativeResponses(props.account?.platform ?? '')) {
-    opts.push({ value: 'responses', labelKey: 'responses' })
-  }
-  return opts
-})
-const editAdaptiveProtocolOptions = computed<Array<{ value: CnNativeApiProtocol; labelKey: string }>>(() => {
-  const opts: Array<{ value: CnNativeApiProtocol; labelKey: string }> = [
-    { value: 'chat_completions', labelKey: 'chatCompletions' },
-    { value: 'anthropic', labelKey: 'anthropic' }
-  ]
-  if (cnSupportsNativeResponses(props.account?.platform ?? '')) opts.push({ value: 'responses', labelKey: 'responses' })
-  return opts
-})
+const NATIVE_PROTOCOL_LABEL_KEYS: Record<CnNativeApiProtocol, string> = {
+  chat_completions: 'chatCompletions',
+  anthropic: 'anthropic',
+  responses: 'responses'
+}
+// 当前供应商与接入模式提供原生端点的协议（profile 中有默认基址的协议）。
+const editAdaptiveProtocolOptions = computed<Array<{ value: CnNativeApiProtocol; labelKey: string }>>(() =>
+  providerNativeProtocols(props.account?.platform ?? '', currentOpenCodeOrCNMode()).map(value => ({
+    value,
+    labelKey: NATIVE_PROTOCOL_LABEL_KEYS[value]
+  }))
+)
+const cnProtocolOptions = computed<Array<{ value: CnApiProtocol; labelKey: string }>>(() => [
+  { value: 'adaptive', labelKey: 'adaptive' },
+  ...editAdaptiveProtocolOptions.value
+])
 watch(editApiProtocol, (protocol, previousProtocol) => {
   if (!isCNApiKeyAccount.value || syncingForm.value) return
   if (protocol === 'adaptive') {
@@ -3800,11 +4112,19 @@ watch(editApiProtocol, (protocol, previousProtocol) => {
 watch(editAccountMode, (mode, previousMode) => {
   if (!isCNApiKeyAccount.value || syncingForm.value) return
   if (props.account?.platform === 'opencode_go') return
-  // deepseek 无 coding 套餐：防御性回退（UI 已隐藏该选项）。
-  const effectiveMode = props.account!.platform === 'deepseek' && mode === 'coding' ? 'payg' : mode
+  // 供应商没有的接入模式（如 deepseek 无 coding 套餐）防御性回退默认模式（UI 已隐藏该选项）。
+  const effectiveMode = resolveProviderAccountMode(props.account!.platform, mode)
   if (effectiveMode !== mode) {
     editAccountMode.value = effectiveMode
     return
+  }
+  if (providerRoutesByModel(props.account!.platform)) {
+    const previousRules = JSON.stringify(defaultProviderProtocolRules(props.account!.platform, previousMode))
+    if (JSON.stringify(editOpenCodeGoProtocolRules.value) === previousRules) {
+      editOpenCodeGoProtocolRules.value = cloneOpenCodeGoProtocolRules(
+        defaultProviderProtocolRules(props.account!.platform, mode)
+      )
+    }
   }
   if (editApiProtocol.value === 'adaptive') {
     const previousDefaults = defaultCNAdaptiveBaseUrls(adaptivePresetPlatform.value, previousMode)
@@ -3857,6 +4177,12 @@ const editBedrockApiKeyValue = ref('')
 const editVertexProjectId = ref('')
 const editVertexClientEmail = ref('')
 const editVertexLocation = ref('us-central1')
+const editVertexApiKey = ref('')
+const isVertexAPIKeyMode = computed(() =>
+  props.account?.platform === 'gemini' &&
+  props.account?.type === 'service_account' &&
+  (props.account?.credentials as Record<string, unknown>)?.auth_mode === 'apikey'
+)
 const isBedrockAPIKeyMode = computed(() =>
   props.account?.type === 'bedrock' &&
   (props.account?.credentials as Record<string, unknown>)?.auth_mode === 'apikey'
@@ -3870,6 +4196,8 @@ const MAX_POOL_MODE_RETRY_COUNT = 10
 const DEFAULT_POOL_MODE_RETRY_STATUS_CODES = [401, 403, 429]
 const GROK_CLIENT_TOOL_CACHE_EXTRA_KEY = 'grok_client_tool_cache_enabled'
 const poolModeEnabled = ref(false)
+const explicitCacheUpstreamEnabled = ref(false)
+const explicitCacheUpstreamMaxTTL = ref<string | number>('')
 const poolModeRetryCount = ref(DEFAULT_POOL_MODE_RETRY_COUNT)
 const poolModeRetryStatusCodesInput = ref('')
 
@@ -4416,6 +4744,19 @@ const openAICompactStatusKey = computed(() => {
 
 // Computed: current preset mappings based on platform
 const presetMappings = computed(() => getPresetMappingsByPlatform(props.account?.platform || 'anthropic'))
+const tempUnschedScopeOptions = computed<Array<{ value: TempUnschedulableScope; label: string; description: string }>>(() => [
+  {
+    value: 'model',
+    label: t('admin.accounts.tempUnschedulable.scopeModel'),
+    description: t('admin.accounts.tempUnschedulable.scopeModelDesc')
+  },
+  {
+    value: 'account',
+    label: t('admin.accounts.tempUnschedulable.scopeAccount'),
+    description: t('admin.accounts.tempUnschedulable.scopeAccountDesc')
+  }
+])
+
 const tempUnschedPresets = computed(() => [
   {
     label: t('admin.accounts.tempUnschedulable.presets.overloadLabel'),
@@ -4423,7 +4764,8 @@ const tempUnschedPresets = computed(() => [
       error_code: 529,
       keywords: 'overloaded, too many',
       duration_minutes: 60,
-      description: t('admin.accounts.tempUnschedulable.presets.overloadDesc')
+      description: t('admin.accounts.tempUnschedulable.presets.overloadDesc'),
+      scope: 'model' as const
     }
   },
   {
@@ -4432,7 +4774,8 @@ const tempUnschedPresets = computed(() => [
       error_code: 429,
       keywords: 'rate limit, too many requests',
       duration_minutes: 10,
-      description: t('admin.accounts.tempUnschedulable.presets.rateLimitDesc')
+      description: t('admin.accounts.tempUnschedulable.presets.rateLimitDesc'),
+      scope: 'model' as const
     }
   },
   {
@@ -4441,7 +4784,8 @@ const tempUnschedPresets = computed(() => [
       error_code: 503,
       keywords: 'unavailable, maintenance',
       duration_minutes: 30,
-      description: t('admin.accounts.tempUnschedulable.presets.unavailableDesc')
+      description: t('admin.accounts.tempUnschedulable.presets.unavailableDesc'),
+      scope: 'model' as const
     }
   }
 ])
@@ -4454,16 +4798,10 @@ const defaultBaseUrl = computed(() => {
   if (props.account?.platform === 'windsurf') return WINDSURF_BASE_URL
   if (props.account?.platform === 'grok') return 'https://api.x.ai/v1'
   if (props.account && isVideoOnlyPlatform(props.account.platform)) return ''
+  if (props.account?.platform === 'typesafe') return 'https://api.typesafe.ai'
   // CN 供应商：按当前模式/协议回落到官方预设（清空输入框提交时使用），
   // 不能落到 anthropic 默认值（会被当 CC base 拼出错误端点）。
-  // glm 是 zhipu 的历史平台 ID，defaultCNBaseUrl 已有对应 case，直接并入。
-  if (
-    props.account?.platform === 'kimi' ||
-    props.account?.platform === 'zhipu' ||
-    props.account?.platform === 'glm' ||
-    props.account?.platform === 'deepseek' ||
-    props.account?.platform === 'opencode_go'
-  ) {
+  if (props.account && isMultiProtocolApiKeyPlatform(props.account.platform)) {
     return defaultCNBaseUrl(props.account.platform, currentOpenCodeOrCNMode(), editApiProtocol.value)
   }
   return 'https://api.anthropic.com'
@@ -4587,6 +4925,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   editVertexProjectId.value = ''
   editVertexClientEmail.value = ''
   editVertexLocation.value = 'us-central1'
+  editVertexApiKey.value = ''
   antigravityProjectId.value =
     newAccount.platform === 'antigravity' &&
     newAccount.type === 'oauth' &&
@@ -4843,11 +5182,13 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     const credentials = newAccount.credentials as Record<string, unknown>
     // 国产供应商：读取 account_mode 与 api_protocol 作为可编辑初始值
     // （编辑弹窗允许修正两者，用于修复早期存错默认值的账号）。
-    if (newAccount.platform === 'glm' || newAccount.platform === 'opencode_go' || isCNProviderPlatform(newAccount.platform)) {
+    if (isMultiProtocolApiKeyPlatform(newAccount.platform)) {
       if (newAccount.platform === 'opencode_go') {
         editOpenCodeAccountMode.value = resolveOpenCodeAccountMode(credentials.account_mode)
-      } else {
+      } else if (isCNProviderPlatform(newAccount.platform)) {
         editAccountMode.value = credentials.account_mode === 'coding' ? 'coding' : 'payg'
+      } else {
+        editAccountMode.value = resolveProviderAccountMode(newAccount.platform, credentials.account_mode)
       }
       const storedProtocol = credentials.api_protocol
       editApiProtocol.value =
@@ -4857,7 +5198,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
         storedProtocol === 'responses'
           ? storedProtocol
           : 'chat_completions'
-      if (!cnSupportsNativeResponses(newAccount.platform) && editApiProtocol.value === 'responses') {
+      if (!cnSupportsNativeResponses(newAccount.platform, currentOpenCodeOrCNMode()) && editApiProtocol.value === 'responses') {
         editApiProtocol.value = 'chat_completions'
       }
       const adaptiveDefaults = defaultCNAdaptiveBaseUrls(adaptivePresetPlatform.value, currentOpenCodeOrCNMode())
@@ -4902,10 +5243,10 @@ const syncFormFromAccount = (newAccount: Account | null) => {
         editZhipuOrganization.value = typeof credentials.zhipu_organization === 'string' ? credentials.zhipu_organization : ''
         editZhipuProject.value = typeof credentials.zhipu_project === 'string' ? credentials.zhipu_project : ''
       }
-      if (newAccount.platform === 'opencode_go') {
+      if (providerRoutesByModel(newAccount.platform)) {
         editOpenCodeGoProtocolRules.value =
           parseOpenCodeGoProtocolRules(credentials.protocol_rules) ??
-          cloneOpenCodeGoProtocolRules(defaultOpenCodeProtocolRules(editOpenCodeAccountMode.value))
+          cloneOpenCodeGoProtocolRules(defaultProviderProtocolRules(newAccount.platform, currentOpenCodeOrCNMode()))
       }
     }
     const platformDefaultUrl =
@@ -4917,11 +5258,9 @@ const syncFormFromAccount = (newAccount: Account | null) => {
           ? 'https://generativelanguage.googleapis.com'
           : newAccount.platform === 'grok'
             ? 'https://api.x.ai/v1'
-            : newAccount.platform === 'kimi' ||
-                newAccount.platform === 'zhipu' ||
-                newAccount.platform === 'glm' ||
-                newAccount.platform === 'deepseek' ||
-                newAccount.platform === 'opencode_go'
+            : newAccount.platform === 'typesafe'
+              ? 'https://api.typesafe.ai'
+            : isMultiProtocolApiKeyPlatform(newAccount.platform)
               ? defaultCNBaseUrl(newAccount.platform, currentOpenCodeOrCNMode(), editApiProtocol.value)
               : newAccount.platform === 'minimax'
                 ? MINIMAX_ANTHROPIC_BASE_URL
@@ -4967,6 +5306,10 @@ const syncFormFromAccount = (newAccount: Account | null) => {
       Number(credentials.pool_mode_retry_count ?? DEFAULT_POOL_MODE_RETRY_COUNT)
     )
     poolModeRetryStatusCodesInput.value = formatPoolModeRetryStatusCodes(credentials.pool_mode_retry_status_codes)
+
+    explicitCacheUpstreamEnabled.value = credentials.explicit_cache_upstream === true
+    explicitCacheUpstreamMaxTTL.value =
+      normalizeExplicitCacheUpstreamMaxTTL(credentials.explicit_cache_upstream_max_ttl_seconds) ?? ''
 
     // Load custom error codes
     customErrorCodesEnabled.value = credentials.custom_error_codes_enabled === true
@@ -5014,6 +5357,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     editVertexProjectId.value = (credentials.project_id as string) || ''
     editVertexClientEmail.value = (credentials.client_email as string) || ''
     editVertexLocation.value = (credentials.location as string) || (credentials.vertex_location as string) || 'us-central1'
+    editVertexApiKey.value = ''
 
     // Load model mappings for service_account
     loadModelRestrictionFromMapping(credentials.model_mapping as Record<string, unknown> | undefined)
@@ -5053,6 +5397,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     poolModeEnabled.value = false
     poolModeRetryCount.value = DEFAULT_POOL_MODE_RETRY_COUNT
     poolModeRetryStatusCodesInput.value = ''
+    explicitCacheUpstreamEnabled.value = false
+    explicitCacheUpstreamMaxTTL.value = ''
     customErrorCodesEnabled.value = false
     selectedErrorCodes.value = []
   }
@@ -5166,7 +5512,7 @@ const syncAntigravityUpstreamModels = async () => {
       appStore.showWarning(t('admin.accounts.syncUpstreamModelsMetadataPartial'))
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : t('admin.accounts.syncUpstreamModelsFailed')
+    const message = extractApiErrorMessage(error, t('admin.accounts.syncUpstreamModelsFailed'))
     appStore.showError(t('admin.accounts.syncUpstreamModelsError', { message }))
   } finally {
     isSyncingAntigravityUpstream.value = false
@@ -5235,7 +5581,8 @@ const addTempUnschedRule = (preset?: TempUnschedRuleForm) => {
     error_code: null,
     keywords: '',
     duration_minutes: 30,
-    description: ''
+    description: '',
+    scope: 'model'
   })
 }
 
@@ -5258,6 +5605,7 @@ const buildTempUnschedRules = (rules: TempUnschedRuleForm[]) => {
     keywords: string[]
     duration_minutes: number
     description: string
+    scope: TempUnschedulableScope
   }> = []
 
   for (const rule of rules) {
@@ -5277,7 +5625,8 @@ const buildTempUnschedRules = (rules: TempUnschedRuleForm[]) => {
       error_code: Math.trunc(errorCode),
       keywords,
       duration_minutes: Math.trunc(duration),
-      description: rule.description.trim()
+      description: rule.description.trim(),
+      scope: rule.scope
     })
   }
 
@@ -5375,11 +5724,13 @@ function loadTempUnschedRules(credentials?: Record<string, unknown>) {
 
   tempUnschedRules.value = rawRules.map((rule) => {
     const entry = rule as Record<string, unknown>
+    const errorCode = toPositiveNumber(entry.error_code)
     return {
-      error_code: toPositiveNumber(entry.error_code),
+      error_code: errorCode,
       keywords: formatTempUnschedKeywords(entry.keywords),
       duration_minutes: toPositiveNumber(entry.duration_minutes),
-      description: typeof entry.description === 'string' ? entry.description : ''
+      description: typeof entry.description === 'string' ? entry.description : '',
+      scope: resolveTempUnschedScope(entry.scope, errorCode)
     }
   })
 }
@@ -5476,6 +5827,16 @@ function formatTempUnschedKeywords(value: unknown) {
     return value
   }
   return ''
+}
+
+// 未设置 scope 的规则由后端按「401 账号级、其余模型级」处理，这里按同一规则回显，
+// 保证打开再保存不改变规则行为。
+function resolveTempUnschedScope(value: unknown, errorCode: number | null): TempUnschedulableScope {
+  const scope = typeof value === 'string' ? value.trim().toLowerCase() : ''
+  if (scope === 'account' || scope === 'model') {
+    return scope
+  }
+  return errorCode === 401 ? 'account' : 'model'
 }
 
 const splitTempUnschedKeywords = (value: string) => {
@@ -5808,7 +6169,7 @@ const handleSubmit = async () => {
               : newCredentials.base_url_openai
           }
         }
-        if (props.account.platform === 'opencode_go') {
+        if (providerRoutesByModel(props.account.platform)) {
           applyOpenCodeGoProtocolRules(newCredentials, editOpenCodeGoProtocolRules.value, 'edit')
         }
         // 智谱团队版 Coding Plan：组织/项目 ID 写入凭据（非空才写，清空即移除回落个人版路径）。
@@ -5878,6 +6239,12 @@ const handleSubmit = async () => {
         delete newCredentials.pool_mode_retry_status_codes
       }
 
+      applyExplicitCacheUpstreamCredentials(
+        newCredentials,
+        props.account.platform === 'gemini' && !isOfficialGeminiBaseUrl(editBaseUrl.value) && explicitCacheUpstreamEnabled.value,
+        explicitCacheUpstreamMaxTTL.value
+      )
+
       // Add custom error codes if enabled
       if (!isFixedEndpointGatewayPlatform.value && customErrorCodesEnabled.value) {
         newCredentials.custom_error_codes_enabled = true
@@ -5936,35 +6303,61 @@ const handleSubmit = async () => {
     } else if ((props.account.platform === 'gemini' || props.account.platform === 'anthropic') && props.account.type === 'service_account') {
       const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
       const newCredentials: Record<string, unknown> = { ...currentCredentials }
-
-      if (!editVertexProjectId.value.trim()) {
-        appStore.showError(t('admin.accounts.vertexSaJsonMissingProjectId'))
-        return
-      }
-      if (!editVertexClientEmail.value.trim()) {
-        appStore.showError(t('admin.accounts.vertexSaJsonMissingClientEmail'))
-        return
-      }
-      if (!editVertexLocation.value.trim()) {
-        appStore.showError(t('admin.accounts.vertexLocationRequired'))
-        return
-      }
-
-      // SA JSON 已脱敏不再随 credentials 返回，存在性优先读 credentials_status。
-      // 若后端尚未升级（无 credentials_status），回退读旧结构 service_account_json / service_account。
       const credentialsStatus = props.account.credentials_status
-      const hasExistingServiceAccountJson = credentialsStatus
-        ? Boolean(
-            credentialsStatus.has_service_account_json || credentialsStatus.has_service_account
-          )
-        : Boolean(currentCredentials.service_account_json || currentCredentials.service_account)
-      if (!hasExistingServiceAccountJson) {
-        appStore.showError(t('admin.accounts.vertexSaJsonRequired'))
-        return
+
+      if (isVertexAPIKeyMode.value) {
+        // API Key 已脱敏不再随 credentials 返回，存在性读 credentials_status；留空表示保留原 Key。
+        const newApiKey = editVertexApiKey.value.trim()
+        const hasExistingApiKey = credentialsStatus
+          ? Boolean(credentialsStatus.has_api_key)
+          : Boolean(currentCredentials.api_key)
+        if (!newApiKey && !hasExistingApiKey) {
+          appStore.showError(t('admin.accounts.vertexApiKeyRequired'))
+          return
+        }
+        const projectId = editVertexProjectId.value.trim()
+        if (projectId && !editVertexLocation.value.trim()) {
+          appStore.showError(t('admin.accounts.vertexLocationRequired'))
+          return
+        }
+        if (newApiKey) {
+          newCredentials.api_key = newApiKey
+        }
+        if (projectId) {
+          newCredentials.project_id = projectId
+        } else {
+          delete newCredentials.project_id
+        }
+        newCredentials.location = editVertexLocation.value.trim() || 'global'
+      } else {
+        if (!editVertexProjectId.value.trim()) {
+          appStore.showError(t('admin.accounts.vertexSaJsonMissingProjectId'))
+          return
+        }
+        if (!editVertexClientEmail.value.trim()) {
+          appStore.showError(t('admin.accounts.vertexSaJsonMissingClientEmail'))
+          return
+        }
+        if (!editVertexLocation.value.trim()) {
+          appStore.showError(t('admin.accounts.vertexLocationRequired'))
+          return
+        }
+
+        // SA JSON 已脱敏不再随 credentials 返回，存在性优先读 credentials_status。
+        // 若后端尚未升级（无 credentials_status），回退读旧结构 service_account_json / service_account。
+        const hasExistingServiceAccountJson = credentialsStatus
+          ? Boolean(
+              credentialsStatus.has_service_account_json || credentialsStatus.has_service_account
+            )
+          : Boolean(currentCredentials.service_account_json || currentCredentials.service_account)
+        if (!hasExistingServiceAccountJson) {
+          appStore.showError(t('admin.accounts.vertexSaJsonRequired'))
+          return
+        }
+        newCredentials.project_id = editVertexProjectId.value.trim()
+        newCredentials.client_email = editVertexClientEmail.value.trim()
+        newCredentials.location = editVertexLocation.value.trim()
       }
-      newCredentials.project_id = editVertexProjectId.value.trim()
-      newCredentials.client_email = editVertexClientEmail.value.trim()
-      newCredentials.location = editVertexLocation.value.trim()
       newCredentials.tier_id = 'vertex'
 
       // Add model mapping if configured

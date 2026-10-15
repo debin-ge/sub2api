@@ -353,7 +353,7 @@ func TestListPublic_AuthenticatedIncludesVisibleExclusiveGroupsAndUserRates(t *t
 
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Equal(t, "private, no-store", w.Header().Get("Cache-Control"))
-	require.Equal(t, "Authorization", w.Header().Get("Vary"))
+	require.Equal(t, "Authorization, Accept-Language", w.Header().Get("Vary"))
 	var body struct {
 		Data []userAvailableChannel `json:"data"`
 	}
@@ -1068,7 +1068,8 @@ func TestUserAvailableChannel_FieldWhitelist(t *testing.T) {
 	cacheWriteMultiplier := 2.0
 	cacheReadMultiplier := 2.0
 	pricing := toUserPricing(&service.ChannelModelPricing{
-		BillingMode: service.BillingModeToken,
+		BillingMode:                service.BillingModeToken,
+		ReasoningEffortMultipliers: map[string]float64{"high": 1.5, "max": 3},
 		Intervals: []service.PricingInterval{
 			{
 				ID: 7, MinTokens: 0, MaxTokens: nil, SortOrder: 3,
@@ -1078,6 +1079,7 @@ func TestUserAvailableChannel_FieldWhitelist(t *testing.T) {
 		},
 	})
 	require.NotNil(t, pricing)
+	require.Equal(t, map[string]float64{"high": 1.5, "max": 3}, pricing.ReasoningEffortMultipliers)
 	require.Len(t, pricing.Intervals, 1)
 	rawIv, err := json.Marshal(pricing.Intervals[0])
 	require.NoError(t, err)

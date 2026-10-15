@@ -1,17 +1,14 @@
 package service
 
 import (
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
 func TestDefaultModelCatalogIDs_AllPlatforms(t *testing.T) {
-	platforms := []string{
-		PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity,
-		PlatformGrok, PlatformMiniMax, PlatformZhipu, PlatformGLM, PlatformKimi,
-		PlatformDeepSeek, PlatformWindsurf, PlatformOpenCodeGo, PlatformByteDance,
-	}
+	platforms := append(domain.ConcretePlatformIDs(), PlatformGLM)
 	for _, platform := range platforms {
 		t.Run(platform, func(t *testing.T) {
 			first := DefaultModelCatalogIDs(platform)

@@ -82,6 +82,9 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 		h.chatCompletionsErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "Model is not supported by composite groups")
 		return
 	}
+	if rejectSystemOneOnlyPlatform(c, apiKey, h.chatCompletionsErrorResponse) {
+		return
+	}
 	reqStream, ok := parseOpenAICompatibleStream(body)
 	if !ok {
 		h.chatCompletionsErrorResponse(c, http.StatusBadRequest, "invalid_request_error", invalidStreamFieldTypeMessage)
@@ -115,8 +118,11 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 	// 解析渠道级模型映射
 	channelMapping := h.gatewayService.ResolveRequestChannelMapping(c.Request.Context(), apiKey.GroupID, reqModel)
 
-	// Claude Code only restriction
-	if apiKey.Group != nil && apiKey.Group.ClaudeCodeOnly {
+	// Claude Code only restriction: /v1/chat/completions is never a Claude Code
+	// endpoint. With a fallback group the request continues and account selection
+	// (checkClaudeCodeRestriction) schedules it in the fallback group; without one
+	// it is rejected here.
+	if apiKey.Group != nil && apiKey.Group.ClaudeCodeOnly && apiKey.Group.FallbackGroupID == nil {
 		h.chatCompletionsErrorResponse(c, http.StatusForbidden, "permission_error",
 			"This group is restricted to Claude Code clients (/v1/messages only)")
 		return
@@ -158,6 +164,19 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 		return
 	}
 
+	// 余额模式在途预留：防止并发请求在预检时看到同一份余额而集体透支。
+	inflightRelease, err := reserveInflightBalance(c, h.billingCacheService, h.gatewayService, apiKey, subscription, tokenInflightEstimate(reqModel, body))
+	if err != nil {
+		reqLog.Info("gateway.cc.inflight_reservation_rejected", zap.Error(err))
+		status, code, message, retryAfter := billingErrorDetails(err)
+		if retryAfter > 0 {
+			c.Header("Retry-After", strconv.Itoa(retryAfter))
+		}
+		h.chatCompletionsErrorResponse(c, status, code, message)
+		return
+	}
+	defer inflightRelease()
+
 	// Enrich the request parsed and validated before routing for session hash.
 	parsedReq.SessionContext = &service.SessionContext{
 		ClientIP:  ip.GetClientIP(c),
@@ -178,7 +197,7 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 	var mappingFallback service.ChannelMappingFallbackState
 
 	for {
-		if c.Request.Context().Err() != nil {
+		if failoverClientGone(c) {
 			return
 		}
 		selection, routingModel, err := selectGatewayAccountWithChannelMapping(
@@ -194,6 +213,10 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 			int64(0),
 		)
 		if err != nil {
+			if failoverClientGone(c) {
+				reqLog.Info("gateway.cc.account_select_aborted_client_disconnected", zap.Error(err))
+				return
+			}
 			if accessErr, ok := classifyGroupAccessSelectionError(err); ok {
 				h.chatCompletionsErrorResponse(c, accessErr.Status, accessErr.Reason, accessErr.Message)
 				return

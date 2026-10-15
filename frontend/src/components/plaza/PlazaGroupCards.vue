@@ -52,6 +52,11 @@
         </div>
       </div>
 
+      <div v-if="group.reasoning.length" class="mt-2 flex flex-wrap gap-1.5">
+        <span v-for="[effort, multiplier] in group.reasoning" :key="effort" :data-reasoning-effort="effort" class="rounded bg-amber-50 px-1.5 py-0.5 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-300" :title="t('modelPlaza.table.reasoningMultiplierHint', { effort, multiplier })">
+          {{ t('modelPlaza.table.reasoningMultiplierBadge', { effort, multiplier }) }}
+        </span>
+      </div>
       <div v-if="group.mediaRate || group.peakWindow" class="mt-2 flex flex-wrap gap-1.5">
         <span
           v-if="group.mediaRate"

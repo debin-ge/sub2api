@@ -293,10 +293,13 @@ type userAvailableGroup struct {
 	VideoPrice1080P      *float64                           `json:"-"`
 	VideoModelPrices     map[string]map[string]float64      `json:"-"`
 	ModelsListConfig     service.GroupModelsListConfig      `json:"-"`
+	modelPricing         []service.ChannelModelPricing
+	i18n                 service.GroupI18n
 }
 
 // userSupportedModelPricing 用户可见的定价字段白名单。
 type userSupportedModelPricing struct {
+	ReasoningEffortMultipliers   map[string]float64       `json:"reasoning_effort_multipliers,omitempty"`
 	BillingMode                  string                   `json:"billing_mode"`
 	Currency                     string                   `json:"currency"`
 	Source                       string                   `json:"source"`
@@ -407,6 +410,7 @@ func (h *AvailableChannelHandler) List(c *gin.Context) {
 		return
 	}
 
+	acceptLanguage := c.GetHeader("Accept-Language")
 	out := make([]userAvailableChannel, 0, len(channels))
 	groupCatalogs := make(map[int64][]string)
 	resolvedGroups := make(map[int64]struct{})
@@ -422,6 +426,7 @@ func (h *AvailableChannelHandler) List(c *gin.Context) {
 			response.ErrorFrom(c, err)
 			return
 		}
+		localizeUserAvailableGroups(visibleGroups, acceptLanguage)
 		sections := buildPlatformSections(ch, visibleGroups)
 		sections = mergeGroupCatalogModels(sections, groupCatalogs)
 		if len(sections) == 0 {
@@ -455,7 +460,7 @@ func (h *AvailableChannelHandler) ListPublic(c *gin.Context) {
 		return
 	}
 
-	c.Header("Vary", "Authorization")
+	c.Writer.Header().Add("Vary", "Authorization, Accept-Language")
 	if !authenticated {
 		// 匿名输出与用户无关：走进程内缓存，并发 miss 由 singleflight 合并为一次构建。
 		out, err := h.publicCache.get(publicPlazaAnonymousCacheKey, func() ([]userAvailableChannel, error) {
@@ -466,7 +471,7 @@ func (h *AvailableChannelHandler) ListPublic(c *gin.Context) {
 			return
 		}
 		c.Header("Cache-Control", "public, max-age=60, stale-while-revalidate=300")
-		response.Success(c, out)
+		response.Success(c, localizedAvailableChannels(out, c.GetHeader("Accept-Language")))
 		return
 	}
 
@@ -495,7 +500,7 @@ func (h *AvailableChannelHandler) ListPublic(c *gin.Context) {
 		return
 	}
 	c.Header("Cache-Control", "private, no-store")
-	response.Success(c, out)
+	response.Success(c, localizedAvailableChannels(out, c.GetHeader("Accept-Language")))
 }
 
 // buildAnonymousPlaza 构建匿名广场响应（仅公开分组、默认倍率）。
@@ -533,6 +538,7 @@ func (h *AvailableChannelHandler) buildPlaza(
 	}
 	applyPlazaModelPricesToChannels(h.modelPrices, h.billingFallback, out)
 	applyPlazaMediaPricesToChannels(h.modelPrices, out)
+	applyPlazaReasoningMultipliers(out)
 	h.applyRecentCallCounts(ctx, out)
 	return out, nil
 }
@@ -901,6 +907,13 @@ func filterRoutingOnlyModels(sections []userChannelPlatformSection) []userChanne
 	return sections
 }
 
+// localizeUserAvailableGroups 把分组名称就地换成请求首选语言的版本。
+func localizeUserAvailableGroups(groups []userAvailableGroup, acceptLanguage string) {
+	for i := range groups {
+		groups[i].Name = groups[i].i18n.LocalizeName(acceptLanguage, groups[i].Name)
+	}
+}
+
 // buildPlatformSections 把一个渠道按 visibleGroups 的平台集合拆成有序的 section 列表：
 // 每个 section 对应一个具体平台，只包含该平台的 groups 和 supported_models。
 //
@@ -1097,6 +1110,8 @@ func filterUserVisibleGroups(
 			VideoPrice1080P:      g.VideoPrice1080P,
 			VideoModelPrices:     g.VideoModelPrices,
 			ModelsListConfig:     g.ModelsListConfig,
+			modelPricing:         g.ModelPricing,
+			i18n:                 g.I18n,
 		})
 	}
 	return visible
@@ -1112,6 +1127,8 @@ func filterPublicGroups(groups []service.AvailableGroupRef) []userAvailableGroup
 		visible = append(visible, userAvailableGroup{
 			ID:                   g.ID,
 			Name:                 g.Name,
+			modelPricing:         g.ModelPricing,
+			i18n:                 g.I18n,
 			Platform:             g.Platform,
 			SubscriptionType:     g.SubscriptionType,
 			RateMultiplier:       g.RateMultiplier,
@@ -1254,5 +1271,42 @@ func toUserPricing(p *service.ChannelModelPricing) *userSupportedModelPricing {
 		ImageOutputPrice:             p.ImageOutputPrice,
 		PerRequestPrice:              p.PerRequestPrice,
 		Intervals:                    intervals,
+		ReasoningEffortMultipliers:   p.EffectiveReasoningEffortMultipliers(),
+	}
+}
+
+// Copy the mutable name containers so one public-cache reader cannot change
+// the language seen by other concurrent readers.
+func localizedAvailableChannels(channels []userAvailableChannel, language string) []userAvailableChannel {
+	out := append([]userAvailableChannel(nil), channels...)
+	for i := range out {
+		out[i].Platforms = append([]userChannelPlatformSection(nil), channels[i].Platforms...)
+		for j := range out[i].Platforms {
+			out[i].Platforms[j].Groups = append([]userAvailableGroup(nil), channels[i].Platforms[j].Groups...)
+			localizeUserAvailableGroups(out[i].Platforms[j].Groups, language)
+		}
+	}
+	return out
+}
+
+func applyPlazaReasoningMultipliers(channels []userAvailableChannel) {
+	for i := range channels {
+		for j := range channels[i].Platforms {
+			section := &channels[i].Platforms[j]
+			if len(section.Groups) != 1 {
+				continue
+			}
+			for k := range section.SupportedModels {
+				model := &section.SupportedModels[k]
+				multipliers := service.ResolveDisplayReasoningEffortMultipliers(model.Name, section.Groups[0].modelPricing, model.channelPricing)
+				if len(multipliers) == 0 {
+					continue
+				}
+				if model.Pricing == nil {
+					model.Pricing = &userSupportedModelPricing{BillingMode: string(service.BillingModeToken), Intervals: []userPricingIntervalDTO{}}
+				}
+				model.Pricing.ReasoningEffortMultipliers = multipliers
+			}
+		}
 	}
 }

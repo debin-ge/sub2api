@@ -77,11 +77,11 @@ func (a *Account) IsHeaderOverrideEligible() bool {
 	if a == nil {
 		return false
 	}
-	switch CanonicalCNPlatform(a.Platform) {
-	case PlatformAnthropic, PlatformOpenAI, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax, PlatformByteDance, PlatformOpenCodeGo,
-		PlatformFal, PlatformWaveSpeed, PlatformRunware, PlatformFlova:
+	switch {
+	case a.Platform == PlatformAnthropic, a.Platform == PlatformOpenAI, IsMultiProtocolAPIKeyProvider(CanonicalCNPlatform(a.Platform)),
+		a.Platform == PlatformByteDance, a.Platform == PlatformFal, a.Platform == PlatformWaveSpeed, a.Platform == PlatformRunware, a.Platform == PlatformFlova:
 		return a.Type == AccountTypeAPIKey
-	case PlatformGrok:
+	case a.Platform == PlatformGrok:
 		return a.Type == AccountTypeAPIKey || a.Type == AccountTypeOAuth
 	default:
 		return false

@@ -128,7 +128,12 @@ func (s *OpenAIGatewayService) resolveOpenAIImageBillingPlanForPlatforms(
 			case BillingModePerRequest, BillingModeImage:
 				resolved := resolver.Resolve(ctx, PricingInput{Model: model, GroupID: groupID})
 				if price, ok := exactOpenAIImageRequestPrice(resolver, resolved, tier); ok {
-					return newOpenAIImageUnitBillingPlan(model, tier, PricingSourceChannel, price), nil
+					plan := newOpenAIImageUnitBillingPlan(model, tier, PricingSourceChannel, price)
+					// Keep the channel row so settlement applies its reasoning-effort multipliers.
+					if resolved != nil {
+						plan.Resolved.channelPricing = resolved.channelPricing
+					}
+					return plan, nil
 				}
 				return nil, fmt.Errorf(
 					"%w for image model %s tier %s: explicit channel image pricing is incomplete",
