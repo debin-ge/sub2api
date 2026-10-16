@@ -386,7 +386,8 @@ func (m *VideoMetrics) RecordFlovaOutcome(outcome string) {
 
 func flovaOutcomeLabel(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "empty_completion", "membership_gate", "insufficient_balance", "auto_resume", "price_drift", "extra_artifacts", "run_timeout", "user_action_required":
+	case "empty_completion", "membership_gate", "insufficient_balance", "auto_resume", "price_drift", "extra_artifacts", "run_timeout", "user_action_required",
+		"submitted", "resume_authorized", "resume_unconfirmed", "budget_exceeded", "overspend", "cost_reconciled":
 		return strings.ToLower(strings.TrimSpace(value))
 	default:
 		return "other"

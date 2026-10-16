@@ -152,36 +152,6 @@ func TestFlovaTaskIDRoundTrip(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestFlovaVideoProviderCreateRejectsUnverifiableBudgetBeforeSideEffects(t *testing.T) {
-	for _, skillPresent := range []bool{true, false} {
-		stub := newFlovaStubServer()
-		provider := newFlovaTestProvider(stub)
-		account := flovaVideoTestAccount()
-		if !skillPresent {
-			delete(account.Credentials, "skill_id")
-		}
-		// Legacy configuration must not opt back into unbounded spending.
-		account.Credentials["auto_confirm_high_cost"] = true
-		account.Credentials["auto_confirm_credits_max"] = 1000000
-		opened := false
-		inputs := []VideoInput{{
-			VideoInputManifestEntry: VideoInputManifestEntry{Role: VideoInputRoleReferenceImage, FileName: "ref.png", MIMEType: "image/png", Size: 7},
-			Open: func(context.Context) (io.ReadCloser, error) {
-				opened = true
-				return io.NopCloser(strings.NewReader("PNGDATA")), nil
-			},
-		}}
-		task, err := provider.Create(context.Background(), account, VideoCreateRequest{TaskID: "t", Model: FlovaVideoModelSeedance25, Prompt: "x", Seconds: 5, Resolution: "720p"}, inputs)
-		var typed *VideoProviderError
-		require.ErrorAs(t, err, &typed)
-		require.Equal(t, "budget_unverifiable", typed.Code)
-		require.Equal(t, VideoSubmissionRejected, typed.Certainty)
-		require.Nil(t, task)
-		require.Empty(t, stub.calls)
-		require.False(t, opened)
-	}
-}
-
 func TestFlovaVideoProviderValidation(t *testing.T) {
 	provider := newFlovaTestProvider(newFlovaStubServer())
 	account := flovaVideoTestAccount()

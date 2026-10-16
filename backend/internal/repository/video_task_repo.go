@@ -350,16 +350,20 @@ func (r *videoTaskRepository) CreateHeldVideoTask(ctx context.Context, params se
 		}
 	}
 	if params.MaxAccountConcurrency > 0 {
+		// Flova 的供应商成本按账号余额差结清（docs/Flova 成本约束设计.md），归因要求账号上同一
+		// 时刻只有一个任务在花钱：上一个任务的成本记录结清前，它仍占着这个账号的名额。
 		var active int
 		if err := tx.QueryRowContext(ctx, `
-			SELECT COUNT(*) FROM video_tasks
+			SELECT (SELECT COUNT(*) FROM video_tasks
 			WHERE account_id = $1
 			  AND (
 				generation_state IN ('submitting', 'queued', 'in_progress')
 				OR billing_state = 'held'
 				OR billing_state = 'capture_pending'
-			  )
-		`, params.AccountID).Scan(&active); err != nil {
+			  ))
+			  + CASE WHEN $2 = 'flova' THEN (SELECT COUNT(*) FROM video_provider_costs
+				WHERE account_id = $1 AND provider = 'flova' AND state = 'unresolved') ELSE 0 END
+		`, params.AccountID, params.Provider).Scan(&active); err != nil {
 			return nil, false, err
 		}
 		if active >= params.MaxAccountConcurrency {

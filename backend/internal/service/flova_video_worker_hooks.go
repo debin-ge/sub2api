@@ -7,6 +7,8 @@ import (
 	"log"
 	"strings"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/observability"
 )
 
 func fmtFloat(v float64) string {
@@ -44,6 +46,13 @@ func (w *VideoTaskWorker) trackFlovaObservation(ctx context.Context, account *Ac
 		current = int(v)
 	}
 	ctx = context.WithoutCancel(ctx)
+	if observed.Control != nil && observed.Control.Overspent {
+		spent := 0.0
+		if observed.Control.SpentCredits != nil {
+			spent = *observed.Control.SpentCredits
+		}
+		w.tripFlovaOverspend(ctx, account, task.PublicID, spent, "in-run balance")
+	}
 	switch observed.Status {
 	case VideoGenerationCompleted:
 		if current > 0 {
@@ -54,7 +63,7 @@ func (w *VideoTaskWorker) trackFlovaObservation(ctx context.Context, account *Ac
 			return
 		}
 		next := current + 1
-		if next >= flovaEmptyStreakPauseAfter {
+		if next >= flovaEmptyStreakPauseAfter && !flovaOverspendTripped(account, w.now()) {
 			until := w.now().Add(flovaEmptyStreakPauseCooldown)
 			if err := w.accounts.SetTempUnschedulable(ctx, account.ID, until, flovaEmptyStreakPauseReason); err != nil {
 				log.Printf("[Video] pause flova account %d after empty completions failed: %v", account.ID, err)
@@ -65,6 +74,34 @@ func (w *VideoTaskWorker) trackFlovaObservation(ctx context.Context, account *Ac
 		}
 		_ = w.accounts.UpdateExtra(ctx, account.ID, map[string]any{FlovaExtraEmptyStreak: next})
 	}
+}
+
+// flovaOverspendPauseReasonPrefix 标记超支熔断。它比积分低水位与空完成暂停都长，并且只能由
+// 人工解除：积分同步只清理自己的低水位原因，空完成暂停不会覆盖它。
+const (
+	flovaOverspendPauseReasonPrefix = "flova overspend"
+	flovaOverspendPauseCooldown     = 24 * time.Hour
+)
+
+func flovaOverspendTripped(account *Account, now time.Time) bool {
+	return account != nil && account.TempUnschedulableUntil != nil && now.Before(*account.TempUnschedulableUntil) &&
+		strings.HasPrefix(account.TempUnschedulableReason, flovaOverspendPauseReasonPrefix)
+}
+
+// tripFlovaOverspend 在任务花费超出预算时把账号移出调度（D2：平台承担超支，用户账单不变）。
+func (w *VideoTaskWorker) tripFlovaOverspend(ctx context.Context, account *Account, taskPublicID string, spent float64, source string) {
+	if w == nil || w.accounts == nil || account == nil || flovaOverspendTripped(account, w.now()) {
+		return
+	}
+	until := w.now().Add(flovaOverspendPauseCooldown)
+	reason := fmt.Sprintf("%s: task %s spent %s credits beyond its budget (%s)", flovaOverspendPauseReasonPrefix, taskPublicID, fmtFloat(spent), source)
+	if err := w.accounts.SetTempUnschedulable(context.WithoutCancel(ctx), account.ID, until, reason); err != nil {
+		log.Printf("[Video] trip flova overspend breaker for account %d failed: %v", account.ID, err)
+		return
+	}
+	account.TempUnschedulableUntil, account.TempUnschedulableReason = &until, reason
+	observability.DefaultVideoMetrics().RecordFlovaOutcome("overspend")
+	log.Printf("[Video] flova account %d paused: %s", account.ID, reason)
 }
 
 func (w *VideoTaskWorker) now() time.Time {

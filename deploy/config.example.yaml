@@ -325,8 +325,10 @@ gateway:
       signing_secret: ""
   # Flova（Agent 式视频创作平台，托管视频 provider "flova"）。
   # 账号凭据：api_key / base_url / upload_url / env_name / skill_id / max_run_minutes /
-  # auto_confirm_high_cost / price_drift_tolerance / auto_confirm_credits_max /
-  # round_fee_credits / min_credits_reserve / client_version（见 docs/Flova 平台接入实施方案.md 9.1）。
+  # price_drift_tolerance / min_credits_reserve / client_version（见 docs/Flova 平台接入实施方案.md 9.1）。
+  # 花费契约（docs/Flova 成本约束设计.md）：账号必须专用于本网关；每个账号同一时刻只跑一个任务，
+  # 终态后按账号余额差结清供应商成本；预算内的高成本确认自动放行；超出预算的账号熔断 24 小时。
+  # 旧凭据 auto_confirm_high_cost / auto_confirm_credits_max / round_fee_credits 已不再生效。
   flova:
     # 调用 Agent API 与直拉签名内容时的 User-Agent；Flova 的 CDN 会拦截默认 UA。
     user_agent: "flova-cli/v0.0.10 (linux; amd64)"
@@ -338,8 +340,10 @@ gateway:
     credits_reserve_default: 60
     # 账号未配置 max_run_minutes 时单次 run 的最长等待（分钟）。
     max_run_minutes_default: 60
-    # 高成本确认报价相对价格表的容差默认值（0.10 = 10%）。
+    # 高成本确认报价相对价格表的容差默认值（0.10 = 10%），也是任务预算相对名义积分的余量。
     price_drift_tolerance_default: 0.10
+    # 任务终态后等待上游入账的时间（分钟），之后才按账号余额差结清供应商成本。
+    cost_settle_window_minutes: 10
 
   # Timeout for waiting upstream response headers (seconds)
   # 等待上游响应头超时时间（秒）

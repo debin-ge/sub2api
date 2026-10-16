@@ -394,7 +394,57 @@ func (w *VideoTaskWorker) poll(ctx context.Context, task *VideoTask) error {
 		// 与上游永久失败同一口径：在本轮就把预扣释放掉，不等下一次队列调度。
 		return w.settle(ctx, expired)
 	}
-	_, err = w.service.ReconcileProviderObservation(ctx, task, observed, "provider_polled")
+	updated, err := w.service.ReconcileProviderObservation(ctx, task, observed, "provider_polled")
+	if err != nil {
+		return err
+	}
+	return w.resumeAuthorizedAction(ctx, task, updated, account, provider, observed)
+}
+
+// resumeAuthorizedAction 执行一次预算内授权的确认：只在授权（ResumeActionKey）由本次观测首次
+// 落库之后调用，任务租约保证同一任务不会被并发处理。之后无论成功、失败还是结果未知都不再
+// 调用——未知结果下任务按单次确认已用尽处理，花费由终态后的余额差对账兜底。
+func (w *VideoTaskWorker) resumeAuthorizedAction(ctx context.Context, before, updated *VideoTask, account *Account, provider VideoProvider, observed *ProviderVideoTask) error {
+	if observed == nil || observed.Control == nil || observed.Control.ResumeIntent == nil || before == nil || updated == nil {
+		return nil
+	}
+	intent := *observed.Control.ResumeIntent
+	if before.ProviderExecutionState != nil && before.ProviderExecutionState.ResumeActionKey != "" {
+		return nil
+	}
+	persisted := updated.ProviderExecutionState
+	if persisted == nil || persisted.ResumeActionKey != intent.ActionKey || persisted.ResumedStreamChatID != "" ||
+		updated.ProviderTaskID == nil || IsVideoGenerationTerminal(updated.GenerationState) {
+		return nil
+	}
+	resumer, ok := provider.(VideoProviderResumer)
+	if !ok {
+		return nil
+	}
+	ref := ProviderTaskRef{Provider: updated.Provider, AccountID: account.ID, ProviderTaskID: *updated.ProviderTaskID, ProviderExecutionState: persisted}
+	requestCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), videoWorkerRequestTimeout(w.cfg))
+	stream, err := resumer.ResumeAuthorized(requestCtx, account, ref, intent)
+	cancel()
+	if err != nil {
+		observability.DefaultVideoMetrics().RecordFlovaOutcome("resume_unconfirmed")
+		slog.Warn("video provider resume failed; it will not be retried", "task", updated.PublicID, "provider", updated.Provider, "error", err)
+		_, _ = w.tasks.AppendVideoTaskEvent(context.WithoutCancel(ctx), VideoTaskEvent{
+			TaskID: &updated.ID, EventType: "provider_resume_failed", Provider: updated.Provider,
+			AccountID: updated.AccountID, ProviderTaskID: *updated.ProviderTaskID,
+			FromGenerationState: updated.GenerationState, ToGenerationState: updated.GenerationState,
+			Payload:   map[string]any{"action_key": intent.ActionKey},
+			EventHash: transitionEventHashForService(updated.ID, updated.Version, updated.GenerationState, "provider_resume_failed"),
+		})
+		return nil
+	}
+	state := *persisted
+	state.ResumedStreamChatID = stream
+	resumed := &ProviderVideoTask{
+		ProviderTaskID: *updated.ProviderTaskID, Status: VideoGenerationInProgress, RawStatus: "resumed",
+		SuggestedPollInterval: flovaDefaultPollInterval,
+		Control:               &VideoProviderControlObservation{State: &state},
+	}
+	_, err = w.service.ReconcileProviderObservation(context.WithoutCancel(ctx), updated, resumed, "provider_resumed")
 	return err
 }
 

@@ -183,6 +183,10 @@ func (r *videoTaskRepoStub) TransitionVideoTask(_ context.Context, _ string, tra
 		now := time.Now().UTC()
 		r.task.SubmissionUnknownAt = &now
 	}
+	if transition.ProviderExecutionState != nil {
+		state := *transition.ProviderExecutionState
+		r.task.ProviderExecutionState = &state
+	}
 	return r.task, nil
 }
 func (r *videoTaskRepoStub) SaveVideoProviderAccepted(_ context.Context, _ string, acceptance VideoProviderAcceptance) (*VideoTask, error) {

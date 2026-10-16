@@ -1196,8 +1196,11 @@ type GatewayFlovaConfig struct {
 	CreditsReserveDefault float64 `mapstructure:"credits_reserve_default"`
 	// MaxRunMinutesDefault 账号未配置 max_run_minutes 时单次 run 的最长等待（分钟）。
 	MaxRunMinutesDefault int `mapstructure:"max_run_minutes_default"`
-	// PriceDriftToleranceDefault 高成本确认报价相对价格表的容差默认值（0.10 = 10%）。
+	// PriceDriftToleranceDefault 高成本确认报价相对价格表的容差默认值（0.10 = 10%），也是任务预算的余量。
 	PriceDriftToleranceDefault float64 `mapstructure:"price_drift_tolerance_default"`
+	// CostSettleWindowMinutes 任务终态后等待上游入账的时间（分钟），之后才按账号余额差结清供应商成本；
+	// 实测入账延迟 2~5 分钟。<=0 时取默认 10。
+	CostSettleWindowMinutes int `mapstructure:"cost_settle_window_minutes"`
 }
 
 // GatewayConfig API网关相关配置
@@ -3012,6 +3015,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.flova.credits_reserve_default", 60)
 	viper.SetDefault("gateway.flova.max_run_minutes_default", 60)
 	viper.SetDefault("gateway.flova.price_drift_tolerance_default", 0.10)
+	viper.SetDefault("gateway.flova.cost_settle_window_minutes", 10)
 	viper.SetDefault("gateway.video.content_proxy.total_timeout_seconds", 3600)
 	viper.SetDefault("gateway.video.callback.enabled", false)
 	viper.SetDefault("gateway.video.callback.retry_hours", 24)

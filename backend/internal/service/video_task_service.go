@@ -2583,6 +2583,10 @@ func numericMapValue(values map[string]any, key string) (float64, bool) {
 }
 
 func maxVideoAccountConcurrency(account *Account) int {
+	if account != nil && account.Platform == PlatformFlova {
+		// 余额差对账要求单账号串行，不读账号上配置的并发。
+		return 1
+	}
 	if account != nil && account.Concurrency > 0 {
 		return account.Concurrency
 	}
