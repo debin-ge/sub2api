@@ -14,6 +14,8 @@ type flovaPlan struct {
 	ratio      string
 	resolution string
 	seconds    int
+	// cameraFixed 来自 Ark 的 camera_fixed=true：Flova 没有对应开关，只能写进指令要求固定机位。
+	cameraFixed bool
 }
 
 // flovaFile 是上传到 Flova 存储后的文件引用（/chat 的 files[] 条目）。
@@ -50,6 +52,9 @@ func flovaRenderInstruction(plan *flovaPlan, prompt string, files []flovaFile) (
 		plan.profile.DisplayName, plan.ratio, plan.resolution, plan.seconds)
 	if len(files) > 0 {
 		_, _ = b.WriteString("Reference image: use the attached uploaded image as the first frame / visual reference only.\n")
+	}
+	if plan.cameraFixed {
+		_, _ = b.WriteString("Camera: keep a fixed, static camera for the whole video (no pan, tilt, zoom, dolly or handheld movement).\n")
 	}
 	fmt.Fprintf(&b, "Prompt (use verbatim, do not rewrite): <<<%s>>>\n", flovaEscapePrompt(prompt))
 	_, _ = b.WriteString("Rules for this round: produce exactly one video asset and nothing else. Do not write a script, storyboard, voiceover, music, timeline or export. ")

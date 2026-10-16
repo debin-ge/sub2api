@@ -137,14 +137,15 @@ print(result.status)
 <details>
 <summary>非 ByteDance 直连上游对开关字段的处理</summary>
 
-fal、WaveSpeed、Runware、Flova 以及 ByteDance 中继账号不能逐字执行所有 Ark 开关，处理规则分两类：
+fal、WaveSpeed、Runware、Flova 以及 ByteDance 中继账号不能逐字执行所有 Ark 字段，处理规则如下：
 
-| 处理 | 取值 |
+| 处理 | 字段 |
 | --- | --- |
-| 当作空操作接受，并在查询响应的 `ignored_parameters` 中列出 | `watermark=false`、`camera_fixed=false`、`generate_audio=false`、`seed=-1`、`service_tier="default"`，以及 `return_last_frame` 的任意取值 |
-| 返回 400 `unsupported_parameter`，不会静默丢弃 | `watermark=true`、`service_tier="flex"`、`duration=-1`、`frames`，以及模型没有映射的 `seed>=0`、`camera_fixed=true`、`generate_audio=true` |
+| 接受但不生效，在查询响应的 `ignored_parameters` 中列出 | 上游落不了地的 `seed`、`camera_fixed`、`watermark`、`generate_audio`、`return_last_frame`（任意取值），以及 `service_tier="default"` |
+| 换算成上游可接受的取值，在查询响应的 `adjusted_parameters` 中列出 | `duration=-1` 换成模型默认时长；`frames` 按 24fps 向上取整成秒数，再取模型支持的最近时长（等距取较长者）。实际时长见响应的 `duration` |
+| 返回 400 `unsupported_parameter` | `service_tier="flex"` |
 
-Flova 不支持任何开关，且参考图必须以 `data:` 内联。各模型的开关支持情况见能力目录的 `flags`，参考媒体的角色与数量限制见 `content_roles`。
+被忽略的 `generate_audio=true` 按无声视频计价。Flova 会把 `camera_fixed=true` 写进生成指令，要求固定机位，但不保证效果。Flova 的参考图必须以 `data:` 内联。各模型上能生效的开关见能力目录的 `flags`，参考媒体的角色与数量限制见 `content_roles`。
 
 </details>
 
@@ -178,7 +179,8 @@ Flova 不支持任何开关，且参考图必须以 `data:` 内联。各模型�
 | `content.last_frame_url` | `return_last_frame=true` 且上游提供尾帧时出现。 |
 | `usage` | 仅上游回报 token 时出现，目前只有 ByteDance 直连。 |
 | `error` | `failed`、`cancelled`、`expired` 时出现，含 `code` 与 `message`。 |
-| `ignored_parameters` | 被当作空操作接受的开关。 |
+| `ignored_parameters` | 被接受但未生效的开关。 |
+| `adjusted_parameters` | 被换算过取值的字段，例如 `duration`、`frames`。 |
 | `prompt`、`actual_cost`、`currency`、`provider` | 是否出现取决于分组的披露策略。 |
 
 任务未完成时查询响应带 `Retry-After: 10`，建议按此间隔轮询。

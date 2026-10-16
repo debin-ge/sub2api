@@ -137,14 +137,15 @@ Each `content[]` item:
 <details>
 <summary>How non-direct upstreams treat the flag fields</summary>
 
-fal, WaveSpeed, Runware, Flova and ByteDance relay accounts cannot honour every Ark flag literally. Values fall into two groups:
+fal, WaveSpeed, Runware, Flova and ByteDance relay accounts cannot honour every Ark field literally. They are handled as follows:
 
-| Handling | Values |
+| Handling | Fields |
 | --- | --- |
-| Accepted as a no-op and listed under `ignored_parameters` in the task response | `watermark=false`, `camera_fixed=false`, `generate_audio=false`, `seed=-1`, `service_tier="default"`, and any value of `return_last_frame` |
-| Rejected with 400 `unsupported_parameter`, never silently dropped | `watermark=true`, `service_tier="flex"`, `duration=-1`, `frames`, plus `seed>=0`, `camera_fixed=true` or `generate_audio=true` when the model has no mapping for them |
+| Accepted without effect and listed under `ignored_parameters` in the task response | `seed`, `camera_fixed`, `watermark`, `generate_audio` and `return_last_frame` (any value) when the upstream cannot apply them, plus `service_tier="default"` |
+| Converted to a value the upstream accepts and listed under `adjusted_parameters` | `duration=-1` becomes the model's default duration; `frames` is rounded up to whole seconds at 24 fps, then snapped to the nearest duration the model supports (ties go to the longer one). The resulting duration is reported as `duration` |
+| Rejected with 400 `unsupported_parameter` | `service_tier="flex"` |
 
-Flova supports no flags at all and requires reference images to be inlined as `data:` URLs. Per-model flag support is listed under `flags` in the models catalog, and reference media roles and limits under `content_roles`.
+An ignored `generate_audio=true` is priced as a silent video. Flova writes `camera_fixed=true` into its generation instruction to ask for a locked camera, without guaranteeing the result. Flova requires reference images to be inlined as `data:` URLs. Flags that take effect on each model are listed under `flags` in the models catalog, and reference media roles and limits under `content_roles`.
 
 </details>
 
@@ -178,7 +179,8 @@ Get returns the Ark shape:
 | `content.last_frame_url` | Present when `return_last_frame=true` and the upstream provides a last frame. |
 | `usage` | Present only when the upstream reports tokens, currently direct ByteDance only. |
 | `error` | Present on `failed`, `cancelled` and `expired`, with `code` and `message`. |
-| `ignored_parameters` | Flags that were accepted as no-ops. |
+| `ignored_parameters` | Flags that were accepted without effect. |
+| `adjusted_parameters` | Fields whose value was converted, such as `duration` or `frames`. |
 | `prompt`, `actual_cost`, `currency`, `provider` | Presence depends on the group's disclosure policy. |
 
 While a task is unfinished the response carries `Retry-After: 10`; poll at that interval.

@@ -111,8 +111,13 @@ func BuildArkVideoTaskObject(task *VideoTask, contentURLs ArkVideoContentURLs) m
 		object["usage"] = usage
 	}
 	if ignored := arkStringList(attributes["ignored_parameters"]); len(ignored) > 0 {
-		// sub2api 扩展：这些 Ark 开关对该上游是空操作，已被接受但未生效。
+		// sub2api 扩展：这些 Ark 开关该上游落不了地，已被接受但未生效。
 		object["ignored_parameters"] = ignored
+	}
+	if adjusted := arkStringList(attributes["adjusted_parameters"]); len(adjusted) > 0 {
+		// sub2api 扩展：这些字段被换算成上游可接受的取值（如 duration=-1 → 模型默认秒数），
+		// 实际取值见 duration。
+		object["adjusted_parameters"] = adjusted
 	}
 	if status == ArkVideoStatusSucceeded {
 		content := map[string]any{}

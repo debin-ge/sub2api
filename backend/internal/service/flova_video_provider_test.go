@@ -218,6 +218,15 @@ func TestFlovaVideoProviderValidation(t *testing.T) {
 	audioOff := false
 	_, err = provider.plan(account, VideoCreateRequest{Model: FlovaVideoModelMiniMaxH3, Prompt: "x", Ratio: ArkVideoRatioAdaptive, AudioEnabled: &audioOff}, nil)
 	require.NoError(t, err, "adaptive falls back to 16:9 and generate_audio=false is a no-op")
+
+	// camera_fixed 不再拒绝：true 写进指令，false 不加提示。
+	fixed, moving := true, false
+	plan, err := provider.plan(account, VideoCreateRequest{Model: FlovaVideoModelMiniMaxH3, Prompt: "x", Ratio: "9:16", CameraFixed: &fixed}, nil)
+	require.NoError(t, err)
+	require.True(t, plan.cameraFixed)
+	plan, err = provider.plan(account, VideoCreateRequest{Model: FlovaVideoModelMiniMaxH3, Prompt: "x", Ratio: "9:16", CameraFixed: &moving}, nil)
+	require.NoError(t, err)
+	require.False(t, plan.cameraFixed)
 }
 
 func TestFlovaVideoProviderGetStateMachine(t *testing.T) {
@@ -588,7 +597,7 @@ func TestFlovaVideoProviderSkillAndUser(t *testing.T) {
 func TestFlovaArkModelSpecAndCatalog(t *testing.T) {
 	provider := newFlovaTestProvider(newFlovaStubServer())
 	spec := provider.ArkModelSpec(FlovaVideoModelVeo31Fast)
-	require.Equal(t, ArkVideoModelFlags{}, spec.Flags, "Flova exposes no Ark switches")
+	require.Equal(t, ArkVideoModelFlags{CameraFixed: true}, spec.Flags, "Flova only realises camera_fixed, via its instruction")
 	require.Equal(t, map[VideoInputRole]ArkVideoContentRole{
 		VideoInputRoleFirstFrame: {Max: 1, Accepts: []string{videoReferenceAcceptsDataURI}},
 	}, spec.ContentRoles, "reference images must be bytes: Flova has no URL ingestion")
@@ -668,4 +677,15 @@ func TestFlovaRenderInstructionGolden(t *testing.T) {
 	require.Len(t, sha, 64)
 	_, sha2 := flovaRenderInstruction(plan, "different", nil)
 	require.NotEqual(t, sha, sha2)
+}
+
+func TestFlovaRenderInstructionCameraFixedHint(t *testing.T) {
+	plan := &flovaPlan{profile: flovaModelProfileFor(FlovaVideoModelSeedance20Fast), ratio: "9:16", resolution: "720p", seconds: 6}
+	plain, plainSHA := flovaRenderInstruction(plan, "a cat", nil)
+	require.NotContains(t, plain, "Camera:")
+
+	plan.cameraFixed = true
+	fixed, fixedSHA := flovaRenderInstruction(plan, "a cat", nil)
+	require.Contains(t, fixed, "Duration: 6 seconds.\nCamera: keep a fixed, static camera for the whole video (no pan, tilt, zoom, dolly or handheld movement).\nPrompt (use verbatim")
+	require.NotEqual(t, plainSHA, fixedSHA, "the hint is part of the frozen instruction")
 }

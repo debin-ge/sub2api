@@ -563,11 +563,12 @@ func (p *FlovaVideoProvider) plan(account *Account, request VideoCreateRequest, 
 	if request.HasOpenAIOnlyFields() {
 		return nil, rejectedVideoProviderError("validation", "unsupported_option", "size, quality, aspect_ratio, input_reference and characters are OpenAI-only fields", http.StatusBadRequest)
 	}
-	// 中性值（seed=-1、camera_fixed/watermark/return_last_frame/generate_audio=false、service_tier=default）
-	// 已在任务服务里清掉并记为 ignored；execution_expires_after 由本网关 worker 执行。
-	if request.SmartDuration || request.Frames > 0 || request.Seed != nil || request.CameraFixed != nil || request.Watermark != nil ||
+	// 任务服务已按 ArkParameterSupport 忽略 seed / watermark / generate_audio / return_last_frame，
+	// 并把 duration=-1 / frames 换算成秒数；camera_fixed 写进指令。到这里还带着这些值说明
+	// 绕过了任务服务（或模型没有默认时长可换算），按原样拒绝。
+	if request.SmartDuration || request.Frames > 0 || request.Seed != nil || request.Watermark != nil ||
 		request.ReturnLastFrame != nil || (request.AudioEnabled != nil && *request.AudioEnabled) {
-		return nil, rejectedVideoProviderError("validation", "unsupported_option", "Flova does not support duration -1, frames, seed, camera_fixed, watermark, generate_audio or return_last_frame", http.StatusBadRequest)
+		return nil, rejectedVideoProviderError("validation", "unsupported_option", "Flova does not support duration -1, frames, seed, watermark, generate_audio or return_last_frame", http.StatusBadRequest)
 	}
 	// Flova 的参考图必须先上传到它的存储：content[] 里只接受首帧，且必须是字节（data: URI），
 	// https 引用没有可下载再上传的通道。
@@ -624,7 +625,8 @@ func (p *FlovaVideoProvider) plan(account *Account, request VideoCreateRequest, 
 			return nil, rejectedVideoProviderError("validation", "input_too_large", "reference image exceeds the Flova size limit", http.StatusBadRequest)
 		}
 	}
-	return &flovaPlan{profile: profile, ratio: ratio, resolution: resolution, seconds: seconds}, nil
+	cameraFixed := request.CameraFixed != nil && *request.CameraFixed
+	return &flovaPlan{profile: profile, ratio: ratio, resolution: resolution, seconds: seconds, cameraFixed: cameraFixed}, nil
 }
 
 // ---------------------------------------------------------------------------

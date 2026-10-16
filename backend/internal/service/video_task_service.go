@@ -141,8 +141,10 @@ func NewVideoTaskService(
 }
 
 type resolvedVideoSubmission struct {
-	// ignoredParameters 是被当作空操作接受的 Ark 开关（审计与查询响应透出）。
+	// ignoredParameters 是被接受但未生效的 Ark 开关（审计与查询响应透出）。
 	ignoredParameters []string
+	// adjustedParameters 是被换算成 provider 可接受取值的 Ark 字段（如 duration=-1 → 默认秒数）。
+	adjustedParameters []string
 	// executionExpiryLocal 为真时 execution_expires_after 由本网关 worker 执行。
 	executionExpiryLocal     bool
 	providerRequest          VideoCreateRequest
@@ -469,13 +471,23 @@ func (s *VideoTaskService) resolveSubmission(ctx context.Context, request VideoS
 	}
 	providerRequest := request.providerRequest(publicModel, upstreamModel, characters)
 	providerRequest = ApplyVideoCapabilityDefaults(provider.Capabilities(), providerRequest)
-	// Ark 开关的中性值对非 Ark 直连 provider 是空操作：先清掉并记录，再让 provider 校验
-	// 真正要求厂商做到的值。排队超时由上游执行还是本网关执行也在这里定下来。
-	var ignoredParameters []string
+	// 非 Ark 直连 provider 落不了地的 Ark 开关一律忽略并记录，不支持的智能时长 / 帧数换算成
+	// 明确秒数，再让 provider 校验剩下的值。排队超时由上游执行还是本网关执行也在这里定下来。
+	var ignoredParameters, adjustedParameters []string
 	arkSupport := ArkNativeParameterSupport()
 	if normalizer, ok := provider.(VideoArkParameterNormalizer); ok {
 		arkSupport = normalizer.ArkParameterSupport(account, providerRequest)
-		providerRequest, ignoredParameters = normalizeNeutralArkParameters(providerRequest, arkSupport)
+		audioRequested := providerRequest.AudioEnabled != nil && *providerRequest.AudioEnabled
+		providerRequest, ignoredParameters = normalizeUnsupportedArkParameters(providerRequest, arkSupport)
+		providerRequest, adjustedParameters = adjustArkDurationForProvider(providerRequest, arkSupport, provider.Capabilities())
+		if audioRequested && providerRequest.AudioEnabled == nil {
+			// 被忽略的 generate_audio=true 交付的是无声视频，报价也必须按无声档，而不是落到
+			// 定价配置的默认音频档。
+			silent := false
+			request.AudioEnabled = &silent
+		}
+		request.SmartDuration = providerRequest.SmartDuration
+		request.Frames = providerRequest.Frames
 	}
 	for _, input := range request.Inputs {
 		capabilities := provider.Capabilities()
@@ -563,6 +575,7 @@ func (s *VideoTaskService) resolveSubmission(ctx context.Context, request VideoS
 	return &resolvedVideoSubmission{
 		providerRequest: providerRequest, executionSpec: executionSpec, executionSpecHash: executionSpecHash,
 		ignoredParameters:        ignoredParameters,
+		adjustedParameters:       adjustedParameters,
 		executionExpiryLocal:     providerRequest.ExecutionExpiresAfter > 0 && !arkSupport.ExecutionExpiresAfter,
 		callbackRetryHours:       callbackRetryHours,
 		callbackDisclosurePolicy: effectiveVideoDisclosurePolicy(s.cfg.Gateway.Video.DisclosurePolicy, group.VideoDisclosurePolicy, account.VideoDisclosurePolicy),
@@ -2398,6 +2411,9 @@ func videoRequestAttributes(request VideoSubmitRequest, resolved *resolvedVideoS
 	}
 	if len(resolved.ignoredParameters) > 0 {
 		attributes["ignored_parameters"] = append([]string(nil), resolved.ignoredParameters...)
+	}
+	if len(resolved.adjustedParameters) > 0 {
+		attributes["adjusted_parameters"] = append([]string(nil), resolved.adjustedParameters...)
 	}
 	return attributes
 }

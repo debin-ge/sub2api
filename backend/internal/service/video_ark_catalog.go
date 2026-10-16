@@ -32,7 +32,8 @@ type ArkVideoModelChoices struct {
 	Default string   `json:"default,omitempty"`
 }
 
-// ArkVideoModelFlags 列出模型接受的 Ark 开关字段。
+// ArkVideoModelFlags 列出模型上能生效的 Ark 开关字段；为 false 的开关提交后被忽略并列入
+// ignored_parameters（service_tier 之外不再返回 400）。
 type ArkVideoModelFlags struct {
 	Seed            bool `json:"seed"`
 	CameraFixed     bool `json:"camera_fixed"`
@@ -287,14 +288,17 @@ func (p *VideoVendorProvider) ArkModelSpec(model string) ArkVideoModelSpec {
 	return spec
 }
 
-// ArkParameterSupport：Flova 没有任何 Ark 开关可落地；排队超时由本网关 worker 执行。
+// ArkParameterSupport：Flova 没有 Ark 开关字段，只有 camera_fixed 能以指令形式落地（见
+// flovaRenderInstruction）；其余开关由任务服务忽略，智能时长 / 帧数换算成秒数，排队超时由
+// 本网关 worker 执行。
 func (p *FlovaVideoProvider) ArkParameterSupport(*Account, VideoCreateRequest) VideoArkParameterSupport {
-	return VideoArkParameterSupport{}
+	return VideoArkParameterSupport{CameraFixed: true}
 }
 
-// ArkModelSpec：Flova 没有任何开关；参考图必须是字节（先上传到 Flova 存储）。
+// ArkModelSpec：Flova 只有 camera_fixed 以指令形式生效；参考图必须是字节（先上传到 Flova 存储）。
 func (p *FlovaVideoProvider) ArkModelSpec(string) ArkVideoModelSpec {
 	return ArkVideoModelSpec{
+		Flags: ArkVideoModelFlags{CameraFixed: true},
 		ContentRoles: map[VideoInputRole]ArkVideoContentRole{
 			VideoInputRoleFirstFrame: {Max: 1, Accepts: []string{videoReferenceAcceptsDataURI}},
 		},
