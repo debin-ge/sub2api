@@ -1097,7 +1097,7 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	}
 	opts.PricingPlatforms = pricingPlatformCandidates(apiKey, account)
 	ApplyForwardImageBillingResolution(result)
-	logServiceTierBillingDowngrade("service.gateway", account, result.RequestID, ApplyForwardServiceTierBillingResolution(result))
+	logServiceTierBillingMismatch("service.gateway", account, result.RequestID, ResolveBillingServiceTier(optionalStringValue(result.ServiceTier), result.UpstreamResponseServiceTier))
 
 	// 强制缓存计费：将 input_tokens 转为 cache_read_input_tokens
 	// 用于粘性会话切换时的特殊计费处理

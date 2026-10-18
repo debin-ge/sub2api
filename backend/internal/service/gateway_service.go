@@ -644,9 +644,9 @@ type ForwardResult struct {
 	// RequestedReasoningEffort is the client-requested effort before mapping.
 	RequestedReasoningEffort *string
 	// ServiceTier records the tier requested by the client. OpenAI uses
-	// service_tier; Anthropic speed=fast is normalized to "fast". Usage recording
-	// lowers it to UpstreamResponseServiceTier when the upstream reports a
-	// cheaper tier (see ResolveBillingServiceTier).
+	// service_tier; Anthropic speed=fast is normalized to "fast". It is also the
+	// billed tier: UpstreamResponseServiceTier is audited, never billed (see
+	// ResolveBillingServiceTier).
 	ServiceTier *string
 
 	// 图片生成计费字段（图片生成模型使用）
