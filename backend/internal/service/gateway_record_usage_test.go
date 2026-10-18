@@ -1129,14 +1129,14 @@ func newGatewayRecordUsageServiceWithResolverForTest(usageRepo UsageLogRepositor
 	return svc, &APIKey{ID: 1, GroupID: &groupID, Group: &Group{ID: groupID, RateMultiplier: 1.0}}
 }
 
-func TestGatewayServiceRecordUsage_FastSpeedDowngradedByUpstreamResponse(t *testing.T) {
+func TestGatewayServiceRecordUsage_FastSpeedBilledAsRequestedDespiteStandardResponse(t *testing.T) {
 	usageRepo := &openAIRecordUsageBestEffortLogRepoStub{}
 	svc, apiKey := newGatewayRecordUsageServiceWithResolverForTest(usageRepo)
 
 	tier := "fast"
 	err := svc.RecordUsage(context.Background(), &RecordUsageInput{
 		Result: &ForwardResult{
-			RequestID:                   "fast_downgraded_test",
+			RequestID:                   "fast_standard_response_test",
 			Usage:                       ClaudeUsage{InputTokens: 100, OutputTokens: 50},
 			Model:                       "claude-opus-5",
 			Duration:                    time.Second,
@@ -1151,7 +1151,7 @@ func TestGatewayServiceRecordUsage_FastSpeedDowngradedByUpstreamResponse(t *test
 	require.NoError(t, err)
 	require.NotNil(t, usageRepo.lastLog)
 	require.NotNil(t, usageRepo.lastLog.ServiceTier)
-	require.Equal(t, "standard", *usageRepo.lastLog.ServiceTier)
+	require.Equal(t, "fast", *usageRepo.lastLog.ServiceTier, "usage log must record the requested tier")
 
 	tokens := UsageTokens{InputTokens: 100, OutputTokens: 50}
 	standardCost, err := svc.billingService.CalculateCost("claude-opus-5", tokens, 1.0)
@@ -1159,7 +1159,7 @@ func TestGatewayServiceRecordUsage_FastSpeedDowngradedByUpstreamResponse(t *test
 	fastCost, err := svc.billingService.CalculateCostWithServiceTier("claude-opus-5", tokens, 1.0, "fast")
 	require.NoError(t, err)
 	require.Greater(t, fastCost.TotalCost, standardCost.TotalCost, "fast mode must carry a premium for the test to be meaningful")
-	require.InDelta(t, standardCost.TotalCost, usageRepo.lastLog.TotalCost, 1e-10)
+	require.InDelta(t, fastCost.TotalCost, usageRepo.lastLog.TotalCost, 1e-10, "the upstream response tier must not lower the bill")
 }
 
 func TestGatewayServiceRecordUsage_FastSpeedHonouredKeepsPremium(t *testing.T) {
