@@ -59,6 +59,7 @@ func flovaRenderInstruction(plan *flovaPlan, prompt string, files []flovaFile) (
 	fmt.Fprintf(&b, "Prompt (use verbatim, do not rewrite): <<<%s>>>\n", flovaEscapePrompt(prompt))
 	_, _ = b.WriteString("Rules for this round: produce exactly one video asset and nothing else. Do not write a script, storyboard, voiceover, music, timeline or export. ")
 	_, _ = b.WriteString("Do not generate images unless strictly required as the first frame of this single video. ")
+	_, _ = b.WriteString("Do not ask clarifying questions, and do not generate extra variants, previews, thumbnails or alternative takes. ")
 	_, _ = b.WriteString("Use the model, aspect ratio, resolution and duration exactly as given; if the model is unavailable to this account, stop and report the reason instead of substituting another model.")
 	content := b.String()
 	sum := sha256.Sum256([]byte(content))

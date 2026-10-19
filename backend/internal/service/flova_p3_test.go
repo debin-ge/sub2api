@@ -192,40 +192,23 @@ func flovaTestConnectionContext() (*gin.Context, *httptest.ResponseRecorder) {
 }
 
 func TestFlovaAccountTestConnection(t *testing.T) {
-	t.Run("creates and saves the skill when missing", func(t *testing.T) {
+	t.Run("does not create a skill when none is configured", func(t *testing.T) {
 		account := flovaSchedulableAccount()
 		delete(account.Credentials, "skill_id")
 		repo := newFlovaAccountRepoStub(account)
 		stub := newFlovaStubServer()
 		stub.json("/api/agent/v2/user", flovaUserOK)
-		stub.json("/api/agent/v2/skill/create", `{"code":0,"data":{"skill_id":"sk_auto"}}`)
 		svc := &AccountTestService{accountRepo: repo, httpUpstream: stub.upstream(), cfg: &config.Config{}}
 		c, recorder := flovaTestConnectionContext()
 		require.NoError(t, svc.testFlovaAccountConnection(c, account))
 		body := recorder.Body.String()
 		require.Contains(t, body, "Credentials accepted. credits_balance=2009")
 		require.Contains(t, body, "Subscription: starter_month")
-		require.Contains(t, body, "Private skill created and saved: sk_auto")
+		require.Contains(t, body, "No skill_id configured (optional)")
 		require.Contains(t, body, `"type":"test_complete"`)
-		require.NotNil(t, repo.updated)
-		require.Equal(t, "sk_auto", repo.updated.Credentials["skill_id"])
+		require.Nil(t, repo.updated, "credentials are never rewritten")
 		require.Equal(t, 2009.0, repo.extra[FlovaExtraCredits])
-		require.Zero(t, stub.count("/api/agent/v2/skill/get"))
-	})
-
-	t.Run("recovers the existing skill when creation reports a duplicate", func(t *testing.T) {
-		account := flovaSchedulableAccount()
-		delete(account.Credentials, "skill_id")
-		repo := newFlovaAccountRepoStub(account)
-		stub := newFlovaStubServer()
-		stub.json("/api/agent/v2/user", flovaUserOK)
-		flovaSkillConflict(stub)
-		stub.json("/api/agent/v2/skill/my/list", `{"code":0,"data":{"skills":[{"skill_id":"sk_poc","skill_name":"sub2api relay single-shot"}]}}`)
-		svc := &AccountTestService{accountRepo: repo, httpUpstream: stub.upstream(), cfg: &config.Config{}}
-		c, recorder := flovaTestConnectionContext()
-		require.NoError(t, svc.testFlovaAccountConnection(c, account))
-		require.Contains(t, recorder.Body.String(), "Existing private skill found and saved: sk_poc")
-		require.Equal(t, "sk_poc", repo.updated.Credentials["skill_id"])
+		require.Equal(t, []string{"/api/agent/v2/user"}, stub.calls)
 	})
 
 	t.Run("verifies an existing skill and warns about free tier", func(t *testing.T) {
@@ -239,7 +222,7 @@ func TestFlovaAccountTestConnection(t *testing.T) {
 		require.NoError(t, svc.testFlovaAccountConnection(c, account))
 		body := recorder.Body.String()
 		require.Contains(t, body, "free-tier")
-		require.Contains(t, body, "Private skill verified: sk_test")
+		require.Contains(t, body, "Configured skill verified: sk_test")
 		require.Equal(t, "sk_test", stub.lastBody("/api/agent/v2/skill/get")["skill_id"])
 		require.Nil(t, repo.updated)
 	})

@@ -852,7 +852,7 @@ export default {
         envName: 'Environment name',
         envNameHint: 'Optional Flova environment name (env_name). Leave blank unless Flova support gave you one.',
         skillId: 'Skill ID',
-        skillIdHint: 'Leave blank and run "Test connection": the backend creates a Skill automatically and writes its ID back here.',
+        skillIdHint: 'Optional. When set, every request attaches this Flova Skill; generation works without it because the single-shot rules are sent with every request.',
         maxRunMinutes: 'Max run time (minutes)',
         maxRunMinutesHint: 'A single run is abandoned after this many minutes. Default 60.',
         autoConfirmHighCost: 'Auto-confirm high-cost tasks',

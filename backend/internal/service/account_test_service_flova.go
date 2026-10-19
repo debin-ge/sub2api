@@ -10,8 +10,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// testFlovaAccountConnection：POST /user 验 Key 并回显积分 / 档位；skill_id 为空时自动创建（或找回
-// 同一 Flova 用户下已有的）私有 Skill 并回填凭据（方案 D9），非空时校验可读；最后写一次积分快照。
+// testFlovaAccountConnection：POST /user 验 Key 并回显积分 / 档位；配置了 skill_id 时校验可读；
+// 最后写一次积分快照。不创建 Skill，也不改写账号凭据。
 func (s *AccountTestService) testFlovaAccountConnection(c *gin.Context, account *Account) error {
 	ctx := c.Request.Context()
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
@@ -45,30 +45,13 @@ func (s *AccountTestService) testFlovaAccountConnection(c *gin.Context, account 
 		s.sendEvent(c, TestEvent{Type: "content", Text: fmt.Sprintf("Subscription: %s (%s)", flovaNonEmpty(plan, "unknown plan"), flovaNonEmpty(status, "unknown status"))})
 	}
 
-	skillID := provider.skillID(account)
-	if skillID == "" {
-		created, reused, err := provider.ResolveSkill(ctx, account)
-		if err != nil {
-			return s.sendErrorAndEnd(c, fmt.Sprintf("Skill creation failed: %s", err.Error()))
-		}
-		if account.Credentials == nil {
-			account.Credentials = map[string]any{}
-		}
-		account.Credentials[flovaCredentialSkillID] = created
-		if s.accountRepo != nil {
-			if err := s.accountRepo.Update(ctx, account); err != nil {
-				return s.sendErrorAndEnd(c, fmt.Sprintf("Skill %s was created but could not be saved to the account: %s", created, err.Error()))
-			}
-		}
-		if reused {
-			s.sendEvent(c, TestEvent{Type: "content", Text: "Existing private skill found and saved: " + created})
-		} else {
-			s.sendEvent(c, TestEvent{Type: "content", Text: "Private skill created and saved: " + created})
-		}
+	// Skill 可选：单镜头约束写在每轮指令里。配置了 skill_id 时只校验它对这个 API Key 可读。
+	if skillID := provider.skillID(account); skillID == "" {
+		s.sendEvent(c, TestEvent{Type: "content", Text: "No skill_id configured (optional): generation rules are sent with every request."})
 	} else if err := provider.GetSkill(ctx, account, skillID); err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Skill %s is not readable: %s", skillID, err.Error()))
 	} else {
-		s.sendEvent(c, TestEvent{Type: "content", Text: "Private skill verified: " + skillID})
+		s.sendEvent(c, TestEvent{Type: "content", Text: "Configured skill verified: " + skillID})
 	}
 
 	if s.accountRepo != nil {

@@ -955,7 +955,7 @@ export default {
         envName: '环境名称',
         envNameHint: '可选的 Flova 环境名（env_name），除非 Flova 提供，否则留空。',
         skillId: 'Skill ID',
-        skillIdHint: '留空后点击「测试连接」：后端会自动创建 Skill 并把 ID 回填到这里。',
+        skillIdHint: '可选。填写后每次请求都会附带这个 Flova Skill；留空也能正常生成，单镜头规则随每次请求下发。',
         maxRunMinutes: '单次运行时限（分钟）',
         maxRunMinutesHint: '单次 run 超过该分钟数即放弃等待。默认 60。',
         autoConfirmHighCost: '自动放行高成本任务',

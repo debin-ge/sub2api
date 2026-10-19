@@ -87,21 +87,30 @@ func TestFlovaVideoProviderCreateRejectsBalanceBelowBudgetPlusReserve(t *testing
 	require.Equal(t, []string{"/api/agent/v2/user"}, stub.calls)
 }
 
-func TestFlovaVideoProviderCreateProvisionsSkillWhenMissing(t *testing.T) {
+// skill_id 可选：未配置时不创建 Skill、不改写账号，/chat 也不带 skill_id。
+func TestFlovaVideoProviderCreateWithoutSkillNeverProvisionsOne(t *testing.T) {
 	stub := newFlovaStubServer()
 	stub.json("/api/agent/v2/user", flovaUserOK)
-	stub.json("/api/agent/v2/skill/create", `{"code":0,"data":{"skill_id":"sk_lazy"}}`)
 	stub.json("/api/agent/v2/create", `{"code":0,"data":{"project_id":"p1"}}`)
 	stub.json("/api/agent/v2/chat", `{"code":0,"data":{"stream_chat_id":"s1"}}`)
 	account := flovaVideoTestAccount()
 	delete(account.Credentials, "skill_id")
-	repo := newFlovaAccountRepoStub(account)
-	provider := newFlovaTestProvider(stub)
-	provider.accounts = repo
-	_, err := provider.Create(context.Background(), account, VideoCreateRequest{TaskID: "t", Model: FlovaVideoModelSeedance20, Prompt: "x", Seconds: 4, Resolution: "720p"}, nil)
+	_, err := newFlovaTestProvider(stub).Create(context.Background(), account, VideoCreateRequest{TaskID: "t", Model: FlovaVideoModelSeedance20, Prompt: "x", Seconds: 4, Resolution: "720p"}, nil)
 	require.NoError(t, err)
-	require.Equal(t, []string{"/api/agent/v2/user", "/api/agent/v2/skill/create", "/api/agent/v2/create", "/api/agent/v2/chat"}, stub.calls)
-	require.Equal(t, "sk_lazy", repo.updated.Credentials["skill_id"])
+	require.Equal(t, []string{"/api/agent/v2/user", "/api/agent/v2/create", "/api/agent/v2/chat"}, stub.calls)
+	chat := stub.lastBody("/api/agent/v2/chat")
+	require.NotContains(t, chat["extra_data"].(map[string]any), "skill_id")
+	require.Contains(t, chat["content"].(string), "Do not ask clarifying questions", "the single-shot rules travel with every run")
+	require.NotContains(t, account.Credentials, "skill_id")
+
+	// 管理员配置了 skill_id 时照常带上。
+	configured := newFlovaStubServer()
+	configured.json("/api/agent/v2/user", flovaUserOK)
+	configured.json("/api/agent/v2/create", `{"code":0,"data":{"project_id":"p1"}}`)
+	configured.json("/api/agent/v2/chat", `{"code":0,"data":{"stream_chat_id":"s1"}}`)
+	_, err = newFlovaTestProvider(configured).Create(context.Background(), flovaVideoTestAccount(), VideoCreateRequest{TaskID: "t", Model: FlovaVideoModelSeedance20, Prompt: "x", Seconds: 4, Resolution: "720p"}, nil)
+	require.NoError(t, err)
+	require.Equal(t, "sk_test", configured.lastBody("/api/agent/v2/chat")["extra_data"].(map[string]any)["skill_id"])
 }
 
 func TestFlovaTaskIDBudgetRoundTripAndValidation(t *testing.T) {
