@@ -627,6 +627,101 @@ func (p *FlovaVideoProvider) CreateSkill(ctx context.Context, account *Account) 
 	return "", controlVideoProviderError(errors.New("flova: skill creation returned no skill_id"))
 }
 
+// ResolveSkill 返回账号可用的私有 Skill，以及它是否为已有 Skill（reused）。Skill 挂在 Flova 用户
+// 名下而不是本网关账号上，名称与描述是固定常量：同一个 API Key 之前建过（PoC、删掉重建的账号、
+// 回填失败的上一次提交）时，Flova 以「同名同描述已存在」拒绝创建，此时从 /skill/my/list 找回原 Skill。
+func (p *FlovaVideoProvider) ResolveSkill(ctx context.Context, account *Account) (string, bool, error) {
+	skillID, err := p.CreateSkill(ctx, account)
+	if err == nil {
+		return skillID, false, nil
+	}
+	if !flovaSkillAlreadyExists(err) {
+		return "", false, err
+	}
+	existing, findErr := p.findExistingSkill(ctx, account)
+	if findErr != nil {
+		return "", false, findErr
+	}
+	if existing == "" {
+		return "", false, rejectedVideoProviderError("upstream", "skill_conflict",
+			"Flova reports the sub2api skill already exists but it is not in this account's created skills; set skill_id on the account manually", http.StatusConflict)
+	}
+	return existing, true, nil
+}
+
+func flovaSkillAlreadyExists(err error) bool {
+	var typed *VideoProviderError
+	if !errors.As(err, &typed) || typed == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(typed.Message), "already exists")
+}
+
+// findExistingSkill 在账号自建的 Skill 里按名称与描述精确匹配本网关的 Skill。响应结构没有官方文档，
+// 兼容 data 为数组或 {skills|items|list|records|rows: [...]}，以及 skill_id/id、skill_name/name 两套字段名。
+func (p *FlovaVideoProvider) findExistingSkill(ctx context.Context, account *Account) (string, error) {
+	result, err := p.do(ctx, account, "/skill/my/list", map[string]any{"only_brief": true, "page_size": 40, "view": "created"})
+	if err != nil {
+		return "", unknownVideoProviderError("transport", "request_failed", "Flova skill lookup transport failed", err)
+	}
+	if err := p.resultError(result, account, false); err != nil {
+		return "", err
+	}
+	var data any
+	if err := p.decodeData(result, &data); err != nil {
+		return "", controlVideoProviderError(err)
+	}
+	for _, item := range flovaSkillListItems(data) {
+		name := strings.TrimSpace(flovaFirstString(item, "skill_name", "name"))
+		if name != flovaSkillName {
+			continue
+		}
+		if description := strings.TrimSpace(flovaFirstString(item, "skill_description", "description")); description != "" && description != flovaSkillDescription {
+			continue
+		}
+		if id := strings.TrimSpace(flovaFirstString(item, "skill_id", "id")); validVideoProviderIdentifier(id) {
+			return id, nil
+		}
+	}
+	return "", nil
+}
+
+func flovaSkillListItems(data any) []map[string]any {
+	var list []any
+	switch value := data.(type) {
+	case []any:
+		list = value
+	case map[string]any:
+		for _, key := range []string{"skills", "items", "list", "records", "rows", "data"} {
+			if candidate, ok := value[key].([]any); ok {
+				list = candidate
+				break
+			}
+		}
+	}
+	items := make([]map[string]any, 0, len(list))
+	for _, entry := range list {
+		if item, ok := entry.(map[string]any); ok {
+			items = append(items, item)
+		}
+	}
+	return items
+}
+
+func flovaFirstString(item map[string]any, keys ...string) string {
+	for _, key := range keys {
+		switch value := item[key].(type) {
+		case string:
+			if strings.TrimSpace(value) != "" {
+				return value
+			}
+		case float64:
+			return strconv.FormatFloat(value, 'f', -1, 64)
+		}
+	}
+	return ""
+}
+
 // GetSkill 校验 skill_id 对账号可见。
 func (p *FlovaVideoProvider) GetSkill(ctx context.Context, account *Account, skillID string) error {
 	result, err := p.do(ctx, account, "/skill/get", map[string]any{"skill_id": strings.TrimSpace(skillID)})
@@ -795,13 +890,13 @@ func (p *FlovaVideoProvider) Create(ctx context.Context, account *Account, reque
 	}, nil
 }
 
-// ensureSkill：账号没有 skill_id 时创建私有 Skill 并回填凭据（D9 的懒加载形态，测试连接
-// 没跑过也能直接提交）。创建成功但回填失败时仍继续本次提交，下一次会再建一个。
+// ensureSkill：账号没有 skill_id 时创建（或找回同名的已有）私有 Skill 并回填凭据（D9 的懒加载形态，
+// 测试连接没跑过也能直接提交）。回填失败时仍继续本次提交，下一次会经 ResolveSkill 找回同一个。
 func (p *FlovaVideoProvider) ensureSkill(ctx context.Context, account *Account) error {
 	if p.skillID(account) != "" {
 		return nil
 	}
-	skillID, err := p.CreateSkill(ctx, account)
+	skillID, _, err := p.ResolveSkill(ctx, account)
 	if err != nil {
 		var typed *VideoProviderError
 		if errors.As(err, &typed) {

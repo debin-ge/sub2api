@@ -10,8 +10,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// testFlovaAccountConnection：POST /user 验 Key 并回显积分 / 档位；skill_id 为空时自动创建
-// 私有 Skill 并回填凭据（方案 D9），非空时校验可读；最后写一次积分快照。
+// testFlovaAccountConnection：POST /user 验 Key 并回显积分 / 档位；skill_id 为空时自动创建（或找回
+// 同一 Flova 用户下已有的）私有 Skill 并回填凭据（方案 D9），非空时校验可读；最后写一次积分快照。
 func (s *AccountTestService) testFlovaAccountConnection(c *gin.Context, account *Account) error {
 	ctx := c.Request.Context()
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
@@ -47,7 +47,7 @@ func (s *AccountTestService) testFlovaAccountConnection(c *gin.Context, account 
 
 	skillID := provider.skillID(account)
 	if skillID == "" {
-		created, err := provider.CreateSkill(ctx, account)
+		created, reused, err := provider.ResolveSkill(ctx, account)
 		if err != nil {
 			return s.sendErrorAndEnd(c, fmt.Sprintf("Skill creation failed: %s", err.Error()))
 		}
@@ -60,7 +60,11 @@ func (s *AccountTestService) testFlovaAccountConnection(c *gin.Context, account 
 				return s.sendErrorAndEnd(c, fmt.Sprintf("Skill %s was created but could not be saved to the account: %s", created, err.Error()))
 			}
 		}
-		s.sendEvent(c, TestEvent{Type: "content", Text: "Private skill created and saved: " + created})
+		if reused {
+			s.sendEvent(c, TestEvent{Type: "content", Text: "Existing private skill found and saved: " + created})
+		} else {
+			s.sendEvent(c, TestEvent{Type: "content", Text: "Private skill created and saved: " + created})
+		}
 	} else if err := provider.GetSkill(ctx, account, skillID); err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Skill %s is not readable: %s", skillID, err.Error()))
 	} else {
