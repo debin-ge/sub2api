@@ -89,11 +89,9 @@ type FlovaVideoProvider struct {
 	capabilities VideoCapabilities
 	catalog      *VideoCapabilityCatalog
 	cfg          config.GatewayFlovaConfig
-	// accounts 用于首次提交时自动创建私有 Skill 并回填 skill_id（可为 nil：仅跳过回填）。
-	accounts AccountRepository
-	resolver videoCallbackIPResolver
-	redirect videoContentRedirectExecutor
-	now      func() time.Time
+	resolver     videoCallbackIPResolver
+	redirect     videoContentRedirectExecutor
+	now          func() time.Time
 }
 
 func NewFlovaVideoProvider(httpUpstream HTTPUpstream, tlsProfiles *TLSFingerprintProfileService, cfg config.GatewayFlovaConfig) *FlovaVideoProvider {
