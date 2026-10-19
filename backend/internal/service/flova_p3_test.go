@@ -213,6 +213,21 @@ func TestFlovaAccountTestConnection(t *testing.T) {
 		require.Zero(t, stub.count("/api/agent/v2/skill/get"))
 	})
 
+	t.Run("recovers the existing skill when creation reports a duplicate", func(t *testing.T) {
+		account := flovaSchedulableAccount()
+		delete(account.Credentials, "skill_id")
+		repo := newFlovaAccountRepoStub(account)
+		stub := newFlovaStubServer()
+		stub.json("/api/agent/v2/user", flovaUserOK)
+		flovaSkillConflict(stub)
+		stub.json("/api/agent/v2/skill/my/list", `{"code":0,"data":{"skills":[{"skill_id":"sk_poc","skill_name":"sub2api relay single-shot"}]}}`)
+		svc := &AccountTestService{accountRepo: repo, httpUpstream: stub.upstream(), cfg: &config.Config{}}
+		c, recorder := flovaTestConnectionContext()
+		require.NoError(t, svc.testFlovaAccountConnection(c, account))
+		require.Contains(t, recorder.Body.String(), "Existing private skill found and saved: sk_poc")
+		require.Equal(t, "sk_poc", repo.updated.Credentials["skill_id"])
+	})
+
 	t.Run("verifies an existing skill and warns about free tier", func(t *testing.T) {
 		account := flovaSchedulableAccount()
 		repo := newFlovaAccountRepoStub(account)
