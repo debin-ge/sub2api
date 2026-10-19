@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"math"
 	"mime/multipart"
 	"net"
@@ -29,6 +28,7 @@ import (
 // FlovaVideoProvider 把 Flova（Agent 式视频创作平台）接成托管视频 provider：
 //
 //	Create = live 余额 B0 ≥ 任务预算 + 低水位 → 上传参考图 ×N → POST /create 建项目 → POST /chat
+//	         （单镜头约束全部写在每轮指令里；skill_id 只在管理员配置时附带）
 //	Get    = 只读 POST /run_result；预算内的高成本确认只做授权（写入执行状态），
 //	         由 worker 在授权落库后调用 ResumeAuthorized 恰好一次（POST /chat is_resume）
 //	Content= 直拉 CDN 签名 URL（必须带 flova-cli UA），403 时经 /resource_info 刷新
@@ -119,7 +119,7 @@ func (p *FlovaVideoProvider) Capabilities() VideoCapabilities {
 }
 
 // SupportsAccount：平台 / 类型 / Key 齐全，且积分快照（若有）不低于低水位。
-// skill_id 不是前置条件：缺失时首次提交会自动创建并回填（ensureSkill）。
+// skill_id 可选：管理员配置了就随 /chat 带上，网关不创建 Skill，也不改写账号凭据。
 // 快照过滤不发网络请求；提交前还会 live 查一次余额。
 func (p *FlovaVideoProvider) SupportsAccount(account *Account) bool {
 	if p == nil || account == nil {
@@ -606,122 +606,6 @@ func (p *FlovaVideoProvider) FetchUser(ctx context.Context, account *Account) (*
 	return info, nil
 }
 
-// CreateSkill 用内置 Skill 内容创建私有 Skill（默认启用），返回 skill_id。
-func (p *FlovaVideoProvider) CreateSkill(ctx context.Context, account *Account) (string, error) {
-	result, err := p.do(ctx, account, "/skill/create", flovaSkillPayload())
-	if err != nil {
-		return "", unknownVideoProviderError("transport", "request_failed", "Flova skill creation transport failed", err)
-	}
-	if err := p.resultError(result, account, false); err != nil {
-		return "", err
-	}
-	var data map[string]any
-	if err := p.decodeData(result, &data); err != nil {
-		return "", controlVideoProviderError(err)
-	}
-	for _, key := range []string{"skill_id", "id"} {
-		if v, ok := data[key].(string); ok && strings.TrimSpace(v) != "" {
-			return strings.TrimSpace(v), nil
-		}
-	}
-	return "", controlVideoProviderError(errors.New("flova: skill creation returned no skill_id"))
-}
-
-// ResolveSkill 返回账号可用的私有 Skill，以及它是否为已有 Skill（reused）。Skill 挂在 Flova 用户
-// 名下而不是本网关账号上，名称与描述是固定常量：同一个 API Key 之前建过（PoC、删掉重建的账号、
-// 回填失败的上一次提交）时，Flova 以「同名同描述已存在」拒绝创建，此时从 /skill/my/list 找回原 Skill。
-func (p *FlovaVideoProvider) ResolveSkill(ctx context.Context, account *Account) (string, bool, error) {
-	skillID, err := p.CreateSkill(ctx, account)
-	if err == nil {
-		return skillID, false, nil
-	}
-	if !flovaSkillAlreadyExists(err) {
-		return "", false, err
-	}
-	existing, findErr := p.findExistingSkill(ctx, account)
-	if findErr != nil {
-		return "", false, findErr
-	}
-	if existing == "" {
-		return "", false, rejectedVideoProviderError("upstream", "skill_conflict",
-			"Flova reports the sub2api skill already exists but it is not in this account's created skills; set skill_id on the account manually", http.StatusConflict)
-	}
-	return existing, true, nil
-}
-
-func flovaSkillAlreadyExists(err error) bool {
-	var typed *VideoProviderError
-	if !errors.As(err, &typed) || typed == nil {
-		return false
-	}
-	return strings.Contains(strings.ToLower(typed.Message), "already exists")
-}
-
-// findExistingSkill 在账号自建的 Skill 里按名称与描述精确匹配本网关的 Skill。响应结构没有官方文档，
-// 兼容 data 为数组或 {skills|items|list|records|rows: [...]}，以及 skill_id/id、skill_name/name 两套字段名。
-func (p *FlovaVideoProvider) findExistingSkill(ctx context.Context, account *Account) (string, error) {
-	result, err := p.do(ctx, account, "/skill/my/list", map[string]any{"only_brief": true, "page_size": 40, "view": "created"})
-	if err != nil {
-		return "", unknownVideoProviderError("transport", "request_failed", "Flova skill lookup transport failed", err)
-	}
-	if err := p.resultError(result, account, false); err != nil {
-		return "", err
-	}
-	var data any
-	if err := p.decodeData(result, &data); err != nil {
-		return "", controlVideoProviderError(err)
-	}
-	for _, item := range flovaSkillListItems(data) {
-		name := strings.TrimSpace(flovaFirstString(item, "skill_name", "name"))
-		if name != flovaSkillName {
-			continue
-		}
-		if description := strings.TrimSpace(flovaFirstString(item, "skill_description", "description")); description != "" && description != flovaSkillDescription {
-			continue
-		}
-		if id := strings.TrimSpace(flovaFirstString(item, "skill_id", "id")); validVideoProviderIdentifier(id) {
-			return id, nil
-		}
-	}
-	return "", nil
-}
-
-func flovaSkillListItems(data any) []map[string]any {
-	var list []any
-	switch value := data.(type) {
-	case []any:
-		list = value
-	case map[string]any:
-		for _, key := range []string{"skills", "items", "list", "records", "rows", "data"} {
-			if candidate, ok := value[key].([]any); ok {
-				list = candidate
-				break
-			}
-		}
-	}
-	items := make([]map[string]any, 0, len(list))
-	for _, entry := range list {
-		if item, ok := entry.(map[string]any); ok {
-			items = append(items, item)
-		}
-	}
-	return items
-}
-
-func flovaFirstString(item map[string]any, keys ...string) string {
-	for _, key := range keys {
-		switch value := item[key].(type) {
-		case string:
-			if strings.TrimSpace(value) != "" {
-				return value
-			}
-		case float64:
-			return strconv.FormatFloat(value, 'f', -1, 64)
-		}
-	}
-	return ""
-}
-
 // GetSkill 校验 skill_id 对账号可见。
 func (p *FlovaVideoProvider) GetSkill(ctx context.Context, account *Account, skillID string) error {
 	result, err := p.do(ctx, account, "/skill/get", map[string]any{"skill_id": strings.TrimSpace(skillID)})
@@ -829,7 +713,7 @@ func (p *FlovaVideoProvider) plan(account *Account, request VideoCreateRequest, 
 }
 
 // ---------------------------------------------------------------------------
-// Create：live 余额 B0 → Skill → 上传 → 建项目 → chat
+// Create：live 余额 B0 → 上传 → 建项目 → chat
 //
 // 单账号串行由任务库保证（账号上有在途或未结清的 Flova 任务时不会选到这个账号），所以 B0
 // 只属于本任务。B0 与预算写进 ProviderTaskID，创建后不再变化。
@@ -846,9 +730,6 @@ func (p *FlovaVideoProvider) Create(ctx context.Context, account *Account, reque
 	}
 	balanceBefore, err := p.preflightCredits(ctx, account, plan, budget)
 	if err != nil {
-		return nil, err
-	}
-	if err := p.ensureSkill(ctx, account); err != nil {
 		return nil, err
 	}
 	files := make([]flovaFile, 0, len(inputs))
@@ -888,32 +769,6 @@ func (p *FlovaVideoProvider) Create(ctx context.Context, account *Account, reque
 			"skill_id": p.skillID(account), "instruction_sha256": instructionSHA, "files": fileIDs,
 		},
 	}, nil
-}
-
-// ensureSkill：账号没有 skill_id 时创建（或找回同名的已有）私有 Skill 并回填凭据（D9 的懒加载形态，
-// 测试连接没跑过也能直接提交）。回填失败时仍继续本次提交，下一次会经 ResolveSkill 找回同一个。
-func (p *FlovaVideoProvider) ensureSkill(ctx context.Context, account *Account) error {
-	if p.skillID(account) != "" {
-		return nil
-	}
-	skillID, _, err := p.ResolveSkill(ctx, account)
-	if err != nil {
-		var typed *VideoProviderError
-		if errors.As(err, &typed) {
-			typed.Certainty = VideoSubmissionRejected
-		}
-		return err
-	}
-	if account.Credentials == nil {
-		account.Credentials = map[string]any{}
-	}
-	account.Credentials[flovaCredentialSkillID] = skillID
-	if p.accounts != nil {
-		if err := p.accounts.Update(context.WithoutCancel(ctx), account); err != nil {
-			log.Printf("[Flova] account %d: skill %s created but could not be saved: %v", account.ID, skillID, err)
-		}
-	}
-	return nil
 }
 
 // preflightCredits：余额不足时 Flova 不报错而是静默不生成，所以提交前必须 live 查一次。
@@ -1064,14 +919,13 @@ func (p *FlovaVideoProvider) createProject(ctx context.Context, account *Account
 }
 
 func (p *FlovaVideoProvider) startRun(ctx context.Context, account *Account, projectID, content string, files []flovaFile) (string, error) {
-	payload := map[string]any{
-		"project_id": projectID,
-		"content":    content,
-		"extra_data": map[string]any{
-			"client": "flova-cli", "client_version": p.clientVersion(account), "os": "linux", "arch": "amd64", "source": "cli",
-			"skill_id": p.skillID(account),
-		},
+	extra := map[string]any{
+		"client": "flova-cli", "client_version": p.clientVersion(account), "os": "linux", "arch": "amd64", "source": "cli",
 	}
+	if skillID := p.skillID(account); skillID != "" {
+		extra["skill_id"] = skillID
+	}
+	payload := map[string]any{"project_id": projectID, "content": content, "extra_data": extra}
 	if len(files) > 0 {
 		payload["files"] = files
 	}

@@ -540,17 +540,6 @@ func TestFlovaVideoProviderRejectsMismatchedPrivateRecoveryState(t *testing.T) {
 func TestFlovaVideoProviderSkillAndUser(t *testing.T) {
 	stub := newFlovaStubServer()
 	stub.json("/api/agent/v2/user", flovaUserOK)
-	stub.on("/api/agent/v2/skill/create", func(_ int, _ *http.Request, body string) *http.Response {
-		var payload map[string]any
-		require.NoError(t, json.Unmarshal([]byte(body), &payload))
-		require.Equal(t, flovaSkillName, payload["skill_name"])
-		sections := payload["skill_content"].([]any)
-		require.Len(t, sections, 2)
-		first := sections[0].(map[string]any)
-		require.Equal(t, "Role", first["section"])
-		require.NotNil(t, first["config"])
-		return openAIVideoResponseForTest(http.StatusOK, `{"code":0,"data":{"skill_id":"sk_new"}}`, nil)
-	})
 	stub.json("/api/agent/v2/skill/get", `{"code":0,"data":{"skill_id":"sk_new","skill_name":"x"}}`)
 	provider := newFlovaTestProvider(stub)
 	account := flovaVideoTestAccount()
@@ -558,9 +547,6 @@ func TestFlovaVideoProviderSkillAndUser(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 2009.0, user.CreditsBalance)
 	require.Equal(t, "starter_month", user.SubscriptionInfo["lookup_key"])
-	skillID, err := provider.CreateSkill(context.Background(), account)
-	require.NoError(t, err)
-	require.Equal(t, "sk_new", skillID)
 	require.NoError(t, provider.GetSkill(context.Background(), account, "sk_new"))
 }
 
@@ -643,6 +629,7 @@ func TestFlovaRenderInstructionGolden(t *testing.T) {
 		"Prompt (use verbatim, do not rewrite): <<<Line one\nLine 'two' < < <x> > >>>>\n"+
 		"Rules for this round: produce exactly one video asset and nothing else. Do not write a script, storyboard, voiceover, music, timeline or export. "+
 		"Do not generate images unless strictly required as the first frame of this single video. "+
+		"Do not ask clarifying questions, and do not generate extra variants, previews, thumbnails or alternative takes. "+
 		"Use the model, aspect ratio, resolution and duration exactly as given; if the model is unavailable to this account, stop and report the reason instead of substituting another model.", content)
 	require.Len(t, sha, 64)
 	_, sha2 := flovaRenderInstruction(plan, "different", nil)
