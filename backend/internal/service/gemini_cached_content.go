@@ -606,7 +606,7 @@ func (e *GeminiCachedContentMalformedResponseError) Unwrap() error {
 	return e.Err
 }
 
-// RetryableOnOtherAccount 判断创建失败是否值得换一个账号重试（账号凭据、配额或上游可用性问题）。
+// RetryableOnOtherAccount 只对明确的凭据 / 配额拒绝换号；5xx 的创建结果未知。
 func (e *GeminiCachedContentUpstreamError) RetryableOnOtherAccount() bool {
 	if e == nil {
 		return false
@@ -615,7 +615,7 @@ func (e *GeminiCachedContentUpstreamError) RetryableOnOtherAccount() bool {
 	case http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests:
 		return true
 	default:
-		return e.StatusCode >= 500
+		return false
 	}
 }
 
@@ -953,9 +953,12 @@ func GeminiCachedContentUpstreamModelResource(account *Account, mappedModel stri
 
 // CreateUpstream 在账号上创建上游缓存。
 func (s *GeminiCachedContentService) CreateUpstream(ctx context.Context, account *Account, req *GeminiCachedContentCreateRequest, mappedModel, publicID string, ttl time.Duration) (*GeminiCachedContentUpstream, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, geminiCachedContentNotSent(err)
+	}
 	upstreamModel, err := GeminiCachedContentUpstreamModelResource(account, mappedModel)
 	if err != nil {
-		return nil, err
+		return nil, geminiCachedContentNotSent(err)
 	}
 	payload := make(map[string]any, len(req.payload)+3)
 	for k, v := range req.payload {
@@ -966,15 +969,15 @@ func (s *GeminiCachedContentService) CreateUpstream(ctx context.Context, account
 	payload["displayName"] = geminiCachedContentUpstreamTagPrefix + publicID
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return nil, err
+		return nil, geminiCachedContentNotSent(err)
 	}
 	base, err := s.apiBase(account)
 	if err != nil {
-		return nil, err
+		return nil, geminiCachedContentNotSent(err)
 	}
 	collectionURL, err := geminiCachedContentCollectionURL(account, base, mappedModel)
 	if err != nil {
-		return nil, err
+		return nil, geminiCachedContentNotSent(err)
 	}
 	respBody, err := s.doUpstream(ctx, account, http.MethodPost, collectionURL, body, geminiCachedContentUpstreamTimeout)
 	if err != nil {

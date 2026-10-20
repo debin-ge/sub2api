@@ -13,7 +13,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// publicOrderVerifyRateLimit caps anonymous legacy out_trade_no lookups per
+// publicOrderVerifyRateLimit caps anonymous order lookups per
 // client IP. The payment result page polls at most a handful of times per
 // order, so this leaves ample headroom for real users while making
 // out_trade_no enumeration impractical.
@@ -65,15 +65,15 @@ func RegisterPaymentRoutes(
 	// The legacy anonymous out_trade_no verify endpoint remains available as a
 	// persisted-state compatibility path for staggered upgrades.
 	// Keep anonymous body limits and panel IP controls, plus the upstream
-	// fixed verify limiter (fail-open during Redis outages).
+	// fixed verify limiter. Anonymous DB lookups fail closed during Redis outages.
 	publicRateLimiter := ratelimit.NewRateLimiter(redisClient)
 	public := v1.Group("/payment/public")
 	public.Use(publicBodyLimit(publicJSONBodyLimit)...)
 	public.Use(panelRateLimiter.PublicIP())
+	public.Use(publicRateLimiter.LimitWithOptions("payment-public-order-verify", publicOrderVerifyRateLimit, publicOrderVerifyRateLimitWindow,
+		ratelimit.RateLimitOptions{FailureMode: ratelimit.RateLimitFailClose}))
 	{
-		public.POST("/orders/verify",
-			publicRateLimiter.Limit("payment-public-order-verify", publicOrderVerifyRateLimit, publicOrderVerifyRateLimitWindow),
-			paymentHandler.VerifyOrderPublic)
+		public.POST("/orders/verify", paymentHandler.VerifyOrderPublic)
 		public.POST("/orders/resolve", paymentHandler.ResolveOrderPublicByResumeToken)
 	}
 

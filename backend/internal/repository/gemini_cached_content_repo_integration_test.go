@@ -8,8 +8,28 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
+
+func TestGeminiCacheCreationIntentPostgresConstraints(t *testing.T) {
+	ctx := context.Background()
+	repo := &geminiCachedContentRepository{sql: testTx(t)}
+	userID := time.Now().UnixNano()
+	intent := &service.GeminiCachedContentCreationIntent{PublicID: uuid.NewString(), UserID: userID,
+		APIKeyID: 1, AccountID: userID, UpstreamModel: "models/synthetic", TTL: time.Hour}
+	first := intent.PublicID
+	require.NoError(t, repo.BeginCreation(ctx, intent))
+	intent.PublicID = uuid.NewString()
+	intent.APIKeyID++
+	intent.AccountID++
+	require.ErrorIs(t, repo.BeginCreation(ctx, intent), service.ErrGeminiCachedContentCreationPending, "same user across keys/accounts")
+	intent.UserID++
+	intent.AccountID--
+	require.ErrorIs(t, repo.BeginCreation(ctx, intent), service.ErrGeminiCachedContentCreationPending, "same supplier across users")
+	require.NoError(t, repo.ResolveCreation(ctx, first, "synthetic verified final settlement"))
+	require.NoError(t, repo.BeginCreation(ctx, intent))
+}
 
 func TestGeminiCachedContentRepository_Lifecycle(t *testing.T) {
 	ctx := context.Background()

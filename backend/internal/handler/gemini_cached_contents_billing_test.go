@@ -37,10 +37,48 @@ type cachedBillingRepo struct {
 	mu      sync.Mutex
 	records map[string]*service.GeminiCachedContent
 	// mutations 按记录 id 保存修改意图。
-	mutations  map[int64]cachedBillingMutation
-	failCommit bool
-	nextID     int64
-	deleted    []int64
+	mutations   map[int64]cachedBillingMutation
+	failCommit  bool
+	nextID      int64
+	deleted     []int64
+	intents     map[string]service.GeminiCachedContentCreationIntent
+	failBegin   bool
+	failResolve bool
+	failCreate  bool
+}
+
+func (r *cachedBillingRepo) BeginCreation(ctx context.Context, intent *service.GeminiCachedContentCreationIntent) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if r.failBegin {
+		return errors.New("intent database unavailable")
+	}
+	if r.intents == nil {
+		r.intents = make(map[string]service.GeminiCachedContentCreationIntent)
+	}
+	for _, pending := range r.intents {
+		if pending.UserID == intent.UserID || pending.AccountID == intent.AccountID {
+			return service.ErrGeminiCachedContentCreationPending
+		}
+	}
+	r.intents[intent.PublicID] = *intent
+	return nil
+}
+
+func (r *cachedBillingRepo) ResolveCreation(ctx context.Context, publicID, _ string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if r.failResolve {
+		return errors.New("intent database unavailable")
+	}
+	delete(r.intents, publicID)
+	return nil
 }
 
 type cachedBillingMutation struct {
@@ -51,6 +89,9 @@ type cachedBillingMutation struct {
 func (r *cachedBillingRepo) Create(_ context.Context, record *service.GeminiCachedContent) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.failCreate {
+		return errors.New("binding database unavailable")
+	}
 	r.nextID++
 	record.ID = r.nextID
 	cp := *record
@@ -201,6 +242,7 @@ type cachedBillingUpstream struct {
 	// failures 按请求方法返回上游错误响应；transportErrors 按请求方法返回传输层错误（上游结果未知）。
 	failures        map[string]cachedBillingUpstreamFailure
 	transportErrors map[string]error
+	beforeCreate    func(context.Context)
 }
 
 type cachedBillingUpstreamFailure struct {
@@ -224,6 +266,9 @@ func (u *cachedBillingUpstream) Do(req *http.Request, _ string, _ int64, _ int) 
 	failure, failed := u.failures[req.Method]
 	transportErr := u.transportErrors[req.Method]
 	u.mu.Unlock()
+	if req.Method == http.MethodPost && u.beforeCreate != nil {
+		u.beforeCreate(req.Context())
+	}
 	if transportErr != nil {
 		return nil, transportErr
 	}
@@ -273,11 +318,15 @@ type cachedBillingUsageRepo struct {
 	service.UsageLogRepository
 	mu   sync.Mutex
 	logs []*service.UsageLog
+	fail bool
 }
 
 func (r *cachedBillingUsageRepo) Create(_ context.Context, log *service.UsageLog) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.fail {
+		return false, errors.New("usage database unavailable")
+	}
 	r.logs = append(r.logs, log)
 	return true, nil
 }
@@ -298,6 +347,28 @@ func (r *cachedBillingUsageRepo) totals() []float64 {
 	return out
 }
 
+// Model the durable billing boundary, including its outbox receipt, so success
+// tests do not accidentally accept the production error for a missing repository.
+type cachedBillingDurableRepo struct {
+	service.DurableUsageBillingRepository
+	usage *cachedBillingUsageRepo
+}
+
+func (r *cachedBillingDurableRepo) ApplyAndRecord(ctx context.Context, _ *service.UsageBillingCommand, log *service.UsageLog) (*service.UsageBillingApplyResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if _, err := r.usage.Create(ctx, log); err != nil {
+		return nil, err
+	}
+	return &service.UsageBillingApplyResult{UsageLogRecorded: true,
+		OutboxReceipt: &service.UsageBillingOutboxReceipt{ID: 1, WorkerID: "cache-billing-test"}}, nil
+}
+
+func (r *cachedBillingDurableRepo) AcknowledgeUsageBillingOutbox(context.Context, string, int64) error {
+	return nil
+}
+
 type cachedBillingEnv struct {
 	h        *GatewayHandler
 	repo     *cachedBillingRepo
@@ -307,6 +378,7 @@ type cachedBillingEnv struct {
 	group    *service.Group
 	// accounts 是调度快照桩直接返回的账号对象，测试可改其凭据。
 	accounts map[int64]*service.Account
+	slots    *cachedCreationConcurrency
 }
 
 func newCachedBillingEnv(t *testing.T, balance float64, accountIDs ...int64) *cachedBillingEnv {
@@ -342,7 +414,9 @@ func newCachedBillingEnv(t *testing.T, balance float64, accountIDs ...int64) *ca
 	bcs := service.NewBillingCacheService(nil, userRepo, nil, nil, nil, nil, cfg, nil)
 	t.Cleanup(bcs.Stop)
 	snapshot := service.NewSchedulerSnapshotService(&fakeSchedulerCache{accounts: scheduled}, nil, nil, nil, nil)
-	gw := service.NewGatewayService(nil, &fakeGroupRepo{group: group}, usage, nil, userRepo, nil, nil, nil, cfg, snapshot, nil,
+	slots := &cachedCreationConcurrency{}
+	concurrency := service.NewConcurrencyService(slots)
+	gw := service.NewGatewayService(nil, &fakeGroupRepo{group: group}, usage, &cachedBillingDurableRepo{usage: usage}, userRepo, nil, nil, nil, cfg, snapshot, concurrency,
 		billing, nil, &service.BillingCacheService{}, nil, nil, &service.DeferredService{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	upstream := &cachedBillingUpstream{}
 	compat := service.NewGeminiMessagesCompatService(&cachedBillingAccountRepo{accounts: accounts}, nil, nil, nil, nil, nil, upstream, nil, nil, cfg)
@@ -350,12 +424,12 @@ func newCachedBillingEnv(t *testing.T, balance float64, accountIDs ...int64) *ca
 	h := &GatewayHandler{
 		gatewayService:             gw,
 		billingCacheService:        bcs,
-		concurrencyHelper:          NewConcurrencyHelper(service.NewConcurrencyService(&fakeConcurrencyCache{}), SSEPingFormatNone, 0),
+		concurrencyHelper:          NewConcurrencyHelper(concurrency, SSEPingFormatNone, 0),
 		geminiCachedContentService: service.NewGeminiCachedContentService(repo, compat, cfg),
 	}
 	apiKey := &service.APIKey{ID: 7, UserID: 3, GroupID: &groupID, Group: group, Status: service.StatusActive,
 		User: &service.User{ID: 3, Concurrency: 10, Balance: balance}}
-	return &cachedBillingEnv{h: h, repo: repo, upstream: upstream, usage: usage, apiKey: apiKey, group: group, accounts: accounts}
+	return &cachedBillingEnv{h: h, repo: repo, upstream: upstream, usage: usage, apiKey: apiKey, group: group, accounts: accounts, slots: slots}
 }
 
 // TestGeminiExplicitCacheExclusions_FiltersUnsupportedAccountsFromSnapshot 候选过滤直接按快照里的凭据判定：
@@ -451,6 +525,7 @@ func TestGeminiCachedContentsCreate_ChargesInputAndStorage(t *testing.T) {
 	require.Len(t, totals, 1)
 	require.InDelta(t, cachedBillingTokens*cachedBillingInputPrice+cachedBillingTokens*cachedBillingStoragePrice*24, totals[0], 1e-9)
 	require.Len(t, env.repo.records, 1)
+	require.Empty(t, env.repo.intents, "the resource and its durable usage are both accounted for")
 	for _, record := range env.repo.records {
 		require.False(t, record.ExpireTime.After(time.Now().Add(24*time.Hour)), "本地到期时间不超过请求的有效期")
 		require.Equal(t, "gcache:create:"+record.PublicID, env.usage.first().RequestID, "费用行按缓存 ID 可检索")
@@ -607,10 +682,11 @@ func TestGeminiCachedContentMutationRecovery_DeletesUpstreamWhenBaselineExpired(
 // cachedBillingReservationCache 是启用在途预留时的计费缓存桩：余额与订阅用量取固定值，各维度预留按 key 记账。
 type cachedBillingReservationCache struct {
 	service.BillingCache
-	mu       sync.Mutex
-	balance  float64
-	sub      *service.SubscriptionCacheData
-	reserved map[string]map[string]float64
+	mu          sync.Mutex
+	balance     float64
+	sub         *service.SubscriptionCacheData
+	reserved    map[string]map[string]float64
+	failReserve bool
 }
 
 func (c *cachedBillingReservationCache) GetUserBalance(context.Context, int64) (float64, error) {
@@ -639,6 +715,9 @@ func (c *cachedBillingReservationCache) reserveLocked(key, requestID string, amo
 func (c *cachedBillingReservationCache) ReserveInflightBalance(_ context.Context, userID int64, requestID string, amount, balance float64, _ time.Duration) (bool, float64, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.failReserve {
+		return false, 0, errors.New("reservation cache unavailable")
+	}
 	key := fmt.Sprintf("user:%d", userID)
 	others := c.reserveLocked(key, requestID, amount)
 	if len(c.reserved[key]) > 1 && balance-others < amount {

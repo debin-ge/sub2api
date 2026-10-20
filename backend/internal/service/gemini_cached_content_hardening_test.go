@@ -227,9 +227,15 @@ func TestGeminiCachedContentCreateUpstreamUnusableResponse(t *testing.T) {
 type geminiCachedContentCtxProbeUpstream struct {
 	geminiCompatHTTPUpstreamStub
 	ctxErrAtSend error
+	cancel       context.CancelFunc
+	called       bool
 }
 
 func (s *geminiCachedContentCtxProbeUpstream) Do(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error) {
+	s.called = true
+	if s.cancel != nil {
+		s.cancel()
+	}
 	s.ctxErrAtSend = req.Context().Err()
 	return s.geminiCompatHTTPUpstreamStub.Do(req, proxyURL, accountID, accountConcurrency)
 }
@@ -245,11 +251,17 @@ func TestGeminiCachedContentUpstreamCallIgnoresClientCancel(t *testing.T) {
 	req, err := ParseGeminiCachedContentCreateRequest([]byte(`{"model":"gemini-3.8-flash"}`), time.Now(), 24*time.Hour)
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+	defer cancel()
+	up.cancel = cancel
 	account := &Account{ID: 9, Platform: PlatformGemini, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "secret"}}
 	_, err = svc.CreateUpstream(ctx, account, req, "gemini-3.8-flash", "pub1", time.Hour)
 	require.NoError(t, err)
 	require.NoError(t, up.ctxErrAtSend, "客户端断开不取消发往上游的创建")
+
+	up.called = false
+	_, err = svc.CreateUpstream(ctx, account, req, "gemini-3.8-flash", "pub2", time.Hour)
+	require.ErrorIs(t, err, ErrGeminiCachedContentRequestNotSent)
+	require.False(t, up.called, "a caller that left before admission must not start new work")
 }
 
 func TestClampGeminiCachedContentExpire(t *testing.T) {

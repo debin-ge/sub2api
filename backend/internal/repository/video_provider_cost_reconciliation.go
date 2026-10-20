@@ -272,35 +272,4 @@ func (r *videoTaskRepository) RecordVideoProviderCostBalance(ctx context.Context
 	return nil
 }
 
-// AutoResolveVideoProviderCost closes a claimed record from verified supplier
-// accounting. The lease and version guard make a concurrent admin resolution or
-// a second worker lose rather than overwrite.
-func (r *videoTaskRepository) AutoResolveVideoProviderCost(ctx context.Context, item *service.VideoProviderCost, worker, state string, amount float64, currency, evidence, key string) error {
-	if item == nil || item.ID <= 0 || !strings.HasPrefix(key, "auto:") || len(key) > 128 {
-		return service.ErrVideoInvalidRequest
-	}
-	amount = service.QuantizeUsageBillingAmount(amount)
-	if (state != "resolved_no_charge" && state != "resolved_cost_recorded") ||
-		(state == "resolved_no_charge" && amount != 0) || (state == "resolved_cost_recorded" && amount <= 0) {
-		return service.ErrVideoInvalidRequest
-	}
-	result, err := r.db.ExecContext(ctx, `
-		UPDATE video_provider_costs SET state = $4, amount = $5, currency = $6, evidence = $7,
-		 resolved_by = NULL, resolution_key = $8, resolved_at = NOW(), next_action_at = NULL,
-		 lease_owner = NULL, lease_expires_at = NULL, version = version + 1, updated_at = NOW()
-		WHERE id = $1 AND version = $2 AND lease_owner = $3 AND lease_expires_at > NOW() AND state = 'unresolved'
-	`, item.ID, item.Version, worker, state, amount, currency, strings.TrimSpace(evidence), key)
-	if err != nil {
-		return err
-	}
-	n, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if n != 1 {
-		return service.ErrVideoProviderCostConflict
-	}
-	return nil
-}
-
-var _ service.VideoProviderCostAutoResolver = (*videoTaskRepository)(nil)
+var _ service.VideoProviderCostBalanceObserver = (*videoTaskRepository)(nil)

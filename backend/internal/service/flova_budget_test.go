@@ -451,28 +451,33 @@ func TestFlovaBalanceDeltaRequiresTwoEqualReadings(t *testing.T) {
 	require.Empty(t, repo.resolutions)
 }
 
-func TestFlovaBalanceDeltaResolvesStableSpend(t *testing.T) {
+func TestFlovaBalanceDeltaRetainsUnverifiedSettlement(t *testing.T) {
 	previous := 1700.0
 	repo, accounts, _ := runFlovaCostReconcile(t, flovaCostItem(15*time.Minute, &previous, 3*time.Minute), "1700")
-	require.Equal(t, []string{"resolved_cost_recorded"}, repo.resolutions)
-	require.Equal(t, 309.0, repo.amounts[0])
-	require.Equal(t, "CREDITS", repo.currency)
-	require.Equal(t, "auto:flova-balance-delta:video_flova", repo.key)
-	require.Contains(t, repo.evidence, "balance 2009 credits before submission, 1700 credits stable")
+	require.Empty(t, repo.resolutions)
+	require.Equal(t, []string{"final_settlement_unverified"}, repo.reasons)
+	require.Nil(t, repo.nexts[0], "manual final-settlement evidence is required")
 	require.Zero(t, accounts.pausedID, "309 is within the 356.4 budget")
 	require.Zero(t, repo.observed, "the generic read-only lookup is not used")
 
 	unchanged := 2009.0
 	repo, _, _ = runFlovaCostReconcile(t, flovaCostItem(15*time.Minute, &unchanged, 3*time.Minute), "2009")
-	require.Equal(t, []string{"resolved_no_charge"}, repo.resolutions)
-	require.Equal(t, 0.0, repo.amounts[0])
+	require.Empty(t, repo.resolutions, "a stable zero delta is not proof of no charge")
+	require.Equal(t, []string{"final_settlement_unverified"}, repo.reasons)
+	require.Nil(t, repo.nexts[0])
+
+	// A deduction can arrive after stable observations. It must never retroactively
+	// make an earlier task eligible for automated cost closure.
+	repo, _, _ = runFlovaCostReconcile(t, flovaCostItem(30*time.Minute, &unchanged, 18*time.Minute), "1700")
+	require.Empty(t, repo.resolutions)
+	require.Equal(t, []string{"awaiting_stable_balance"}, repo.reasons)
 }
 
 func TestFlovaBalanceDeltaOverspendTripsBreaker(t *testing.T) {
 	previous := 1500.0
 	repo, accounts, _ := runFlovaCostReconcile(t, flovaCostItem(15*time.Minute, &previous, 3*time.Minute), "1500")
-	require.Equal(t, []string{"resolved_cost_recorded"}, repo.resolutions)
-	require.Equal(t, 509.0, repo.amounts[0])
+	require.Empty(t, repo.resolutions)
+	require.Equal(t, []string{"final_settlement_unverified"}, repo.reasons)
 	require.Equal(t, int64(31), accounts.pausedID)
 	require.True(t, strings.HasPrefix(accounts.pausedWhy, flovaOverspendPauseReasonPrefix))
 }

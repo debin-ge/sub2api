@@ -1069,6 +1069,7 @@ func (s *BillingCacheService) CheckBillingEligibility(ctx context.Context, user 
 // API Key 总额度与限速窗口同样叠加 amount。订阅与 API Key 的用量取库中权威值，并叠加同一订阅 / Key 上其他
 // 在途预留：先登记本次预留再读用量，并发的两笔费用中后读用量的一方必然看到另一方（预留或已落库的扣费）。
 // 返回的句柄可能为 nil（未登记任何预留）；调用方须在 handler 结束时调用 HandlerDone，预留在计费任务落库后释放。
+// 预留功能开启时，缓存能力缺失或登记失败必须拒绝；错误时回滚已登记的所有维度。
 // 须在 CheckBillingEligibility 通过后调用；简易模式不校验。
 func (s *BillingCacheService) ReserveFixedCharge(ctx context.Context, user *User, apiKey *APIKey, group *Group, subscription *UserSubscription, amount float64) (*InflightReservation, error) {
 	if user == nil || amount <= 0 || math.IsNaN(amount) || math.IsInf(amount, 0) {
@@ -1087,18 +1088,18 @@ func (s *BillingCacheService) ReserveFixedCharge(ctx context.Context, user *User
 			return nil, ErrInsufficientBalance
 		}
 	}
-	res, err := s.reserveInflight(ctx, user, group, subscription, amount, false, false)
+	res, err := s.reserveInflight(ctx, user, group, subscription, amount, false, false, true)
 	if err != nil {
 		return nil, err
 	}
 	var subscriptionPending, apiKeyPending float64
 	if subscriptionBill && (group.HasDailyLimit() || group.HasWeeklyLimit() || group.HasMonthlyLimit()) {
-		res, subscriptionPending = s.reserveInflightScope(ctx, res, user.ID, inflightSubscriptionScope(subscription.ID), amount)
+		res, subscriptionPending, err = s.reserveInflightScope(ctx, res, user.ID, inflightSubscriptionScope(subscription.ID), amount)
 	}
-	if apiKey != nil && (apiKey.Quota > 0 || apiKey.HasRateLimits()) {
-		res, apiKeyPending = s.reserveInflightScope(ctx, res, user.ID, inflightAPIKeyScope(apiKey.ID), amount)
+	if err == nil && apiKey != nil && (apiKey.Quota > 0 || apiKey.HasRateLimits()) {
+		res, apiKeyPending, err = s.reserveInflightScope(ctx, res, user.ID, inflightAPIKeyScope(apiKey.ID), amount)
 	}
-	if subscriptionBill {
+	if err == nil && subscriptionBill {
 		err = s.checkFixedChargeSubscription(ctx, user.ID, group, amount+subscriptionPending)
 	}
 	if err == nil && apiKey != nil {

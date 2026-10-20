@@ -297,6 +297,13 @@ func TestGeminiCachedContentUpstreamErrorClassification(t *testing.T) {
 	badRequest := &GeminiCachedContentUpstreamError{StatusCode: http.StatusBadRequest}
 	require.False(t, badRequest.RetryableOnOtherAccount())
 	require.False(t, badRequest.NotFound())
+	for _, status := range []int{http.StatusRequestTimeout, http.StatusConflict, http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable} {
+		unknown := &GeminiCachedContentUpstreamError{StatusCode: status}
+		require.False(t, unknown.RetryableOnOtherAccount())
+		require.False(t, unknown.DefinitivelyRejectsCreation())
+	}
+	require.True(t, quota.DefinitivelyRejectsCreation())
+	require.True(t, badRequest.DefinitivelyRejectsCreation())
 }
 
 func TestGeminiCachedContentResolve(t *testing.T) {

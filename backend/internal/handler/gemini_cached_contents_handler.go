@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
@@ -139,7 +140,8 @@ func (h *GatewayHandler) GeminiCachedContentsCreate(c *gin.Context) {
 		googleConcurrencyError(c, err, "user")
 		return
 	}
-	userReleaseFunc = wrapReleaseOnDone(c.Request.Context(), userReleaseFunc)
+	// Upstream cache operations outlive client cancellation. Hold the slot until
+	// execution and settlement/cleanup have actually finished.
 	if userReleaseFunc != nil {
 		defer userReleaseFunc()
 	}
@@ -198,6 +200,7 @@ func (h *GatewayHandler) GeminiCachedContentsCreate(c *gin.Context) {
 		if !ok {
 			return
 		}
+		defer accountReleaseFunc() // also release on panic; the release is idempotent
 		admissionCtx := service.ContextWithSelectionProfitGate(c.Request.Context(), selection)
 		latest, vetoed, reason := h.gatewayService.GatewayProfitControlVetoLatest(admissionCtx, account)
 		if vetoed {
@@ -236,14 +239,60 @@ func (h *GatewayHandler) GeminiCachedContentsCreate(c *gin.Context) {
 			googleError(c, http.StatusInternalServerError, "Failed to allocate cached content id")
 			return
 		}
+		// Commit admission before the non-idempotent POST. Unknown outcomes retain
+		// both the user and supplier-account guard across retries and process restarts.
+		admitCtx, cancelAdmit := context.WithTimeout(c.Request.Context(), geminiCachedContentPersistTimeout)
+		err = svc.BeginCreation(admitCtx, &service.GeminiCachedContentCreationIntent{
+			PublicID: publicID, UserID: authSubject.UserID, APIKeyID: apiKey.ID,
+			AccountID: account.ID, AccountIdentityVersion: account.ProviderIdentityVersion,
+			UpstreamModel: upstreamModel, TTL: ttl,
+		})
+		cancelAdmit()
+		if err != nil {
+			reqLog.Warn("gemini.cached_content.creation_admission_failed", zap.String("public_id", publicID), zap.Error(err))
+			if errors.Is(err, service.ErrGeminiCachedContentCreationPending) {
+				googleError(c, http.StatusConflict, service.ErrGeminiCachedContentCreationPending.Error())
+			} else {
+				googleError(c, http.StatusServiceUnavailable, "Cache creation admission is unavailable")
+			}
+			return
+		}
+		// Capture immutable request context; successful billing may call this after
+		// the handler returns, when Gin has already reused its Context.
+		creationCtx := context.WithoutCancel(c.Request.Context())
+		resolveCreation := func(reason string) bool {
+			ctx, cancel := context.WithTimeout(creationCtx, geminiCachedContentPersistTimeout)
+			defer cancel()
+			if err := svc.ResolveCreation(ctx, publicID, reason); err != nil {
+				reqLog.Error("gemini.cached_content.creation_resolution_failed", zap.String("public_id", publicID), zap.Error(err))
+				return false
+			}
+			return true
+		}
 
 		upstream, err := svc.CreateUpstream(c.Request.Context(), account, req, mappedModel, publicID, ttl)
-		accountReleaseFunc()
 		if err != nil {
+			if errors.Is(err, service.ErrGeminiCachedContentRequestNotSent) {
+				if !resolveCreation("request_not_sent") {
+					googleError(c, http.StatusServiceUnavailable, "Cache creation requires reconciliation")
+					return
+				}
+				accountReleaseFunc()
+				if failoverClientGone(c) {
+					return
+				}
+				excluded[account.ID] = struct{}{}
+				continue
+			}
 			var upErr *service.GeminiCachedContentUpstreamError
 			if errors.As(err, &upErr) {
 				reqLog.Info("gemini.cached_content.upstream_create_failed", zap.Int64("account_id", account.ID), zap.Int("status", upErr.StatusCode))
+				if upErr.DefinitivelyRejectsCreation() && !resolveCreation("upstream_rejected") {
+					googleError(c, http.StatusServiceUnavailable, "Cache creation requires reconciliation")
+					return
+				}
 				if upErr.RetryableOnOtherAccount() {
+					accountReleaseFunc()
 					lastUpstreamErr = upErr
 					excluded[account.ID] = struct{}{}
 					continue
@@ -261,12 +310,9 @@ func (h *GatewayHandler) GeminiCachedContentsCreate(c *gin.Context) {
 				googleError(c, http.StatusBadGateway, "Upstream returned an invalid cached content response")
 				return
 			}
-			if failoverClientGone(c) {
-				return
-			}
-			reqLog.Warn("gemini.cached_content.upstream_create_error", zap.Int64("account_id", account.ID), zap.Error(err))
-			excluded[account.ID] = struct{}{}
-			continue
+			reqLog.Error("gemini.cached_content.upstream_create_unknown", zap.String("public_id", publicID), zap.Int64("account_id", account.ID), zap.Error(err))
+			googleError(c, http.StatusBadGateway, "Cache creation outcome is unknown and requires reconciliation")
+			return
 		}
 
 		// 缓存 token 数在上游创建后才确定：按确定金额校验余额 / 额度并预留，不足时删除上游缓存，
@@ -281,8 +327,12 @@ func (h *GatewayHandler) GeminiCachedContentsCreate(c *gin.Context) {
 			APIKey: apiKey, User: apiKey.User, Account: account, Subscription: subscription, PricingAt: pricingAt, RequestPayloadHash: service.HashUsageRequestPayload(body), ChannelUsageFields: usageFields,
 		})
 		if quoteErr != nil {
-			h.cleanupGeminiCachedContentUpstream(reqLog, account, upstream.Name)
-			h.submitGeminiCachedContentUsage(c, apiKey, account, subscription, pricingAt, service.GeminiCachedContentCreateUsageRequestID(publicID), modelName, mappedModel, int(tokens), 0, usageFields, body)
+			cleaned := h.cleanupGeminiCachedContentUpstream(reqLog, account, upstream.Name)
+			h.submitGeminiCachedContentUsage(c, apiKey, account, subscription, pricingAt, service.GeminiCachedContentCreateUsageRequestID(publicID), modelName, mappedModel, int(tokens), 0, usageFields, body, func() {
+				if cleaned {
+					resolveCreation("resource_deleted_input_usage_recorded")
+				}
+			})
 			googlePlatformError(c, http.StatusServiceUnavailable, "Cache pricing is unavailable")
 			return
 		}
@@ -290,9 +340,13 @@ func (h *GatewayHandler) GeminiCachedContentsCreate(c *gin.Context) {
 		chargeDone, err := h.reserveGeminiCachedContentCharge(c, apiKey, subscription, amount)
 		if err != nil {
 			reqLog.Info("gemini.cached_content.storage_charge_rejected", zap.Float64("amount", amount), zap.Error(err))
-			h.cleanupGeminiCachedContentUpstream(reqLog, account, upstream.Name)
+			cleaned := h.cleanupGeminiCachedContentUpstream(reqLog, account, upstream.Name)
 			h.submitGeminiCachedContentUsage(c, apiKey, account, subscription, pricingAt,
-				service.GeminiCachedContentCreateUsageRequestID(publicID), modelName, mappedModel, int(tokens), 0, usageFields, body)
+				service.GeminiCachedContentCreateUsageRequestID(publicID), modelName, mappedModel, int(tokens), 0, usageFields, body, func() {
+					if cleaned {
+						resolveCreation("resource_deleted_input_usage_recorded")
+					}
+				})
 			writeGeminiCachedContentBillingError(c, err)
 			return
 		}
@@ -324,7 +378,9 @@ func (h *GatewayHandler) GeminiCachedContentsCreate(c *gin.Context) {
 		}
 
 		h.submitGeminiCachedContentUsage(c, apiKey, account, subscription, pricingAt,
-			service.GeminiCachedContentCreateUsageRequestID(publicID), modelName, mappedModel, int(tokens), storageTokenHours, usageFields, body)
+			service.GeminiCachedContentCreateUsageRequestID(publicID), modelName, mappedModel, int(tokens), storageTokenHours, usageFields, body, func() {
+				resolveCreation("resource_and_usage_recorded")
+			})
 		c.JSON(http.StatusOK, service.GeminiCachedContentView(record))
 		return
 	}
@@ -637,7 +693,7 @@ func (h *GatewayHandler) acquireGeminiCachedContentAccountSlot(c *gin.Context, r
 		if release == nil {
 			release = func() {}
 		}
-		return wrapReleaseOnDone(c.Request.Context(), release), true
+		return sync.OnceFunc(release), true
 	}
 	account := selection.Account
 	if selection.WaitPlan == nil {
@@ -665,7 +721,7 @@ func (h *GatewayHandler) acquireGeminiCachedContentAccountSlot(c *gin.Context, r
 	if release == nil {
 		release = func() {}
 	}
-	return wrapReleaseOnDone(c.Request.Context(), release), true
+	return sync.OnceFunc(release), true
 }
 
 // submitGeminiCachedContentUsage 记录缓存创建 / 延长的计费：inputTokens 按输入价计，storageTokenHours 按计费模型的存储单价计；
@@ -683,6 +739,7 @@ func (h *GatewayHandler) submitGeminiCachedContentUsage(
 	storageTokenHours float64,
 	usageFields service.ChannelUsageFields,
 	payload []byte,
+	onRecorded ...func(),
 ) {
 	if inputTokens <= 0 && storageTokenHours <= 0 {
 		return
@@ -726,6 +783,10 @@ func (h *GatewayHandler) submitGeminiCachedContentUsage(
 				zap.Int64("account_id", account.ID),
 				zap.String("request_id", result.RequestID),
 			).Error("gemini.cached_content.record_usage_failed", zap.Error(err))
+			return
+		}
+		for _, done := range onRecorded {
+			done()
 		}
 	})
 }
@@ -736,12 +797,14 @@ func geminiCachedContentPersistContext(c *gin.Context) (context.Context, context
 }
 
 // cleanupGeminiCachedContentUpstream 尽力删除已在上游创建、但网关不会登记的缓存，避免其持续产生存储费。
-func (h *GatewayHandler) cleanupGeminiCachedContentUpstream(reqLog *zap.Logger, account *service.Account, upstreamName string) {
+func (h *GatewayHandler) cleanupGeminiCachedContentUpstream(reqLog *zap.Logger, account *service.Account, upstreamName string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), geminiCachedContentPersistTimeout)
 	defer cancel()
 	if err := h.geminiCachedContentService.DeleteUpstream(ctx, account, &service.GeminiCachedContent{UpstreamName: upstreamName}); err != nil {
 		reqLog.Error("gemini.cached_content.orphan_cleanup_failed", zap.Int64("account_id", account.ID), zap.String("upstream_name", upstreamName), zap.Error(err))
+		return false
 	}
+	return true
 }
 
 // reserveGeminiCachedContentCharge 校验余额 / 订阅额度 / API Key 额度足以支付确定金额 amount（倍率后），

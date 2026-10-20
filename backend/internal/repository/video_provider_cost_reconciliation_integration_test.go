@@ -118,8 +118,8 @@ func TestVideoProviderCostDatabaseRejectsIncompleteFinancialResolution(t *testin
 	}
 }
 
-// Flova 余额差对账：账号上未结清的 Flova 成本记录占着串行名额，自动结清后释放。
-func TestFlovaUnresolvedCostSerializesAccountUntilAutoResolved(t *testing.T) {
+// Flova 账号上的未结清成本占着串行名额；稳定余额不释放，凭据核销后释放。
+func TestFlovaUnresolvedCostSerializesAccountUntilVerifiedResolution(t *testing.T) {
 	ctx := context.Background()
 	repo, _, _, user, key, account := newVideoRepositoryFixture(t, 100)
 	flovaParams := func() service.VideoCreateTaskParams {
@@ -168,14 +168,23 @@ func TestFlovaUnresolvedCostSerializesAccountUntilAutoResolved(t *testing.T) {
 	item = claim()
 	require.True(t, item.ObservedBalanceAt.Equal(firstAt), "an equal reading keeps the original observation time")
 
-	require.ErrorIs(t, repo.AutoResolveVideoProviderCost(ctx, item, "worker-b", "resolved_cost_recorded", 308.5, "CREDITS", strings.Repeat("e", 30), "auto:flova-balance-delta:"+publicID),
-		service.ErrVideoProviderCostConflict, "only the lease holder can resolve")
-	require.NoError(t, repo.AutoResolveVideoProviderCost(ctx, item, "worker-a", "resolved_cost_recorded", 308.5, "CREDITS", strings.Repeat("e", 30), "auto:flova-balance-delta:"+publicID))
+	require.ErrorIs(t, repo.RecordVideoProviderCostBalance(ctx, item, "worker-b", &balance, false, "final_settlement_unverified", nil),
+		service.ErrVideoProviderCostConflict, "only the lease holder can record an observation")
+	require.NoError(t, repo.RecordVideoProviderCostBalance(ctx, item, "worker-a", &balance, false, "final_settlement_unverified", nil))
+	_, _, err = repo.CreateHeldVideoTask(ctx, flovaParams())
+	require.ErrorIs(t, err, service.ErrVideoAccountConcurrencyLimited, "stable balances must retain supplier exposure")
+	amount := 308.5
+	_, err = repo.ResolveVideoProviderCost(ctx, item.ID, service.VideoProviderCostResolution{
+		ExpectedVersion: item.Version + 1, ActorID: user.ID, State: "resolved_cost_recorded", Amount: &amount,
+		Currency: "CREDITS", Evidence: "synthetic supplier final invoice and termination evidence", IdempotencyKey: uuid.NewString(),
+	})
+	require.NoError(t, err)
 	var state string
 	var resolvedBy *int64
 	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT state, resolved_by FROM video_provider_costs WHERE task_public_id = $1`, publicID).Scan(&state, &resolvedBy))
 	require.Equal(t, "resolved_cost_recorded", state)
-	require.Nil(t, resolvedBy)
+	require.NotNil(t, resolvedBy)
+	require.Equal(t, user.ID, *resolvedBy)
 
 	next := flovaParams()
 	task, created, err := repo.CreateHeldVideoTask(ctx, next)

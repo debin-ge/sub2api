@@ -3,15 +3,12 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 	"math"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
-	"github.com/Wei-Shaw/sub2api/internal/observability"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
 
@@ -94,11 +91,10 @@ func ValidateVideoProviderCostResolution(in VideoProviderCostResolution) error {
 	return nil
 }
 
-// VideoProviderCostAutoResolver 支持不经管理员、按可验证的余额差自动结清（Flova）。自动结清
-// 没有操作者：resolved_by 为空，resolution_key 以 auto: 开头。
-type VideoProviderCostAutoResolver interface {
+// VideoProviderCostBalanceObserver records observations without closing supplier exposure.
+// A stable balance does not prove that all supplier charges have settled.
+type VideoProviderCostBalanceObserver interface {
 	RecordVideoProviderCostBalance(ctx context.Context, item *VideoProviderCost, worker string, balance *float64, balanceChanged bool, reason string, next *time.Time) error
-	AutoResolveVideoProviderCost(ctx context.Context, item *VideoProviderCost, worker, state string, amount float64, currency, evidence, key string) error
 }
 
 type VideoProviderCostRepository interface {
@@ -239,9 +235,9 @@ func (w *VideoTaskWorker) flovaCostSettleWindow() time.Duration {
 	return flovaCostDefaultSettleWindow
 }
 
-// reconcileFlovaBalanceDelta 结清带预算的 Flova 任务的供应商成本：终态后等过结算窗口，账号余额
-// 连续两次（间隔 ≥ 2 分钟）读数一致即视为入账完成，花费 = 提交前余额 B0 − 稳定余额 B1。
-// 单账号串行保证这段时间账号上没有别的任务花钱，所以余额差只属于本任务。
+// reconcileFlovaBalanceDelta observes supplier spending after the local task ends.
+// Equal balances cannot establish supplier termination or final settlement, so even
+// a stable zero delta retains unresolved exposure until evidence-backed manual resolution.
 //
 // 无法验证的情况（旧任务没有 B0、账号身份变化、余额上升、超过最长等待仍不稳定）不推断
 // 任何金额，停止自动处理留给人工。返回 handled=false 时交给通用的只读观测。
@@ -253,19 +249,19 @@ func (w *VideoTaskWorker) reconcileFlovaBalanceDelta(ctx context.Context, item *
 	if err != nil || !state.budgeted() {
 		return false, nil
 	}
-	auto, ok := w.tasks.(VideoProviderCostAutoResolver)
+	observer, ok := w.tasks.(VideoProviderCostBalanceObserver)
 	if !ok || w.accounts == nil || w.providers == nil {
 		return false, nil
 	}
 	now := w.now()
 	stop := func(reason string, balance *float64, changed bool) (bool, error) {
-		return true, auto.RecordVideoProviderCostBalance(ctx, item, w.workerID, balance, changed, reason, nil)
+		return true, observer.RecordVideoProviderCostBalance(ctx, item, w.workerID, balance, changed, reason, nil)
 	}
 	retry := func(reason string, balance *float64, changed bool, at time.Time) (bool, error) {
 		if now.Sub(item.CreatedAt) > flovaCostMaxWait {
 			return stop("balance_unstable", balance, changed)
 		}
-		return true, auto.RecordVideoProviderCostBalance(ctx, item, w.workerID, balance, changed, reason, &at)
+		return true, observer.RecordVideoProviderCostBalance(ctx, item, w.workerID, balance, changed, reason, &at)
 	}
 	account, err := w.accounts.GetByID(ctx, item.AccountID)
 	if err != nil || account == nil {
@@ -280,7 +276,7 @@ func (w *VideoTaskWorker) reconcileFlovaBalanceDelta(ctx context.Context, item *
 		return false, nil
 	}
 	if settleAt := item.CreatedAt.Add(w.flovaCostSettleWindow()); now.Before(settleAt) {
-		return true, auto.RecordVideoProviderCostBalance(ctx, item, w.workerID, nil, false, "awaiting_settlement", &settleAt)
+		return true, observer.RecordVideoProviderCostBalance(ctx, item, w.workerID, nil, false, "awaiting_settlement", &settleAt)
 	}
 	user, err := flova.FetchUser(ctx, account)
 	if err != nil || user == nil || !ValidVideoProviderObservedBalance(user.CreditsBalance) {
@@ -300,24 +296,8 @@ func (w *VideoTaskWorker) reconcileFlovaBalanceDelta(ctx context.Context, item *
 		// 余额上升（充值、续费或退款）：差额无法归因，留给人工。
 		return stop("balance_increased", &balance, false)
 	}
-	resolution := "resolved_no_charge"
-	if spent > 0 {
-		resolution = "resolved_cost_recorded"
-	}
-	evidence := fmt.Sprintf("auto balance delta: balance %s credits before submission, %s credits stable since %s, spent %s of a %s credit budget",
-		strconv.FormatFloat(state.BalanceBefore, 'f', -1, 64), strconv.FormatFloat(balance, 'f', -1, 64),
-		item.ObservedBalanceAt.UTC().Format(time.RFC3339), strconv.FormatFloat(spent, 'f', -1, 64),
-		strconv.FormatFloat(state.BudgetCredits, 'f', -1, 64))
-	key := "auto:flova-balance-delta:" + item.TaskPublicID
-	if len(key) > 128 {
-		key = key[:128]
-	}
-	if err := auto.AutoResolveVideoProviderCost(ctx, item, w.workerID, resolution, spent, "CREDITS", evidence, key); err != nil {
-		return true, err
-	}
-	observability.DefaultVideoMetrics().RecordFlovaOutcome("cost_reconciled")
 	if spent > state.BudgetCredits {
-		w.tripFlovaOverspend(ctx, account, item.TaskPublicID, spent, "settled balance delta")
+		w.tripFlovaOverspend(ctx, account, item.TaskPublicID, spent, "observed balance delta")
 	}
-	return true, nil
+	return stop("final_settlement_unverified", &balance, false)
 }

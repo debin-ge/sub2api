@@ -9,11 +9,17 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	"github.com/Wei-Shaw/sub2api/internal/handler/admin"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
+	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 )
 
-func registerPaymentRoutesForTest(router *gin.Engine) {
+func registerPaymentRoutesForTest(router *gin.Engine, clients ...*redis.Client) {
+	var client *redis.Client
+	if len(clients) > 0 {
+		client = clients[0]
+	}
 	RegisterPaymentRoutes(
 		router.Group("/api/v1"),
 		&handler.PaymentHandler{},
@@ -24,7 +30,7 @@ func registerPaymentRoutesForTest(router *gin.Engine) {
 		nil,
 		nil,
 		nil,
-		nil,
+		client,
 	)
 }
 
@@ -53,7 +59,9 @@ func TestRegisterPaymentRoutesPublicEndpointsAreRateLimitedAndBodyBounded(t *tes
 func TestRegisterPaymentRoutesPublicVerifyRejectsOversizedBody(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	registerPaymentRoutesForTest(router)
+	rdb := redis.NewClient(&redis.Options{Addr: miniredis.RunT(t).Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	registerPaymentRoutesForTest(router, rdb)
 
 	oversized := `{"out_trade_no":"` + strings.Repeat("9", 8<<20) + `"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/payment/public/orders/verify", strings.NewReader(oversized))
@@ -69,6 +77,27 @@ func TestRegisterPaymentRoutesPublicVerifyRejectsOversizedBody(t *testing.T) {
 	router.ServeHTTP(w, req)
 	require.Equal(t, http.StatusBadRequest, w.Code)
 	require.Contains(t, w.Body.String(), "Invalid request")
+}
+
+func TestRegisterPaymentRoutesPublicLookupsFailClosed(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, path := range []string{"verify", "resolve"} {
+		t.Run(path, func(t *testing.T) {
+			// A closed client fails locally. The nil payment services would panic if
+			// a valid lookup passed the limiter and reached the handler.
+			rdb := redis.NewClient(&redis.Options{Addr: "unused.invalid:6379"})
+			require.NoError(t, rdb.Close())
+			router := gin.New()
+			registerPaymentRoutesForTest(router, rdb)
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/payment/public/orders/"+path,
+				strings.NewReader(`{"out_trade_no":"synthetic","resume_token":"synthetic"}`))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+			require.Equal(t, http.StatusTooManyRequests, w.Code)
+			require.NotEmpty(t, w.Header().Get("Retry-After"))
+		})
+	}
 }
 
 func TestRegisterPaymentRoutesIncludesWiseWebhook(t *testing.T) {
