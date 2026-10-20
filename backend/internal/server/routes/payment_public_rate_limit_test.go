@@ -69,7 +69,7 @@ func TestPublicOrderVerifyRateLimitedPerIP(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, w.Code)
 }
 
-func TestPublicOrderVerifyRateLimitFailsOpenWhenRedisUnavailable(t *testing.T) {
+func TestPublicOrderVerifyRateLimitFailsClosedWhenRedisUnavailable(t *testing.T) {
 	rdb := redis.NewClient(&redis.Options{
 		Addr:         "127.0.0.1:1",
 		DialTimeout:  50 * time.Millisecond,
@@ -80,5 +80,8 @@ func TestPublicOrderVerifyRateLimitFailsOpenWhenRedisUnavailable(t *testing.T) {
 
 	router := newPaymentRoutesTestRouter(rdb)
 	w := postPublicOrderVerify(router, "203.0.113.30:1234")
-	require.Equal(t, http.StatusBadRequest, w.Code, "users mid-payment must not be blocked by a Redis outage")
+	// SEC-008: Redis outages must not bypass anonymous lookup limits.
+	require.Equal(t, http.StatusTooManyRequests, w.Code, "anonymous lookups must be blocked when the limiter is unavailable")
+	require.Equal(t, "60", w.Header().Get("Retry-After"))
+	require.Contains(t, w.Body.String(), "rate limit exceeded")
 }
