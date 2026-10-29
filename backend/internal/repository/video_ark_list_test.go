@@ -49,7 +49,7 @@ func TestArkVideoListFiltersBeforeSingleBoundedQuery(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	repo := &videoTaskRepository{db: db}
 	filter := service.VideoTaskFilter{ArkOnly: true, ArkStatus: "running", Operation: "generate", Model: "model'quoted", Limit: 1, Offset: 49, Order: "desc"}
-	query := `SELECT to_jsonb(vt) FROM video_tasks vt WHERE user_id = $1 AND source = 'managed' AND ` + arkVideoProviderSQL + ` AND operation = 'generate' AND (` + arkVideoStatusSQL + `) = $2 AND public_model = $3 ORDER BY created_at DESC, id DESC LIMIT $4 OFFSET $5`
+	query := `SELECT to_jsonb(vt) FROM video_tasks vt WHERE user_id = $1 AND source = 'managed' AND provider <> 'grok' AND ` + arkVideoProviderSQL + ` AND operation = 'generate' AND (` + arkVideoStatusSQL + `) = $2 AND public_model = $3 ORDER BY created_at DESC, id DESC LIMIT $4 OFFSET $5`
 	mock.ExpectQuery(regexp.QuoteMeta(query)).WithArgs(int64(42), "running", filter.Model, 2, 49).
 		WillReturnRows(sqlmock.NewRows([]string{"task"}).AddRow(`{"id":2,"public_id":"video_a","user_id":42}`).AddRow(`{"id":1,"public_id":"video_b","user_id":42}`))
 	page, err := repo.ListVideoTasksForOwner(context.Background(), 42, filter)

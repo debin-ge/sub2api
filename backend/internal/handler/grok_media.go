@@ -459,7 +459,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			// Once submitted, never retry a tracked creation automatically: an upstream
 			// timeout or 5xx cannot prove that no paid job was accepted.
 			var rejection *service.UpstreamFailoverError
-			unknown := !(c.Writer.Written() && c.Writer.Status() >= 400 && c.Writer.Status() < 500)
+			unknown := !c.Writer.Written() || c.Writer.Status() < 400 || c.Writer.Status() >= 500
 			if errors.As(err, &rejection) && rejection.StatusCode >= 400 && rejection.StatusCode < 500 {
 				unknown = false
 			}

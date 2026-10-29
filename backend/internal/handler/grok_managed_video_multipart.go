@@ -44,7 +44,7 @@ func (h *VideoHandler) parseGrokManagedMultipart(ctx context.Context, userID int
 	}
 	defer func() {
 		if err != nil && uploads.session != nil {
-			uploads.session.Close()
+			_ = uploads.session.Close()
 		}
 	}()
 	values := map[string]json.RawMessage{}
@@ -61,33 +61,33 @@ func (h *VideoHandler) parseGrokManagedMultipart(ctx context.Context, userID int
 		}
 		name := part.FormName()
 		if name == "" || name != strings.TrimSpace(name) || hasControlCharacter(name) {
-			part.Close()
+			_ = part.Close()
 			return nil, uploads, service.ErrVideoInvalidRequest
 		}
 		for key, entries := range part.Header {
 			if len(entries) != 1 || (key != "Content-Type" && key != "Content-Disposition") {
-				part.Close()
+				_ = part.Close()
 				return nil, uploads, service.ErrVideoInvalidRequest
 			}
 		}
 		disposition, attributes, parseErr := mime.ParseMediaType(part.Header.Get("Content-Disposition"))
 		if parseErr != nil || disposition != "form-data" {
-			part.Close()
+			_ = part.Close()
 			return nil, uploads, service.ErrVideoInvalidRequest
 		}
 		for attribute := range attributes {
 			if attribute != "name" && attribute != "filename" {
-				part.Close()
+				_ = part.Close()
 				return nil, uploads, service.ErrVideoInvalidRequest
 			}
 		}
 		filename, file := attributes["filename"]
 		if file && strings.TrimSpace(filename) == "" {
-			part.Close()
+			_ = part.Close()
 			return nil, uploads, service.ErrVideoInvalidRequest
 		}
 		if previous, duplicate := seen[name]; duplicate && (!file || !previous) {
-			part.Close()
+			_ = part.Close()
 			return nil, uploads, service.ErrVideoInvalidRequest
 		}
 		seen[name] = file
@@ -108,19 +108,19 @@ func (h *VideoHandler) parseGrokManagedMultipart(ctx context.Context, userID int
 			if strings.HasPrefix(name, "image[") && strings.HasSuffix(name, "]") && name != "image[]" {
 				index, e = strconv.Atoi(name[6 : len(name)-1])
 				if e != nil || index < 0 || index > 13 {
-					part.Close()
+					_ = part.Close()
 					return nil, uploads, service.ErrVideoInvalidRequest
 				}
 				role = service.VideoInputRoleTaggedReferenceImage
 			}
 			if role == "" || h == nil || h.spool == nil {
-				part.Close()
+				_ = part.Close()
 				return nil, uploads, service.ErrVideoInputUnsupported
 			}
 			if uploads.session == nil {
 				uploads.session, e = h.spool.Begin(ctx, userID)
 				if e != nil {
-					part.Close()
+					_ = part.Close()
 					return nil, uploads, e
 				}
 			}
@@ -129,7 +129,7 @@ func (h *VideoHandler) parseGrokManagedMultipart(ctx context.Context, userID int
 				hash := sha256.New()
 				size, readErr := io.Copy(hash, io.LimitReader(part, service.VideoCreateMultipartMaxBytes+1))
 				if readErr != nil || size > service.VideoCreateMultipartMaxBytes {
-					part.Close()
+					_ = part.Close()
 					return nil, uploads, service.ErrVideoInputTooLarge
 				}
 				digest := hex.EncodeToString(hash.Sum(nil))
@@ -141,13 +141,13 @@ func (h *VideoHandler) parseGrokManagedMultipart(ctx context.Context, userID int
 					}
 				}
 				if input.Open == nil {
-					part.Close()
+					_ = part.Close()
 					return nil, uploads, service.ErrVideoInputUnsupported
 				}
 			} else {
 				input, e = uploads.session.Store(ctx, role, filename, part.Header.Get("Content-Type"), part)
 			}
-			part.Close()
+			_ = part.Close()
 			if e != nil {
 				return nil, uploads, e
 			}
@@ -164,7 +164,7 @@ func (h *VideoHandler) parseGrokManagedMultipart(ctx context.Context, userID int
 			continue
 		}
 		data, e := io.ReadAll(io.LimitReader(part, service.VideoCreateMultipartScalarMaxBytes+1))
-		part.Close()
+		_ = part.Close()
 		if e != nil || len(data) > service.VideoCreateMultipartScalarMaxBytes {
 			return nil, uploads, service.ErrVideoInputTooLarge
 		}

@@ -8,6 +8,7 @@ import {
 	getVideoCapabilityCatalog,
 	getVideoAccountCapability,
   listVideoTaskEvents,
+  previewGrokVideoMigration,
   retryVideoCallback,
   retryVideoGet,
 	retryVideoSettlement,
@@ -17,12 +18,13 @@ import {
 import videosAPI from '@/api/admin/videos'
 
 describe('admin videos api', () => {
-  it('does not export Grok migration or correction commands', () => {
-    expect(Object.keys(videosAPI).filter(key => /grok|createintent/i.test(key))).toEqual([])
+  it('exposes only the read-only Grok migration preview, without correction commands', () => {
+    expect(Object.keys(videosAPI).filter(key => /grok|createintent/i.test(key))).toEqual(['previewGrokMigration'])
   })
 
   it('does not export any manual review command', () => {
-    expect(Object.keys(videosAPI).filter(key => /review|resolve|unknown/i.test(key))).toEqual([])
+    // Only this read-only preview is allowed; retain the guard on other review commands.
+    expect(Object.keys(videosAPI).filter(key => key !== 'previewGrokMigration' && /review|resolve|unknown/i.test(key))).toEqual([])
   })
 
   beforeEach(() => {
@@ -53,6 +55,22 @@ describe('admin videos api', () => {
 		expect(get).toHaveBeenCalledWith('/admin/videos/accounts/42/capability')
 		expect(post).toHaveBeenCalledWith('/admin/videos/accounts/42/capability/probe')
 	})
+
+  it('posts migration samples to the read-only preview endpoint', async () => {
+    const request = {
+      api_key_id: 12,
+      account_id: 42,
+      cases: [{ model: 'grok-imagine-video-1.5', operation: 'generate' as const, resolution: '480p', seconds: 8 }],
+    }
+    const report = { ready: true, comparisons: [], warnings: [], fingerprint: 'preview-fingerprint' }
+    post.mockResolvedValue({ data: report })
+
+    expect(videosAPI.previewGrokMigration).toBe(previewGrokVideoMigration)
+    await expect(previewGrokVideoMigration(request)).resolves.toEqual(report)
+    expect(post).toHaveBeenCalledTimes(1)
+    expect(post).toHaveBeenCalledWith('/admin/videos/grok-migration/preview', request)
+    expect(put).not.toHaveBeenCalled()
+  })
 
   it('uses the task timeline endpoint', async () => {
     get.mockResolvedValue({ data: { items: [], total: 0, page: 1, page_size: 20 } })

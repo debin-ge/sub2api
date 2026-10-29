@@ -215,7 +215,7 @@ func (h *VideoHandler) parseGrokManagedRequest(ctx context.Context, key *service
 			return request, session, e
 		}
 		input, e := session.Store(ctx, service.VideoInputRoleSourceVideo, "source.mp4", "video/mp4", content.Body)
-		content.Body.Close()
+		_ = content.Body.Close()
 		if e != nil {
 			return request, session, e
 		}

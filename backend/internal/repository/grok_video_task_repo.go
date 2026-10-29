@@ -44,7 +44,7 @@ func (r *grokVideoTaskRepository) FindOwned(ctx context.Context, u, k, g int64, 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var result *service.GrokVideoTask
 	for rows.Next() {
 		t, e := scanGrokVideo(rows)
@@ -73,13 +73,13 @@ func (r *grokVideoTaskRepository) Create(ctx context.Context, t *service.GrokVid
 	if err != nil {
 		return nil, false, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	saved, err := scanGrokVideo(tx.QueryRowContext(ctx, `INSERT INTO grok_video_tasks AS g
  (public_id,user_id,api_key_id,group_id,account_id,operation,request_hash,idempotency_key,provider_task_id,generation_state,sync_status,settlement_status,data,next_action_at)
  VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) ON CONFLICT DO NOTHING RETURNING `+grokVideoJSON,
 		t.PublicID, t.UserID, t.APIKeyID, t.GroupID, t.AccountID, t.Operation, t.RequestHash, t.IdempotencyKey, t.ProviderTaskID, t.GenerationState, t.SyncStatus, t.SettlementStatus, raw, t.NextActionAt))
 	if errors.Is(err, service.ErrGrokVideoNotFound) || isGrokCreationReceiptConflict(err) {
-		tx.Rollback()
+		_ = tx.Rollback()
 		if t.IdempotencyKey != nil {
 			saved, err = r.FindIdempotent(ctx, t.UserID, t.APIKeyID, t.Operation, *t.IdempotencyKey)
 		} else if t.ProviderTaskID != nil {
@@ -116,7 +116,7 @@ func (r *grokVideoTaskRepository) Save(ctx context.Context, t *service.GrokVideo
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var version int64
 	err = tx.QueryRowContext(ctx, `UPDATE grok_video_tasks SET data=$2,provider_task_id=$3,generation_state=$4,sync_status=$5,settlement_status=$6,next_action_at=$7,version=version+1,updated_at=NOW(),lease_owner=$8,lease_expires_at=$9
  WHERE public_id=$1 AND version=$10 AND lease_epoch=$11 AND (lease_owner IS NULL OR lease_expires_at>clock_timestamp()) RETURNING version`, t.PublicID, raw, t.ProviderTaskID, t.GenerationState, t.SyncStatus, t.SettlementStatus, t.NextActionAt, t.LeaseOwner, t.LeaseExpiresAt, t.Version, t.LeaseEpoch).Scan(&version)
@@ -151,7 +151,7 @@ func (r *grokVideoTaskRepository) Due(ctx context.Context, limit int) ([]string,
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	ids := []string{}
 	for rows.Next() {
 		var id string

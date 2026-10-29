@@ -499,7 +499,7 @@ func (r *videoAdminRepository) listGrokVideoEvents(ctx context.Context, id strin
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	events := []*service.VideoTaskEvent{}
 	for rows.Next() {
 		e, err := scanVideoAdminEvent(rows)

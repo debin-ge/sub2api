@@ -114,7 +114,7 @@ func (h *VideoHandler) tryGrokManagedCreate(c *gin.Context, operation string) bo
 		}
 		raw, uploads, err = h.parseGrokManagedMultipart(c.Request.Context(), key.UserID, operation, contentType, wireRaw, reuse)
 		if uploads != nil && uploads.session != nil {
-			defer uploads.session.Close()
+			defer func() { _ = uploads.session.Close() }()
 		}
 		if err != nil {
 			videoError(c, err)
@@ -183,7 +183,7 @@ func (h *VideoHandler) tryGrokManagedCreate(c *gin.Context, operation string) bo
 		c.Request = c.Request.WithContext(preparedCtx)
 		request, session, e := h.parseGrokManagedRequest(c.Request.Context(), key, operation, raw, nil, uploads)
 		if session != nil {
-			defer session.Close()
+			defer func() { _ = session.Close() }()
 		}
 		if e != nil {
 			videoError(c, e)

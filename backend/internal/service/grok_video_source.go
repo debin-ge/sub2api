@@ -51,12 +51,12 @@ func (v *GrokVideoSourceVerifier) StoreURL(ctx context.Context, session *VideoSp
 			return nil, ErrVideoSourceSpecUnavailable
 		}
 		if response.StatusCode != 200 {
-			response.Body.Close()
+			_ = response.Body.Close()
 			return nil, ErrVideoSourceSpecUnavailable
 		}
 		reader = response.Body
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 	input, err := session.Store(ctx, VideoInputRoleSourceVideo, "source.mp4", "video/mp4", io.LimitReader(reader, grokSourceVideoMaxBytes+1))
 	if err != nil {
 		return nil, err
@@ -79,7 +79,7 @@ func (v *GrokVideoSourceVerifier) Verify(ctx context.Context, input VideoInput) 
 	if err != nil {
 		return nil, ErrVideoSourceSpecUnavailable
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 	// ffprobe requires seeking for non-faststart MP4 files. The decrypted copy is
 	// private (0600) and unlinked immediately. An inherited descriptor lets the
 	// decoder seek without leaving plaintext behind if the gateway crashes.
@@ -87,8 +87,8 @@ func (v *GrokVideoSourceVerifier) Verify(ctx context.Context, input VideoInput) 
 	if err != nil {
 		return nil, ErrVideoSourceSpecUnavailable
 	}
-	defer os.Remove(file.Name())
-	defer file.Close()
+	defer func() { _ = os.Remove(file.Name()) }()
+	defer func() { _ = file.Close() }()
 	if err = os.Remove(file.Name()); err != nil {
 		return nil, ErrVideoSourceSpecUnavailable
 	}

@@ -308,7 +308,7 @@ func grokManagedImage(ctx context.Context, item VideoContentItem) (map[string]st
 	if err != nil {
 		return nil, err
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(reader, MaxContentModerationImageBytes+1))
 	if err != nil {
 		return nil, err
@@ -389,7 +389,7 @@ func (p *GrokVideoProvider) submitDerived(ctx context.Context, a *Account, r Vid
 	if err != nil {
 		return nil, rejectedVideoProviderError("input", "source_unavailable", "source video could not be read", 400)
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(reader, (100<<20)+1))
 	digest := sha256.Sum256(raw)
 	if err != nil || int64(len(raw)) != input.Size || len(raw) > 100<<20 || hex.EncodeToString(digest[:]) != input.SHA256 {
@@ -412,7 +412,7 @@ func (p *GrokVideoProvider) submit(ctx context.Context, a *Account, e GrokMediaE
 	if err != nil {
 		return nil, err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	data, err := readGrokManagedBody(response.Body)
 	if err != nil {
 		return nil, unknownVideoProviderError("upstream", "invalid_acceptance", "could not read video acceptance", nil)
@@ -439,7 +439,7 @@ func (p *GrokVideoProvider) Get(ctx context.Context, a *Account, ref ProviderTas
 	if err != nil {
 		return nil, controlVideoProviderError(err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return nil, grokManagedResponseError(response, false)
 	}
@@ -649,10 +649,10 @@ func (p *GrokVideoProvider) OpenContent(ctx context.Context, a *Account, r Provi
 		}
 		resp, err := p.upstream.Do(req, proxy, a.ID, a.Concurrency)
 		if err != nil {
-			return nil, controlVideoProviderError(errors.New("Grok content transport failed"))
+			return nil, controlVideoProviderError(errors.New("grok content transport failed"))
 		}
 		if resp.StatusCode != 200 && resp.StatusCode != 206 && resp.StatusCode != 416 {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			return nil, grokManagedResponseError(resp, false)
 		}
 		return &ProviderContent{StatusCode: resp.StatusCode, Header: resp.Header.Clone(), Body: resp.Body}, nil

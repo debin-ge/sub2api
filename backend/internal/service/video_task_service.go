@@ -2188,7 +2188,8 @@ func validateVideoSubmitRequest(request VideoSubmitRequest) error {
 	if request.APIKey == nil || request.APIKey.ID <= 0 || request.APIKey.UserID <= 0 {
 		return ErrVideoInvalidRequest
 	}
-	if request.Operation != VideoOperationCharacterCreate && strings.TrimSpace(request.Prompt) == "" && !(request.Grok != nil && request.Operation == VideoOperationGenerate && (len(request.Content) > 0 || len(request.Grok.Keyframes) > 0)) {
+	grokGenerationWithInput := request.Grok != nil && request.Operation == VideoOperationGenerate && (len(request.Content) > 0 || len(request.Grok.Keyframes) > 0)
+	if request.Operation != VideoOperationCharacterCreate && strings.TrimSpace(request.Prompt) == "" && !grokGenerationWithInput {
 		return ErrVideoInvalidRequest
 	}
 	switch request.Operation {
