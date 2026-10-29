@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"io/fs"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -205,7 +206,7 @@ func TestVideoPlatformMigrationsDoNotInstallRemovedGrokWorkflows(t *testing.T) {
 	for _, name := range files {
 		content, err := FS.ReadFile(name)
 		require.NoError(t, err)
-		for _, removed := range []string{"grok_video_", "usage_billing_effect_archive", "archive_usage_billing_effect", "guard_applied_usage_billing_outbox_delete", "video_create_intent_reviews", "video_create_intent_review_actions", "legacy_grok_import_v1"} {
+		for _, removed := range []string{"grok_video_jobs", "grok_video_correction_reviews", "grok_video_legacy_imports", "usage_billing_effect_archive", "archive_usage_billing_effect", "guard_applied_usage_billing_outbox_delete", "video_create_intent_reviews", "video_create_intent_review_actions", "legacy_grok_import_v1"} {
 			require.NotContains(t, strings.ToLower(string(content)), removed, name)
 		}
 	}
@@ -311,4 +312,18 @@ func TestVideoPlatformMigrationsContainRequiredSafetyConstraints(t *testing.T) {
 	require.Contains(t, activeIndexSQL, "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_video_tasks_account_active_v2")
 	require.Contains(t, activeIndexSQL, "billing_state IN ('held', 'capture_pending')")
 	require.Contains(t, activeIndexSQL, "DROP INDEX CONCURRENTLY IF EXISTS idx_video_tasks_account_active")
+}
+
+func TestGrokBridgeSchemaRemainsLimitedToTrackingAndCreationReceipts(t *testing.T) {
+	files, err := fs.Glob(FS, "*.sql")
+	require.NoError(t, err)
+	allowed := map[string]bool{"grok_video_tasks": true, "grok_video_task_events": true, "grok_video_creation_receipts": true}
+	pattern := regexp.MustCompile(`(?i)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(grok_video_[a-z_]+)`)
+	for _, name := range files {
+		content, err := FS.ReadFile(name)
+		require.NoError(t, err)
+		for _, match := range pattern.FindAllSubmatch(content, -1) {
+			require.True(t, allowed[strings.ToLower(string(match[1]))], "unapproved Grok workflow table in %s: %s", name, match[1])
+		}
+	}
 }

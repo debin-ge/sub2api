@@ -22,6 +22,7 @@ func TestRegisterAdminVideoRoutesExposeOnlySafeRecoveryCommands(t *testing.T) {
 	}
 	for _, expected := range []string{
 		"GET /api/v1/admin/videos/overview",
+		"POST /api/v1/admin/videos/grok-migration/preview",
 		"GET /api/v1/admin/videos/provider-costs",
 		"POST /api/v1/admin/videos/provider-costs/:id/resolve",
 		"GET /api/v1/admin/videos/capabilities",
@@ -48,7 +49,10 @@ func TestRegisterAdminVideoRoutesExposeOnlySafeRecoveryCommands(t *testing.T) {
 		require.NotContains(t, route, "/videos/intents")
 		require.NotContains(t, route, "replay-create")
 		require.NotContains(t, route, "retry-create")
-		require.NotContains(t, route, "review")
+		// The exact pricing preview is read-only, not a manual billing review.
+		if route != "POST /api/v1/admin/videos/grok-migration/preview" {
+			require.NotContains(t, route, "review")
+		}
 		require.NotContains(t, route, "resolve-")
 		require.NotContains(t, route, "/tasks/unknown")
 	}

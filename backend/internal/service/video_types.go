@@ -31,6 +31,12 @@ const (
 )
 
 type VideoTask struct {
+	SyncStatus         string     `json:"sync_status,omitempty"`
+	SettlementStatus   string     `json:"settlement_status,omitempty"`
+	LastPolledAt       *time.Time `json:"last_polled_at,omitempty"`
+	ImportedFromLegacy bool       `json:"imported_from_legacy"`
+	AllowedActions     []string   `json:"allowed_actions,omitempty"`
+
 	ID                     int64
 	PublicID               string
 	Source                 string
@@ -234,12 +240,15 @@ type VideoOwner struct {
 }
 
 type VideoTaskFilter struct {
-	Status    string
-	Model     string
-	Operation string
-	Limit     int
-	After     string
-	Order     string
+	Provider     string
+	GrokAPIKeyID *int64
+	GrokGroupID  *int64
+	Status       string
+	Model        string
+	Operation    string
+	Limit        int
+	After        string
+	Order        string
 	// ArkOnly selects the Ark public protocol before pagination. ArkStatus
 	// includes billing state; it must not be treated as a generation state.
 	ArkOnly   bool
@@ -248,35 +257,36 @@ type VideoTaskFilter struct {
 }
 
 type VideoCreateTaskParams struct {
-	PublicID              string
-	Owner                 VideoOwner
-	ChannelID             *int64
-	AccountID             int64
-	AccountOwnerUserID    *int64
-	Provider              string
-	Operation             string
-	ParentTaskID          *int64
-	RootTaskID            *int64
-	Endpoint              string
-	RequestedModel        string
-	PublicModel           string
-	ChannelModel          string
-	UpstreamModel         string
-	RequestHash           string
-	IdempotencyKey        string
-	InputManifest         []VideoInputManifestEntry
-	RequestAttributes     map[string]any
-	StableClientToken     string
-	BillingUnit           string
-	EstimatedUnits        float64
-	PriceSnapshot         map[string]any
-	ProviderCostSnapshot  map[string]any
-	Currency              string
-	HoldID                string
-	HoldAmount            float64
-	CallbackURLEnc        string
-	NextActionAt          *time.Time
-	MaxAccountConcurrency int
+	PublicID                  string
+	Owner                     VideoOwner
+	ChannelID                 *int64
+	AccountID                 int64
+	AccountOwnerUserID        *int64
+	Provider                  string
+	Operation                 string
+	ParentTaskID              *int64
+	RootTaskID                *int64
+	Endpoint                  string
+	RequestedModel            string
+	PublicModel               string
+	ChannelModel              string
+	UpstreamModel             string
+	RequestHash               string
+	IdempotencyKey            string
+	InputManifest             []VideoInputManifestEntry
+	RequestAttributes         map[string]any
+	StableClientToken         string
+	BillingUnit               string
+	EstimatedUnits            float64
+	PriceSnapshot             map[string]any
+	ProviderCostSnapshot      map[string]any
+	Currency                  string
+	HoldID                    string
+	HoldAmount                float64
+	CallbackURLEnc            string
+	NextActionAt              *time.Time
+	MaxAccountConcurrency     int
+	LegacyActiveWindowSeconds int64
 }
 
 type VideoTaskPage struct {

@@ -170,7 +170,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		c.Request = c.Request.WithContext(ctx)
 		billingInfoRequest := c.Request.URL.Path == "/v1/sub2api/billing"
 		videoResourceRequest := isVideoResourceRequest(c.Request.Method, c.Request.URL.Path, apiKey)
-		videoGenerationRequest := isVideoGenerationRequest(c.Request.Method, c.Request.URL.Path, apiKey)
+		videoGenerationRequest := isVideoGenerationRequest(c.Request.Method, c.Request.URL.Path, apiKey, cfg.Gateway.Video.GrokManagedEnabled || strings.TrimSpace(c.GetHeader("Idempotency-Key")) != "")
 		if (videoResourceRequest || videoGenerationRequest) && (apiKey.Status == service.StatusAPIKeyExpired || apiKey.IsExpired()) {
 			AbortWithError(c, http.StatusForbidden, "API_KEY_EXPIRED", "API key 已过期")
 			return

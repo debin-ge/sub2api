@@ -198,9 +198,9 @@ func ProvideBatchImageCleanupService(repo BatchImageRepository, accountRepo Acco
 	return svc
 }
 
-func ProvideVideoProviderRegistry(openAI *OpenAIVideoProvider, byteDance *ByteDanceVideoProvider, flova *FlovaVideoProvider, vendors VideoVendorProviders) *VideoProviderRegistry {
+func ProvideVideoProviderRegistry(openAI *OpenAIVideoProvider, byteDance *ByteDanceVideoProvider, flova *FlovaVideoProvider, vendors VideoVendorProviders, grok *GrokVideoProvider) *VideoProviderRegistry {
 	providers := make([]VideoProvider, 0, 3+len(vendors.Providers))
-	providers = append(providers, openAI, byteDance, flova)
+	providers = append(providers, openAI, byteDance, flova, grok)
 	providers = append(providers, vendors.Providers...)
 	return NewVideoProviderRegistry(providers...)
 }
@@ -1121,6 +1121,7 @@ var ProviderSet = wire.NewSet(
 	NewVideoCapabilityCatalog,
 	ProvideOpenAIVideoProvider,
 	ProvideVideoProviderRegistry,
+	ProvideGrokVideoProvider,
 	ProvideByteDanceVideoProvider,
 	ProvideFlovaVideoProvider,
 	ProvideFlovaCreditsSyncService,
@@ -1134,7 +1135,8 @@ var ProviderSet = wire.NewSet(
 	ProvideVideoTaskRuntime,
 	NewVideoCallbackWorker,
 	ProvideVideoCallbackRuntime,
-	NewVideoAdminService,
+	ProvideVideoAdminService,
+	ProvideGrokVideoTaskService,
 	wire.Bind(new(AccountRuntimeBlocker), new(*OpenAIGatewayService)),
 	NewOAuthService,
 	ProvideClaudeResetCreditService,
@@ -1417,4 +1419,21 @@ func ProvideClaudeResetCreditService(accounts AccountRepository, tokens *ClaudeT
 	s := NewClaudeResetCreditService(accounts, tokens, proxies, settings)
 	s.ConfigureRedemption(idem, locks)
 	return s
+}
+
+func ProvideGrokVideoTaskService(repo GrokVideoTaskRepository, gateway *OpenAIGatewayService, keys *APIKeyService, users UserRepository, accounts AccountRepository, encryptor SecretEncryptor, billing UsageBillingRepository, post *UsageBillingPostEffectsService, cfg *config.Config) *GrokVideoTaskService {
+	s := NewGrokVideoTaskService(repo, gateway, keys, users, accounts, encryptor, billing, post, cfg)
+	s.Start()
+	return s
+}
+func ProvideVideoAdminService(repository VideoAdminRepository, tasks VideoTaskRepository, taskSvc *VideoTaskService, queue VideoTaskQueue, catalog *VideoCapabilityCatalog, spool *VideoSubmissionSpool, probe *VideoCapabilityProbeService, grok *GrokVideoTaskService) *VideoAdminService {
+	s := NewVideoAdminService(repository, tasks, taskSvc, queue, catalog, spool, probe)
+	s.grok = grok
+	return s
+}
+
+func ProvideGrokVideoProvider(upstream HTTPUpstream, tokens *GrokTokenProvider, cfg *config.Config, catalog *VideoCapabilityCatalog) *GrokVideoProvider {
+	provider := NewGrokVideoProvider(upstream, tokens, cfg)
+	provider.catalog = catalog
+	return provider
 }

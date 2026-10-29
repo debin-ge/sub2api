@@ -21,6 +21,9 @@ import (
 
 // OpenAIRecordUsageInput input for recording usage
 type OpenAIRecordUsageInput struct {
+	// PrepareOnly captures an immutable billing intent without applying effects.
+	PrepareOnly func(*PreparedGrokVideoBilling) error
+
 	Result *OpenAIForwardResult
 	// FallbackRequestBody is the transformed request body retained only for
 	// local usage estimation when the upstream omitted usage.
@@ -654,6 +657,9 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 
 	simpleModeKeyRateLimitOnly := simpleModeKeyRateLimitBillingEnabled(s.cfg, apiKey)
 	if simpleMode && !simpleModeKeyRateLimitOnly {
+		if input.PrepareOnly != nil {
+			return input.PrepareOnly(&PreparedGrokVideoBilling{UsageLog: usageLog, Simple: true})
+		}
 		if err := writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.openai_gateway"); err != nil {
 			return err
 		}
@@ -669,7 +675,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		quotaPlatform = PlatformFromAPIKey(apiKey)
 	}
 
-	_, usageLogRecorded, billingErr := applyUsageBilling(ctx, requestID, usageLog, &postUsageBillingParams{
+	params := &postUsageBillingParams{
 		Cost:                       cost,
 		User:                       user,
 		APIKey:                     apiKey,
@@ -681,7 +687,15 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		APIKeyService:              input.APIKeyService,
 		Platform:                   quotaPlatform,
 		SimpleModeKeyRateLimitOnly: simpleModeKeyRateLimitOnly,
-	}, s.billingDeps(), s.usageBillingRepo)
+	}
+	if input.PrepareOnly != nil {
+		cmd := buildUsageBillingCommand(ctx, requestID, usageLog, params, s.billingDeps())
+		if cmd == nil {
+			return ErrDurableUsageBillingRequired
+		}
+		return input.PrepareOnly(&PreparedGrokVideoBilling{Command: cmd, UsageLog: usageLog})
+	}
+	_, usageLogRecorded, billingErr := applyUsageBilling(ctx, requestID, usageLog, params, s.billingDeps(), s.usageBillingRepo)
 
 	if billingErr != nil {
 		if shouldWriteUnsettledUsageLog(billingErr, usageLogRecorded) {

@@ -1,5 +1,12 @@
 export default {
   videos: {
+    grok: {
+      source: 'Task source', all: 'All sources', managed: 'Managed videos', relay: 'Legacy Grok tasks',
+      settlement: 'Grok settlement', sync: 'Status sync', lastPolled: 'Last polled', imported: 'Imported legacy task',
+      resume: 'Resume sync', pausedCount: 'Grok sync paused: {value}', blockedCount: 'Grok settlement blocked: {value}',
+      not_due: 'Not due', pending: 'Awaiting settlement', settled: 'Settled', retrying: 'Retrying', blocked: 'Blocked', not_required: 'Not required',
+      scheduled: 'Scheduled', paused: 'Paused', finished: 'Finished',
+    },
     title: 'Video Tasks',
     description: 'Inspect Provider jobs, billing settlement, callbacks, and automatic recovery queues.',
     loadFailed: 'Unable to load video platform data.',

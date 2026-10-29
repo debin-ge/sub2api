@@ -20,6 +20,7 @@ import (
 // Ark 维度为规范（Seconds=duration、AudioEnabled=generate_audio、Content 带角色媒体），
 // Size / Quality / AspectRatio / InputReference / CharacterIDs / SourceVideoID 只服务 OpenAI 形态。
 type VideoSubmitRequest struct {
+	Grok                  *GrokVideoOptions
 	APIKey                *APIKey
 	Operation             string
 	Model                 string
@@ -55,7 +56,13 @@ type VideoSubmitRequest struct {
 
 // MediaContent 返回全部媒体引用项。
 func (request VideoSubmitRequest) MediaContent() []VideoContentItem {
-	return videoMediaContent(request.Content)
+	items := videoMediaContent(request.Content)
+	if request.Grok != nil {
+		for _, frame := range request.Grok.Keyframes {
+			items = append(items, frame.Image)
+		}
+	}
+	return items
 }
 
 // ContentByRole 返回指定角色的媒体引用项。
@@ -65,7 +72,7 @@ func (request VideoSubmitRequest) ContentByRole(role VideoInputRole) []VideoCont
 
 // HasImageContent 报告是否带任何图片引用（URL 或字节）。
 func (request VideoSubmitRequest) HasImageContent() bool {
-	for _, item := range request.Content {
+	for _, item := range request.MediaContent() {
 		if item.IsMedia() && item.Role.IsImageContentRole() {
 			return true
 		}
@@ -218,6 +225,11 @@ func (s *VideoTaskService) Submit(ctx context.Context, request VideoSubmitReques
 	if err != nil {
 		return nil, err
 	}
+	if request.Grok != nil {
+		if prepared, ok := ctx.Value(grokPreparationTokenKey{}).(string); ok && prepared != "" {
+			operationToken = prepared
+		}
+	}
 	originalRequest := request
 	excludedAccounts := make(map[int64]struct{})
 	timeout := 180 * time.Second
@@ -244,6 +256,10 @@ func (s *VideoTaskService) Submit(ctx context.Context, request VideoSubmitReques
 		owner := VideoOwner{UserID: request.APIKey.UserID, APIKeyID: request.APIKey.ID, GroupID: request.APIKey.GroupID}
 		providerCost := map[string]any{"account_rate_multiplier": resolved.account.BillingRateMultiplier()}
 		s.recordUpstreamQuote(ctx, resolved, providerCost)
+		legacyWindow := int64(0)
+		if providerName == VideoProviderGrok {
+			legacyWindow = int64(videoSubmissionReconciliationWindow(s.cfg) / time.Second)
+		}
 		var created bool
 		task, created, err = s.tasks.CreateHeldVideoTask(ctx, VideoCreateTaskParams{
 			PublicID: publicID, Owner: owner, ChannelID: resolved.channelID,
@@ -259,7 +275,8 @@ func (s *VideoTaskService) Submit(ctx context.Context, request VideoSubmitReques
 			PriceSnapshot: videoPriceSnapshot(resolved.quote), ProviderCostSnapshot: providerCost,
 			Currency: "USD", HoldID: VideoTaskHoldRequestID(publicID), HoldAmount: resolved.quote.HoldAmount,
 			CallbackURLEnc: resolved.callbackURLEnc, NextActionAt: &submitRecoveryAt,
-			MaxAccountConcurrency: maxVideoAccountConcurrency(resolved.account),
+			MaxAccountConcurrency:     maxVideoAccountConcurrency(resolved.account),
+			LegacyActiveWindowSeconds: legacyWindow,
 		})
 		if err != nil {
 			observability.DefaultVideoMetrics().RecordHold("error", resolved.quote.HoldAmount)
@@ -356,7 +373,12 @@ func (s *VideoTaskService) resolveSubmission(ctx context.Context, request VideoS
 	if err != nil {
 		return nil, err
 	}
-	source, sourceTask, sourceAccountID, err := s.resolveSource(ctx, request.APIKey.UserID, request.Operation, request.SourceVideoID)
+	var source *ProviderTaskRef
+	var sourceTask *VideoTask
+	var sourceAccountID int64
+	if request.Grok == nil || request.Grok.Source == nil || request.SourceVideoID != "" {
+		source, sourceTask, sourceAccountID, err = s.resolveSource(ctx, request.APIKey.UserID, request.Operation, request.SourceVideoID)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -399,7 +421,23 @@ func (s *VideoTaskService) resolveSubmission(ctx context.Context, request VideoS
 				return nil, ErrVideoNoAccountAvailable
 			}
 			targetPlatform = pinnedPlatform
-			publicModel = firstNonEmptyString(sourceTask.UpstreamModel, sourceTask.PublicModel, requestedModel)
+			if pinnedPlatform == PlatformGrok {
+				// Grok 1.5 outputs can be edited by the classic model; source affinity
+				// pins the provider/account, not OpenAI's same-model execution contract.
+				publicModel = requestedModel
+				if s.composite != nil {
+					decision, err = s.composite.Resolve(ctx, group.ID, requestedModel, endpoint)
+					if err != nil {
+						return nil, err
+					}
+					if !decision.Matched || decision.TargetPlatform != PlatformGrok {
+						return nil, ErrVideoSourceSpecConflict
+					}
+					publicModel = decision.UpstreamModel
+				}
+			} else {
+				publicModel = firstNonEmptyString(sourceTask.UpstreamModel, sourceTask.PublicModel, requestedModel)
+			}
 		} else {
 			if s.composite == nil {
 				return nil, ErrVideoNoAccountAvailable
@@ -419,6 +457,12 @@ func (s *VideoTaskService) resolveSubmission(ctx context.Context, request VideoS
 	providerName, supported := managedVideoProviderForPlatform(targetPlatform)
 	if !supported {
 		return nil, ErrVideoNoAccountAvailable
+	}
+	if providerName == VideoProviderGrok && (request.Grok == nil || !s.cfg.Gateway.Video.GrokManagedEnabled) {
+		return nil, ErrVideoCreationDisabled
+	}
+	if request.Grok != nil && providerName != VideoProviderGrok {
+		return nil, ErrVideoProviderUnsupported
 	}
 	if requestedModel == "" {
 		if request.Operation == VideoOperationEdit && sourceTask == nil && len(request.Inputs) > 0 {
@@ -470,7 +514,11 @@ func (s *VideoTaskService) resolveSubmission(ctx context.Context, request VideoS
 		return nil, ErrVideoCapabilityUnsupported
 	}
 	providerRequest := request.providerRequest(publicModel, upstreamModel, characters)
-	providerRequest = ApplyVideoCapabilityDefaults(provider.Capabilities(), providerRequest)
+	if defaults, ok := provider.(VideoRequestDefaults); ok {
+		providerRequest = defaults.ApplyRequestDefaults(providerRequest)
+	} else {
+		providerRequest = ApplyVideoCapabilityDefaults(provider.Capabilities(), providerRequest)
+	}
 	// 非 Ark 直连 provider 落不了地的 Ark 开关一律忽略并记录，不支持的智能时长 / 帧数换算成
 	// 明确秒数，再让 provider 校验剩下的值。排队超时由上游执行还是本网关执行也在这里定下来。
 	var ignoredParameters, adjustedParameters []string
@@ -508,6 +556,9 @@ func (s *VideoTaskService) resolveSubmission(ctx context.Context, request VideoS
 	request.Size = providerRequest.Size
 	request.Resolution = providerRequest.Resolution
 	request.Ratio = providerRequest.Ratio
+	if provider.Name() == VideoProviderGrok {
+		request.AudioEnabled = providerRequest.AudioEnabled
+	}
 	if err := ValidateVideoCreateCapabilities(provider.Capabilities(), providerRequest, request.Inputs); err != nil {
 		return nil, err
 	}
@@ -525,7 +576,7 @@ func (s *VideoTaskService) resolveSubmission(ctx context.Context, request VideoS
 	attrs := VideoPricingAttributes{
 		Provider: provider.Name(), Model: upstreamModel, Operation: request.Operation,
 		Size: request.Size, Resolution: executionSpec.Resolution,
-		Seconds: request.Seconds, InputType: inputType,
+		Seconds: request.Seconds, BillableSeconds: executionSpec.BillableSeconds, InputType: inputType,
 		MaximumOutputSeconds: videoMaximumOutputSeconds(request, providerRequest, provider.Capabilities()),
 		Ratio:                providerRequest.Ratio, Frames: providerRequest.Frames, SmartDuration: providerRequest.SmartDuration,
 		OutputSpecUnverified: executionSpec.OutputUnverified,
@@ -811,10 +862,14 @@ func (s *VideoTaskService) submitToProvider(ctx context.Context, resolved *resol
 		return providerTask, nil, err
 	case VideoOperationExtend:
 		extender, ok := resolved.provider.(VideoExtender)
-		if !ok || resolved.source == nil {
+		if !ok || (resolved.source == nil && (providerRequest.Grok == nil || providerRequest.Grok.Source == nil)) {
 			return nil, nil, videoCapabilityRejection()
 		}
-		providerTask, err := extender.Extend(ctx, resolved.account, VideoExtendRequest{VideoCreateRequest: providerRequest, SourceTask: *resolved.source})
+		var sourceRef ProviderTaskRef
+		if resolved.source != nil {
+			sourceRef = *resolved.source
+		}
+		providerTask, err := extender.Extend(ctx, resolved.account, VideoExtendRequest{VideoCreateRequest: providerRequest, SourceTask: sourceRef})
 		return providerTask, nil, err
 	case VideoOperationCharacterCreate:
 		characterProvider, ok := resolved.provider.(VideoCharacterProvider)
@@ -1427,6 +1482,22 @@ func (s *VideoTaskService) enqueueBestEffort(ctx context.Context, publicID strin
 	}
 }
 
+// GetStatusForOwner exposes the task's business state while settlement is
+// pending. Content and credential disclosure continue to require captured funds.
+func (s *VideoTaskService) GetStatusForOwner(ctx context.Context, userID int64, publicID string) (*VideoTask, error) {
+	if s == nil || s.tasks == nil {
+		return nil, ErrVideoTaskNotFound
+	}
+	task, err := s.tasks.GetVideoTaskForOwner(ctx, userID, publicID)
+	if err != nil {
+		return nil, err
+	}
+	if task.BillingState == VideoBillingCapturePending || task.BillingState == VideoBillingReleasePending || ((task.GenerationState == VideoGenerationQueued || task.GenerationState == VideoGenerationInProgress) && (task.NextActionAt == nil || !task.NextActionAt.After(s.now().UTC()))) {
+		s.enqueueBestEffort(context.WithoutCancel(ctx), task.PublicID)
+	}
+	return task, nil
+}
+
 func (s *VideoTaskService) GetForOwner(ctx context.Context, userID int64, publicID string) (*VideoTask, error) {
 	task, err := s.tasks.GetVideoTaskForOwner(ctx, userID, publicID)
 	if err != nil {
@@ -1888,6 +1959,9 @@ func (s *VideoTaskService) DeleteForOwner(ctx context.Context, userID int64, pub
 	if err != nil {
 		return nil, err
 	}
+	if task.Provider == VideoProviderGrok {
+		return nil, ErrVideoCapabilityUnsupported
+	}
 	if task.GenerationState == VideoGenerationSubmitting {
 		return nil, ErrVideoDeleteConflict
 	}
@@ -2081,6 +2155,7 @@ func (s *VideoTaskService) DeleteCharacterForOwner(ctx context.Context, userID i
 
 func (request VideoSubmitRequest) providerRequest(publicModel, upstreamModel string, characters []ProviderResourceRef) VideoCreateRequest {
 	return VideoCreateRequest{
+		Grok:      request.Grok,
 		Operation: request.Operation, Model: upstreamModel, RequestedModel: publicModel,
 		Prompt: request.Prompt, Content: append([]VideoContentItem(nil), request.Content...),
 		Seconds: request.Seconds, SmartDuration: request.SmartDuration, Frames: request.Frames,
@@ -2113,12 +2188,15 @@ func validateVideoSubmitRequest(request VideoSubmitRequest) error {
 	if request.APIKey == nil || request.APIKey.ID <= 0 || request.APIKey.UserID <= 0 {
 		return ErrVideoInvalidRequest
 	}
-	if request.Operation != VideoOperationCharacterCreate && strings.TrimSpace(request.Prompt) == "" {
+	if request.Operation != VideoOperationCharacterCreate && strings.TrimSpace(request.Prompt) == "" && !(request.Grok != nil && request.Operation == VideoOperationGenerate && (len(request.Content) > 0 || len(request.Grok.Keyframes) > 0)) {
 		return ErrVideoInvalidRequest
 	}
 	switch request.Operation {
 	case VideoOperationGenerate:
 	case VideoOperationEdit:
+		if request.Grok != nil && request.Grok.Source != nil && request.Grok.Source.verified && len(request.Inputs) == 1 && request.Inputs[0].Role == VideoInputRoleSourceVideo {
+			break
+		}
 		if strings.TrimSpace(request.SourceVideoID) == "" && len(request.Inputs) != 1 {
 			return ErrVideoInvalidRequest
 		}
@@ -2126,6 +2204,9 @@ func validateVideoSubmitRequest(request VideoSubmitRequest) error {
 			return ErrVideoInvalidRequest
 		}
 	case VideoOperationExtend:
+		if request.Grok != nil && request.Grok.Source != nil && request.Grok.Source.verified && len(request.Inputs) == 1 && request.Inputs[0].Role == VideoInputRoleSourceVideo {
+			break
+		}
 		if strings.TrimSpace(request.SourceVideoID) == "" || len(request.Inputs) != 0 || len(request.CharacterIDs) != 0 || request.InputReference != nil {
 			return ErrVideoInvalidRequest
 		}
@@ -2191,6 +2272,19 @@ func (s *VideoTaskService) videoCustomerMultiplier(ctx context.Context, apiKey *
 }
 
 func videoPricingInputType(request VideoSubmitRequest) string {
+	if request.Grok != nil {
+		if request.Grok.Source != nil {
+			return string(VideoInputRoleSourceVideo)
+		}
+		if request.HasImageContent() {
+			return string(VideoInputRoleReferenceImage)
+		}
+		if len(request.Grok.VoiceIDs) > 0 {
+			return string(VideoInputRoleReferenceAudio)
+		}
+		return "text"
+	}
+
 	if len(request.Inputs) > 0 {
 		return string(request.Inputs[0].Role)
 	}
@@ -2273,6 +2367,9 @@ func videoInputHasVideo(request VideoSubmitRequest) bool {
 }
 
 func trustedVideoInputSeconds(request VideoSubmitRequest, source *VideoTask) float64 {
+	if request.Grok != nil && request.Grok.Source != nil && request.Grok.Source.verified {
+		return request.Grok.Source.Seconds
+	}
 	if !videoInputHasVideo(request) || source == nil {
 		return 0
 	}
@@ -2312,6 +2409,9 @@ func videoClientRequestHash(request VideoSubmitRequest) (string, error) {
 		"inputs": videoInputHashManifest(request.Inputs), "characters": request.CharacterIDs,
 		"source_video": strings.TrimSpace(request.SourceVideoID), "provider_options": request.ProviderOptions,
 		"callback_url": strings.TrimSpace(request.CallbackURL),
+	}
+	if request.Grok != nil {
+		contract["grok"] = grokVideoRequestHashFields(request.Grok)
 	}
 	if len(request.Content) > 0 {
 		contract["content"] = request.Content
@@ -2382,7 +2482,7 @@ func videoRequestAttributes(request VideoSubmitRequest, resolved *resolvedVideoS
 		// seconds 是结算、补偿与扩展链路一直读的键：显式时长照抄；智能时长与按帧请求
 		// 没有确定秒数，写入预扣用的上界，上游没回报实际时长时就按上界结算，不会少收。
 		// Ark 形态的投影读 duration（-1 表示智能时长）。
-		"seconds": videoRequestSecondsAttribute(request, attrs), "duration": videoArkDurationValue(request.Seconds, request.SmartDuration),
+		"seconds": videoRequestBillableSecondsAttribute(request, attrs), "duration": videoArkDurationValue(request.Seconds, request.SmartDuration),
 		"smart_duration": request.SmartDuration, "frames": request.Frames,
 		"size": request.Size, "raw_size": request.Size,
 		"resolution": attrs.Resolution, "ratio": attrs.Ratio, "quality": request.Quality,
@@ -2408,6 +2508,9 @@ func videoRequestAttributes(request VideoSubmitRequest, resolved *resolvedVideoS
 	// "存过但为空"。
 	if prompt := trimRunes(strings.TrimSpace(request.Prompt), videoPromptAttributeMaxRunes); prompt != "" {
 		attributes["prompt"] = prompt
+	}
+	if request.Grok != nil {
+		attributes["grok_client_request_hash"] = request.Grok.ClientRequestHash
 	}
 	if len(resolved.ignoredParameters) > 0 {
 		attributes["ignored_parameters"] = append([]string(nil), resolved.ignoredParameters...)
@@ -2601,3 +2704,10 @@ func videoStringValue(value *string) string {
 }
 
 func timePointer(value time.Time) *time.Time { return &value }
+
+func videoRequestBillableSecondsAttribute(request VideoSubmitRequest, attrs VideoPricingAttributes) any {
+	if attrs.BillableSeconds > 0 {
+		return attrs.BillableSeconds
+	}
+	return videoRequestSecondsAttribute(request, attrs)
+}

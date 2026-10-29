@@ -38,6 +38,8 @@ import (
 // CompatibleGatewayHandler. It dispatches multiple ingress protocols and
 // provider transports, not only OpenAI requests.
 type OpenAIGatewayHandler struct {
+	grokManaged                *VideoHandler
+	grokVideoTasks             *service.GrokVideoTaskService
 	compositeResolver          *service.CompositeRouteResolver
 	gatewayService             *service.OpenAIGatewayService
 	billingCacheService        *service.BillingCacheService

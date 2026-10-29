@@ -44,6 +44,12 @@ func (r *videoAdminRepository) ListVideoTasksAdmin(ctx context.Context, filter s
 		args = append(args, value)
 		where = append(where, fmt.Sprintf(format, len(args)))
 	}
+	if filter.Source != "" && filter.Source != "all" {
+		add("source = $%d", filter.Source)
+	}
+	if filter.SettlementStatus != "" {
+		add("settlement_status = $%d", filter.SettlementStatus)
+	}
 	if filter.UserID != nil {
 		add("user_id = $%d", *filter.UserID)
 	}
@@ -63,6 +69,7 @@ func (r *videoAdminRepository) ListVideoTasksAdmin(ctx context.Context, filter s
 		add("generation_state = $%d", value)
 	}
 	if value := strings.TrimSpace(filter.BillingState); value != "" {
+		where = append(where, "source <> 'grok_relay'")
 		add("billing_state = $%d", value)
 	}
 	if value := strings.TrimSpace(filter.DeleteState); value != "" {
@@ -89,14 +96,14 @@ func (r *videoAdminRepository) ListVideoTasksAdmin(ctx context.Context, filter s
 
 	whereSQL := strings.Join(where, " AND ")
 	var total int
-	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM video_tasks WHERE "+whereSQL, args...).Scan(&total); err != nil {
+	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM video_admin_task_rows WHERE "+whereSQL, args...).Scan(&total); err != nil {
 		return nil, err
 	}
 	args = append(args, pageSize, offset)
 	query := fmt.Sprintf(`
-		SELECT to_jsonb(vt) FROM video_tasks vt
+		SELECT task FROM video_admin_task_rows vt
 		WHERE %s
-		ORDER BY created_at DESC, id DESC
+		ORDER BY created_at DESC, source, id DESC
 		LIMIT $%d OFFSET $%d
 	`, whereSQL, len(args)-1, len(args))
 	rows, err := r.db.QueryContext(ctx, query, args...)
@@ -119,7 +126,7 @@ func (r *videoAdminRepository) ListVideoTasksAdmin(ctx context.Context, filter s
 }
 
 func (r *videoAdminRepository) GetVideoTaskAdmin(ctx context.Context, publicID string) (*service.VideoTask, error) {
-	task, err := scanVideoTask(r.db.QueryRowContext(ctx, `SELECT to_jsonb(vt) FROM video_tasks vt WHERE public_id = $1`, strings.TrimSpace(publicID)))
+	task, err := scanVideoTask(r.db.QueryRowContext(ctx, `SELECT task FROM video_admin_task_rows vt WHERE public_id = $1`, strings.TrimSpace(publicID)))
 	return translateVideoTaskNotFound(task, err)
 }
 
@@ -227,6 +234,9 @@ func scanVideoAdminEvent(scanner videoJSONScanner) (*service.VideoTaskEvent, err
 }
 
 func (r *videoAdminRepository) ListVideoTaskEventsAdmin(ctx context.Context, publicID string, page, pageSize int) (*service.VideoAdminEventPage, error) {
+	if strings.HasPrefix(publicID, "grok_video_") {
+		return r.listGrokVideoEvents(ctx, publicID, page, pageSize)
+	}
 	var taskID int64
 	if err := r.db.QueryRowContext(ctx, `SELECT id FROM video_tasks WHERE public_id = $1`, strings.TrimSpace(publicID)).Scan(&taskID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -356,7 +366,15 @@ func (r *videoAdminRepository) GetVideoAdminOverview(ctx context.Context) (*serv
 		TasksByGeneration: make(map[string]int64), TasksByBilling: make(map[string]int64),
 		TasksByDelete: make(map[string]int64), CallbacksByStatus: make(map[string]int64),
 	}
-	if err := r.loadVideoAdminCounts(ctx, `SELECT generation_state, COUNT(*) FROM video_tasks GROUP BY generation_state`, overview.TasksByGeneration); err != nil {
+	if err := r.loadVideoAdminCounts(ctx, `SELECT generation_state, COUNT(*) FROM video_admin_task_rows GROUP BY generation_state`, overview.TasksByGeneration); err != nil {
+		return nil, err
+	}
+	overview.GrokSettlement = make(map[string]int64)
+	overview.GrokSync = make(map[string]int64)
+	if err := r.loadVideoAdminCounts(ctx, `SELECT settlement_status,COUNT(*) FROM grok_video_tasks GROUP BY settlement_status`, overview.GrokSettlement); err != nil {
+		return nil, err
+	}
+	if err := r.loadVideoAdminCounts(ctx, `SELECT sync_status,COUNT(*) FROM grok_video_tasks GROUP BY sync_status`, overview.GrokSync); err != nil {
 		return nil, err
 	}
 	if err := r.loadVideoAdminCounts(ctx, `SELECT billing_state, COUNT(*) FROM video_tasks GROUP BY billing_state`, overview.TasksByBilling); err != nil {
@@ -462,4 +480,33 @@ func scanNullableTime(row *sql.Row, target **time.Time) error {
 		*target = &v
 	}
 	return nil
+}
+
+func (r *videoAdminRepository) listGrokVideoEvents(ctx context.Context, id string, page, size int) (*service.VideoAdminEventPage, error) {
+	page, size, offset := videoAdminPagination(page, size)
+	var taskID int64
+	if err := r.db.QueryRowContext(ctx, `SELECT id FROM grok_video_tasks WHERE public_id=$1`, id).Scan(&taskID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, service.ErrVideoTaskNotFound
+		}
+		return nil, err
+	}
+	var total int
+	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM grok_video_task_events WHERE task_id=$1`, taskID).Scan(&total); err != nil {
+		return nil, err
+	}
+	rows, err := r.db.QueryContext(ctx, `SELECT to_jsonb(e)||jsonb_build_object('provider','grok','to_generation_state',generation_state,'payload',jsonb_build_object('settlement_status',settlement_status)) FROM grok_video_task_events e WHERE task_id=$1 ORDER BY created_at DESC,id DESC LIMIT $2 OFFSET $3`, taskID, size, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	events := []*service.VideoTaskEvent{}
+	for rows.Next() {
+		e, err := scanVideoAdminEvent(rows)
+		if err != nil {
+			return nil, err
+		}
+		events = append(events, e)
+	}
+	return &service.VideoAdminEventPage{Events: events, Total: total, Page: page, PageSize: size}, rows.Err()
 }

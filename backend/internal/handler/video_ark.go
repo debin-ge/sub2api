@@ -57,7 +57,7 @@ func (h *VideoHandler) ArkRetrieve(c *gin.Context) {
 	if !h.readEnabled(c) {
 		return
 	}
-	task, err := h.tasks.GetForOwner(c.Request.Context(), apiKey.UserID, videoPathID(c))
+	task, err := h.readTaskStatus(c.Request.Context(), apiKey.UserID, videoPathID(c))
 	if err != nil {
 		arkVideoError(c, err)
 		return
@@ -252,6 +252,9 @@ func (h *VideoHandler) projectArkTask(ctx context.Context, userID int64, task *s
 	object := service.BuildArkVideoTaskObject(task, urls)
 	if prompt := videoAttributeString(task.RequestAttributes, "prompt"); prompt != "" {
 		object["prompt"] = prompt
+	}
+	if task.GenerationState == service.VideoGenerationCompleted && task.BillingState != service.VideoBillingCaptured {
+		return object, nil
 	}
 	disclosure, err := h.tasks.DisclosureForOwner(ctx, userID, task.PublicID)
 	if err != nil {

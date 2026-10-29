@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"github.com/google/uuid"
 	"net/http"
 	"strings"
 
@@ -40,7 +41,7 @@ func isVideoResourceRequest(method, path string, apiKey *service.APIKey) bool {
 			return false
 		}
 	}
-	if apiKey.Group.Platform != service.PlatformOpenAI && apiKey.Group.Platform != service.PlatformComposite {
+	if apiKey.Group.Platform != service.PlatformOpenAI && apiKey.Group.Platform != service.PlatformComposite && apiKey.Group.Platform != service.PlatformGrok {
 		return false
 	}
 	if strings.HasPrefix(path, "/v1/") {
@@ -49,6 +50,25 @@ func isVideoResourceRequest(method, path string, apiKey *service.APIKey) bool {
 	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
 	if len(parts) == 0 || parts[0] != "videos" {
 		return false
+	}
+	if apiKey.Group.Platform == service.PlatformGrok && (method == http.MethodDelete || (len(parts) > 1 && parts[1] == "characters")) {
+		return false
+	}
+	if apiKey.Group.Platform == service.PlatformGrok || apiKey.Group.Platform == service.PlatformComposite {
+		ids := parts[1:]
+		if len(ids) > 0 && (ids[0] == "generations" || ids[0] == "edits" || ids[0] == "extensions") {
+			ids = ids[1:]
+		}
+		if len(ids) > 0 {
+			if _, err := uuid.Parse(ids[0]); err == nil {
+				if len(ids) == 1 {
+					return method == http.MethodGet
+				}
+				if len(ids) == 2 && ids[1] == "content" {
+					return method == http.MethodGet || method == http.MethodHead
+				}
+			}
+		}
 	}
 	switch len(parts) {
 	case 1:
@@ -65,7 +85,7 @@ func isVideoResourceRequest(method, path string, apiKey *service.APIKey) bool {
 	}
 }
 
-func isVideoGenerationRequest(method, path string, apiKey *service.APIKey) bool {
+func isVideoGenerationRequest(method, path string, apiKey *service.APIKey, grokManaged ...bool) bool {
 	if method != http.MethodPost || apiKey == nil || apiKey.Group == nil {
 		return false
 	}
@@ -76,6 +96,18 @@ func isVideoGenerationRequest(method, path string, apiKey *service.APIKey) bool 
 		}
 		_, supported := service.ManagedVideoOperationForPath(path)
 		return supported
+	}
+	managed := len(grokManaged) > 0 && grokManaged[0]
+	normalized := strings.TrimPrefix(path, "/v1")
+	if normalized == "/videos/generations" {
+		return managed && (apiKey.Group.Platform == service.PlatformGrok || apiKey.Group.Platform == service.PlatformComposite)
+	}
+	if apiKey.Group.Platform == service.PlatformGrok {
+		if !managed {
+			return false
+		}
+		op, ok := service.ManagedVideoOperationForPath(path)
+		return ok && op != service.VideoOperationCharacterCreate
 	}
 	if apiKey.Group.Platform != service.PlatformOpenAI && apiKey.Group.Platform != service.PlatformComposite {
 		return false

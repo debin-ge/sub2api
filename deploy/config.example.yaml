@@ -274,6 +274,10 @@ gateway:
   # Provider-neutral asynchronous video task platform. Creation stays off
   # until video pricing and at least one capable OpenAI API-key account exist.
   video:
+    # Grok new tasks use the same durable holds/settlement engine.
+    # Enable only after managed pricing preflight and all-instance upgrade.
+    # Environment: GATEWAY_VIDEO_GROK_MANAGED_ENABLED
+    grok_managed_enabled: false
     # Managed video platforms: openai (Sora, /v1/videos) and the Ark-protocol
     # platforms bytedance / fal / wavespeed / runware / flova, which are served
     # only at /api/v3/contents/generations/tasks (apikey accounts).
@@ -1647,3 +1651,8 @@ image_storage:
   presign_expiry_hours: 24
   # 当上游返回的是图片 url 时，下载该图片再转存的字节上限（默认 32MB）
   max_download_bytes: 33554432
+
+# Grok task tracking: enable after all instances and migrations are upgraded.
+grok_video_tracking:
+  enabled: false
+  worker_enabled: false

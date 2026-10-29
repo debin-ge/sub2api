@@ -24,7 +24,7 @@ func TestNativeVideoReleasePolicyAppliesToDirectAndCompositeByteDance(t *testing
 		{name: "direct_bytedance", groupPlatform: service.PlatformByteDance, want: true},
 		{name: "composite_bytedance", groupPlatform: service.PlatformComposite, targetPlatform: service.PlatformByteDance, resolved: true, want: true},
 		{name: "composite_openai", groupPlatform: service.PlatformComposite, targetPlatform: service.PlatformOpenAI, resolved: true, want: true},
-		{name: "composite_grok", groupPlatform: service.PlatformComposite, targetPlatform: service.PlatformGrok, resolved: true, want: false},
+		{name: "composite_grok", groupPlatform: service.PlatformComposite, targetPlatform: service.PlatformGrok, resolved: true, want: true},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			ctx, _ := newVideoHandlerTestContext(http.MethodPost, "/v1/videos", "application/json", strings.NewReader(`{}`))

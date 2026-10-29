@@ -93,7 +93,13 @@ const (
 	radarMaxSourceHardRetentionDays       = 30
 )
 
+type GrokVideoTrackingConfig struct {
+	Enabled       bool `mapstructure:"enabled"`
+	WorkerEnabled bool `mapstructure:"worker_enabled"`
+}
+
 type Config struct {
+	GrokVideoTracking       GrokVideoTrackingConfig       `mapstructure:"grok_video_tracking"`
 	Server                  ServerConfig                  `mapstructure:"server"`
 	Log                     LogConfig                     `mapstructure:"log"`
 	CORS                    CORSConfig                    `mapstructure:"cors"`
@@ -1165,8 +1171,9 @@ type GatewayVideoCallbackConfig struct {
 }
 
 type GatewayVideoConfig struct {
-	Enabled         bool `mapstructure:"enabled"`
-	CreationEnabled bool `mapstructure:"creation_enabled"`
+	GrokManagedEnabled bool `mapstructure:"grok_managed_enabled"`
+	Enabled            bool `mapstructure:"enabled"`
+	CreationEnabled    bool `mapstructure:"creation_enabled"`
 	// TaskJSONBodyMaxBytes 是 Ark 形态创建请求（/contents/generations/tasks）的 JSON 体上限。
 	// content[] 里的 data: URI 图片会内联在请求体里，所以要比 /v1/videos 的 1MB 宽松；
 	// 单张图片仍受内容审核的 8MB 上限约束。
@@ -2884,6 +2891,9 @@ func setDefaults() {
 	viper.SetDefault("gateway.grok_response_header_timeout", 120)
 	viper.SetDefault("gateway.openai_first_output_timeout_seconds", 0)
 	viper.SetDefault("gateway.openai_high_effort_first_output_timeout_seconds", 0)
+	viper.SetDefault("gateway.video.grok_managed_enabled", false)
+	viper.SetDefault("grok_video_tracking.enabled", false)
+	viper.SetDefault("grok_video_tracking.worker_enabled", false)
 	viper.SetDefault("gateway.log_upstream_error_body", true)
 	viper.SetDefault("gateway.log_upstream_error_body_max_bytes", 2048)
 	viper.SetDefault("gateway.inject_beta_for_apikey", false)

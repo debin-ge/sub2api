@@ -3,7 +3,7 @@
 本页说明通过 {{SITE_NAME}} 提交视频生成任务的方式。ByteDance（火山方舟）、fal、WaveSpeed、Runware、Flova 五类平台的分组统一使用火山方舟 Ark 的异步视频任务协议：请求体、响应体和状态词表都与 Ark 一致，火山 Ark SDK 只需把 Base URL 改成 `{{BASE_URL}}api/v3`。
 
 > [!NOTE]
-> OpenAI（Sora）与 Grok 分组的视频仍走 `/v1/videos`，请求格式以管理员提供的说明为准，本页不展开。
+> OpenAI（Sora）仍使用 `/v1/videos`。Grok 保留自己的请求格式和路径，见文末“Grok 托管视频”；下方 Ark 参数表不适用于 Grok。
 
 ## 前置条件
 
@@ -223,3 +223,42 @@ fal、WaveSpeed、Runware、Flova 以及 ByteDance 中继账号不能逐字执�
 | 502 | `video_no_account_available` | 没有可用的上游账号。 |
 
 其他排查思路见[错误排查](/docs/errors)。
+
+
+## Grok 托管视频
+
+管理员启用 Grok 托管模式后，新任务与 ByteDance 使用相同的资金和交付流程：创建时冻结预估费用，后台持续同步状态，成功扣款后交付视频，明确失败时释放冻结。关闭客户端不会中止后台处理。升级前的旧任务继续使用原有结算流程。
+
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| POST | `/v1/videos/generations` | 生成视频 |
+| POST | `/v1/videos/edits` | 编辑已验证的源视频 |
+| POST | `/v1/videos/extensions` | 延长已验证的源视频 |
+| GET | `/v1/videos/{request_id}` | 查询任务 |
+| GET | `/v1/videos/{request_id}/content` | 使用 API Key 下载已结算的视频 |
+
+```bash
+# 每个业务任务生成一次键；重试必须复用相同键和请求内容。
+REQUEST_KEY="$(uuidgen)"
+curl "{{BASE_URL}}v1/videos/generations" \
+  -H "Authorization: Bearer ${API_KEY}" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: ${REQUEST_KEY}" \
+  -d '{
+    "model": "grok-imagine-video-1.5",
+    "prompt": "公园树荫下，一位成年人把木质挂钟轻轻放在桌上。",
+    "duration": 8,
+    "aspect_ratio": "9:16",
+    "resolution": "480p",
+    "generate_audio": true
+  }'
+# 返回 {"request_id":"<UUID>"}
+```
+
+托管模式返回的 UUID 标识本网关任务，不是供应商任务 ID。查询与鉴权下载需要使用创建任务的 API Key，且分组保持一致。`pending` 包括生成中和结算处理中；只有结算完成后才返回 `done` 和 `video.url`。请按返回的 `Retry-After` 轮询。`video.url` 是有期限的签名下载链接，应按敏感链接保管；过期后重新查询获取。
+
+参考图片使用 `reference_images: [{"url":"https://..."}]`；不要将 Ark 的 `content`、`ratio` 等字段直接套用到 Grok。参考素材数量、音频与关键帧组合以当前模型能力为准。`usage.cost_in_usd_ticks` 是供应商成本信息，客户扣费以平台账单为准。
+
+编辑与延长使用 `video: {"url":"https://.../source.mp4"}`，也可用 `video: {"id":"<已结算的 Grok request_id>"}` 引用同一密钥下的托管任务。源视频会被冻结并测量实际时长。编辑按验证后的源时长计费；延长请求的 `duration` 表示新增秒数，按新增部分计费。编辑不传 `duration`；编辑、延长不传 `resolution`、`aspect_ratio` 或 `generate_audio`。当前适配的派生操作使用 `grok-imagine-video`，具体能力受管理员配置限制。
+
+创建结果不确定时，复用原幂等键查询或重试，不要更换键再次付费生成。Grok 暂不提供取消或删除上游任务的操作。托管模式不支持订阅分组；simple mode 下也会冻结和结算余额，切换前由管理员核对价格与余额规则。

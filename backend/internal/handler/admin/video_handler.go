@@ -57,6 +57,12 @@ type videoAdminAccessMetadata struct {
 }
 
 type videoAdminTaskResponse struct {
+	SyncStatus         string     `json:"sync_status,omitempty"`
+	SettlementStatus   string     `json:"settlement_status,omitempty"`
+	LastPolledAt       *time.Time `json:"last_polled_at,omitempty"`
+	ImportedFromLegacy bool       `json:"imported_from_legacy"`
+	AllowedActions     []string   `json:"allowed_actions,omitempty"`
+
 	Version              int64                             `json:"version"`
 	LeaseEpoch           int64                             `json:"lease_epoch"`
 	LeaseExpiresAt       *time.Time                        `json:"lease_expires_at,omitempty"`
@@ -135,6 +141,7 @@ func videoAdminTask(task *service.VideoTask) *videoAdminTaskResponse {
 		return nil
 	}
 	response := &videoAdminTaskResponse{
+		SyncStatus: task.SyncStatus, SettlementStatus: task.SettlementStatus, LastPolledAt: task.LastPolledAt, ImportedFromLegacy: task.ImportedFromLegacy, AllowedActions: task.AllowedActions,
 		Version: task.Version, LeaseEpoch: task.LeaseEpoch, LeaseExpiresAt: task.LeaseExpiresAt,
 		ID: task.ID, PublicID: task.PublicID, Source: task.Source, UserID: task.UserID,
 		APIKeyID: task.APIKeyID, GroupID: task.GroupID, ChannelID: task.ChannelID, AccountID: task.AccountID,
@@ -171,11 +178,14 @@ func videoAdminTask(task *service.VideoTask) *videoAdminTaskResponse {
 		videoAdminString(task.ResponseMetadata, "resolution"),
 		videoAdminString(task.PriceSnapshot, "resolution"),
 		videoAdminString(task.RequestAttributes, "size"),
+		videoAdminString(task.RequestAttributes, "resolution"),
 	)
 	response.DurationSeconds = firstVideoAdminNumber(
+		videoAdminNumber(task.UsageSnapshot, "duration"),
 		videoAdminNumber(task.ResponseMetadata, "seconds"),
 		videoAdminNumber(task.PriceSnapshot, "seconds"),
 		videoAdminNumber(task.RequestAttributes, "seconds"),
+		videoAdminNumber(task.RequestAttributes, "duration"),
 	)
 	if response.BillingUnit == service.VideoBillingUnitVideoToken {
 		response.VideoTokens = task.ActualUnits
@@ -559,9 +569,13 @@ func videoAdminRespond(c *gin.Context, value any, err error) {
 func videoAdminTaskFilter(c *gin.Context) (service.VideoAdminTaskFilter, error) {
 	page, pageSize := response.ParsePagination(c)
 	filter := service.VideoAdminTaskFilter{
+		Source: strings.TrimSpace(c.Query("source")), SettlementStatus: strings.TrimSpace(c.Query("settlement_status")),
 		Page: page, PageSize: pageSize, Provider: strings.TrimSpace(c.Query("provider")), Operation: strings.TrimSpace(c.Query("operation")),
 		GenerationState: strings.TrimSpace(c.Query("generation_state")), BillingState: strings.TrimSpace(c.Query("billing_state")),
 		DeleteState: strings.TrimSpace(c.Query("delete_state")), Query: strings.TrimSpace(c.Query("q")),
+	}
+	if filter.Source != "" && filter.Source != "all" && filter.Source != "managed" && filter.Source != "grok_relay" {
+		return filter, errors.New("invalid source")
 	}
 	var err error
 	if filter.UserID, err = videoAdminOptionalID(c.Query("user_id")); err != nil {

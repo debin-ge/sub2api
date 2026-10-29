@@ -100,3 +100,8 @@ func isUniqueConstraintViolation(err error) bool {
 		strings.Contains(msg, "unique constraint") ||
 		strings.Contains(msg, "duplicate entry")
 }
+
+func isGrokCreationReceiptConflict(err error) bool {
+	var pgErr *pq.Error
+	return errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.Constraint == "grok_video_creation_receipt_conflict"
+}

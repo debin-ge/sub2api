@@ -308,6 +308,7 @@ func cleanupWithRadarTestDependencies(rdb *redis.Client, radarRunner *service.Ra
 		nil, // batchImageWorker
 		nil, // videoSpoolRuntime
 		nil, // videoTaskRuntime
+		nil, // grokVideoTasks
 		nil, // videoCallbackRuntime
 		nil, // videoCapabilityProbeRuntime
 		service.NewPricingService(cfg, nil),
@@ -466,6 +467,7 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		nil, // batchImageWorker
 		nil, // videoSpoolRuntime
 		nil, // videoTaskRuntime
+		nil, // grokVideoTasks
 		nil, // videoCallbackRuntime
 		nil, // videoCapabilityProbeRuntime
 		pricingSvc,

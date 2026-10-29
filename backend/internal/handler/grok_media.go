@@ -28,26 +28,41 @@ func (h *OpenAIGatewayHandler) GrokImages(c *gin.Context) {
 
 // GrokVideoGeneration handles xAI video generation through Grok groups.
 func (h *OpenAIGatewayHandler) GrokVideoGeneration(c *gin.Context) {
+	if h.grokManaged != nil && h.grokManaged.tryGrokManagedCreate(c, service.VideoOperationGenerate) {
+		return
+	}
 	h.handleGrokMedia(c, service.GrokMediaEndpointVideosGenerations, "")
 }
 
 // GrokVideoEdit handles asynchronous xAI video edits through Grok groups.
 func (h *OpenAIGatewayHandler) GrokVideoEdit(c *gin.Context) {
+	if h.grokManaged != nil && h.grokManaged.tryGrokManagedCreate(c, service.VideoOperationEdit) {
+		return
+	}
 	h.handleGrokMedia(c, service.GrokMediaEndpointVideosEdits, "")
 }
 
 // GrokVideoExtension handles asynchronous xAI video extensions through Grok groups.
 func (h *OpenAIGatewayHandler) GrokVideoExtension(c *gin.Context) {
+	if h.grokManaged != nil && h.grokManaged.tryGrokManagedCreate(c, service.VideoOperationExtend) {
+		return
+	}
 	h.handleGrokMedia(c, service.GrokMediaEndpointVideosExtensions, "")
 }
 
 // GrokVideoStatus handles xAI video status retrieval through Grok groups.
 func (h *OpenAIGatewayHandler) GrokVideoStatus(c *gin.Context) {
+	if h.grokManaged != nil && h.grokManaged.tryGrokManagedLookup(c, false) {
+		return
+	}
 	h.handleGrokMedia(c, service.GrokMediaEndpointVideoStatus, c.Param("request_id"))
 }
 
 // GrokVideoContent proxies downloadable video content through the task's upstream account.
 func (h *OpenAIGatewayHandler) GrokVideoContent(c *gin.Context) {
+	if h.grokManaged != nil && h.grokManaged.tryGrokManagedLookup(c, true) {
+		return
+	}
 	h.handleGrokMedia(c, service.GrokMediaEndpointVideoContent, c.Param("request_id"))
 }
 
@@ -81,6 +96,9 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		return
 	}
 
+	if endpoint.IsVideoLookupRequest() && h.handleTrackedGrokLookup(c, apiKey, endpoint, requestID) {
+		return
+	}
 	var body []byte
 	var err error
 	if endpoint.RequiresRequestBody() {
@@ -122,6 +140,17 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 	setOpsRequestContext(c, requestModel, false)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeSync))
 
+	if isGrokVideoCreateEndpoint(endpoint) && h.grokVideoTasks != nil {
+		existing, e := h.grokVideoTasks.Replay(c.Request.Context(), apiKey, endpoint, strings.TrimSpace(c.GetHeader("Idempotency-Key")), body)
+		if e != nil {
+			h.grokVideoTrackingError(c, e)
+			return
+		}
+		if existing != nil {
+			h.writeGrokVideoReplay(c, existing)
+			return
+		}
+	}
 	if endpoint.IsGenerationRequest() {
 		if !service.GroupAllowsImageGeneration(apiKey.Group) {
 			h.errorResponse(c, http.StatusForbidden, "permission_error", service.ImageGenerationPermissionMessage())
@@ -195,6 +224,12 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		boundLookupAccountID, err = h.gatewayService.ResolveGrokMediaVideoRequestAccount(
 			c.Request.Context(), apiKey.GroupID, requestID, subject.UserID, apiKey.ID,
 		)
+		if err != nil && !errors.Is(err, service.ErrStickySessionNotFound) {
+			reqLog.Warn("grok_media.video_lookup_owner_binding_failed", zap.Error(err))
+			c.Header("Retry-After", "5")
+			h.errorResponse(c, http.StatusServiceUnavailable, "grok_video_lookup_unavailable", "Video status lookup is temporarily unavailable; retry with the same request_id")
+			return
+		}
 		if err != nil || boundLookupAccountID <= 0 {
 			reqLog.Info("grok_media.video_lookup_owner_binding_missing", zap.Error(err))
 			h.errorResponse(c, http.StatusNotFound, "not_found_error", "Video request not found")
@@ -271,7 +306,13 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 				return
 			}
 			if boundLookupAccountID > 0 && errors.Is(err, service.ErrNoAvailableAccounts) {
-				h.errorResponse(c, http.StatusNotFound, "not_found_error", "Video request not found")
+				// Ownership was already verified. A cooldown, quota gate or disabled
+				// account prevents forwarding but does not mean the task disappeared.
+				// Keep the binding and never fall back to another upstream account.
+				reqLog.Warn("grok_media.video_lookup_bound_account_unavailable",
+					zap.Int64("bound_account_id", boundLookupAccountID), zap.Error(err))
+				c.Header("Retry-After", "5")
+				h.errorResponse(c, http.StatusServiceUnavailable, "grok_video_account_unavailable", "The account for this video is currently unavailable; retry with the same request_id")
 				return
 			}
 			reqLog.Warn("grok_media.account_select_failed",
@@ -382,9 +423,28 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
 		forwardStart := time.Now()
 		writerSizeBeforeForward := c.Writer.Size()
+		var tracked *service.GrokVideoTask
+		if isGrokVideoCreateEndpoint(endpoint) && h.grokVideoTasks != nil && (h.grokVideoTasks.Enabled() || strings.TrimSpace(c.GetHeader("Idempotency-Key")) != "") {
+			var created bool
+			tracked, created, err = h.grokVideoTasks.Begin(requestCtx, apiKey, account, subscription, endpoint, strings.TrimSpace(c.GetHeader("Idempotency-Key")), c.Request.URL.Path, body, service.ChannelUsageFields{OriginalModel: clientRequestedModel(c, requestModel), ChannelMappedModel: requestModel}, contentType)
+			if err != nil {
+				releaseAccount()
+				h.grokVideoTrackingError(c, err)
+				return
+			}
+			if !created {
+				releaseAccount()
+				h.writeGrokVideoReplay(c, tracked)
+				return
+			}
+		}
+		var beforeSuccess func(int, []byte) error
+		if tracked != nil {
+			beforeSuccess = func(status int, raw []byte) error { return h.grokVideoTasks.Accepted(requestCtx, tracked, status, raw) }
+		}
 		result, err := func() (*service.OpenAIForwardResult, error) {
 			defer releaseAccount()
-			return h.gatewayService.ForwardGrokMedia(requestCtx, c, account, endpoint, requestID, body, contentType)
+			return h.gatewayService.ForwardGrokMedia(requestCtx, c, account, endpoint, requestID, body, contentType, beforeSuccess)
 		}()
 
 		forwardDurationMs := time.Since(forwardStart).Milliseconds()
@@ -395,6 +455,22 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		}
 		service.SetOpsLatencyMs(c, service.OpsResponseLatencyMsKey, responseLatencyMs)
 
+		if err != nil && tracked != nil {
+			// Once submitted, never retry a tracked creation automatically: an upstream
+			// timeout or 5xx cannot prove that no paid job was accepted.
+			var rejection *service.UpstreamFailoverError
+			unknown := !(c.Writer.Written() && c.Writer.Status() >= 400 && c.Writer.Status() < 500)
+			if errors.As(err, &rejection) && rejection.StatusCode >= 400 && rejection.StatusCode < 500 {
+				unknown = false
+			}
+			if tracked.ProviderTaskID == nil {
+				_ = h.grokVideoTasks.SubmissionFailed(requestCtx, tracked, unknown, "upstream_submission_failed")
+			}
+			if !c.Writer.Written() {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{"type": "grok_video_submission_unconfirmed", "message": "Video submission could not be confirmed; do not automatically resubmit", "task_id": tracked.PublicID}})
+			}
+			return
+		}
 		if err != nil {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
@@ -472,7 +548,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 		}
 
 		h.gatewayService.ReportOpenAIAccountScheduleResult(account, grokMediaScheduleModel(account, routingModel, result), true, nil)
-		if isGrokVideoCreateEndpoint(endpoint) && strings.TrimSpace(result.ResponseID) != "" {
+		if tracked == nil && isGrokVideoCreateEndpoint(endpoint) && strings.TrimSpace(result.ResponseID) != "" {
 			if err := h.gatewayService.BindGrokMediaVideoRequestAccount(
 				requestCtx, apiKey.GroupID, result.ResponseID, subject.UserID, apiKey.ID, account.ID,
 			); err != nil {

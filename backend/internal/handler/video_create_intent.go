@@ -91,6 +91,16 @@ func (h *VideoHandler) CreateIntentMiddleware(c *gin.Context) {
 		c.Next()
 		return
 	}
+	// Grok owns a key-scoped compatibility namespace and checks legacy receipts
+	// before creating any managed intent.
+	if key.Group.Platform == service.PlatformGrok {
+		c.Next()
+		return
+	}
+	if target, ok := service.ResolvedTargetPlatformFromContext(c.Request.Context()); ok && target == service.PlatformGrok {
+		c.Next()
+		return
+	}
 	operation, _ := service.VideoCreateIntentOperationForPath(c.Request.URL.Path)
 	if err := service.ValidateVideoReleaseOperation(operation); err != nil {
 		videoError(c, err)

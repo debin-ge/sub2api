@@ -234,7 +234,7 @@ func validateVideoCapabilities(provider string, capabilities VideoCapabilities) 
 				if field == "supported_resolutions" && !IsArkVideoResolution(normalized) {
 					return fail("%s: model %q has unknown resolution %q", field, model, entry)
 				}
-				if field == "supported_ratios" && !IsArkVideoRatio(normalized) {
+				if field == "supported_ratios" && !IsArkVideoRatio(normalized) && !(provider == VideoProviderGrok && slices.Contains([]string{"3:2", "2:3", "5:2"}, normalized)) {
 					return fail("%s: model %q has unknown ratio %q", field, model, entry)
 				}
 				if _, duplicate := seen[normalized]; duplicate {
@@ -300,8 +300,12 @@ func validateVideoCapabilities(provider string, capabilities VideoCapabilities) 
 			}
 		}
 	}
+	maximumBinaryInputs := videoMaxBinaryInputsPerOperation
+	if provider == VideoProviderGrok {
+		maximumBinaryInputs = 20
+	}
 	for operation, maximum := range capabilities.MaxInputsByOperation {
-		if !isKnownVideoInputOperation(operation) || maximum < 0 || maximum > videoMaxBinaryInputsPerOperation {
+		if !isKnownVideoInputOperation(operation) || maximum < 0 || maximum > maximumBinaryInputs {
 			return fail("operation %q has invalid maximum input count", operation)
 		}
 	}

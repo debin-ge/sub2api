@@ -25,6 +25,12 @@ func NewVideoTaskRepository(db *sql.DB, billing *usageBillingRepository) service
 }
 
 type videoTaskRow struct {
+	SyncStatus         string     `json:"sync_status,omitempty"`
+	SettlementStatus   string     `json:"settlement_status,omitempty"`
+	LastPolledAt       *time.Time `json:"last_polled_at,omitempty"`
+	ImportedFromLegacy bool       `json:"imported_from_legacy"`
+	AllowedActions     []string   `json:"allowed_actions,omitempty"`
+
 	ID                      int64                                `json:"id"`
 	PublicID                string                               `json:"public_id"`
 	Source                  string                               `json:"source"`
@@ -101,6 +107,7 @@ type videoTaskRow struct {
 
 func (row videoTaskRow) task() *service.VideoTask {
 	task := &service.VideoTask{
+		SyncStatus: row.SyncStatus, SettlementStatus: row.SettlementStatus, LastPolledAt: row.LastPolledAt, ImportedFromLegacy: row.ImportedFromLegacy, AllowedActions: row.AllowedActions,
 		ID: row.ID, PublicID: row.PublicID, Source: row.Source,
 		APIKeyID: row.APIKeyID, GroupID: row.GroupID, ChannelID: row.ChannelID,
 		AccountID: row.AccountID, AccountOwnerUserID: row.AccountOwnerUserID,
@@ -366,6 +373,18 @@ func (r *videoTaskRepository) CreateHeldVideoTask(ctx context.Context, params se
 		`, params.AccountID, params.Provider).Scan(&active); err != nil {
 			return nil, false, err
 		}
+		if params.Provider == service.VideoProviderGrok {
+			window := params.LegacyActiveWindowSeconds
+			if window <= 0 {
+				window = 1800
+			}
+			var legacyActive int
+			if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM grok_video_tasks WHERE account_id=$1 AND
+    (generation_state IN ('queued','in_progress') OR (generation_state IN ('submitting','submission_unknown') AND created_at > clock_timestamp()-($2*INTERVAL '1 second')))`, params.AccountID, window).Scan(&legacyActive); err != nil {
+				return nil, false, err
+			}
+			active += legacyActive
+		}
 		if active >= params.MaxAccountConcurrency {
 			return nil, false, service.ErrVideoAccountConcurrencyLimited
 		}
@@ -439,6 +458,9 @@ func (r *videoTaskRepository) CreateHeldVideoTask(ctx context.Context, params se
 				}
 				return existing, false, nil
 			}
+		}
+		if isGrokCreationReceiptConflict(insertErr) {
+			return nil, false, service.ErrVideoIdempotencyConflict
 		}
 		return nil, false, insertErr
 	}
@@ -650,6 +672,9 @@ func (r *videoTaskRepository) ListVideoTasksForOwner(ctx context.Context, userID
 		if lookupErr != nil {
 			return nil, lookupErr
 		}
+		if anchor.Provider == service.VideoProviderGrok && (filter.GrokAPIKeyID == nil || filter.GrokGroupID == nil || anchor.APIKeyID == nil || anchor.GroupID == nil || *anchor.APIKeyID != *filter.GrokAPIKeyID || *anchor.GroupID != *filter.GrokGroupID) {
+			return nil, service.ErrVideoTaskNotFound
+		}
 		cursor = &videoTaskCursor{CreatedAt: anchor.CreatedAt, ID: anchor.ID}
 		err = nil
 	}
@@ -661,6 +686,15 @@ func (r *videoTaskRepository) ListVideoTasksForOwner(ctx context.Context, userID
 	add := func(condition string, value any) {
 		args = append(args, value)
 		where = append(where, fmt.Sprintf(condition, len(args)))
+	}
+	if filter.Provider != "" {
+		add("provider = $%d", filter.Provider)
+	}
+	if filter.GrokAPIKeyID == nil || filter.GrokGroupID == nil {
+		where = append(where, "provider <> 'grok'")
+	} else {
+		args = append(args, *filter.GrokAPIKeyID, *filter.GrokGroupID)
+		where = append(where, fmt.Sprintf("(provider <> 'grok' OR (api_key_id = $%d AND group_id = $%d))", len(args)-1, len(args)))
 	}
 	if filter.ArkOnly {
 		// Literal server-owned predicates also let PostgreSQL use the partial

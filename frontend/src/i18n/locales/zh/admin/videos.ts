@@ -1,5 +1,12 @@
 export default {
   videos: {
+    grok: {
+      source: '任务来源', all: '全部来源', managed: '托管视频', relay: 'Grok 旧任务',
+      settlement: 'Grok 结算', sync: '状态同步', lastPolled: '最后查询', imported: '历史任务补录',
+      resume: '恢复同步', pausedCount: 'Grok 同步暂停：{value}', blockedCount: 'Grok 结算异常：{value}',
+      not_due: '尚未结算', pending: '等待结算', settled: '已结算', retrying: '等待重试', blocked: '结算受阻', not_required: '无需结算',
+      scheduled: '等待同步', paused: '同步暂停', finished: '同步完成',
+    },
     title: '视频任务',
     description: '查看 Provider 任务、资金结算、回调与自动恢复队列。',
     loadFailed: '视频平台数据加载失败。',

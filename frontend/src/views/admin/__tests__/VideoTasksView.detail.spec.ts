@@ -184,3 +184,23 @@ describe('video task upstream cost', () => {
     } finally { wrapper.unmount() }
   })
 })
+
+it('shows Grok settlement, sync, legacy attribution and upstream costs separately', async () => {
+  const grok = { ...task, public_id: 'grok_video_a', provider: 'grok', source: 'grok_relay',
+    provider_task_id: 'upstream-uuid', generation_state: 'completed', billing_state: 'none',
+    settlement_status: 'settled', sync_status: 'finished', imported_from_legacy: true,
+    last_polled_at: '2026-10-28T00:00:00Z', allowed_actions: [],
+    provider_cost_snapshot: { cost_in_usd_ticks: 6900000000 }, actual_cost: 1.25,
+  }
+  const { wrapper, state } = await mountView(overview, grok)
+  try {
+    await state.openTask(grok)
+    const labels = fieldLabels(state.detailSections)
+    expect(labels).toContain('admin.videos.grok.settlement')
+    expect(labels).toContain('admin.videos.grok.lastPolled')
+    expect(labels).toContain('admin.videos.grok.imported')
+    const fields = state.detailSections.flatMap(section => section.fields)
+    expect(fields.find(field => field.label === 'admin.videos.columns.billing')?.value).toBe('admin.videos.grok.settled')
+    expect(wrapper.find('button[title="admin.videos.actions.retryDelete"]').exists()).toBe(false)
+  } finally { wrapper.unmount() }
+})
