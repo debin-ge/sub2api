@@ -3,6 +3,8 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
+	"strconv"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -37,6 +39,16 @@ func TestGrokManagedLookupDeliveryRequiresCapturedFunds(t *testing.T) {
 				video := body["video"].(map[string]any)
 				require.Equal(t, 8.25, video["duration"])
 				require.Contains(t, video["url"], "sig=")
+				// Both JSON clients and users copying the raw response must receive
+				// the same usable signed URL, without HTML-escaped separators.
+				require.Contains(t, w.Body.String(), "&sig=")
+				require.NotContains(t, w.Body.String(), `\u0026`)
+				require.Contains(t, w.Header().Get("Content-Type"), "application/json")
+				parsed, err := url.Parse(video["url"].(string))
+				require.NoError(t, err)
+				exp, err := strconv.ParseInt(parsed.Query().Get("exp"), 10, 64)
+				require.NoError(t, err)
+				require.True(t, h.verifyVideoContentSignature(task.PublicID, exp, parsed.Query().Get("sig")))
 			} else {
 				require.Equal(t, "pending", body["status"])
 				require.NotContains(t, body, "video")

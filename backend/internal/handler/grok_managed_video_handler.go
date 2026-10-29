@@ -315,7 +315,8 @@ func (h *VideoHandler) tryGrokManagedLookup(c *gin.Context, content bool) bool {
 		c.Header("Retry-After", "5")
 	}
 	h.setNoStore(c)
-	c.JSON(200, body)
+	// Match the other video status endpoints: preserve copyable signed URLs.
+	c.PureJSON(http.StatusOK, body)
 	return true
 }
 
