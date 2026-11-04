@@ -194,6 +194,12 @@ export default {
       output_cost_per_image_token: '图片输出 token 价',
       input_cost_per_image_token: '图片输入 token 价'
     },
+    imageTiers: {
+      title: '图片按张档位价（可选）',
+      hint: '按输出尺寸分别配置 1K、2K、4K；未配置的档位回退到默认图片价格。',
+      label: '{tier} 单张价格',
+      inherit: '继承默认价格'
+    },
     invalidNumber: '{field} 不是有效的非负数字',
     errors: {
       INCOMPLETE_PRICING: '价格维度不完整：{missing_dimension}',

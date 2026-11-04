@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -61,9 +62,10 @@ const videoPayloadField = "video_pricing"
 
 // validatePayloadFieldsInBillingMode 检查 payload 的价格字段是否属于声明的计费档。
 // token / image 档接受除 video_pricing 以外的全部价格字段（图片按 token 计费是正常配置）；
+// 图片 intervals 是 image 档专属的按张档位结构；
 // video 档只接受 video_pricing，写入 token / 图片价格会被抑制，属于配置错误。
 func validatePayloadFieldsInBillingMode(payload *ModelPriceOverridePayload, mode BillingMode) error {
-	if mode == BillingModeToken {
+	if mode == BillingModeToken && len(payload.Intervals) == 0 {
 		return nil
 	}
 	for field := range payloadToMap(payload) {
@@ -74,6 +76,31 @@ func validatePayloadFieldsInBillingMode(payload *ModelPriceOverridePayload, mode
 			return infraerrors.BadRequest("FIELD_NOT_IN_BILLING_MODE",
 				fmt.Sprintf("%s does not belong to billing mode %s", field, mode)).
 				WithMetadata(map[string]string{"field": field, "billing_mode": string(mode)})
+		}
+	}
+	if len(payload.Intervals) > 0 {
+		if mode != BillingModeImage {
+			return infraerrors.BadRequest("FIELD_NOT_IN_BILLING_MODE", fmt.Sprintf("intervals does not belong to billing mode %s", mode)).
+				WithMetadata(map[string]string{"field": "intervals", "billing_mode": string(mode)})
+		}
+		seen := make(map[string]struct{}, len(payload.Intervals))
+		for i, interval := range payload.Intervals {
+			label := strings.ToUpper(strings.TrimSpace(interval.TierLabel))
+			switch label {
+			case ImageBillingSize1K, ImageBillingSize2K, ImageBillingSize4K:
+			default:
+				return infraerrors.BadRequest("INVALID_IMAGE_INTERVAL", fmt.Sprintf("intervals[%d].tier_label must be 1K, 2K or 4K", i))
+			}
+			if _, exists := seen[label]; exists {
+				return infraerrors.BadRequest("INVALID_IMAGE_INTERVAL", fmt.Sprintf("duplicate image tier %s", label))
+			}
+			seen[label] = struct{}{}
+			if interval.PerRequestPrice == nil || math.IsNaN(*interval.PerRequestPrice) || math.IsInf(*interval.PerRequestPrice, 0) || *interval.PerRequestPrice < 0 {
+				return infraerrors.BadRequest("INVALID_IMAGE_INTERVAL", fmt.Sprintf("intervals[%d].per_request_price must be finite and non-negative", i))
+			}
+			if interval.MinTokens != 0 || interval.MaxTokens != nil || interval.InputPrice != nil || interval.OutputPrice != nil || interval.CacheWritePrice != nil || interval.CacheWrite1hPrice != nil || interval.CacheReadPrice != nil || interval.InputMultiplier != nil || interval.OutputMultiplier != nil || interval.CacheWriteMultiplier != nil || interval.CacheReadMultiplier != nil || interval.Conditions != nil || interval.BillingUnit != nil {
+				return infraerrors.BadRequest("INVALID_IMAGE_INTERVAL", fmt.Sprintf("intervals[%d] may only contain tier_label and per_request_price", i))
+			}
 		}
 	}
 	return nil
@@ -130,7 +157,7 @@ func rawHasBillingModePricing(raw *RawModelPriceEntry, mode BillingMode) bool {
 	}
 	switch mode {
 	case BillingModeImage:
-		return raw.OutputCostPerImage != nil || raw.OutputCostPerImageToken != nil ||
+		return len(raw.Intervals) > 0 || raw.OutputCostPerImage != nil || raw.OutputCostPerImageToken != nil ||
 			raw.InputCostPerImageToken != nil || raw.InputCostPerToken != nil || raw.OutputCostPerToken != nil
 	case BillingModeVideo:
 		// 显式关闭的视频价不算有价：否则 video 档会抹掉 token 价、却没有可用的视频价。

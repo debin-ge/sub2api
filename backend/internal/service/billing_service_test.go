@@ -1496,6 +1496,26 @@ func TestCalculateMediaCostStrictPreservesCatalogExplicitZeroImagePrice(t *testi
 	)
 }
 
+func TestCalculateImageCostStrictUsesCatalogImageIntervals(t *testing.T) {
+	price := 0.07
+	pricingService := &PricingService{pricingData: map[string]*ModelPriceEntry{
+		"catalog-tiered-image": {
+			OutputCostPerImage:         0.2,
+			OutputCostPerImageExplicit: true,
+			Intervals:                  []PricingInterval{{TierLabel: ImageBillingSize1K, PerRequestPrice: &price}},
+		},
+	}}
+	svc := NewBillingService(&config.Config{}, pricingService)
+
+	cost, err := svc.CalculateImageCostStrict("catalog-tiered-image", ImageBillingSize1K, 2, nil, 1)
+	require.NoError(t, err)
+	require.InDelta(t, 0.14, cost.TotalCost, 1e-12)
+
+	cost, err = svc.CalculateImageCostStrict("catalog-tiered-image", ImageBillingSize2K, 1, nil, 1)
+	require.NoError(t, err)
+	require.InDelta(t, 0.3, cost.TotalCost, 1e-12)
+}
+
 func TestCalculateGrokImagineImageCostUsesDefaultRateCard(t *testing.T) {
 	svc := newTestBillingService()
 

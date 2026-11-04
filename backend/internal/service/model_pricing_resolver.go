@@ -138,6 +138,14 @@ func (r *ModelPricingResolver) resolve(ctx context.Context, input PricingInput, 
 		Source:                 source,
 		SupportsCacheBreakdown: basePricing != nil && basePricing.SupportsCacheBreakdown,
 	}
+	if basePricing != nil && basePricing.BillingMode == BillingModeImage {
+		resolved.Mode = BillingModeImage
+		resolved.RequestTiers = filterValidRequestTiers(basePricing.ImageRequestTiers)
+		if basePricing.ImageDefaultPerRequestPriceSet {
+			resolved.DefaultPerRequestPrice = basePricing.ImageDefaultPerRequestPrice
+			resolved.DefaultPerRequestPriceSet = true
+		}
+	}
 	resolved.longContextPricingEnabled = longContextPricingEnabled
 
 	// 2. 如果有 GroupID，尝试渠道覆盖

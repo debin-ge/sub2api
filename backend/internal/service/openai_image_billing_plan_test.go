@@ -230,7 +230,7 @@ func TestResolveOpenAIImageBillingPlanUsesChannelImageTierPrice(t *testing.T) {
 	require.InDelta(t, price, plan.Resolved.DefaultPerRequestPrice, 1e-12)
 }
 
-func TestResolveOpenAIImageBillingPlanRejectsIncompleteExplicitChannelImagePrice(t *testing.T) {
+func TestResolveOpenAIImageBillingPlanFallsBackFromIncompleteExplicitChannelImagePrice(t *testing.T) {
 	svc := newOpenAIImageBillingPlanTestService(t)
 	groupID := int64(74)
 	price2K := 0.27
@@ -250,9 +250,9 @@ func TestResolveOpenAIImageBillingPlanRejectsIncompleteExplicitChannelImagePrice
 		ImageBillingSize1K,
 		false,
 	)
-	require.Nil(t, plan)
-	require.ErrorIs(t, err, ErrModelPricingUnavailable)
-	require.ErrorContains(t, err, "explicit channel image pricing is incomplete")
+	require.NoError(t, err)
+	require.NotNil(t, plan)
+	require.Equal(t, PricingSourceModelPrice, plan.Source)
 }
 
 func TestResolveOpenAIImageBillingPlanRejectsInvalidExplicitChannelTokenPrice(t *testing.T) {

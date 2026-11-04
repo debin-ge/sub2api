@@ -87,10 +87,13 @@ type ModelPriceOverridePayload struct {
 	LongContextInputCostMultiplier  *float64 `json:"long_context_input_cost_multiplier,omitempty"`
 	LongContextOutputCostMultiplier *float64 `json:"long_context_output_cost_multiplier,omitempty"`
 
-	OutputCostPerImage      *float64            `json:"output_cost_per_image,omitempty"`
-	OutputCostPerImageToken *float64            `json:"output_cost_per_image_token,omitempty"`
-	InputCostPerImageToken  *float64            `json:"input_cost_per_image_token,omitempty"`
-	VideoPricing            *VideoPricingConfig `json:"video_pricing,omitempty"`
+	OutputCostPerImage      *float64 `json:"output_cost_per_image,omitempty"`
+	OutputCostPerImageToken *float64 `json:"output_cost_per_image_token,omitempty"`
+	InputCostPerImageToken  *float64 `json:"input_cost_per_image_token,omitempty"`
+	// Intervals carries image per-request tiers when billing_mode=image.
+	// Only tier_label (1K/2K/4K) and per_request_price are valid for this use.
+	Intervals    []PricingInterval   `json:"intervals,omitempty"`
+	VideoPricing *VideoPricingConfig `json:"video_pricing,omitempty"`
 
 	SupportsServiceTier    *bool   `json:"supports_service_tier,omitempty"`
 	SupportsPromptCaching  *bool   `json:"supports_prompt_caching,omitempty"`
@@ -334,6 +337,20 @@ func cloneInt(v *int) *int {
 	return &out
 }
 
+func clonePricingIntervals(src []PricingInterval) []PricingInterval {
+	if src == nil {
+		return nil
+	}
+	out := make([]PricingInterval, len(src))
+	copy(out, src)
+	for i := range out {
+		if src[i].Conditions != nil {
+			out[i].Conditions = append(json.RawMessage(nil), src[i].Conditions...)
+		}
+	}
+	return out
+}
+
 func rawOf(entry *ModelPriceEntry) *RawModelPriceEntry {
 	raw := &RawModelPriceEntry{Currency: ModelPriceCurrencyUSD}
 	if entry == nil {
@@ -384,6 +401,7 @@ func rawOf(entry *ModelPriceEntry) *RawModelPriceEntry {
 	if entry.ImageInputPriceExplicit || (!entry.PricePresenceKnown && entry.InputCostPerImageToken != 0) {
 		raw.InputCostPerImageToken = catalogPriceFloat64(entry.InputCostPerImageToken)
 	}
+	raw.Intervals = clonePricingIntervals(entry.Intervals)
 	raw.VideoPricing = cloneVideoPricingConfig(entry.VideoPricing)
 	raw.SupportsServiceTier = entry.SupportsServiceTier
 	raw.SupportsPromptCaching = entry.SupportsPromptCaching
@@ -411,6 +429,7 @@ func mergeRawPriceEntry(base *RawModelPriceEntry, patch *ModelPriceOverridePaylo
 		out.OutputCostPerImage = cloneFloat(base.OutputCostPerImage)
 		out.OutputCostPerImageToken = cloneFloat(base.OutputCostPerImageToken)
 		out.InputCostPerImageToken = cloneFloat(base.InputCostPerImageToken)
+		out.Intervals = clonePricingIntervals(base.Intervals)
 		out.VideoPricing = cloneVideoPricingConfig(base.VideoPricing)
 	}
 	if patch == nil {
@@ -460,6 +479,9 @@ func mergeRawPriceEntry(base *RawModelPriceEntry, patch *ModelPriceOverridePaylo
 	}
 	if patch.InputCostPerImageToken != nil {
 		out.InputCostPerImageToken = cloneFloat(patch.InputCostPerImageToken)
+	}
+	if patch.Intervals != nil {
+		out.Intervals = clonePricingIntervals(patch.Intervals)
 	}
 	if patch.VideoPricing != nil {
 		out.VideoPricing = cloneVideoPricingConfig(patch.VideoPricing)
@@ -544,6 +566,7 @@ func buildModelPriceEntry(model string, raw *RawModelPriceEntry) *ModelPriceEntr
 		entry.CacheStoragePriceExplicit = true
 	}
 	entry.VideoPricing = cloneVideoPricingConfig(raw.VideoPricing)
+	entry.Intervals = clonePricingIntervals(raw.Intervals)
 	if raw.InputCostPerToken != nil {
 		entry.InputCostPerToken = *raw.InputCostPerToken
 	}
@@ -603,6 +626,7 @@ func cloneCatalog(catalog map[string]*ModelPriceEntry) map[string]*ModelPriceEnt
 		}
 		cp := *entry
 		cp.Currency = modelPriceEntryCurrency(entry)
+		cp.Intervals = clonePricingIntervals(entry.Intervals)
 		cp.VideoPricing = cloneVideoPricingConfig(entry.VideoPricing)
 		out[normalizePricingModelKey(model)] = &cp
 	}
@@ -737,6 +761,12 @@ func (s *PricingService) validateOverrideWrite(platform, model, currency string,
 	for field, value := range pricePointers(payload) {
 		if value != nil && *value > 1 {
 			warnings = append(warnings, ModelPriceWarning{Code: "PRICE_MAGNITUDE", Field: field})
+		}
+	}
+	for _, interval := range payload.Intervals {
+		if interval.PerRequestPrice != nil && *interval.PerRequestPrice > 1 {
+			warnings = append(warnings, ModelPriceWarning{Code: "PRICE_MAGNITUDE", Field: "intervals"})
+			break
 		}
 	}
 	if !enabled {
@@ -1388,6 +1418,9 @@ func overriddenFields(payload *ModelPriceOverridePayload) []string {
 	if payload.VideoPricing != nil {
 		fields = append(fields, "video_pricing")
 	}
+	if len(payload.Intervals) > 0 {
+		fields = append(fields, "intervals")
+	}
 	sort.Strings(fields)
 	return fields
 }
@@ -1396,7 +1429,7 @@ func hasImagePricing(entry *ModelPriceEntry) bool {
 	if entry == nil {
 		return false
 	}
-	return entry.OutputCostPerImageExplicit || entry.ImageOutputPriceExplicit || entry.ImageInputPriceExplicit ||
+	return len(entry.Intervals) > 0 || entry.OutputCostPerImageExplicit || entry.ImageOutputPriceExplicit || entry.ImageInputPriceExplicit ||
 		entry.OutputCostPerImage != 0 || entry.OutputCostPerImageToken != 0 || entry.InputCostPerImageToken != 0
 }
 
@@ -1450,6 +1483,7 @@ func applyVideoPricingSummaryToDetail(detail *ModelPriceDetail, entry *ModelPric
 
 func cloneModelPriceOverridePayload(payload ModelPriceOverridePayload) ModelPriceOverridePayload {
 	clone := payload
+	clone.Intervals = clonePricingIntervals(payload.Intervals)
 	clone.VideoPricing = cloneVideoPricingConfig(payload.VideoPricing)
 	return clone
 }
@@ -1476,6 +1510,9 @@ func modelPriceEntryToMap(entry *ModelPriceEntry) map[string]any {
 	put("output_cost_per_image", entry.OutputCostPerImage, entry.OutputCostPerImageExplicit)
 	put("output_cost_per_image_token", entry.OutputCostPerImageToken, entry.ImageOutputPriceExplicit)
 	put("input_cost_per_image_token", entry.InputCostPerImageToken, entry.ImageInputPriceExplicit)
+	if len(entry.Intervals) > 0 {
+		out["intervals"] = clonePricingIntervals(entry.Intervals)
+	}
 	if entry.LongContextPricingExplicit || entry.LongContextInputTokenThreshold != 0 {
 		out["long_context_input_token_threshold"] = entry.LongContextInputTokenThreshold
 		out["long_context_input_cost_multiplier"] = entry.LongContextInputCostMultiplier

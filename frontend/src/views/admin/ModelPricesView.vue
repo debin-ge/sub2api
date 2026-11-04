@@ -194,6 +194,26 @@
             </button>
           </div>
         </div>
+        <div v-if="billingMode === 'image'" class="space-y-3 rounded-lg border border-fuchsia-200 bg-fuchsia-50/40 p-3 dark:border-fuchsia-900/40 dark:bg-fuchsia-950/20">
+          <div>
+            <div class="text-sm font-medium zt-ink">{{ t('admin.modelPrices.imageTiers.title') }}</div>
+            <div class="mt-1 text-xs zt-ink-3">{{ t('admin.modelPrices.imageTiers.hint') }}</div>
+          </div>
+          <div v-for="tier in IMAGE_TIERS" :key="tier" class="grid items-end gap-2 sm:grid-cols-[1fr,1fr,1fr,auto]">
+            <div class="text-xs zt-ink-3">
+              <div class="font-medium zt-ink">{{ t('admin.modelPrices.imageTiers.label', { tier }) }}</div>
+              <div>{{ t('admin.modelPrices.catalogValue') }}: {{ formatImageTierValue(detail?.catalog?.intervals, tier, detail?.catalog_currency) }}</div>
+            </div>
+            <input v-model="form.imageIntervals[tier]" class="input" type="number" min="0" step="any" :placeholder="t('admin.modelPrices.imageTiers.inherit')" />
+            <div class="text-xs zt-ink-3">
+              {{ t('admin.modelPrices.effectiveValue') }}:
+              {{ formatImageTierValue(detail?.effective?.intervals, tier, detail?.currency) }}
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm" @click="form.imageIntervals[tier] = ''">
+              {{ t('admin.modelPrices.clearField') }}
+            </button>
+          </div>
+        </div>
         <p
           v-if="billingMode === 'token' && legacyTokenExtras.video"
           class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200"
@@ -277,6 +297,7 @@ import {
   type ModelPriceSyncStatus,
   type ModelPriceTimeSchedule,
   type ModelPricePayload,
+  type ModelPriceInterval,
   type PriceField,
   type VideoPricingConfig,
 } from '@/api/admin/modelPrices'
@@ -298,6 +319,7 @@ const detail = ref<ModelPriceDetail | null>(null)
 const pendingDelete = ref<ModelPriceListItem | null>(null)
 // 计费方式是权威字段：只提交当前方式的价格，其余方式的继承价由后端屏蔽。
 const billingMode = ref<ModelPriceBillingMode>('token')
+const IMAGE_TIERS = ['1K', '2K', '4K'] as const
 const videoPricingErrors = ref<string[]>([])
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -310,6 +332,7 @@ const form = reactive({
   enabled: true,
   note: '',
   fields: Object.fromEntries(PRICE_FIELDS.map((field) => [field, ''])) as Record<PriceField, string>,
+  imageIntervals: Object.fromEntries(IMAGE_TIERS.map((tier) => [tier, ''])) as Record<(typeof IMAGE_TIERS)[number], string>,
   videoPricing: null as VideoPricingConfig | null,
 })
 
@@ -419,6 +442,13 @@ function formatFieldPrice(value: unknown, field: PriceField, currency?: string):
   return formatPrice(value, isImageField(field), currency === 'CNY' ? 'CNY' : 'USD')
 }
 
+function formatImageTierValue(value: unknown, tier: (typeof IMAGE_TIERS)[number], currency?: string): string {
+  if (!Array.isArray(value)) return t('admin.modelPrices.inherit')
+  const interval = value.find((item): item is ModelPriceInterval => item?.tier_label === tier)
+  if (!interval || interval.per_request_price == null) return t('admin.modelPrices.inherit')
+  return `${currency === 'CNY' ? '¥' : '$'}${interval.per_request_price}`
+}
+
 // 生效价可能是空闲价（目录 / 手动覆盖）也可能是高峰价（官方兜底表），
 // 两档一律按后端给的倍率换算，不要假设生效价本身是哪一档。
 function scheduledPrice(
@@ -509,6 +539,7 @@ function resetForm() {
   form.enabled = true
   form.note = ''
   form.videoPricing = null
+  for (const tier of IMAGE_TIERS) form.imageIntervals[tier] = ''
   videoPricingErrors.value = []
   billingMode.value = 'token'
   legacyTokenExtras.fields = new Set()
@@ -526,6 +557,10 @@ function fillFormFromDetail(entry: ModelPriceDetail) {
   form.note = entry.note || ''
   billingMode.value = entry.billing_mode ?? 'token'
   form.videoPricing = entry.override?.video_pricing ? JSON.parse(JSON.stringify(entry.override.video_pricing)) : null
+  for (const tier of IMAGE_TIERS) form.imageIntervals[tier] = ''
+  for (const interval of entry.override?.intervals ?? []) {
+    if (IMAGE_TIERS.includes(interval.tier_label)) form.imageIntervals[interval.tier_label] = String(interval.per_request_price)
+  }
   videoPricingErrors.value = []
   for (const field of PRICE_FIELDS) {
     const raw = entry.override ? entry.override[field] : undefined
@@ -581,6 +616,16 @@ function invalidPriceField(): PriceField | null {
   return null
 }
 
+function hasInvalidImageInterval(): boolean {
+  if (billingMode.value !== 'image') return false
+  return IMAGE_TIERS.some((tier) => {
+    const raw = String(form.imageIntervals[tier] ?? '').trim()
+    if (raw === '') return false
+    const value = Number(raw)
+    return !Number.isFinite(value) || value < 0
+  })
+}
+
 function buildPayload(): ModelPricePayload {
   const payload: ModelPricePayload = {}
   for (const field of activePriceFields.value) {
@@ -590,12 +635,22 @@ function buildPayload(): ModelPricePayload {
     if (value == null || Number.isNaN(value)) continue
     payload[field] = value
   }
+  if (billingMode.value === 'image') {
+    const intervals = IMAGE_TIERS.flatMap((tier) => {
+      const raw = String(form.imageIntervals[tier] ?? '').trim()
+      if (raw === '') return []
+      const value = Number(raw)
+      return Number.isFinite(value) && value >= 0 ? [{ tier_label: tier, per_request_price: value }] : []
+    })
+    if (intervals.length) payload.intervals = intervals
+  }
   if (videoPricingSubmitted.value && form.videoPricing !== null) payload.video_pricing = prepareVideoPricingForSave(form.videoPricing)
   return payload
 }
 
 function hasMagnitudeRisk(payload: ModelPricePayload): boolean {
-  return PRICE_FIELDS.some((field) => !isUnscaledField(field) && payload[field] != null && Number(payload[field]) > 1)
+  return PRICE_FIELDS.some((field) => !isUnscaledField(field) && payload[field] != null && Number(payload[field]) > 1) ||
+    (payload.intervals ?? []).some((interval) => interval.per_request_price > 1)
 }
 
 async function saveOverride(confirmed: boolean) {
@@ -604,8 +659,8 @@ async function saveOverride(confirmed: boolean) {
     return
   }
   const invalidField = invalidPriceField()
-  if (invalidField) {
-    appStore.showError(t('admin.modelPrices.invalidNumber', { field: fieldLabel(invalidField) }))
+  if (invalidField || hasInvalidImageInterval()) {
+    appStore.showError(t('admin.modelPrices.invalidNumber', { field: invalidField ? fieldLabel(invalidField) : t('admin.modelPrices.imageTiers.title') }))
     return
   }
   const payload = buildPayload()

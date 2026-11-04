@@ -54,6 +54,25 @@ func TestResolvePlazaMediaPricing_ImageFromCatalogOnly(t *testing.T) {
 	require.InDelta(t, 0.08, tiers[ImageBillingSize4K], 1e-12)
 }
 
+func TestResolvePlazaMediaPricing_ModelImageIntervalsBeatScalarDefault(t *testing.T) {
+	price1K := 0.11
+	pricing := &PricingService{pricingData: map[string]*ModelPriceEntry{
+		"custom-image": {
+			BillingMode:                BillingModeImage,
+			OutputCostPerImage:         0.2,
+			OutputCostPerImageExplicit: true,
+			Intervals: []PricingInterval{
+				{TierLabel: ImageBillingSize1K, PerRequestPrice: &price1K},
+			},
+		},
+	}}
+	media := ResolvePlazaMediaPricing(pricing, PlatformOpenAI, "custom-image", nil, AvailableGroupRef{})
+	tiers := plazaTierMap(media.ImageTiers)
+	require.InDelta(t, 0.11, tiers[ImageBillingSize1K], 1e-12)
+	require.InDelta(t, 0.3, tiers[ImageBillingSize2K], 1e-12)
+	require.InDelta(t, 0.4, tiers[ImageBillingSize4K], 1e-12)
+}
+
 func TestResolvePlazaMediaPricing_TextModelIgnoresGroupMediaPrices(t *testing.T) {
 	pricing := &PricingService{pricingData: map[string]*ModelPriceEntry{
 		"gpt-5": {InputCostPerToken: 0.000001, OutputCostPerToken: 0.00001},

@@ -98,6 +98,10 @@ type BillingCache interface {
 
 // ModelPricing 模型价格配置（per-token价格，与配置化模型价格目录格式一致）
 type ModelPricing struct {
+	BillingMode                        BillingMode
+	ImageRequestTiers                  []PricingInterval
+	ImageDefaultPerRequestPrice        float64
+	ImageDefaultPerRequestPriceSet     bool
 	InputPricePerToken                 float64  // 每token输入价格 (USD)
 	InputPriceExplicit                 bool     // 是否由目录或渠道显式配置；用于区分缺失与显式 0
 	InputPricePerTokenPriority         float64  // priority service tier 下每token输入价格 (USD)
@@ -1811,6 +1815,10 @@ func (s *BillingService) modelPricingFromCatalogEntry(model string, catalogEntry
 		enableBreakdown = price1h > 0 && price1h > price5m
 	}
 	pricing := s.applyModelSpecificPricingPolicyEx(model, &ModelPricing{
+		BillingMode:                        catalogEntry.BillingMode,
+		ImageRequestTiers:                  clonePricingIntervals(catalogEntry.Intervals),
+		ImageDefaultPerRequestPrice:        catalogEntry.OutputCostPerImage,
+		ImageDefaultPerRequestPriceSet:     catalogEntry.OutputCostPerImageExplicit || catalogEntry.OutputCostPerImage != 0,
 		InputPricePerToken:                 catalogEntry.InputCostPerToken,
 		InputPriceExplicit:                 catalogEntry.InputPriceExplicit,
 		InputPricePerTokenPriority:         catalogEntry.InputCostPerTokenPriority,
@@ -3071,6 +3079,9 @@ func (s *BillingService) strictImageUnitPriceForPlatforms(
 		}
 	}
 
+	if price, ok := s.strictCatalogImageTierPriceForPlatforms(platforms, model, imageSize); ok {
+		return price, true
+	}
 	if price, ok := getDefaultGrokImagineImagePrice(model, imageSize); ok {
 		return price, true
 	}
@@ -3085,6 +3096,33 @@ func (s *BillingService) strictImageUnitPriceForPlatforms(
 		return basePrice * 2, true
 	default:
 		return basePrice, true
+	}
+}
+
+func (s *BillingService) strictCatalogImageTierPriceForPlatforms(platforms []string, model, tier string) (float64, bool) {
+	if s == nil || s.pricingService == nil {
+		return 0, false
+	}
+	entry := s.pricingService.LookupModelPricingStrictForPlatforms(platforms, strings.TrimSpace(model))
+	if entry == nil {
+		return 0, false
+	}
+	for _, interval := range entry.Intervals {
+		if strings.EqualFold(strings.TrimSpace(interval.TierLabel), tier) && validConfiguredPrice(interval.PerRequestPrice) {
+			return *interval.PerRequestPrice, true
+		}
+	}
+	if !isFiniteNonNegativePrice(entry.OutputCostPerImage) ||
+		(entry.OutputCostPerImage == 0 && !entry.OutputCostPerImageExplicit) {
+		return 0, false
+	}
+	switch tier {
+	case ImageBillingSize2K:
+		return entry.OutputCostPerImage * 1.5, true
+	case ImageBillingSize4K:
+		return entry.OutputCostPerImage * 2, true
+	default:
+		return entry.OutputCostPerImage, true
 	}
 }
 
@@ -3186,21 +3224,36 @@ func (s *BillingService) getVideoUnitPrice(model string, resolution string, grou
 
 // getDefaultImagePrice 获取配置化模型价格目录默认图片价格。
 func (s *BillingService) getDefaultImagePrice(model string, imageSize string) float64 {
-	if price, ok := getDefaultGrokImagineImagePrice(model, imageSize); ok {
-		return price
-	}
-
 	basePrice := 0.0
 	priceConfigured := false
+	var pricing *ModelPriceEntry
 
-	// 从 PricingService 获取 output_cost_per_image
 	if s.pricingService != nil {
-		pricing := s.pricingService.GetModelPricing(model)
+		pricing = s.pricingService.GetModelPricing(model)
+		if pricing != nil {
+			for _, interval := range pricing.Intervals {
+				if strings.EqualFold(strings.TrimSpace(interval.TierLabel), imageSize) && validConfiguredPrice(interval.PerRequestPrice) {
+					return *interval.PerRequestPrice
+				}
+			}
+		}
 		if pricing != nil && isFiniteNonNegativePrice(pricing.OutputCostPerImage) &&
 			(pricing.OutputCostPerImage > 0 || pricing.OutputCostPerImageExplicit) {
 			basePrice = pricing.OutputCostPerImage
 			priceConfigured = true
 		}
+	}
+	if priceConfigured {
+		if imageSize == ImageBillingSize2K {
+			return basePrice * 1.5
+		}
+		if imageSize == ImageBillingSize4K {
+			return basePrice * 2
+		}
+		return basePrice
+	}
+	if price, ok := getDefaultGrokImagineImagePrice(model, imageSize); ok {
+		return price
 	}
 
 	// 如果没有找到价格，使用硬编码默认值（$0.134，来自 gemini-3-pro-image-preview）

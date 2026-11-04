@@ -222,9 +222,11 @@ func TestModelPriceHandlerUpsertBillingMode(t *testing.T) {
 	}
 
 	response := put(`{"platform":"openai","model":"my-image","currency":"USD","billing_mode":"image",
-		"payload":{"output_cost_per_image":0.04}}`)
+		"payload":{"output_cost_per_image":0.04,"intervals":[{"tier_label":"1K","per_request_price":0.03},{"tier_label":"2K","per_request_price":0.05}]}}`)
 	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
 	require.Equal(t, service.BillingModeImage, store.row.BillingMode)
+	require.Len(t, store.row.Payload.Intervals, 2)
+	require.Equal(t, service.ImageBillingSize1K, store.row.Payload.Intervals[0].TierLabel)
 
 	// 出图按普通 token 计价是正常配置：image 档接受 token 字段
 	response = put(`{"platform":"openai","model":"my-image","currency":"USD","billing_mode":"image",

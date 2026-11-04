@@ -164,7 +164,13 @@ export interface VideoPricingPreviewResult {
 }
 
 export type ModelPricePayload = Partial<Record<PriceField, number>> & {
+  intervals?: ModelPriceInterval[]
   video_pricing?: VideoPricingConfig
+}
+
+export interface ModelPriceInterval {
+  tier_label: '1K' | '2K' | '4K'
+  per_request_price: number
 }
 
 /** 倍率语义见 @/api/channels 中的同名类型：都是相对随行的那份生效价。 */
