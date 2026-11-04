@@ -128,17 +128,31 @@ func TestVideoPlatformMigrationsSchema(t *testing.T) {
 	}
 }
 
+// The Grok bridge schema (285/286) is the only grok_video_* surface allowed back:
+// grok_video_tasks, grok_video_task_events and grok_video_creation_receipts, their
+// indexes/sequences, the read-only grok_video_admin_tasks view, and
+// bind_grok_video_creation_receipt(). Anything else named
+// grok_video_* is a remnant of the removed workflow (see the unit-level
+// TestGrokBridgeSchemaRemainsLimitedToTrackingAndCreationReceipts).
 func TestVideoPlatformMigrationsExcludeRemovedGrokObjects(t *testing.T) {
 	tx := testTx(t)
 	ctx := context.Background()
 	for _, query := range []string{
-		`SELECT COUNT(*) FROM pg_class WHERE relnamespace='public'::regnamespace
-		 AND (position('grok_video' in relname)>0 OR position('usage_billing_effect' in relname)>0
-		 OR relname IN ('video_create_intent_reviews','video_create_intent_review_actions'))`,
+		`SELECT COUNT(*) FROM pg_class c WHERE c.relnamespace='public'::regnamespace
+		 AND (position('grok_video' in c.relname)>0 OR position('usage_billing_effect' in c.relname)>0
+		 OR c.relname IN ('video_create_intent_reviews','video_create_intent_review_actions'))
+		 AND COALESCE(
+			(SELECT t.relname FROM pg_index i JOIN pg_class t ON t.oid=i.indrelid WHERE i.indexrelid=c.oid),
+			(SELECT t.relname FROM pg_depend d JOIN pg_class t ON t.oid=d.refobjid
+			 WHERE d.classid='pg_class'::regclass AND d.objid=c.oid
+			 AND d.refclassid='pg_class'::regclass AND d.deptype IN ('a','i') LIMIT 1),
+			c.relname
+		 ) NOT IN ('grok_video_tasks','grok_video_task_events','grok_video_creation_receipts','grok_video_admin_tasks')`,
 		`SELECT COUNT(*) FROM pg_proc WHERE pronamespace='public'::regnamespace
 		 AND (position('grok_video' in proname)>0 OR position('usage_billing_effect' in proname)>0
 		 OR proname IN ('guard_applied_usage_billing_outbox_delete','video_create_intent_review_facts',
-		 'guard_video_create_intent_review_change','guard_video_create_intent_review_action_change'))`,
+		 'guard_video_create_intent_review_change','guard_video_create_intent_review_action_change'))
+		 AND proname <> 'bind_grok_video_creation_receipt'`,
 		`SELECT COUNT(*) FROM pg_trigger WHERE NOT tgisinternal
 		 AND (position('grok_video' in tgname)>0 OR tgname IN ('usage_billing_outbox_effect_archive',
 		 'usage_billing_outbox_applied_delete_guard','video_create_intents_legacy_import_guard',
