@@ -138,7 +138,6 @@ func (s *OpenAIGatewayService) resolveOpenAIImageBillingPlanForPlatforms(
 				// A partial channel tier is allowed to fall through to the same
 				// model-price/default chain used by the plaza. The exact tier or
 				// channel default still wins when present above.
-				break
 			case BillingModeToken:
 				resolved, err := s.resolveStrictOpenAIImageTokenPricing(
 					ctx,
