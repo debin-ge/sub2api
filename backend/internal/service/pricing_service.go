@@ -236,6 +236,7 @@ type ModelPriceEntry struct {
 	OutputCostPerImage                  float64             `json:"output_cost_per_image"`       // 图片生成模型每张图片价格
 	OutputCostPerImageToken             float64             `json:"output_cost_per_image_token"` // 图片输出 token 价格
 	InputCostPerImageToken              float64             `json:"input_cost_per_image_token"`  // 图片输入 token 价格（如 gpt-image-2 图片编辑）
+	Intervals                           []PricingInterval   `json:"intervals,omitempty"`         // 图片按张档位（1K/2K/4K）
 	CacheReadInputImageTokenCost        float64             `json:"cache_read_input_image_token_cost"`
 	VideoPricing                        *VideoPricingConfig `json:"video_pricing,omitempty"`
 	OutputCostPerImageExplicit          bool                `json:"-"`
@@ -308,6 +309,7 @@ type RawModelPriceEntry struct {
 	OutputCostPerImage                  *float64            `json:"output_cost_per_image"`
 	OutputCostPerImageToken             *float64            `json:"output_cost_per_image_token"`
 	InputCostPerImageToken              *float64            `json:"input_cost_per_image_token"`
+	Intervals                           []PricingInterval   `json:"intervals"`
 	CacheReadInputImageTokenCost        *float64            `json:"cache_read_input_image_token_cost"`
 	VideoPricing                        *VideoPricingConfig `json:"video_pricing"`
 }

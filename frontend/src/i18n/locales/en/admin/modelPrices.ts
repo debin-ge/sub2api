@@ -194,6 +194,12 @@ export default {
       output_cost_per_image_token: 'Image output token price',
       input_cost_per_image_token: 'Image input token price'
     },
+    imageTiers: {
+      title: 'Per-image tier prices (optional)',
+      hint: 'Configure 1K, 2K and 4K independently; unconfigured tiers fall back to the default image price.',
+      label: '{tier} per-image price',
+      inherit: 'Inherit default price'
+    },
     invalidNumber: '{field} must be a valid non-negative number',
     errors: {
       INCOMPLETE_PRICING: 'Pricing dimension is incomplete: {missing_dimension}',

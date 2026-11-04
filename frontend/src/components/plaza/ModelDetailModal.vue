@@ -86,7 +86,6 @@
             <section v-else-if="model.billingKind === 'image'" :class="['grid gap-5', imageTokenRows.length && imageTierRows.length ? 'md:grid-cols-2' : '']">
               <div v-if="imageTokenRows.length">
                 <p class="mb-2 flex items-center gap-2 text-xs font-semibold text-gray-500 dark:text-gray-400">
-                  <span v-if="imageTierRows.length" class="rounded bg-primary-600 px-1.5 py-px text-[10px] text-white">{{ t('plaza.modal.preferred') }}</span>
                   {{ t('plaza.modal.imageTokenPricing') }}
                 </p>
                 <PricingTable :model="model" :rows="imageTokenRows" :caption="t('plaza.card.tokenCaption')" />

@@ -69,6 +69,22 @@ func TestBillingModeImageAcceptsTokenFieldsButNotVideoFields(t *testing.T) {
 	requireAppErrorReason(t, err, "FIELD_NOT_IN_BILLING_MODE")
 }
 
+func TestBillingModeImageValidatesTierIntervals(t *testing.T) {
+	svc := newBillingModeTestService(t)
+	price := 0.04
+	_, err := svc.validateOverrideWrite("*", "gemini-2.5-flash-image", ModelPriceCurrencyUSD, BillingModeImage,
+		&ModelPriceOverridePayload{Intervals: []PricingInterval{{TierLabel: ImageBillingSize1K, PerRequestPrice: &price}}}, true)
+	require.NoError(t, err)
+
+	_, err = svc.validateOverrideWrite("*", "gemini-2.5-flash-image", ModelPriceCurrencyUSD, BillingModeImage,
+		&ModelPriceOverridePayload{Intervals: []PricingInterval{{TierLabel: ImageBillingSize1K, PerRequestPrice: &price}, {TierLabel: ImageBillingSize1K, PerRequestPrice: &price}}}, true)
+	requireAppErrorReason(t, err, "INVALID_IMAGE_INTERVAL")
+
+	_, err = svc.validateOverrideWrite("*", "gemini-2.5-flash-image", ModelPriceCurrencyUSD, BillingModeToken,
+		&ModelPriceOverridePayload{Intervals: []PricingInterval{{TierLabel: ImageBillingSize1K, PerRequestPrice: &price}}}, true)
+	requireAppErrorReason(t, err, "FIELD_NOT_IN_BILLING_MODE")
+}
+
 func TestBillingModeTokenAcceptsMixedFieldsForLegacyClients(t *testing.T) {
 	svc := newBillingModeTestService(t)
 	_, err := svc.validateOverrideWrite("*", "gemini-2.5-flash-image", ModelPriceCurrencyUSD, BillingModeToken,

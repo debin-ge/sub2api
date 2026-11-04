@@ -580,6 +580,46 @@ describe('ModelPricesView', () => {
     expect(wrapper.text()).toContain('admin.modelPrices.billingMode.discardNotice')
   })
 
+  it('edits image per-tier intervals and preserves the scalar fallback', async () => {
+    upsertModelPrice.mockResolvedValue({ override: {}, warnings: [] })
+    getModelPriceEntry.mockResolvedValue({
+      platform: 'openai',
+      model: 'tiered-image',
+      currency: 'USD',
+      catalog: { output_cost_per_image: 0.2 },
+      override: { output_cost_per_image: 0.2, intervals: [{ tier_label: '1K', per_request_price: 0.1 }] },
+      effective: { output_cost_per_image: 0.2, intervals: [{ tier_label: '1K', per_request_price: 0.1 }] },
+      billing_mode: 'image',
+      enabled: true,
+      token_pricing_absent: true,
+      has_image_pricing: true,
+      sync_invalidated: false,
+      redundant: false,
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.find('button.action-btn').trigger('click')
+    await flushPromises()
+
+    const intervalInputs = wrapper.findAll('[data-test="editor"] input.input')
+    await intervalInputs[1 + PRICE_FIELDS.length + 1].setValue('0.15')
+    const saveButton = wrapper.findAll('button').find((button) => button.text() === 'admin.modelPrices.save')
+    await saveButton!.trigger('click')
+    await flushPromises()
+
+    expect(upsertModelPrice).toHaveBeenCalledWith(expect.objectContaining({
+      billing_mode: 'image',
+      payload: expect.objectContaining({
+        output_cost_per_image: 0.2,
+        intervals: [
+          { tier_label: '1K', per_request_price: 0.1 },
+          { tier_label: '2K', per_request_price: 0.15 },
+        ],
+      }),
+    }))
+  })
+
   it('keeps legacy image and video pricing when resaving a token-mode row', async () => {
     upsertModelPrice.mockResolvedValue({ override: {}, warnings: [] })
     const videoPricing = { enabled: true, rules: [{ key: 'default', billing_unit: 'second', unit_price_usd: 0.1 }] }

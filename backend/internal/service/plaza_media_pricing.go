@@ -29,8 +29,9 @@ var (
 // ResolvePlazaMediaPricing 按真实结算链路的优先级推导模型广场的按张/按秒展示价，
 // 保证用户在广场看到的档位价就是实际扣费用到的单价：
 //
-//   - 图片：分组 1K/2K/4K 价 > 渠道图片档位价（同档位 > 渠道按次价）> Grok 内置价 >
-//     模型价格目录 output_cost_per_image（2K ×1.5、4K ×2），与
+//   - 图片：分组 1K/2K/4K 价 > 渠道图片档位价（同档位 > 渠道按次价）>
+//     模型价格 intervals > 模型价格 output_cost_per_image（2K ×1.5、4K ×2）>
+//     Grok 内置价，与
 //     calculateOpenAIImageCostForPlatforms / strictImageUnitPriceForPlatforms 一致；
 //   - 视频：分组按模型族配置 > 分组统一 480p/720p/1080p 价 > 渠道视频档位价 > Grok 内置价，
 //     与 calculateOpenAIVideoCost / strictVideoUnitPrice 一致；都没有时再看模型价格里的
@@ -102,7 +103,8 @@ func isPlazaImageModel(model string, channel *ChannelModelPricing, catalog *Mode
 	if strings.EqualFold(strings.TrimSpace(catalog.Mode), "image_generation") {
 		return true
 	}
-	return (catalog.OutputCostPerImage > 0 || catalog.OutputCostPerImageExplicit) ||
+	return len(catalog.Intervals) > 0 ||
+		(catalog.OutputCostPerImage > 0 || catalog.OutputCostPerImageExplicit) ||
 		(catalog.OutputCostPerImageToken > 0 || catalog.ImageOutputPriceExplicit)
 }
 
@@ -129,9 +131,15 @@ func plazaImageTierPrices(
 			out = append(out, PlazaMediaTierPrice{Tier: tier, Price: *price})
 			continue
 		}
-		if channel != nil && channel.BillingMode == BillingModeImage {
+		if channel != nil && (channel.BillingMode == BillingModeImage || channel.BillingMode == BillingModePerRequest) {
 			if price := channelMediaTierPrice(channel, tier); validConfiguredPrice(price) {
 				out = append(out, PlazaMediaTierPrice{Tier: tier, Price: *price})
+				continue
+			}
+		}
+		if catalog != nil {
+			if price, ok := catalogImageTierPrice(catalog, tier); ok {
+				out = append(out, PlazaMediaTierPrice{Tier: tier, Price: price})
 				continue
 			}
 		}
@@ -152,6 +160,29 @@ func plazaImageTierPrices(
 		}
 	}
 	return out
+}
+
+func catalogImageTierPrice(catalog *ModelPriceEntry, tier string) (float64, bool) {
+	if catalog == nil {
+		return 0, false
+	}
+	for _, interval := range catalog.Intervals {
+		if strings.EqualFold(strings.TrimSpace(interval.TierLabel), tier) && validConfiguredPrice(interval.PerRequestPrice) {
+			return *interval.PerRequestPrice, true
+		}
+	}
+	if !isFiniteNonNegativePrice(catalog.OutputCostPerImage) ||
+		(catalog.OutputCostPerImage == 0 && !catalog.OutputCostPerImageExplicit) {
+		return 0, false
+	}
+	switch tier {
+	case ImageBillingSize2K:
+		return catalog.OutputCostPerImage * 1.5, true
+	case ImageBillingSize4K:
+		return catalog.OutputCostPerImage * 2, true
+	default:
+		return catalog.OutputCostPerImage, true
+	}
 }
 
 func plazaVideoTierPrices(model string, channel *ChannelModelPricing, group AvailableGroupRef) []PlazaMediaTierPrice {
