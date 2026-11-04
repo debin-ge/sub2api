@@ -496,7 +496,9 @@ func TestVideoHandlerRetrieveListAndDeleteContracts(t *testing.T) {
 
 		require.Equal(t, http.StatusOK, recorder.Code)
 		require.Equal(t, int64(42), fake.listUserID)
+		grokKeyID, grokGroupID := int64(7), int64(8)
 		require.Equal(t, service.VideoTaskFilter{
+			GrokAPIKeyID: &grokKeyID, GrokGroupID: &grokGroupID,
 			Status: "queued", Model: "sora-2", Operation: "generate", Limit: 5, After: "cursor", Order: "asc",
 		}, fake.listFilter)
 		require.Contains(t, recorder.Body.String(), `"object":"list"`)

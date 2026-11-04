@@ -7,19 +7,21 @@ import (
 )
 
 type VideoAdminTaskFilter struct {
-	Page            int
-	PageSize        int
-	UserID          *int64
-	GroupID         *int64
-	AccountID       *int64
-	Provider        string
-	Operation       string
-	GenerationState string
-	BillingState    string
-	DeleteState     string
-	Query           string
-	CreatedAfter    *time.Time
-	CreatedBefore   *time.Time
+	Source           string
+	SettlementStatus string
+	Page             int
+	PageSize         int
+	UserID           *int64
+	GroupID          *int64
+	AccountID        *int64
+	Provider         string
+	Operation        string
+	GenerationState  string
+	BillingState     string
+	DeleteState      string
+	Query            string
+	CreatedAfter     *time.Time
+	CreatedBefore    *time.Time
 	// SubmissionUnknown 为 true 时只列出曾进入"提交结果未知"对账流程的任务（对账报表）。
 	SubmissionUnknown *bool
 }
@@ -70,6 +72,8 @@ type VideoAdminCallbackPage struct {
 }
 
 type VideoAdminOverview struct {
+	GrokSettlement      map[string]int64         `json:"grok_settlement"`
+	GrokSync            map[string]int64         `json:"grok_sync"`
 	TasksByGeneration   map[string]int64         `json:"tasks_by_generation"`
 	TasksByBilling      map[string]int64         `json:"tasks_by_billing"`
 	TasksByDelete       map[string]int64         `json:"tasks_by_delete"`
@@ -98,6 +102,7 @@ type VideoAdminRepository interface {
 }
 
 type VideoAdminService struct {
+	grok       *GrokVideoTaskService
 	repository VideoAdminRepository
 	tasks      VideoTaskRepository
 	taskSvc    *VideoTaskService
@@ -155,7 +160,7 @@ func (s *VideoAdminService) ListTasks(ctx context.Context, filter VideoAdminTask
 }
 
 func (s *VideoAdminService) GetTask(ctx context.Context, publicID string) (*VideoTask, error) {
-	if s == nil || s.repository == nil || !IsValidVideoTaskID(publicID) {
+	if s == nil || s.repository == nil || (!IsValidVideoTaskID(publicID) && !isGrokVideoAdminID(publicID)) {
 		return nil, ErrVideoInvalidRequest
 	}
 	task, err := s.repository.GetVideoTaskAdmin(ctx, strings.TrimSpace(publicID))
@@ -183,7 +188,7 @@ func (s *VideoAdminService) GetResource(ctx context.Context, publicID string) (*
 }
 
 func (s *VideoAdminService) ListEvents(ctx context.Context, publicID string, page, pageSize int) (*VideoAdminEventPage, error) {
-	if s == nil || s.repository == nil || !IsValidVideoTaskID(publicID) {
+	if s == nil || s.repository == nil || (!IsValidVideoTaskID(publicID) && !isGrokVideoAdminID(publicID)) {
 		return nil, ErrVideoInvalidRequest
 	}
 	return s.repository.ListVideoTaskEventsAdmin(ctx, strings.TrimSpace(publicID), page, pageSize)
@@ -231,7 +236,16 @@ func (s *VideoAdminService) Overview(ctx context.Context) (*VideoAdminOverview, 
 }
 
 func (s *VideoAdminService) RetryProviderGet(ctx context.Context, publicID string) (*VideoTask, error) {
-	if s == nil || s.taskSvc == nil || !IsValidVideoTaskID(publicID) {
+	if isGrokVideoAdminID(publicID) && s != nil && s.grok != nil {
+		if _, err := s.GetTask(ctx, publicID); err != nil {
+			return nil, err
+		}
+		if _, err := s.grok.AdminAction(ctx, publicID, "get"); err != nil {
+			return nil, err
+		}
+		return s.repository.GetVideoTaskAdmin(ctx, publicID)
+	}
+	if s == nil || s.taskSvc == nil || (!IsValidVideoTaskID(publicID) && !isGrokVideoAdminID(publicID)) {
 		return nil, ErrVideoInvalidRequest
 	}
 	task, err := s.GetTask(ctx, publicID)
@@ -245,7 +259,16 @@ func (s *VideoAdminService) RetryProviderGet(ctx context.Context, publicID strin
 }
 
 func (s *VideoAdminService) RetrySettlement(ctx context.Context, publicID string) (*VideoTask, error) {
-	if s == nil || s.tasks == nil || !IsValidVideoTaskID(publicID) {
+	if isGrokVideoAdminID(publicID) && s != nil && s.grok != nil {
+		if _, err := s.GetTask(ctx, publicID); err != nil {
+			return nil, err
+		}
+		if _, err := s.grok.AdminAction(ctx, publicID, "settlement"); err != nil {
+			return nil, err
+		}
+		return s.repository.GetVideoTaskAdmin(ctx, publicID)
+	}
+	if s == nil || s.tasks == nil || (!IsValidVideoTaskID(publicID) && !isGrokVideoAdminID(publicID)) {
 		return nil, ErrVideoInvalidRequest
 	}
 	task, err := s.GetTask(ctx, publicID)
@@ -270,7 +293,7 @@ func (s *VideoAdminService) RetrySettlement(ctx context.Context, publicID string
 }
 
 func (s *VideoAdminService) RetryDelete(ctx context.Context, publicID string) (*VideoTask, error) {
-	if s == nil || s.taskSvc == nil || !IsValidVideoTaskID(publicID) {
+	if s == nil || s.taskSvc == nil || (!IsValidVideoTaskID(publicID) && !isGrokVideoAdminID(publicID)) {
 		return nil, ErrVideoInvalidRequest
 	}
 	task, err := s.GetTask(ctx, publicID)
@@ -301,3 +324,5 @@ func (s *VideoAdminService) RetryCallback(ctx context.Context, callbackID int64)
 	}
 	return s.repository.RetryVideoCallbackAdmin(ctx, callbackID)
 }
+
+func isGrokVideoAdminID(id string) bool { return strings.HasPrefix(id, "grok_video_") && len(id) == 43 }

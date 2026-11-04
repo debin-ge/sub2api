@@ -118,6 +118,8 @@ func (item VideoContentItem) IsMedia() bool { return item.Type != VideoContentTy
 // Size（WxH）、Quality、AspectRatio（OpenAI 兼容上游的 aspect_ratio 字段名）、InputReference
 // （file_id 引用）、Characters、ParentTask。
 type VideoCreateRequest struct {
+	// Grok holds submission-only native options; never persist media URLs.
+	Grok                  *GrokVideoOptions
 	TaskID                string
 	ClientToken           string
 	Operation             string
@@ -359,6 +361,11 @@ type VideoProvider interface {
 // VideoSubmissionValidator lets an adapter reject provider-specific options
 // before a task and balance hold are created. Provider methods must still
 // validate defensively when called directly.
+// VideoRequestDefaults keeps provider-specific defaults out of task orchestration.
+type VideoRequestDefaults interface {
+	ApplyRequestDefaults(VideoCreateRequest) VideoCreateRequest
+}
+
 type VideoSubmissionValidator interface {
 	ValidateSubmission(*Account, VideoCreateRequest, []VideoInput) error
 }

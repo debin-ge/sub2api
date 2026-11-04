@@ -83,6 +83,9 @@ type VideoHandler struct {
 func NewVideoHandler(tasks *service.VideoTaskService, spool *service.VideoSubmissionSpool, cfg *config.Config, openAI *OpenAIGatewayHandler, webhooks *service.VideoWebhookService) *VideoHandler {
 	handler := newVideoHandler(tasks, spool, cfg)
 	handler.openAI = openAI
+	if openAI != nil {
+		openAI.grokManaged = handler
+	}
 	handler.grok = openAI
 	handler.webhooks = webhooks
 	return handler
@@ -168,6 +171,14 @@ func (h *VideoHandler) submitWithShape(c *gin.Context, operation string, ark boo
 	if err := validateVideoIdempotencyKey(request.IdempotencyKey); err != nil {
 		videoError(c, err)
 		return
+	}
+	if multipartHash != "" {
+		c.Set("grok_video_multipart_hash", multipartHash)
+		c.Set("grok_video_original_model", request.Model)
+		c.Set("grok_video_parsed_inputs", request.Inputs)
+		if session != nil {
+			c.Set("grok_video_spool_session", session)
+		}
 	}
 	if multipartHash != "" && h.routeParsedCompositeMultipart(c, apiKey, &request) {
 		return
@@ -292,7 +303,7 @@ func (h *VideoHandler) routeParsedCompositeMultipart(c *gin.Context, apiKey *ser
 		videoError(c, service.ErrVideoUseArkEndpoint)
 		return true
 	}
-	if service.IsManagedVideoPlatform(platform) {
+	if service.IsManagedVideoPlatform(platform) && platform != service.PlatformGrok {
 		return false
 	}
 	if platform != service.PlatformGrok || request.Operation == service.VideoOperationCharacterCreate || h.grok == nil {
@@ -443,7 +454,7 @@ func (h *VideoHandler) Retrieve(c *gin.Context) {
 	if !h.readEnabled(c) {
 		return
 	}
-	task, err := h.tasks.GetForOwner(c.Request.Context(), apiKey.UserID, videoPathID(c))
+	task, err := h.readTaskStatus(c.Request.Context(), apiKey.UserID, videoPathID(c))
 	if err != nil {
 		if errors.Is(err, service.ErrVideoTaskNotFound) {
 			// 改版前下发过的"上游同形"内容链接可能恰好落到本路由；只允许链接所属
@@ -452,6 +463,10 @@ func (h *VideoHandler) Retrieve(c *gin.Context) {
 			return
 		}
 		videoError(c, err)
+		return
+	}
+	if !allowGrokManagedTaskOwner(apiKey, task) {
+		videoError(c, service.ErrVideoTaskNotFound)
 		return
 	}
 	response, err := h.projectTask(c.Request.Context(), apiKey.UserID, task, c.Request)
@@ -491,11 +506,16 @@ func (h *VideoHandler) List(c *gin.Context) {
 		videoError(c, service.ErrVideoInvalidRequest)
 		return
 	}
-	page, err := h.tasks.ListForOwner(c.Request.Context(), apiKey.UserID, service.VideoTaskFilter{
+	filter := service.VideoTaskFilter{
+		GrokAPIKeyID: &apiKey.ID, GrokGroupID: apiKey.GroupID,
 		Status: strings.TrimSpace(c.Query("status")), Model: strings.TrimSpace(c.Query("model")),
 		Operation: strings.TrimSpace(c.Query("operation")), Limit: limit,
 		After: strings.TrimSpace(c.Query("after")), Order: order,
-	})
+	}
+	if effectiveAPIKeyPlatform(c, apiKey) == service.PlatformGrok {
+		filter.Provider = service.VideoProviderGrok
+	}
+	page, err := h.tasks.ListForOwner(c.Request.Context(), apiKey.UserID, filter)
 	if err != nil {
 		videoError(c, err)
 		return
@@ -631,6 +651,10 @@ func (h *VideoHandler) Content(c *gin.Context) {
 	task, err := h.tasks.GetContentTaskForOwner(c.Request.Context(), apiKey.UserID, id)
 	if err != nil {
 		videoError(c, err)
+		return
+	}
+	if !allowGrokManagedTaskOwner(apiKey, task) {
+		videoError(c, service.ErrVideoTaskNotFound)
 		return
 	}
 	if id != task.PublicID {
@@ -1622,6 +1646,11 @@ func (h *VideoHandler) projectTask(ctx context.Context, userID int64, task *serv
 			Message: firstNonEmptyVideoString(valueOrEmptyString(task.LastErrorMessage), "video generation failed"),
 		}
 	}
+	if task.GenerationState == service.VideoGenerationCompleted && task.BillingState != service.VideoBillingCaptured {
+		response.CompletedAt = nil
+		response.ContentVariants = nil
+		return response, nil
+	}
 	disclosure, err := h.tasks.DisclosureForOwner(ctx, userID, task.PublicID)
 	if err != nil {
 		return videoTaskResponse{}, err
@@ -1870,7 +1899,7 @@ func videoModerationBody(ctx context.Context, request service.VideoSubmitRequest
 		}
 	}
 	// 远端图片引用（任何图片角色）都送审；字节形式的图片在下面随 Inputs 内联。
-	for _, item := range request.Content {
+	for _, item := range request.MediaContent() {
 		if !item.IsMedia() || !item.Role.IsImageContentRole() || item.Input != nil {
 			continue
 		}
@@ -2154,3 +2183,14 @@ func (l *videoContentLimiter) acquire(userID, accountID int64) (func(), bool) {
 }
 
 var _ videoTaskAPI = (*service.VideoTaskService)(nil)
+
+type videoStatusReader interface {
+	GetStatusForOwner(context.Context, int64, string) (*service.VideoTask, error)
+}
+
+func (h *VideoHandler) readTaskStatus(ctx context.Context, userID int64, id string) (*service.VideoTask, error) {
+	if reader, ok := h.tasks.(videoStatusReader); ok {
+		return reader.GetStatusForOwner(ctx, userID, id)
+	}
+	return h.tasks.GetForOwner(ctx, userID, id)
+}

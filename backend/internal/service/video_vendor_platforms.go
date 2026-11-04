@@ -11,6 +11,7 @@ import "strings"
 // 配额静默失效。
 var managedVideoPlatforms = map[string]string{
 	PlatformOpenAI:    VideoProviderOpenAI,
+	PlatformGrok:      VideoProviderGrok,
 	PlatformByteDance: VideoProviderByteDance,
 	PlatformFal:       VideoProviderFal,
 	PlatformWaveSpeed: VideoProviderWaveSpeed,
@@ -21,7 +22,7 @@ var managedVideoPlatforms = map[string]string{
 // managedVideoPlatformOrder 固定枚举顺序：composite 分组枚举模型、内置能力目录都按
 // 这个顺序输出，避免 map 迭代带来的随机顺序。
 var managedVideoPlatformOrder = []string{
-	PlatformOpenAI, PlatformByteDance, PlatformFal, PlatformWaveSpeed, PlatformRunware, PlatformFlova,
+	PlatformOpenAI, PlatformGrok, PlatformByteDance, PlatformFal, PlatformWaveSpeed, PlatformRunware, PlatformFlova,
 }
 
 // videoOnlyPlatforms 列出"分组只提供 Videos API"的平台：网关对它们拦下除 /videos、
@@ -95,6 +96,8 @@ func builtinVideoCapabilitiesForProvider(provider string) (VideoCapabilities, bo
 	switch strings.TrimSpace(provider) {
 	case VideoProviderOpenAI:
 		return DefaultOpenAIVideoCapabilities(), true
+	case VideoProviderGrok:
+		return DefaultGrokVideoCapabilities(), true
 	case VideoProviderByteDance:
 		return DefaultByteDanceVideoCapabilities(), true
 	case VideoProviderFlova:

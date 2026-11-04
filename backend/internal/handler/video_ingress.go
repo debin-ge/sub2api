@@ -52,7 +52,7 @@ func (h *VideoHandler) PrepareCompositeVideoRoute(c *gin.Context) {
 		return
 	}
 	bodyLimit := videoJSONBodyMaxBytes
-	if service.IsArkVideoTasksPath(c.Request.URL.Path) {
+	if service.IsArkVideoTasksPath(c.Request.URL.Path) || (h.cfg != nil && h.cfg.Gateway.Video.GrokManagedEnabled) {
 		bodyLimit = h.arkJSONBodyLimit()
 	}
 	body, err := io.ReadAll(io.LimitReader(c.Request.Body, bodyLimit+1))
@@ -79,6 +79,30 @@ func (h *VideoHandler) PrepareCompositeVideoRoute(c *gin.Context) {
 		videoError(c, service.ErrVideoInvalidRequest)
 		c.Abort()
 		return
+	}
+	// A legacy Grok receipt is authoritative even if the composite model route
+	// has since moved to another provider. Never create a second paid task.
+	if keyValue != "" && h.openAI != nil && h.openAI.grokVideoTasks != nil {
+		endpoint := service.GrokMediaEndpointVideosGenerations
+		if operation == service.VideoOperationEdit {
+			endpoint = service.GrokMediaEndpointVideosEdits
+		}
+		if operation == service.VideoOperationExtend {
+			endpoint = service.GrokMediaEndpointVideosExtensions
+		}
+		if operation != service.VideoOperationCharacterCreate {
+			legacy, lookupErr := h.openAI.grokVideoTasks.Replay(c.Request.Context(), key, endpoint, keyValue, body)
+			if lookupErr != nil {
+				h.openAI.grokVideoTrackingError(c, lookupErr)
+				c.Abort()
+				return
+			}
+			if legacy != nil {
+				h.openAI.writeGrokVideoReplay(c, legacy)
+				c.Abort()
+				return
+			}
+		}
 	}
 	var source videoIDReference
 	if len(envelope.Video) != 0 {
@@ -112,12 +136,15 @@ func (h *VideoHandler) PrepareCompositeVideoRoute(c *gin.Context) {
 			return
 		}
 	}
-	if route.Decision.TargetPlatform == service.PlatformGrok {
+	if route.Decision.TargetPlatform == service.PlatformGrok && !route.ManagedReplay {
 		if err := checkGrokMediaCreationKey(key); err != nil {
 			videoError(c, err)
 			c.Abort()
 			return
 		}
+	}
+	if route.Decision.TargetPlatform == service.PlatformGrok {
+		c.Set("grok_video_original_body", append([]byte(nil), body...))
 	}
 	if route.Decision.TargetPlatform == service.PlatformGrok && route.Decision.UpstreamModel != strings.TrimSpace(envelope.Model) {
 		body, err = sjson.SetBytes(body, "model", route.Decision.UpstreamModel)

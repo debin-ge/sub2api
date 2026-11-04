@@ -24,6 +24,7 @@ var videoProviderMetadataKeys = []string{
 	"framespersecond",
 	"generate_audio",
 	"revised_prompt",
+	"respect_moderation",
 }
 
 func sanitizeVideoProviderMetadata(values map[string]any) map[string]any {

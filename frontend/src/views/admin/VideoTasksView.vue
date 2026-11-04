@@ -47,6 +47,21 @@
       </section>
 
       <section class="flex flex-col gap-3 lg:flex-row lg:items-end">
+        <label v-if="activeTab === 'tasks'" class="w-full lg:w-40">
+          <span class="mb-1 block text-xs font-medium zt-ink-2">{{ t('admin.videos.grok.source') }}</span>
+          <select v-model="filters.source" class="input h-9 w-full" @change="applyFilters">
+            <option value="all">{{ t('admin.videos.grok.all') }}</option>
+            <option value="managed">{{ t('admin.videos.grok.managed') }}</option>
+            <option value="grok_relay">{{ t('admin.videos.grok.relay') }}</option>
+          </select>
+        </label>
+        <label v-if="activeTab === 'tasks' && filters.source === 'grok_relay'" class="w-full lg:w-40">
+          <span class="mb-1 block text-xs font-medium zt-ink-2">{{ t('admin.videos.grok.settlement') }}</span>
+          <select v-model="filters.settlement_status" class="input h-9 w-full" @change="applyFilters">
+            <option value="">{{ t('admin.videos.filters.all') }}</option>
+            <option v-for="state in grokSettlementStates" :key="state" :value="state">{{ t(`admin.videos.grok.${state}`) }}</option>
+          </select>
+        </label>
         <label class="min-w-0 flex-1">
           <span class="mb-1 block text-xs font-medium zt-ink-2">{{ t('admin.videos.filters.search') }}</span>
           <div class="relative">
@@ -66,7 +81,7 @@
             <option v-for="state in generationStates" :key="state" :value="state">{{ stateLabel(state) }}</option>
           </select>
         </label>
-        <label v-if="activeTab === 'tasks'" class="w-full lg:w-44">
+        <label v-if="activeTab === 'tasks' && filters.source !== 'grok_relay'" class="w-full lg:w-44">
           <span class="mb-1 block text-xs font-medium zt-ink-2">{{ t('admin.videos.filters.billing') }}</span>
           <select v-model="filters.billing_state" class="input h-9 w-full">
             <option value="">{{ t('admin.videos.filters.all') }}</option>
@@ -140,7 +155,8 @@
                     data-test="video-task-reconciliation-badge"
                   >{{ t('admin.videos.reconciliation.badge') }}</span>
                 </td>
-                <td class="px-4 py-3"><span :class="statusClass(task.billing_state)">{{ stateLabel(task.billing_state) }}</span></td>
+                <td class="px-4 py-3"><span :class="statusClass(task.settlement_status || task.billing_state)">{{ task.source === 'grok_relay' ? t(`admin.videos.grok.${task.settlement_status || 'not_due'}`) : stateLabel(task.billing_state) }}</span>
+                  <p v-if="task.sync_status" class="mt-1 text-xs zt-ink-3">{{ t(`admin.videos.grok.${task.sync_status}`) }}</p></td>
 				<td class="px-4 py-3 text-xs" data-test="video-task-amounts">
 					<p v-if="task.actual_cost != null" class="font-mono font-medium zt-good-text">
 						<span class="mr-1 font-sans zt-ink-3">{{ actualAmountLabel(task) }}</span>{{ formatMoney(task.actual_cost, task.currency) }}
@@ -154,7 +170,7 @@
                 <td class="px-4 py-3">
                   <div class="flex justify-end gap-1">
                     <button type="button" class="icon-action" :title="t('admin.videos.actions.inspect')" @click="openTask(task)"><Icon name="eye" size="sm" /></button>
-                    <button v-if="canRetryGet(task)" type="button" class="icon-action" :disabled="actionLoading" :title="t('admin.videos.actions.retryGet')" @click="runTaskAction(task, 'get')"><Icon name="refresh" size="sm" /></button>
+                    <button v-if="canRetryGet(task)" type="button" class="icon-action" :disabled="actionLoading" :title="t(task.allowed_actions?.includes('resume') ? 'admin.videos.grok.resume' : 'admin.videos.actions.retryGet')" @click="runTaskAction(task, 'get')"><Icon name="refresh" size="sm" /></button>
                     <button v-if="canRetrySettlement(task)" type="button" class="icon-action" :disabled="actionLoading" :title="t('admin.videos.actions.retrySettlement')" @click="runTaskAction(task, 'settlement')"><Icon name="dollar" size="sm" /></button>
                     <button v-if="canRetryDelete(task)" type="button" class="icon-action" :disabled="actionLoading" :title="t('admin.videos.actions.retryDelete')" @click="runTaskAction(task, 'delete')"><Icon name="trash" size="sm" /></button>
                   </div>
@@ -290,13 +306,14 @@ const callbackRows = ref<VideoAdminCallback[]>([])
 const selectedTask = ref<VideoAdminTask | null>(null)
 const taskEvents = ref<VideoAdminEvent[]>([])
 const pagination = reactive({ page: 1, page_size: 20, total: 0 })
-const filters = reactive({ q: '', generation_state: '', billing_state: '', status: '', account_id: '', submission_unknown: '' as '' | 'true' })
+const filters = reactive({ source: 'all', settlement_status: '', q: '', generation_state: '', billing_state: '', status: '', account_id: '', submission_unknown: '' as '' | 'true' })
 let overviewRequest = 0
 let rowsRequest = 0
 let detailRequest = 0
 let disposed = false
 
 const generationStates = ['preparing', 'held', 'submitting', 'queued', 'in_progress', 'completed', 'failed', 'cancelled', 'expired']
+const grokSettlementStates = ['not_due', 'pending', 'settled', 'retrying', 'blocked', 'not_required']
 const billingStates = ['none', 'held', 'capture_pending', 'captured', 'release_pending', 'released']
 const resourceStates = ['creating', 'ready', 'failed', 'expired', 'deleted']
 const callbackStates = ['pending', 'delivering', 'delivered', 'failed', 'quarantined']
@@ -310,6 +327,7 @@ const tabs = computed(() => [
 
 const taskTotal = computed(() => Object.values(overview.value?.tasks_by_generation ?? {}).reduce((sum, value) => sum + value, 0))
 const activeTasks = computed(() => (overview.value?.tasks_by_generation?.queued ?? 0) + (overview.value?.tasks_by_generation?.in_progress ?? 0) + (overview.value?.tasks_by_generation?.submitting ?? 0))
+const grokPendingBilling = computed(() => (overview.value?.grok_settlement?.pending ?? 0) + (overview.value?.grok_settlement?.retrying ?? 0) + (overview.value?.grok_settlement?.blocked ?? 0))
 const pendingBilling = computed(() => (overview.value?.tasks_by_billing?.capture_pending ?? 0) + (overview.value?.tasks_by_billing?.release_pending ?? 0))
 const callbackAttention = computed(() => (overview.value?.callbacks_by_status?.failed ?? 0) + (overview.value?.callbacks_by_status?.quarantined ?? 0))
 const heldTasks = computed(() => (overview.value?.tasks_by_billing?.held ?? 0) + pendingBilling.value)
@@ -320,7 +338,7 @@ const heldTasks = computed(() => (overview.value?.tasks_by_billing?.held ?? 0) +
 // 用户余额」——视频计价强制 USD（backend video_pricing_config.go:207），汇总不会混币。
 const overviewMetrics = computed(() => [
   { key: 'active', label: t('admin.videos.metrics.active'), value: formatNumber(activeTasks.value), meta: relativeAge(overview.value?.oldest_task_pending_at) },
-  { key: 'billing', label: t('admin.videos.metrics.billing'), value: formatNumber(pendingBilling.value), meta: relativeAge(overview.value?.oldest_billing_at) },
+  { key: 'billing', label: t('admin.videos.metrics.billing'), value: formatNumber(pendingBilling.value + grokPendingBilling.value), meta: relativeAge(overview.value?.oldest_billing_at) },
   { key: 'held', label: t('admin.videos.metrics.held'), value: formatMoney(overview.value?.held_amount ?? 0), meta: t('admin.videos.metrics.heldCount', { value: formatNumber(heldTasks.value) }) },
 ])
 // 只报「需要人动手」的异常，正常时整条不渲染。磁盘/利用率/孤儿/清理失败这些数字
@@ -328,6 +346,8 @@ const overviewMetrics = computed(() => [
 const healthAlerts = computed(() => {
 	const spool = overview.value?.spool
 	const alerts: string[] = []
+  if (overview.value?.grok_sync?.paused) alerts.push(t('admin.videos.grok.pausedCount', { value: overview.value.grok_sync.paused }))
+  if (overview.value?.grok_settlement?.blocked) alerts.push(t('admin.videos.grok.blockedCount', { value: overview.value.grok_settlement.blocked }))
 	if (overview.value && overview.value?.queue_status !== 'available') alerts.push(t('admin.videos.health.queueUnavailable'))
 	if (spool?.enabled && (spool?.utilization ?? 0) >= 0.85) {
 		alerts.push(t('admin.videos.health.diskTight', { used: formatBytes(spool?.current_bytes), max: formatBytes(spool?.max_bytes), percent: formatPercent(spool?.utilization) }))
@@ -385,6 +405,8 @@ function upstreamCostSection(task: VideoAdminTask): DetailSection {
 	if (inferenceMs != null) fields.push({ label: t('admin.videos.detail.inferenceMs'), value: `${formatNumberValue(inferenceMs)} ms` })
 	const inferenceSeconds = snapshotNumber(usage, 'inference_seconds')
 	if (inferenceSeconds != null) fields.push({ label: t('admin.videos.detail.inferenceSeconds'), value: formatDurationSeconds(inferenceSeconds) })
+	const ticks = snapshotNumber(cost, 'cost_in_usd_ticks') ?? snapshotNumber(usage, 'provider_cost_usd_ticks')
+  if (ticks != null) fields.push({ label: t('admin.videos.detail.upstreamQuote'), value: formatMoney(ticks / 1e10, 'USD') })
 	const upstreamQuote = snapshotNumber(cost, 'upstream_quote_usd')
 	if (upstreamQuote != null) fields.push({ label: t('admin.videos.detail.upstreamQuote'), value: formatMoney(upstreamQuote, 'USD') })
 	const configuredBase = snapshotNumber(cost, 'configured_base_usd')
@@ -416,6 +438,12 @@ const detailSections = computed<DetailSection[]>(() => {
 			{ label: t('admin.videos.detail.routeIds'), value: `C${task.channel_id ?? '-'} / A${task.account_id ?? '-'}` },
 			...modelFields(task),
 			{ label: t('admin.videos.columns.provider'), value: task.provider || '-' },
+      ...(task.source === 'grok_relay' ? [
+        { label: t('admin.videos.grok.sync'), value: t(`admin.videos.grok.${task.sync_status || 'scheduled'}`) },
+        { label: t('admin.videos.grok.settlement'), value: t(`admin.videos.grok.${task.settlement_status || 'not_due'}`) },
+        { label: t('admin.videos.grok.lastPolled'), value: formatDate(task.last_polled_at) },
+        ...(task.imported_from_legacy ? [{ label: t('admin.videos.grok.imported'), value: '✓' }] : []),
+      ] : []),
 			{ label: t('admin.videos.detail.stableClientToken'), value: task.stable_client_token || '-' },
 		],
 	},
@@ -438,7 +466,7 @@ const detailSections = computed<DetailSection[]>(() => {
 		key: 'billing',
 		title: t('admin.videos.detail.billing'),
 		fields: [
-			{ label: t('admin.videos.columns.billing'), value: stateLabel(task.billing_state) },
+			{ label: t('admin.videos.columns.billing'), value: task.source === 'grok_relay' ? t(`admin.videos.grok.${task.settlement_status || 'not_due'}`) : stateLabel(task.billing_state) },
 			{ label: t('admin.videos.detail.billingUnit'), value: billingUnitLabel(task.billing_unit) },
 			{ label: t('admin.videos.detail.unitPrice'), value: formatVideoPrice(task.unit_price, task.billing_unit, task.currency) },
 			{ label: t('admin.videos.detail.estimatedUnits'), value: formatUnits(task.estimated_units, task.billing_unit) },
@@ -503,7 +531,7 @@ async function loadRows() {
   error.value = ''
   try {
     if (tab === 'tasks') {
-      const query = { page: pagination.page, page_size: pagination.page_size, q: filters.q || undefined, generation_state: filters.generation_state || undefined, billing_state: filters.billing_state || undefined, account_id: numericFilter(filters.account_id), submission_unknown: filters.submission_unknown || undefined }
+      const query = { source: filters.source, settlement_status: filters.source === 'grok_relay' ? filters.settlement_status || undefined : undefined, page: pagination.page, page_size: pagination.page_size, q: filters.q || undefined, generation_state: filters.generation_state || undefined, billing_state: filters.source !== 'grok_relay' ? filters.billing_state || undefined : undefined, account_id: numericFilter(filters.account_id), submission_unknown: filters.submission_unknown || undefined }
       const page = await videosAPI.listTasks(query)
       if (disposed || request !== rowsRequest) return
       taskRows.value = page.items
@@ -607,9 +635,9 @@ async function retryCallback(callback: VideoAdminCallback) {
 	}
 }
 
-function canRetryGet(task: VideoAdminTask) { return Boolean(task.provider_task_id) && task.billing_state === 'held' && ['queued', 'in_progress'].includes(task.generation_state) }
-function canRetrySettlement(task: VideoAdminTask) { return task.billing_state === 'capture_pending' || task.billing_state === 'release_pending' }
-function canRetryDelete(task: VideoAdminTask) { return ['requested', 'deleting', 'delete_failed'].includes(task.delete_state) }
+function canRetryGet(task: VideoAdminTask) { if (task.source === 'grok_relay') return task.allowed_actions?.includes('get') ?? false; return Boolean(task.provider_task_id) && task.billing_state === 'held' && ['queued', 'in_progress'].includes(task.generation_state) }
+function canRetrySettlement(task: VideoAdminTask) { if (task.source === 'grok_relay') return task.allowed_actions?.includes('settlement') ?? false; return task.billing_state === 'capture_pending' || task.billing_state === 'release_pending' }
+function canRetryDelete(task: VideoAdminTask) { if (task.source === 'grok_relay') return false; return ['requested', 'deleting', 'delete_failed'].includes(task.delete_state) }
 function canRetryCallback(callback: VideoAdminCallback) { return ['failed', 'quarantined'].includes(callback.status) && new Date(callback.expires_at).getTime() > Date.now() }
 
 function stateLabel(state: string) { return t(`admin.videos.states.${state}`, state) }

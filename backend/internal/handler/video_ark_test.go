@@ -262,7 +262,12 @@ func TestVideoHandlerArkRetrieveProjectsArkTaskObject(t *testing.T) {
 			require.EqualValues(t, 11, response["seed"])
 			require.Equal(t, true, response["generate_audio"])
 			require.Equal(t, "default", response["service_tier"])
-			require.Equal(t, "bytedance", response["provider"])
+			if scenario.generation == service.VideoGenerationCompleted && scenario.billing != service.VideoBillingCaptured {
+				require.NotContains(t, response, "provider")
+				require.NotContains(t, response, "provider_access")
+			} else {
+				require.Equal(t, "bytedance", response["provider"])
+			}
 			require.NotContains(t, response, "object")
 			require.NotContains(t, response, "url")
 			require.NotContains(t, response, "provider_task_id")

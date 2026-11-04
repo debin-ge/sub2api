@@ -535,7 +535,7 @@ func (m *VideoMetrics) UpdateOperational(snapshot VideoOperationalMetrics, now t
 
 func videoProviderLabel(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "openai", "bytedance", "fal", "wavespeed", "runware", "flova":
+	case "openai", "grok", "bytedance", "fal", "wavespeed", "runware", "flova":
 		return strings.ToLower(strings.TrimSpace(value))
 	default:
 		return "other"

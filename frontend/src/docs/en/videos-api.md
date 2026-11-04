@@ -3,7 +3,7 @@
 This page explains how to submit video generation tasks through {{SITE_NAME}}. Groups on the ByteDance (Volcengine Ark), fal, WaveSpeed, Runware and Flova platforms all use the Volcengine Ark asynchronous video task protocol: request body, response body and status vocabulary match Ark, so the Ark SDK works once its Base URL is set to `{{BASE_URL}}api/v3`.
 
 > [!NOTE]
-> Video for OpenAI (Sora) and Grok groups still goes through `/v1/videos`. Follow the instructions provided by your admin; this page does not cover it.
+> OpenAI (Sora) continues to use `/v1/videos`. Grok keeps its own payload and paths; see “Managed Grok video” below. The Ark parameter tables do not apply to Grok.
 
 ## Prerequisites
 
@@ -223,3 +223,42 @@ Errors use `{"error": {"message": "...", "type": "...", "param": null, "code": "
 | 502 | `video_no_account_available` | No usable upstream account. |
 
 See [Troubleshooting](/docs/errors) for the general checklist.
+
+
+## Managed Grok video
+
+When your administrator enables managed Grok, new tasks follow the same funding and delivery flow as ByteDance: reserve estimated funds, track generation in the background, capture payment before delivery, and release the hold on a confirmed failure. Closing the client does not stop processing. Older relay tasks keep their original settlement flow.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| POST | `/v1/videos/generations` | Generate a video |
+| POST | `/v1/videos/edits` | Edit a verified source video |
+| POST | `/v1/videos/extensions` | Extend a verified source video |
+| GET | `/v1/videos/{request_id}` | Read task status |
+| GET | `/v1/videos/{request_id}/content` | Download a settled video with an API Key |
+
+```bash
+# Generate once per business task; reuse this key and payload for retries.
+REQUEST_KEY="$(uuidgen)"
+curl "{{BASE_URL}}v1/videos/generations" \
+  -H "Authorization: Bearer ${API_KEY}" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: ${REQUEST_KEY}" \
+  -d '{
+    "model": "grok-imagine-video-1.5",
+    "prompt": "An adult gently places a wooden clock on a table in a shaded park.",
+    "duration": 8,
+    "aspect_ratio": "9:16",
+    "resolution": "480p",
+    "generate_audio": true
+  }'
+# Returns {"request_id":"<UUID>"}
+```
+
+The UUID identifies the gateway task, not the supplier task. Status and authenticated downloads require the creator API Key and its original group. `pending` includes generation and pending settlement; `done` and `video.url` are exposed only after capture. Follow `Retry-After` when polling. The returned URL is a temporary signed download capability: keep it private and query again when it expires.
+
+Images use `reference_images: [{"url":"https://..."}]`. Do not send Ark's `content` or `ratio` fields. Reference limits and audio/keyframe combinations depend on the model. `usage.cost_in_usd_ticks` reports supplier cost; the platform bill determines the customer charge.
+
+Edits and extensions accept `video: {"url":"https://.../source.mp4"}` or `video: {"id":"<settled Grok request_id>"}` for a managed task owned by the same key. The exact source bytes are frozen and measured. Edits charge the verified source duration; extension `duration` is the added segment and only that segment is charged. Omit `duration` for edits and omit `resolution`, `aspect_ratio`, and `generate_audio` for both derived operations. The current adapter uses `grok-imagine-video` for derived operations, subject to administrator capability settings.
+
+When submission is uncertain, reuse the original idempotency key instead of creating another paid generation. Grok does not expose upstream cancellation or deletion here. Managed video does not support subscription groups, and simple mode still reserves and settles balance; administrators must review prices and funding behavior before switching.

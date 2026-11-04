@@ -11,7 +11,7 @@ import (
 
 func TestVideoCreateIntentRequestClassification(t *testing.T) {
 	for _, prefix := range []string{"", "/v1"} {
-		for _, path := range []string{"/videos", "/videos/edits", "/videos/extensions", "/videos/characters"} {
+		for _, path := range []string{"/videos", "/videos/generations", "/videos/edits", "/videos/extensions", "/videos/characters"} {
 			for _, mediaType := range []string{"application/json", "application/json; charset=utf-8"} {
 				require.True(t, IsIdempotentJSONVideoCreate(http.MethodPost, prefix+path, mediaType, " key "))
 				require.False(t, IsIdempotentJSONVideoCreate(http.MethodGet, prefix+path, mediaType, "key"))
@@ -24,7 +24,7 @@ func TestVideoCreateIntentRequestClassification(t *testing.T) {
 			}
 		}
 	}
-	for _, path := range []string{"/videos/generations", "/v1/videos/generations", "/v11/videos", "/v1/videos/", "/videos/generations/id", "/videos/characters/id", "/images/generations"} {
+	for _, path := range []string{"/v11/videos", "/v1/videos/", "/videos/generations/id", "/videos/characters/id", "/images/generations"} {
 		require.False(t, IsIdempotentJSONVideoCreate(http.MethodPost, path, "application/json", "key"))
 	}
 }

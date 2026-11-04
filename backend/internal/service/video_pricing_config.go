@@ -788,6 +788,16 @@ func videoProfileUnits(config *VideoPricingConfig, rule VideoPricingRule, attrs 
 	case VideoBillingUnitRequest:
 		return 1, 1, nil, "", nil
 	case VideoBillingUnitSecond:
+		if attrs.BillableSeconds != 0 {
+			if !finitePositive(attrs.BillableSeconds) {
+				return 0, 0, nil, "", ErrVideoPricingInvalid
+			}
+			maximum := float64(attrs.MaximumOutputSeconds)
+			if maximum < attrs.BillableSeconds {
+				maximum = attrs.BillableSeconds
+			}
+			return attrs.BillableSeconds, maximum, nil, "", nil
+		}
 		if attrs.Seconds <= 0 {
 			return 0, 0, nil, "", fmt.Errorf("%w: seconds must be positive", ErrVideoPricingInvalid)
 		}

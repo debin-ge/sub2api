@@ -115,6 +115,7 @@ var ProviderSet = wire.NewSet(
 	NewVideoResourceRepository,
 	NewVideoCallbackRepository,
 	NewVideoAdminRepository,
+	NewGrokVideoTaskRepository,
 	NewGeminiCachedContentRepository,
 	NewIdempotencyRepository,
 	NewUsageCleanupRepository,

@@ -727,6 +727,12 @@ func (p *ByteDanceVideoProvider) OpenContent(ctx context.Context, account *Accou
 	if p == nil || request.TaskRef.Provider != VideoProviderByteDance {
 		return nil, ErrVideoProviderUnsupported
 	}
+	return p.openExternalVideoContent(ctx, account, request)
+}
+
+// openExternalVideoContent is shared by providers whose completed task exposes
+// an external object-storage URL. Redirects are pinned and never carry tokens.
+func (p *ByteDanceVideoProvider) openExternalVideoContent(ctx context.Context, account *Account, request ProviderContentRequest) (*ProviderContent, error) {
 	variant := strings.ToLower(strings.TrimSpace(request.Variant))
 	if variant == "" {
 		variant = "video"

@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -123,6 +124,7 @@ type grokMediaSlotBindings struct {
 	owner   int64
 	writes  int
 	key     string
+	readErr error
 	billed  map[string]bool
 	pending map[string][]byte
 }
@@ -139,6 +141,9 @@ func (s *grokMediaSlotBindings) GetGrokVideoPendingBilling(_ context.Context, ke
 }
 
 func (s *grokMediaSlotBindings) GetSessionAccountID(_ context.Context, groupID int64, key string) (int64, error) {
+	if s.readErr != nil {
+		return 0, s.readErr
+	}
 	if groupID != 24 || key != s.key {
 		return 0, service.ErrStickySessionNotFound
 	}
@@ -420,4 +425,43 @@ func TestGrokMediaVideoCompletionStillClaimsBillingOnce(t *testing.T) {
 		}
 	}
 	require.Len(t, bindings.billed, 1)
+}
+
+// A verified owner that cannot be scheduled and an unavailable cache are
+// retryable lookup failures, not evidence that the user's video does not exist.
+func TestGrokMediaVideoLookupUnavailable(t *testing.T) {
+	for _, scenario := range []string{"cache error", "bound account unavailable", "binding missing"} {
+		for _, content := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/content=%t", scenario, content), func(t *testing.T) {
+				h, slots, bindings, upstream := newGrokMediaSlotHandler(t, false, false)
+				switch scenario {
+				case "cache error":
+					bindings.readErr = errors.New("redis unavailable")
+				case "bound account unavailable":
+					bindings.owner = 99
+				case "binding missing":
+					bindings.readErr = service.ErrStickySessionNotFound
+				}
+				c, w := grokMediaSlotContext(context.Background(), false)
+				if content {
+					h.GrokVideoContent(c)
+				} else {
+					h.GrokVideoStatus(c)
+				}
+				if scenario == "binding missing" {
+					require.Equal(t, http.StatusNotFound, w.Code)
+					require.Empty(t, w.Header().Get("Retry-After"))
+				} else {
+					require.Equal(t, http.StatusServiceUnavailable, w.Code, w.Body.String())
+					require.Equal(t, "5", w.Header().Get("Retry-After"))
+					require.NotContains(t, w.Body.String(), "Video request not found")
+					require.NotContains(t, w.Body.String(), "redis unavailable")
+				}
+				require.Zero(t, upstream.calls, "lookups must not escape to another account")
+				require.Zero(t, bindings.writes, "keep the ownership binding")
+				require.Zero(t, slots.acquired)
+				slots.assertReleased(t)
+			})
+		}
+	}
 }

@@ -31,6 +31,7 @@ type VideoPricingAttributes struct {
 	Size                 string
 	Resolution           string
 	Ratio                string
+	BillableSeconds      float64
 	Seconds              int
 	Frames               int
 	SmartDuration        bool
@@ -242,6 +243,12 @@ func videoPricingUnits(unit string, attrs VideoPricingAttributes) (float64, erro
 	case VideoBillingUnitRequest:
 		return 1, nil
 	case VideoBillingUnitSecond:
+		if attrs.BillableSeconds != 0 {
+			if !finitePositive(attrs.BillableSeconds) {
+				return 0, ErrVideoPricingInvalid
+			}
+			return attrs.BillableSeconds, nil
+		}
 		if attrs.Seconds <= 0 {
 			return 0, fmt.Errorf("%w: seconds must be positive", ErrVideoPricingInvalid)
 		}

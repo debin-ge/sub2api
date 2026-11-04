@@ -148,6 +148,7 @@ func ProvideCompatibleGatewayHandler(
 	cfg *config.Config,
 	coordinator *securityaudit.Coordinator,
 	compositeResolver *service.CompositeRouteResolver,
+	grokVideoTasks *service.GrokVideoTaskService,
 ) *CompatibleGatewayHandler {
 	gatewayService.SetPluginManager(pluginManager)
 	h := NewOpenAIGatewayHandler(gatewayService, concurrencyService, billingCacheService, apiKeyService,
@@ -155,6 +156,7 @@ func ProvideCompatibleGatewayHandler(
 	h.compositeResolver = compositeResolver
 	h.securityAuditCoordinator = coordinator
 	h.grokMediaEligibilityProber = grokQuotaService
+	h.grokVideoTasks = grokVideoTasks
 	return h
 }
 
@@ -176,7 +178,7 @@ func ProvideOpenAIGatewayHandler(
 	compositeResolver *service.CompositeRouteResolver,
 ) *OpenAIGatewayHandler {
 	h := ProvideCompatibleGatewayHandler(gatewayService, pluginManager, concurrencyService, billingCacheService, apiKeyService,
-		usageRecordWorkerPool, errorPassthroughService, contentModerationService, opsService, grokQuotaService, cfg, coordinator, compositeResolver)
+		usageRecordWorkerPool, errorPassthroughService, contentModerationService, opsService, grokQuotaService, cfg, coordinator, compositeResolver, nil)
 	h.compositeResolver = compositeResolver
 	return h
 }

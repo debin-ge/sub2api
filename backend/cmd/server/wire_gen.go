@@ -235,7 +235,8 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	byteDanceVideoProvider := service.ProvideByteDanceVideoProvider(httpUpstream, tlsFingerprintProfileService, videoCapabilityCatalog)
 	flovaVideoProvider := service.ProvideFlovaVideoProvider(httpUpstream, tlsFingerprintProfileService, videoCapabilityCatalog, accountRepository, configConfig)
 	videoVendorProviders := service.ProvideVideoVendorProviders(httpUpstream, tlsFingerprintProfileService, videoCapabilityCatalog)
-	videoProviderRegistry := service.ProvideVideoProviderRegistry(openAIVideoProvider, byteDanceVideoProvider, flovaVideoProvider, videoVendorProviders)
+	grokVideoProvider := service.ProvideGrokVideoProvider(httpUpstream, grokTokenProvider, configConfig, videoCapabilityCatalog)
+	videoProviderRegistry := service.ProvideVideoProviderRegistry(openAIVideoProvider, byteDanceVideoProvider, flovaVideoProvider, videoVendorProviders, grokVideoProvider)
 	videoCapabilityProbeService := service.NewVideoCapabilityProbeService(accountRepository, videoProviderRegistry)
 	accountTestService := service.ProvideAccountTestService(accountRepository, geminiTokenProvider, claudeTokenProvider, grokTokenProvider, antigravityGatewayService, httpUpstream, configConfig, tlsFingerprintProfileService, openAIGatewayService, settingService, upstreamModelDiscoverer, pluginManager, videoCapabilityProbeService)
 	crsSyncService := service.NewCRSSyncService(accountRepository, proxyRepository, oAuthService, openAIOAuthService, geminiOAuthService, configConfig)
@@ -341,7 +342,10 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	if err != nil {
 		return nil, err
 	}
-	videoAdminService := service.NewVideoAdminService(videoAdminRepository, videoTaskRepository, videoTaskService, videoTaskQueue, videoCapabilityCatalog, videoSubmissionSpool, videoCapabilityProbeService)
+	grokVideoTaskRepository := repository.NewGrokVideoTaskRepository(db)
+	usageBillingPostEffectsService := service.NewUsageBillingPostEffectsService(billingCacheService, deferredService, userRepository, accountRepository, serviceUserPlatformQuotaRepository, balanceNotifyService, apiKeyService, configConfig)
+	grokVideoTaskService := service.ProvideGrokVideoTaskService(grokVideoTaskRepository, openAIGatewayService, apiKeyService, userRepository, accountRepository, secretEncryptor, usageBillingRepository, usageBillingPostEffectsService, configConfig)
+	videoAdminService := service.ProvideVideoAdminService(videoAdminRepository, videoTaskRepository, videoTaskService, videoTaskQueue, videoCapabilityCatalog, videoSubmissionSpool, videoCapabilityProbeService, grokVideoTaskService)
 	videoHandler := admin.NewVideoHandler(videoAdminService)
 	upstreamBillingProbeService := service.ProvideUpstreamBillingProbeService(accountRepository, accountTestService, settingService, leaderLockCache, db)
 	openCodeGoUsageService := service.ProvideOpenCodeGoUsageService(accountRepository, httpUpstream, settingService, leaderLockCache, db)
@@ -356,7 +360,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	geminiCachedContentRepository := repository.NewGeminiCachedContentRepository(db)
 	geminiCachedContentService := service.ProvideGeminiCachedContentService(geminiCachedContentRepository, geminiMessagesCompatService, configConfig)
 	gatewayHandler := handler.ProvideGatewayHandler(gatewayService, openAIGatewayService, geminiMessagesCompatService, antigravityGatewayService, userService, concurrencyService, billingCacheService, usageService, apiKeyService, usageRecordWorkerPool, errorPassthroughService, contentModerationService, userMessageQueueService, configConfig, settingService, modelCatalogService, coordinator, geminiCachedContentService)
-	openAIGatewayHandler := handler.ProvideCompatibleGatewayHandler(openAIGatewayService, pluginManager, concurrencyService, billingCacheService, apiKeyService, usageRecordWorkerPool, errorPassthroughService, contentModerationService, opsService, grokQuotaService, configConfig, coordinator, compositeRouteResolver)
+	openAIGatewayHandler := handler.ProvideCompatibleGatewayHandler(openAIGatewayService, pluginManager, concurrencyService, billingCacheService, apiKeyService, usageRecordWorkerPool, errorPassthroughService, contentModerationService, opsService, grokQuotaService, configConfig, coordinator, compositeRouteResolver, grokVideoTaskService)
 	miniMaxQuotaCache := repository.NewMiniMaxQuotaCache(redisClient)
 	miniMaxQuotaService := service.NewMiniMaxQuotaService(miniMaxQuotaCache, miniMaxTokenPlanClient)
 	miniMaxGatewayService := service.ProvideMiniMaxGatewayService(miniMaxQuotaService, configConfig)
@@ -403,7 +407,6 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	openAIQuotaAutoResetService := service.ProvideOpenAIQuotaAutoResetService(accountRepository, openAIQuotaService, rateLimitService, idempotencyCoordinator, auditLogService, settingService, leaderLockCache)
 	videoSpoolRuntime := service.ProvideVideoSpoolRuntime(videoSubmissionSpool, configConfig)
 	videoCallbackRepository := repository.NewVideoCallbackRepository(db)
-	usageBillingPostEffectsService := service.NewUsageBillingPostEffectsService(billingCacheService, deferredService, userRepository, accountRepository, serviceUserPlatformQuotaRepository, balanceNotifyService, apiKeyService, configConfig)
 	videoTaskWorker := service.NewVideoTaskWorker(videoTaskRepository, videoTaskQueue, accountRepository, videoProviderRegistry, videoTaskService, usageBillingRepository, videoCallbackRepository, usageBillingPostEffectsService, configConfig)
 	videoTaskRuntime := service.ProvideVideoTaskRuntime(videoTaskWorker, configConfig)
 	videoCallbackWorker := service.NewVideoCallbackWorker(videoCallbackRepository, secretEncryptor, videoTaskService, configConfig)
@@ -450,7 +453,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	channelMonitorV2Aggregator := service.ProvideChannelMonitorV2Aggregator(channelMonitorV2Repository, db, settingService)
 	modelCatalogRefreshRunner := service.ProvideModelCatalogRefreshRunner(modelCatalogService, modelCatalogConfig)
 	userPlatformQuotaUsageFlusher := service.ProvideUserPlatformQuotaUsageFlusher(configConfig, billingCache, serviceUserPlatformQuotaRepository, timingWheelService)
-	mainCleanupFactory := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, opsService, opsIngressRejectAggregator, apiKeyService, authCacheInvalidationWorker, notificationEmailOutboxWorker, apiKeyRotationService, usageBillingOutboxWorker, schedulerSnapshotService, tokenRefreshService, accountExpiryService, cnProviderBalanceCheckService, flovaCreditsSyncService, openAICodexVersionSyncService, claudeCodeVersionSyncService, proxyExpiryService, subscriptionExpiryService, vipReconcileService, vipIncrementalReconcileService, usageCleanupService, idempotencyCleanupService, geminiCachedContentService, batchImageCleanupService, batchImageWorkerRuntime, videoSpoolRuntime, videoTaskRuntime, videoCallbackRuntime, videoCapabilityProbeRuntime, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, billingRecoveryService, miniMaxRemainsSyncRunner, deepSeekBalanceHealthRunner, channelMonitorRunner, channelMonitorV2Aggregator, modelCatalogRefreshRunner, userPlatformQuotaUsageFlusher, upstreamBillingProbeService, ollamaCloudUsageService, openCodeGoUsageService, auditLogService, openAIQuotaAutoResetService, promptService, pluginManager)
+	mainCleanupFactory := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, opsService, opsIngressRejectAggregator, apiKeyService, authCacheInvalidationWorker, notificationEmailOutboxWorker, apiKeyRotationService, usageBillingOutboxWorker, schedulerSnapshotService, tokenRefreshService, accountExpiryService, cnProviderBalanceCheckService, flovaCreditsSyncService, openAICodexVersionSyncService, claudeCodeVersionSyncService, proxyExpiryService, subscriptionExpiryService, vipReconcileService, vipIncrementalReconcileService, usageCleanupService, idempotencyCleanupService, geminiCachedContentService, batchImageCleanupService, batchImageWorkerRuntime, videoSpoolRuntime, videoTaskRuntime, grokVideoTaskService, videoCallbackRuntime, videoCapabilityProbeRuntime, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, billingRecoveryService, miniMaxRemainsSyncRunner, deepSeekBalanceHealthRunner, channelMonitorRunner, channelMonitorV2Aggregator, modelCatalogRefreshRunner, userPlatformQuotaUsageFlusher, upstreamBillingProbeService, ollamaCloudUsageService, openCodeGoUsageService, auditLogService, openAIQuotaAutoResetService, promptService, pluginManager)
 	mainRadarQuotaAggregatorConstructor := provideRadarQuotaAggregatorConstructor(accountRepository, accountUsageService, usageLogRepository, radarCacheRepository, configConfig)
 	mainRadarFetchersConstructor := provideRadarFetchersConstructor(modelCatalogService)
 	application, err := provideApplication(httpServer, promptService, pluginManager, concurrencyService, configConfig, radarCacheRepository, radarRuntimeSettingReader, radarAdminController, mainCleanupFactory, mainRadarQuotaAggregatorConstructor, mainRadarFetchersConstructor)
@@ -628,6 +631,7 @@ func provideCleanup(
 	batchImageWorker *service.BatchImageWorkerRuntime,
 	videoSpoolRuntime *service.VideoSpoolRuntime,
 	videoTaskRuntime *service.VideoTaskRuntime,
+	grokVideoTasks *service.GrokVideoTaskService,
 	videoCallbackRuntime *service.VideoCallbackRuntime,
 	videoCapabilityProbeRuntime *service.VideoCapabilityProbeRuntime,
 	pricing *service.PricingService,
@@ -694,6 +698,7 @@ func provideCleanup(
 			batchImageWorker,
 			videoSpoolRuntime,
 			videoTaskRuntime,
+			grokVideoTasks,
 			videoCallbackRuntime,
 			videoCapabilityProbeRuntime,
 			pricing,
@@ -763,6 +768,7 @@ func provideFinalCleanup(
 	batchImageWorker *service.BatchImageWorkerRuntime,
 	videoSpoolRuntime *service.VideoSpoolRuntime,
 	videoTaskRuntime *service.VideoTaskRuntime,
+	grokVideoTasks *service.GrokVideoTaskService,
 	videoCallbackRuntime *service.VideoCallbackRuntime,
 	videoCapabilityProbeRuntime *service.VideoCapabilityProbeRuntime,
 	pricing *service.PricingService,
@@ -946,6 +952,7 @@ func provideFinalCleanup(
 				}
 				return nil
 			}},
+			{"GrokVideoTasks", func() error { grokVideoTasks.Stop(); return nil }},
 			{"VideoTaskRuntime", func() error {
 				if videoTaskRuntime != nil {
 					videoTaskRuntime.Stop()

@@ -20,6 +20,11 @@ export interface VideoAccessMetadata {
 }
 
 export interface VideoAdminTask {
+  sync_status?: string
+  settlement_status?: string
+  last_polled_at?: string
+  imported_from_legacy?: boolean
+  allowed_actions?: string[]
 	version: number
 	lease_epoch: number
 	lease_expires_at?: string
@@ -155,6 +160,8 @@ export interface VideoAdminCallback {
 }
 
 export interface VideoAdminOverview {
+  grok_settlement?: Record<string, number>
+  grok_sync?: Record<string, number>
   tasks_by_generation: Record<string, number>
   tasks_by_billing: Record<string, number>
   tasks_by_delete: Record<string, number>
@@ -235,6 +242,8 @@ export interface VideoAdminPage<T> {
 }
 
 export interface VideoTaskQuery {
+  source?: string
+  settlement_status?: string
   page?: number
   page_size?: number
   user_id?: number
@@ -356,7 +365,53 @@ export async function retryVideoCallback(id: number): Promise<VideoAdminCallback
   return data
 }
 
+export interface GrokVideoMigrationCase {
+  model: string
+  operation?: 'generate' | 'edit' | 'extend'
+  resolution: string
+  seconds: number
+  source_seconds?: number
+  legacy_resolution?: string
+  input_type?: string
+  generate_audio?: boolean
+}
+
+export interface GrokVideoMigrationPreview {
+  group_id: number
+  ready: boolean
+  fingerprint: string
+  generated_at: string
+  warnings: string[]
+  comparisons: Array<{
+    case: GrokVideoMigrationCase
+    requested_model: string
+    channel_model: string
+    upstream_model: string
+    legacy_cost?: number
+    legacy_after_cost?: number
+    managed_cost?: number
+    hold_amount?: number
+    legacy_seconds: number
+    legacy_resolution: string
+    suggested_rule?: Record<string, unknown>
+    pricing_source?: string
+    notes?: string[]
+    error?: string
+  }>
+}
+
+export async function previewGrokVideoMigration(request: {
+  api_key_id: number
+  account_id: number
+  cases: GrokVideoMigrationCase[]
+  proposed_model_pricing?: Record<string, unknown>[]
+}): Promise<GrokVideoMigrationPreview> {
+  const { data } = await apiClient.post<GrokVideoMigrationPreview>(`${ADMIN_VIDEOS_PATH}/grok-migration/preview`, request)
+  return data
+}
+
 const videosAdminAPI = {
+  previewGrokMigration: previewGrokVideoMigration,
   overview: getVideoOverview,
 	getCapabilities: getVideoCapabilityCatalog,
 	updateCapabilities: updateVideoCapabilityCatalog,

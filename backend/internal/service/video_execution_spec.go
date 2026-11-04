@@ -17,6 +17,7 @@ type ResolvedVideoExecutionSpec struct {
 	Resolution        string  `json:"resolution,omitempty"`
 	Ratio             string  `json:"ratio,omitempty"`
 	Seconds           int     `json:"seconds"`
+	BillableSeconds   float64 `json:"billable_seconds,omitempty"`
 	Frames            int     `json:"frames,omitempty"`
 	SmartDuration     bool    `json:"smart_duration,omitempty"`
 	DurationSemantics string  `json:"duration_semantics"`
@@ -34,6 +35,9 @@ const (
 )
 
 func resolveVideoExecutionSpec(request VideoCreateRequest, accountID int64, provider string, source *VideoTask) (VideoCreateRequest, ResolvedVideoExecutionSpec, error) {
+	if provider == VideoProviderGrok {
+		return resolveGrokVideoExecutionSpec(request, accountID, source)
+	}
 	if normalized, _, _, valid := parseVideoDimensions(request.Size); valid {
 		request.Size = normalized
 	}
@@ -230,6 +234,9 @@ func videoCheckObservedSpecification(task *VideoTask, metadata map[string]any) e
 			return nil
 		}
 		expected := float64(spec.Seconds)
+		if spec.BillableSeconds > 0 {
+			expected = spec.BillableSeconds
+		}
 		if spec.DurationSemantics == "extension_segment" {
 			expected = spec.TotalSeconds
 			if !finitePositive(expected) {

@@ -36,7 +36,7 @@ func TestVideoResourceRequestClassification(t *testing.T) {
 			require.False(t, isVideoResourceRequest(http.MethodGet, path, key))
 		}
 	}
-	require.False(t, isVideoResourceRequest(http.MethodGet, "/videos/"+taskID, &service.APIKey{Group: &service.Group{Platform: service.PlatformGrok}}))
+	require.True(t, isVideoResourceRequest(http.MethodGet, "/videos/"+taskID, &service.APIKey{Group: &service.Group{Platform: service.PlatformGrok}}))
 	require.False(t, isVideoResourceRequest(http.MethodGet, "/videos/"+taskID, nil))
 }
 
@@ -138,4 +138,15 @@ func TestVideoResourceRequestClassificationRecognisesArkPaths(t *testing.T) {
 	require.False(t, isVideoResourceRequest(http.MethodGet, "/api/v3/contents/generations/tasks/"+taskID, &service.APIKey{}))
 	require.False(t, isVideoGenerationRequest(http.MethodPost, "/api/v3/contents/generations/tasks", nil))
 	require.False(t, isVideoGenerationRequest(http.MethodPost, "/api/v3/contents/generations/tasks", &service.APIKey{}))
+}
+
+func TestManagedGrokCreationDefersToAtomicVideoAdmission(t *testing.T) {
+	key := &service.APIKey{Group: &service.Group{Platform: service.PlatformGrok}}
+	for _, path := range []string{"/v1/videos", "/v1/videos/generations", "/v1/videos/edits", "/v1/videos/extensions"} {
+		require.True(t, isVideoGenerationRequest(http.MethodPost, path, key, true), path)
+		require.False(t, isVideoGenerationRequest(http.MethodPost, path, key, false), path)
+	}
+	require.False(t, isVideoGenerationRequest(http.MethodPost, "/v1/videos/characters", key, true))
+	require.True(t, isVideoResourceRequest(http.MethodGet, "/v1/videos/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", key))
+	require.False(t, isVideoResourceRequest(http.MethodDelete, "/v1/videos/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", key))
 }

@@ -226,6 +226,7 @@ func provideCleanup(
 	batchImageWorker *service.BatchImageWorkerRuntime,
 	videoSpoolRuntime *service.VideoSpoolRuntime,
 	videoTaskRuntime *service.VideoTaskRuntime,
+	grokVideoTasks *service.GrokVideoTaskService,
 	videoCallbackRuntime *service.VideoCallbackRuntime,
 	videoCapabilityProbeRuntime *service.VideoCapabilityProbeRuntime,
 	pricing *service.PricingService,
@@ -292,6 +293,7 @@ func provideCleanup(
 			batchImageWorker,
 			videoSpoolRuntime,
 			videoTaskRuntime,
+			grokVideoTasks,
 			videoCallbackRuntime,
 			videoCapabilityProbeRuntime,
 			pricing,
@@ -361,6 +363,7 @@ func provideFinalCleanup(
 	batchImageWorker *service.BatchImageWorkerRuntime,
 	videoSpoolRuntime *service.VideoSpoolRuntime,
 	videoTaskRuntime *service.VideoTaskRuntime,
+	grokVideoTasks *service.GrokVideoTaskService,
 	videoCallbackRuntime *service.VideoCallbackRuntime,
 	videoCapabilityProbeRuntime *service.VideoCapabilityProbeRuntime,
 	pricing *service.PricingService,
@@ -545,6 +548,7 @@ func provideFinalCleanup(
 				}
 				return nil
 			}},
+			{"GrokVideoTasks", func() error { grokVideoTasks.Stop(); return nil }},
 			{"VideoTaskRuntime", func() error {
 				if videoTaskRuntime != nil {
 					videoTaskRuntime.Stop()

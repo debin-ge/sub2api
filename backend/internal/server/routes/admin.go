@@ -148,6 +148,7 @@ func registerAdminVideoRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	videos := admin.Group("/videos")
 	{
 		videos.GET("/overview", h.Admin.Video.Overview)
+		videos.POST("/grok-migration/preview", h.Admin.Video.PreviewGrokMigration)
 		videos.GET("/provider-costs", h.Admin.Video.ListProviderCosts)
 		videos.POST("/provider-costs/:id/resolve", h.Admin.Video.ResolveProviderCost)
 		videos.GET("/capabilities", h.Admin.Video.GetCapabilityCatalog)

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"github.com/google/uuid"
 	"strings"
 )
 
@@ -50,7 +51,7 @@ func ManagedVideoOperationForPath(path string) (string, bool) {
 		path = strings.TrimPrefix(path, "/v1")
 	}
 	switch path {
-	case "/videos":
+	case "/videos", "/videos/generations":
 		return VideoOperationGenerate, true
 	case "/videos/edits":
 		return VideoOperationEdit, true
@@ -94,11 +95,39 @@ func (s *VideoTaskService) ResolveVideoIngress(ctx context.Context, key *APIKey,
 		if !errors.Is(err, ErrVideoTaskNotFound) {
 			return nil, err
 		}
+		// Grok's key-scoped receipt wins before evaluating a newly changed composite
+		// route. Otherwise the same client key could create a second paid task on a
+		// different provider after cutover or a routing edit.
+		grokKey := GrokManagedIdempotencyKey(key, operation, strings.TrimSpace(idempotencyKey))
+		task, grokErr := s.tasks.GetVideoTaskByIdempotency(ctx, key.UserID, endpoint, grokKey)
+		if grokErr == nil {
+			if task == nil || task.Provider != VideoProviderGrok || task.APIKeyID == nil || *task.APIKeyID != key.ID || task.GroupID == nil || *task.GroupID != *key.GroupID {
+				return nil, ErrVideoIdempotencyConflict
+			}
+			return &VideoIngressRoute{ManagedReplay: true, Decision: CompositeRouteDecision{Matched: true, GroupID: *key.GroupID, PublicModel: model, TargetPlatform: PlatformGrok, UpstreamModel: model, Endpoint: endpoint}}, nil
+		}
+		if !errors.Is(grokErr, ErrVideoTaskNotFound) {
+			return nil, grokErr
+		}
+	}
+	if !IsValidVideoTaskID(sourceID) && (operation == VideoOperationEdit || operation == VideoOperationExtend) {
+		if id, parseErr := uuid.Parse(sourceID); parseErr == nil {
+			internal := "video_" + strings.ReplaceAll(id.String(), "-", "")
+			candidate, lookupErr := s.tasks.GetVideoTaskForOwner(ctx, key.UserID, internal)
+			if lookupErr == nil && candidate != nil && candidate.Provider == VideoProviderGrok {
+				sourceID = internal
+			} else if lookupErr != nil && !errors.Is(lookupErr, ErrVideoTaskNotFound) {
+				return nil, lookupErr
+			}
+		}
 	}
 	if IsValidVideoTaskID(sourceID) && (operation == VideoOperationEdit || operation == VideoOperationExtend) {
 		task, err := s.tasks.GetVideoTaskForOwner(ctx, key.UserID, sourceID)
 		if err != nil {
 			return nil, err
+		}
+		if task.Provider == VideoProviderGrok && (task.APIKeyID == nil || *task.APIKeyID != key.ID || task.GroupID == nil || *task.GroupID != *key.GroupID) {
+			return nil, ErrVideoTaskNotFound
 		}
 		if _, supported := managedVideoProviderForPlatform(task.Provider); !supported {
 			return nil, ErrVideoProviderUnsupported
