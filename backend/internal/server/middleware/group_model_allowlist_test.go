@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -124,6 +125,54 @@ func TestGroupModelAllowlistEnabledModelFreeRequestRestoresBody(t *testing.T) {
 	w := doJSON(t, router, http.MethodPost, "/v1/messages", `{"input":"no model field"}`)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+type groupModelAllowlistErrReader struct {
+	data []byte
+	err  error
+}
+
+func (r *groupModelAllowlistErrReader) Read(p []byte) (int, error) {
+	if len(r.data) == 0 {
+		return 0, r.err
+	}
+	n := copy(p, r.data)
+	r.data = r.data[n:]
+	return n, nil
+}
+
+// 客户端上传途中断开（截断）归为 499，其它读取错误仍为 400。
+func TestGroupModelAllowlistRequestBodyReadFailureStatus(t *testing.T) {
+	cases := []struct {
+		name       string
+		err        error
+		wantStatus int
+		wantMsg    string
+	}{
+		{"truncated upload", io.ErrUnexpectedEOF, httputil.StatusClientClosedRequest, "Client closed request"},
+		{"malformed body", errors.New("malformed chunked encoding"), http.StatusBadRequest, "Failed to read request body"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			router, calls := newGroupModelAllowlistTestRouter(allowlistAPIKey(true, "claude-sonnet-4.5"), "/v1")
+			req := httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+			req.Header.Set("Content-Type", "application/json")
+			req.Body = io.NopCloser(&groupModelAllowlistErrReader{data: []byte(`{"model":`), err: tc.err})
+			req.ContentLength = 1000
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			if w.Code != tc.wantStatus {
+				t.Fatalf("expected %d, got %d: %s", tc.wantStatus, w.Code, w.Body.String())
+			}
+			if !strings.Contains(w.Body.String(), tc.wantMsg) {
+				t.Fatalf("expected message %q, got %s", tc.wantMsg, w.Body.String())
+			}
+			if len(*calls) != 0 {
+				t.Fatalf("expected handler not to run, got %v", *calls)
+			}
+		})
 	}
 }
 
