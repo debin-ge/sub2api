@@ -541,6 +541,8 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	if account.IsOAuth() && s.identityService != nil {
 		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, clientHeaders)
 		if err == nil {
+			// 入口标签跟随当前客户端（同 buildUpstreamRequest）
+			fp = fingerprintForClientRequest(fp, clientHeaders.Get("User-Agent"))
 			ctFingerprint = fp
 			if !ctEnableMPT {
 				accountUUID := account.GetExtraString("account_uuid")
