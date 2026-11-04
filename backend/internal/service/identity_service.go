@@ -117,6 +117,52 @@ func floorClaudeCLIUserAgentVersion(ua string) (string, bool) {
 	return floored, true
 }
 
+// claudeCLIReplacesForeignFingerprint 判断客户端的 claude-cli UA 是否应接管一个
+// 非 claude-cli 产品的缓存指纹。
+//
+// isNewerVersion 要求产品名一致，floorClaudeCLIUserAgentVersion 只处理 claude-cli：
+// 账号首个请求若来自第三方客户端（如 "curl/8.7.1"、"python-httpx/0.27.0" 这类形态
+// 合法的 UA），指纹会被写成该产品且此后永远不会被真实 Claude Code
+// 客户端替换，透传请求就一直以第三方 UA 搭配 Claude Code 的 billing block 出站。
+// 只允许 claude-cli 接管其它产品，反向不接管。
+func claudeCLIReplacesForeignFingerprint(clientUA, cachedUA string) bool {
+	return extractProduct(clientUA) == claudeCLIUserAgentProduct &&
+		extractProduct(cachedUA) != claudeCLIUserAgentProduct
+}
+
+// fingerprintForClientRequest 返回本次请求使用的指纹：版本号沿用账号指纹（只升不降、
+// 已抬到下限，且与请求体 cc_version 同源），UA 中版本号之后的客户端形态段
+// （如 "(external, sdk-cli)"）取自当前客户端。
+//
+// 账号指纹只在首次创建或客户端版本更新时整串写入 UA。不做这一步，透传路径出站 UA 的
+// 入口标签就是"最早访问该账号的客户端类型"，而请求体 x-anthropic-billing-header 的
+// cc_entrypoint 是当前客户端的：同一请求自相矛盾，且一类客户端的流量会被标成另一类。
+//
+// 仅在指纹与客户端都是 claude-cli、且客户端 UA 通过 isAcceptableFingerprintUserAgent
+// 校验时生效，其余情况原样返回 fp。改动时返回副本，不修改缓存对象。
+func fingerprintForClientRequest(fp *Fingerprint, clientUA string) *Fingerprint {
+	if fp == nil {
+		return nil
+	}
+	clientUA = strings.TrimSpace(clientUA)
+	if extractProduct(fp.UserAgent) != claudeCLIUserAgentProduct ||
+		extractProduct(clientUA) != claudeCLIUserAgentProduct ||
+		!isAcceptableFingerprintUserAgent(clientUA) {
+		return fp
+	}
+	version := ExtractCLIVersion(fp.UserAgent)
+	if version == "" {
+		return fp
+	}
+	ua := claudeCLIUAVersionPrefixRegex.ReplaceAllString(clientUA, "${1}/"+version)
+	if ua == fp.UserAgent {
+		return fp
+	}
+	out := *fp
+	out.UserAgent = ua
+	return &out
+}
+
 // defaultFingerprint 返回默认指纹值（当客户端未提供时使用）。
 // UserAgent 不能在包 init 时固化：必须在每次使用时经 EffectiveCLIVersion 现取，
 // 否则运行期同步到新版本后，新建账号会写入过期版本作为持久身份。
@@ -203,15 +249,24 @@ func (s *IdentityService) GetOrCreateFingerprint(ctx context.Context, accountID 
 			logger.LegacyPrintf("service.identity",
 				"Replaced malformed cached fingerprint for account %d: %q -> %q",
 				accountID, poisoned, cached.UserAgent)
-		} else {
+		} else if uaAcceptable && claudeCLIReplacesForeignFingerprint(clientUA, cached.UserAgent) {
+			// 真实 Claude Code 客户端接管第三方产品指纹：按首次创建语义重建（缺失的
+			// x-stainless-* 回退默认值，不沿用第三方客户端的运行时信息），只保留 ClientID，
+			// 使 metadata.user_id 的设备标识保持不变。
+			foreign := cached.UserAgent
+			rebuilt := s.createFingerprintFromHeaders(headers)
+			rebuilt.ClientID = cached.ClientID
+			cached = rebuilt
+			needWrite = true
+			logger.LegacyPrintf("service.identity",
+				"Replaced non-claude-cli cached fingerprint for account %d: %q -> %q",
+				accountID, foreign, cached.UserAgent)
+		} else if uaAcceptable && isNewerVersion(clientUA, cached.UserAgent) {
 			// 客户端送来更新版本时的常规升级：merge 语义 — 仅更新请求中实际携带的字段，
 			// 保留缓存值，避免缺失的头被硬编码默认值覆盖（如新 CLI 版本 + 旧 SDK 默认值的不一致）
-			if uaAcceptable && isNewerVersion(clientUA, cached.UserAgent) {
-				mergeHeadersIntoFingerprint(cached, headers)
-				needWrite = true
-				logger.LegacyPrintf("service.identity", "Updated fingerprint for account %d: %s (merge update)", accountID, clientUA)
-			}
-
+			mergeHeadersIntoFingerprint(cached, headers)
+			needWrite = true
+			logger.LegacyPrintf("service.identity", "Updated fingerprint for account %d: %s (merge update)", accountID, clientUA)
 		}
 
 		// 版本下限抬升（floor）：heal 与 healthy 两条缓存命中路径共同的后置条件，与
