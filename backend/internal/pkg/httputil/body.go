@@ -141,7 +141,7 @@ func readRequestBodyChunks(reader io.Reader, initialCapacity int, contentLength 
 			n += read
 		}
 		if err != nil && err != io.EOF {
-			return nil, err
+			return nil, &BodyReadError{BytesRead: int64(total + n), Err: err}
 		}
 		if n > 0 {
 			chunks = append(chunks, chunk[:n])
