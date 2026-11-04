@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/typesafe"
@@ -60,7 +61,8 @@ func (h *GatewayHandler) SystemOne(c *gin.Context) {
 			h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
 			return
 		}
-		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
+		status, message := pkghttputil.RequestBodyReadFailure(c.Request, err)
+		h.errorResponse(c, status, "invalid_request_error", message)
 		return
 	}
 	model, err := typesafe.ValidateSystemOneRequest(body)
