@@ -1292,10 +1292,11 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 			availableModels = h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, platform)
 			err = nil
 		}
-		if err == nil && availableModels == nil && h.gatewayService != nil {
-			// A nil live catalog is distinct from an authoritative empty catalog.
-			// Re-run the account-aware fallback so local retirement/deletion rules
-			// are applied before the static OpenAI defaults are emitted.
+		if err == nil && len(availableModels) == 0 && h.gatewayService != nil {
+			// The live catalog returns an empty (non-nil) slice when it has no
+			// entries for this scope. Re-run the account-aware fallback: it yields
+			// nil (use static defaults) or an authoritative empty slice only when
+			// every OpenAI model is retired.
 			availableModels = h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, platform)
 		}
 	} else if h.gatewayService != nil {

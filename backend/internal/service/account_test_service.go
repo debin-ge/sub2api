@@ -274,14 +274,8 @@ func NewAccountTestService(
 	httpUpstream HTTPUpstream,
 	cfg *config.Config,
 	tlsFPProfileService *TLSFingerprintProfileService,
-	optional ...any,
+	modelDiscoverer *UpstreamModelDiscoverer,
 ) *AccountTestService {
-	var modelDiscoverer *UpstreamModelDiscoverer
-	for _, value := range optional {
-		if typed, ok := value.(*UpstreamModelDiscoverer); ok {
-			modelDiscoverer = typed
-		}
-	}
 	// Do not store a typed-nil *UpstreamModelDiscoverer in the interface field:
 	// an interface containing a nil pointer is non-nil and would select the
 	// discoverer path, returning "discoverer is not configured" instead of

@@ -339,25 +339,13 @@ func resolveUsageBillingPayloadFingerprint(ctx context.Context, requestPayloadHa
 	return ""
 }
 
-func buildUsageBillingCommand(args ...any) *UsageBillingCommand {
-	var (
-		ctx       context.Context = context.Background()
-		requestID string
-		usageLog  *UsageLog
-		p         *postUsageBillingParams
-		deps      *billingDeps
-	)
-	if len(args) == 5 {
-		ctx, _ = args[0].(context.Context)
-		requestID, _ = args[1].(string)
-		usageLog, _ = args[2].(*UsageLog)
-		p, _ = args[3].(*postUsageBillingParams)
-		deps, _ = args[4].(*billingDeps)
-	} else if len(args) == 3 {
-		requestID, _ = args[0].(string)
-		usageLog, _ = args[1].(*UsageLog)
-		p, _ = args[2].(*postUsageBillingParams)
-	}
+func buildUsageBillingCommand(
+	ctx context.Context,
+	requestID string,
+	usageLog *UsageLog,
+	p *postUsageBillingParams,
+	deps *billingDeps,
+) *UsageBillingCommand {
 	if p == nil || p.Cost == nil || p.APIKey == nil || p.User == nil || p.Account == nil {
 		return nil
 	}
