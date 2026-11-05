@@ -744,6 +744,13 @@ func (s *AccountTestService) fetchUpstreamModelListRequest(ctx context.Context, 
 	if account == nil {
 		return nil, nil, nil, newUpstreamModelSyncConfigError("Account is required", nil)
 	}
+	// Grok catalog observations are scoped by the model-list request URL, so
+	// prefer the discoverer entry point that also returns the request.
+	if discoverer, ok := s.modelDiscoverer.(interface {
+		DiscoverWithRequest(context.Context, *Account) ([]string, []byte, *http.Request, error)
+	}); ok {
+		return discoverer.DiscoverWithRequest(ctx, account)
+	}
 	if discoverer, ok := s.modelDiscoverer.(interface {
 		DiscoverWithBody(context.Context, *Account) ([]string, []byte, error)
 	}); ok {
@@ -1455,8 +1462,7 @@ func metadataExtractUpstreamModelIDs(body []byte) ([]string, error) {
 }
 
 func metadataExtractGrokUpstreamModelIDs(body []byte) ([]string, error) {
-	return metadataExtractUpstreamModelIDsWithSelector(body, metadataGrokUpstreamModelEntryID)
-
+	return parseGrokCatalogModelIDs(body)
 }
 
 func extractUpstreamModelCatalog(body []byte, grok bool) ([]string, map[string]UpstreamModelMetadata, error) {
