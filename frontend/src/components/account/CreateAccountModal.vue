@@ -2654,10 +2654,10 @@
         />
       </div>
 
-      <!-- 配额控制 (非 Anthropic apikey/bedrock) -->
+      <!-- 配额控制 (非 Anthropic apikey/bedrock，以及 Vertex service_account) -->
       <div
-        v-else-if="!isFixedEndpointGatewayPlatform && (form.type === 'apikey' || form.type === 'bedrock')"
-        class="border-t zt-border-c2 pt-4 space-y-4"
+        v-else-if="!isFixedEndpointGatewayPlatform && supportsAccountQuota(form.type)"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4"
       >
         <div class="mb-3">
           <h3 class="input-label mb-0 text-base font-semibold">{{ t('admin.accounts.quotaControl.title') }}</h3>
@@ -4641,6 +4641,7 @@ import {
   parseDateTimeLocalInput
 } from '@/utils/format'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
+import { supportsAccountQuota } from '@/utils/accountQuota'
 import { getAccountExpiryTimestamp } from '@/components/account/accountExpiry'
 import {
   MINIMAX_ANTHROPIC_BASE_URL,
@@ -7036,9 +7037,9 @@ const createAccountAndFinish = async (
   if (!isFixedEndpointGatewayPlatformValue(platform) && !applyTempUnschedConfig(credentials)) {
     return
   }
-  // Inject quota limits for apikey/bedrock accounts
+  // Inject quota limits for apikey/bedrock/service_account accounts
   let finalExtra = withUpstreamRequestIdHeader(extra)
-  if (!isFixedEndpointGatewayPlatformValue(platform) && (type === 'apikey' || type === 'bedrock')) {
+  if (!isFixedEndpointGatewayPlatformValue(platform) && supportsAccountQuota(type)) {
     const quotaExtra: Record<string, unknown> = { ...(finalExtra || {}) }
     if (editQuotaLimit.value != null && editQuotaLimit.value > 0) {
       quotaExtra.quota_limit = editQuotaLimit.value

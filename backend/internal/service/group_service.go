@@ -75,6 +75,7 @@ type CreateGroupRequest struct {
 	IsExclusive          bool     `json:"is_exclusive"`
 	VIPOnly              bool     `json:"vip_only"`
 	AllowImageGeneration bool     `json:"allow_image_generation"`
+	ImageCountBilling    bool     `json:"image_count_billing"`
 	ImageRateIndependent bool     `json:"image_rate_independent"`
 	ImageRateMultiplier  *float64 `json:"image_rate_multiplier"`
 }
@@ -88,6 +89,7 @@ type UpdateGroupRequest struct {
 	VIPOnly              *bool    `json:"vip_only"`
 	Status               *string  `json:"status"`
 	AllowImageGeneration *bool    `json:"allow_image_generation"`
+	ImageCountBilling    *bool    `json:"image_count_billing"`
 	ImageRateIndependent *bool    `json:"image_rate_independent"`
 	ImageRateMultiplier  *float64 `json:"image_rate_multiplier"`
 }
@@ -114,6 +116,11 @@ func NewGroupService(
 
 // Create 创建分组
 func (s *GroupService) Create(ctx context.Context, req CreateGroupRequest) (*Group, error) {
+	// 该入口固定创建 Anthropic 分组，而按张计费只支持 composite / openai 平台，
+	// 必须拒绝，避免写入永远不生效的开关。
+	if req.ImageCountBilling {
+		return nil, fmt.Errorf("image_count_billing is only supported for composite or openai groups with image generation enabled")
+	}
 	imageRateMultiplier := 1.0
 	if req.ImageRateMultiplier != nil {
 		if *req.ImageRateMultiplier < 0 {
@@ -141,6 +148,7 @@ func (s *GroupService) Create(ctx context.Context, req CreateGroupRequest) (*Gro
 		Status:               StatusActive,
 		SubscriptionType:     SubscriptionTypeStandard,
 		AllowImageGeneration: req.AllowImageGeneration,
+		ImageCountBilling:    req.ImageCountBilling,
 		ImageRateIndependent: req.ImageRateIndependent,
 		ImageRateMultiplier:  imageRateMultiplier,
 	}
@@ -229,6 +237,16 @@ func (s *GroupService) Update(ctx context.Context, id int64, req UpdateGroupRequ
 	}
 	if req.AllowImageGeneration != nil {
 		group.AllowImageGeneration = *req.AllowImageGeneration
+	}
+	if req.ImageCountBilling != nil {
+		if *req.ImageCountBilling &&
+			(!group.AllowImageGeneration || (group.Platform != PlatformComposite && group.Platform != PlatformOpenAI)) {
+			return nil, fmt.Errorf("image_count_billing requires image generation enabled on composite or openai groups")
+		}
+		group.ImageCountBilling = *req.ImageCountBilling
+	}
+	if !group.AllowImageGeneration || (group.Platform != PlatformComposite && group.Platform != PlatformOpenAI) {
+		group.ImageCountBilling = false
 	}
 	if req.ImageRateIndependent != nil {
 		group.ImageRateIndependent = *req.ImageRateIndependent

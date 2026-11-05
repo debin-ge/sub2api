@@ -169,7 +169,7 @@ func (p *postUsageBillingParams) shouldUpdateRateLimits() bool {
 }
 
 func (p *postUsageBillingParams) shouldUpdateAccountQuota() bool {
-	return p.Cost.TotalCost > 0 && p.Account.IsAPIKeyOrBedrock() && p.Account.HasAnyQuotaLimit()
+	return p.Cost.TotalCost > 0 && p.Account.SupportsAccountQuota() && p.Account.HasAnyQuotaLimit()
 }
 
 // postUsageBilling is the legacy fallback billing path used when the unified
@@ -339,13 +339,25 @@ func resolveUsageBillingPayloadFingerprint(ctx context.Context, requestPayloadHa
 	return ""
 }
 
-func buildUsageBillingCommand(
-	ctx context.Context,
-	requestID string,
-	usageLog *UsageLog,
-	p *postUsageBillingParams,
-	deps *billingDeps,
-) *UsageBillingCommand {
+func buildUsageBillingCommand(args ...any) *UsageBillingCommand {
+	var (
+		ctx       context.Context = context.Background()
+		requestID string
+		usageLog  *UsageLog
+		p         *postUsageBillingParams
+		deps      *billingDeps
+	)
+	if len(args) == 5 {
+		ctx, _ = args[0].(context.Context)
+		requestID, _ = args[1].(string)
+		usageLog, _ = args[2].(*UsageLog)
+		p, _ = args[3].(*postUsageBillingParams)
+		deps, _ = args[4].(*billingDeps)
+	} else if len(args) == 3 {
+		requestID, _ = args[0].(string)
+		usageLog, _ = args[1].(*UsageLog)
+		p, _ = args[2].(*postUsageBillingParams)
+	}
 	if p == nil || p.Cost == nil || p.APIKey == nil || p.User == nil || p.Account == nil {
 		return nil
 	}
@@ -426,6 +438,8 @@ func buildUsageBillingCommand(
 	}
 	if p.shouldUpdateAccountQuota() {
 		cmd.AccountQuotaCost = p.Cost.TotalCost * p.AccountRateMultiplier
+		cmd.AccountQuotaHasDailyLimit = p.Account.GetQuotaDailyLimit() > 0
+		cmd.AccountQuotaHasWeeklyLimit = p.Account.GetQuotaWeeklyLimit() > 0
 	}
 	if !p.IsSubscriptionBill && cmd.Platform != "" && p.Cost.ActualCost > 0 {
 		snapshot, snapshotNeeded, track := captureUsageBillingPlatformQuotaSnapshot(
@@ -787,11 +801,12 @@ func notifyAccountQuota(p *postUsageBillingParams, deps *billingDeps, result *Us
 			slog.Error("panic in notifyAccountQuota", "recover", r)
 		}
 	}()
-	if p.Cost.TotalCost <= 0 || p.Account == nil || !p.Account.IsAPIKeyOrBedrock() || deps.balanceNotifyService == nil {
+	if p.Cost.TotalCost <= 0 || p.Account == nil || !p.Account.SupportsAccountQuota() || !p.Account.HasAnyQuotaLimit() || deps.balanceNotifyService == nil {
 		slog.Debug("notifyAccountQuota: skipped",
 			"total_cost", p.Cost.TotalCost,
 			"account_nil", p.Account == nil,
-			"is_apikey_or_bedrock", p.Account != nil && p.Account.IsAPIKeyOrBedrock(),
+			"supports_account_quota", p.Account != nil && p.Account.SupportsAccountQuota(),
+			"has_quota_limit", p.Account != nil && p.Account.HasAnyQuotaLimit(),
 			"service_nil", deps.balanceNotifyService == nil,
 		)
 		return
@@ -800,6 +815,10 @@ func notifyAccountQuota(p *postUsageBillingParams, deps *billingDeps, result *Us
 	var quotaState *AccountQuotaState
 	if result != nil {
 		quotaState = result.QuotaState
+		// 本应累加却无递增后状态（账号已删除，计数被跳过）：没有新用量，不做阈值判定。
+		if quotaState == nil && p.shouldUpdateAccountQuota() {
+			return
+		}
 	}
 	slog.Debug("notifyAccountQuota: calling CheckAccountQuotaAfterIncrement",
 		"account_id", p.Account.ID,
@@ -1472,8 +1491,10 @@ func (s *GatewayService) calculateRecordUsageCost(
 	}
 	// 图片生成：渠道定价为 token 计费时走 token 路径，否则走图片计费
 	if result.ImageCount > 0 {
-		if resolved := s.resolveChannelPricingForPlatforms(ctx, billingModel, apiKey, opts.PricingPlatforms); resolved != nil && resolved.Mode == BillingModeToken {
-			return s.calculateTokenCost(ctx, result, apiKey, billingModel, multiplier, pricingAt, opts)
+		if !imageCountBillingApplies(apiKey, result.ImageEndpoint) {
+			if resolved := s.resolveChannelPricingForPlatforms(ctx, billingModel, apiKey, opts.PricingPlatforms); resolved != nil && resolved.Mode == BillingModeToken {
+				return s.calculateTokenCost(ctx, result, apiKey, billingModel, multiplier, pricingAt, opts)
+			}
 		}
 		return s.calculateImageCost(ctx, result, apiKey, opts.PricingPlatforms, billingModel, imageMultiplier)
 	}
@@ -1815,7 +1836,9 @@ func (s *GatewayService) calculateImageCost(
 		return nil, err
 	}
 	resolved := s.resolveChannelPricingForPlatforms(ctx, billingModel, apiKey, platforms)
-	if resolved != nil && resolved.Source == PricingSourceGroup {
+	forcePerImage := imageCountBillingApplies(apiKey, result.ImageEndpoint)
+	if resolved != nil && resolved.Source == PricingSourceGroup &&
+		(resolved.Mode == BillingModePerRequest || resolved.Mode == BillingModeImage || !forcePerImage) {
 		gid := apiKey.Group.ID
 		cost, err := s.billingService.CalculateCostUnified(CostInput{
 			Ctx: ctx, Model: billingModel, GroupID: &gid, Group: apiKey.Group,
@@ -1834,7 +1857,8 @@ func (s *GatewayService) calculateImageCost(
 			platforms, billingModel, sizeTier, result.ImageCount, groupConfig, multiplier,
 		)
 	}
-	if resolved != nil && resolved.Source == PricingSourceChannel {
+	if resolved != nil && resolved.Source == PricingSourceChannel &&
+		(resolved.Mode != BillingModeToken || !forcePerImage) {
 		// 必须带上缓存 token：Gemini 的 InputTokens 已扣除 cachedContentTokenCount，
 		// 漏掉 CacheReadTokens 会让按上下文分档（LookupRequestTierPriceByContext）少算。
 		tokens := usageTokensFromClaudeUsage(result.Usage)

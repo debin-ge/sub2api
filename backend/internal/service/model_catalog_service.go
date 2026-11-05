@@ -536,7 +536,15 @@ func (s *ModelCatalogService) listFromAccounts(ctx context.Context, accounts []A
 			}
 		}
 	}
-	return normalizeCatalogModelIDs(models), nil
+	models = normalizeCatalogModelIDs(models)
+	// Keep the local OpenAI subscription retirement policy applied to the
+	// unified catalog as well as the legacy gateway fallback. Otherwise a live
+	// catalog from an unmapped OAuth account would reintroduce a retired model
+	// that GetAvailableModels correctly removes.
+	if platform == PlatformOpenAI {
+		models = filterRetiredOpenAIModelIDs(accounts, models)
+	}
+	return models, nil
 }
 
 // ListForGroup returns the final ordered model list exposed by a group.
@@ -643,7 +651,11 @@ func (s *ModelCatalogService) listGroupCandidatesWithMemo(ctx context.Context, g
 			}
 		}
 	}
-	return normalizeCatalogModelIDs(models), group, nil
+	models = normalizeCatalogModelIDs(models)
+	if platform == PlatformOpenAI {
+		models = filterRetiredOpenAIModelIDs(accounts, models)
+	}
+	return models, group, nil
 }
 
 func (s *ModelCatalogService) listCompositeGroupCandidates(
