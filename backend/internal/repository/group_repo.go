@@ -322,6 +322,7 @@ func (r *groupRepository) update(
 			SetNillableMonthlyLimitUsd(groupIn.MonthlyLimitUSD).
 			SetAllowImageGeneration(groupIn.AllowImageGeneration).
 			SetAllowBatchImageGeneration(groupIn.AllowBatchImageGeneration).
+			SetImageCountBilling(groupIn.ImageCountBilling).
 			SetImageRateIndependent(groupIn.ImageRateIndependent).
 			SetImageRateMultiplier(groupIn.ImageRateMultiplier).
 			SetNillableImagePrice1k(groupIn.ImagePrice1K).

@@ -159,8 +159,12 @@ func (f *fakeConcurrencyCache) ReleaseOwnProcessSlots(context.Context, string) e
 
 func newTestGatewayHandler(t *testing.T, group *service.Group, accounts []*service.Account) (*GatewayHandler, func()) {
 	t.Helper()
+	return newTestGatewayHandlerWithSchedulerCache(t, group, &fakeSchedulerCache{accounts: accounts})
+}
 
-	schedulerCache := &fakeSchedulerCache{accounts: accounts}
+func newTestGatewayHandlerWithSchedulerCache(t *testing.T, group *service.Group, schedulerCache service.SchedulerCache) (*GatewayHandler, func()) {
+	t.Helper()
+
 	schedulerSnapshot := service.NewSchedulerSnapshotService(schedulerCache, nil, nil, nil, nil)
 	// Simple Mode 只免扣款，不免除价格准入；使用代码内置的严格有价 SKU。
 	cfg := &config.Config{RunMode: config.RunModeSimple}

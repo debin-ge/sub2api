@@ -210,7 +210,9 @@ func TestCalculateCostUnified_DeepSeekCatalogBaseIsOffPeak(t *testing.T) {
 		PricingAt: beijingTime(13, 0),
 	})
 	require.NoError(t, err)
-	require.InDelta(t, (deepseekFlashOffPeakInputPrice+deepseekFlashOffPeakOutputPrice)*1_000_000, offPeak.TotalCost, 1e-10)
+	// A catalog/model-price entry is authoritative: preserve the upstream or
+	// operator-provided token card and apply only the official peak multiplier.
+	require.InDelta(t, (0.14e-6+0.28e-6)*1_000_000, offPeak.TotalCost, 1e-10)
 
 	peak, err := billing.CalculateCostUnified(CostInput{
 		Ctx:       context.Background(),

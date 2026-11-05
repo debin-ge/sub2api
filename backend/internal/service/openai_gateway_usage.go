@@ -889,10 +889,16 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCostForPlatforms(
 		return s.billingService.CalculateAudioCost(result.AudioUsage.Mode, result.AudioUsage.DurationOrUnits, cfg, webSearchMultiplier), nil
 	}
 
-	if kind != BillingKindImage && result != nil && result.ImageCount > 0 {
-		// 渠道定价为 token 计费时走 token 路径，否则走图片计费
-		if resolved := s.resolveOpenAIChannelPricingForPlatforms(ctx, billingModel, apiKey, platforms); resolved == nil || resolved.Mode != BillingModeToken {
+	if result != nil && result.ImageCount > 0 {
+		// 专用图片端点的分组按张开关优先；混合请求仍保留文本 token 计费。
+		if imageCountBillingApplies(apiKey, result.ImageEndpoint) {
 			return s.calculateOpenAIImageCostForPlatforms(ctx, billingModel, apiKey, platforms, result, imageMultiplier)
+		}
+		if kind != BillingKindImage {
+			// 渠道定价为 token 计费时走 token 路径，否则走图片计费。
+			if resolved := s.resolveOpenAIChannelPricingForPlatforms(ctx, billingModel, apiKey, platforms); resolved == nil || resolved.Mode != BillingModeToken {
+				return s.calculateOpenAIImageCostForPlatforms(ctx, billingModel, apiKey, platforms, result, imageMultiplier)
+			}
 		}
 	}
 	if kind == BillingKindToken || kind == BillingKindUnspecified {

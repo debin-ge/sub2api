@@ -1,3 +1,4 @@
+import adminAccessKeys from './adminAccessKeys'
 import landing from './landing'
 import common from './common'
 import dashboard from './dashboard'
@@ -10,6 +11,7 @@ import local from './local'
 import { mergeLocaleFallbacks } from '../merge'
 
 const upstream = {
+  adminAccessKeys,
   ...landing,
   ...common,
   ...dashboard,

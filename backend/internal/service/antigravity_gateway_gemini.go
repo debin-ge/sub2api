@@ -92,6 +92,9 @@ func (s *AntigravityGatewayService) ForwardGemini(ctx context.Context, c *gin.Co
 		MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalFeatureGate)
 		return nil, s.writeGoogleError(c, http.StatusForbidden, fmt.Sprintf("model %s not in whitelist", originalModel))
 	}
+	if geminiImageGenerationDenied(c, body, originalModel, mappedModel) {
+		return nil, s.writeGoogleError(c, http.StatusBadRequest, ImageGenerationPermissionMessage())
+	}
 	forwardedModel := mappedModel
 	imageIdentity, err := resolveGeminiImageBillingIdentity(mappedModel, body)
 	if err != nil {
@@ -152,6 +155,8 @@ func (s *AntigravityGatewayService) ForwardGemini(ctx context.Context, c *gin.Co
 	if reconciled, err := enableMixedGeminiToolInvocations(injectedBody); err == nil {
 		injectedBody = reconciled
 	}
+
+	injectedBody = ensureGeminiFunctionCallThoughtSignatures(injectedBody)
 
 	// 包装请求
 	wrappedBody, err := s.wrapV1InternalRequest(projectID, mappedModel, injectedBody)
@@ -491,6 +496,7 @@ handleSuccess:
 		ImageCount:                    imageIdentity.Count,
 		ImageSize:                     imageIdentity.SizeTier,
 		ImageInputSize:                imageIdentity.InputSize,
+		ImageEndpoint:                 imageIdentity.Count > 0,
 	}, nil
 }
 

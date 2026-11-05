@@ -538,8 +538,11 @@ func buildModelPriceEntry(model string, raw *RawModelPriceEntry) *ModelPriceEntr
 		return nil
 	}
 	entry := &ModelPriceEntry{
-		Currency:                           modelPriceCurrencyOrUSD(raw.Currency),
-		PricingCatalogProvider:             raw.PricingCatalogProvider,
+		Currency:               modelPriceCurrencyOrUSD(raw.Currency),
+		PricingCatalogProvider: raw.PricingCatalogProvider,
+		// LiteLLMProvider is the compatibility name used by older billing and
+		// diagnostics call sites. Keep it synchronized with the catalog field.
+		LiteLLMProvider:                    raw.PricingCatalogProvider,
 		Mode:                               raw.Mode,
 		SupportsPromptCaching:              raw.SupportsPromptCaching,
 		SupportsServiceTier:                raw.SupportsServiceTier,
