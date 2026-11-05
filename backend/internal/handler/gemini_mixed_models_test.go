@@ -159,7 +159,7 @@ func newGeminiDeclaredModelsFixture(t *testing.T, accounts []service.Account) *g
 	return &geminiDeclaredModelsFixture{
 		t:        t,
 		groupID:  groupID,
-		handler:  &GatewayHandler{geminiCompatService: service.NewGeminiMessagesCompatService(repo, nil, nil, nil, nil, nil, upstream, nil, &config.Config{})},
+		handler:  &GatewayHandler{geminiCompatService: service.NewGeminiMessagesCompatService(repo, nil, nil, nil, nil, nil, upstream, nil, nil, &config.Config{})},
 		upstream: upstream,
 	}
 }

@@ -49,7 +49,7 @@ func TestGeminiGroupRequestsDoNotReadAntigravityBucket(t *testing.T) {
 		{
 			name:  "gemini native",
 			route: "/v1beta/models/*modelAction",
-			path:  "/v1beta/models/gemini-2.5-flash:generateContent",
+			path:  "/v1beta/models/gemini-3.6-flash:generateContent",
 			body:  `{"contents":[{"role":"user","parts":[{"text":"hi"}]}]}`,
 			call:  func(h *GatewayHandler) func(*gin.Context) { return h.GeminiV1BetaModels },
 		},
@@ -57,7 +57,7 @@ func TestGeminiGroupRequestsDoNotReadAntigravityBucket(t *testing.T) {
 			name:  "messages on gemini group",
 			route: "/v1/messages",
 			path:  "/v1/messages",
-			body:  `{"model":"gemini-2.5-flash","max_tokens":16,"messages":[{"role":"user","content":"hi"}]}`,
+			body:  `{"model":"gemini-3.6-flash","max_tokens":16,"messages":[{"role":"user","content":"hi"}]}`,
 			call:  func(h *GatewayHandler) func(*gin.Context) { return h.Messages },
 		},
 	}
@@ -97,7 +97,7 @@ func TestMessagesAnthropicGroupDoesNotReadAntigravityBucket(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	body := `{"model":"claude-sonnet-4-5","max_tokens":256,"messages":[{"role":"user","content":[{"type":"text","text":"Warmup"}]}]}`
+	body := `{"model":"claude-sonnet-4","max_tokens":256,"messages":[{"role":"user","content":[{"type":"text","text":"Warmup"}]}]}`
 	req := httptest.NewRequest("POST", "/v1/messages", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
 	c.Request = req.WithContext(context.WithValue(req.Context(), ctxkey.Group, group))

@@ -72,7 +72,7 @@ func newBoundRetryEnv(t *testing.T, upstream *boundRetryUpstream, retryCodes ...
 	env.seed(time.Now().Add(time.Hour))
 
 	env.h.geminiCompatService = service.NewGeminiMessagesCompatService(&cachedBillingAccountRepo{accounts: env.accounts},
-		nil, nil, nil, nil, nil, upstream, nil, &config.Config{})
+		nil, nil, nil, nil, nil, upstream, nil, env.h.gatewayService, &config.Config{})
 	return env
 }
 

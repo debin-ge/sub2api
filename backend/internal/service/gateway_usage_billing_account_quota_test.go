@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -60,7 +61,7 @@ func TestBuildUsageBillingCommand_AccountQuotaPeriodHints(t *testing.T) {
 				AccountRateMultiplier: 1,
 			}
 
-			cmd := buildUsageBillingCommand("req-1", nil, p)
+			cmd := buildUsageBillingCommand(context.Background(), "req-1", nil, p, nil)
 			require.NotNil(t, cmd)
 			require.Equal(t, tt.wantQuota, cmd.AccountQuotaCost > 0)
 			require.Equal(t, tt.wantDaily, cmd.AccountQuotaHasDailyLimit)

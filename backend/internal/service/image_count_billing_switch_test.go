@@ -45,11 +45,12 @@ func TestCalculateRecordUsageCost_ImageCountBillingGroupTokenPricing(t *testing.
 	apiKey := &APIKey{ID: 1, GroupID: &groupID, Group: group}
 	svc := &GatewayService{billingService: resolver.billingService, resolver: resolver}
 
-	cost := svc.calculateRecordUsageCost(context.Background(), &ForwardResult{
+	cost, err := svc.calculateRecordUsageCost(context.Background(), &ForwardResult{
 		Model: model, ImageCount: 2, ImageSize: "1K", ImageEndpoint: true,
 		Usage: ClaudeUsage{InputTokens: 1000, OutputTokens: 1000},
 	}, apiKey, model, 1, 1, time.Time{})
 
+	require.NoError(t, err)
 	require.NotNil(t, cost)
 	require.InDelta(t, 1.0, cost.TotalCost, 1e-12, "应回落分组图片价，而不是 token 定价的 $0")
 	require.Equal(t, string(BillingModeImage), cost.BillingMode)
@@ -72,11 +73,12 @@ func TestCalculateRecordUsageCost_ImageCountBillingChannelTokenPricing(t *testin
 	apiKey := &APIKey{ID: 2, GroupID: &groupID, Group: group}
 	svc := &GatewayService{billingService: resolver.billingService, resolver: resolver}
 
-	cost := svc.calculateRecordUsageCost(context.Background(), &ForwardResult{
+	cost, err := svc.calculateRecordUsageCost(context.Background(), &ForwardResult{
 		Model: model, ImageCount: 2, ImageSize: "1K", ImageEndpoint: true,
 		Usage: ClaudeUsage{InputTokens: 1_000_000, OutputTokens: 10_000},
 	}, apiKey, model, 1, 1, time.Time{})
 
+	require.NoError(t, err)
 	require.NotNil(t, cost)
 	require.InDelta(t, 0.8, cost.TotalCost, 1e-12)
 	require.Equal(t, string(BillingModeImage), cost.BillingMode)
@@ -99,11 +101,12 @@ func TestCalculateRecordUsageCost_ImageCountBillingIgnoresMixedRequests(t *testi
 	apiKey := &APIKey{ID: 3, GroupID: &groupID, Group: group}
 	svc := &GatewayService{billingService: resolver.billingService, resolver: resolver}
 
-	cost := svc.calculateRecordUsageCost(context.Background(), &ForwardResult{
+	cost, err := svc.calculateRecordUsageCost(context.Background(), &ForwardResult{
 		Model: model, ImageCount: 1, ImageSize: "1K", ImageEndpoint: false,
 		Usage: ClaudeUsage{InputTokens: 1_000_000, OutputTokens: 10_000},
 	}, apiKey, model, 1, 1, time.Time{})
 
+	require.NoError(t, err)
 	require.NotNil(t, cost)
 	require.Equal(t, string(BillingModeToken), cost.BillingMode)
 	require.Greater(t, cost.TotalCost, 0.0)
@@ -127,9 +130,9 @@ func TestCalculateOpenAIRecordUsageCost_ImageCountBillingIgnoresMixedRequests(t 
 
 	cost, err := svc.calculateOpenAIRecordUsageCost(context.Background(), &OpenAIForwardResult{
 		Model: model, ImageCount: 1, ImageSize: "1K", ImageEndpoint: false,
-	}, apiKey, []string{model}, 1, 1, 1, 1,
+	}, apiKey, []string{model}, BillingKindToken, 1, 1, 1, 1,
 		UsageTokens{InputTokens: 1_000_000, OutputTokens: 10_000},
-		"", nil, false, time.Time{})
+		"", nil, time.Time{})
 
 	require.NoError(t, err)
 	require.NotNil(t, cost)
@@ -141,7 +144,7 @@ func TestGroupService_ImageCountBillingValidation(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("创建入口固定 anthropic 平台，拒绝开关", func(t *testing.T) {
-		svc := NewGroupService(nil, nil)
+		svc := NewGroupService(nil, nil, nil)
 		_, err := svc.Create(ctx, CreateGroupRequest{Name: "g", ImageCountBilling: true})
 		require.ErrorContains(t, err, "image_count_billing")
 	})
@@ -150,7 +153,7 @@ func TestGroupService_ImageCountBillingValidation(t *testing.T) {
 		repo := &groupRepoStubForAdmin{getByID: &Group{
 			ID: 1, Platform: PlatformComposite, AllowImageGeneration: false,
 		}}
-		svc := NewGroupService(repo, nil)
+		svc := NewGroupService(repo, nil, nil)
 		_, err := svc.Update(ctx, 1, UpdateGroupRequest{ImageCountBilling: boolPtrForImageBillingTest(true)})
 		require.ErrorContains(t, err, "image_count_billing")
 	})
@@ -159,7 +162,7 @@ func TestGroupService_ImageCountBillingValidation(t *testing.T) {
 		repo := &groupRepoStubForAdmin{getByID: &Group{
 			ID: 2, Platform: PlatformAnthropic, AllowImageGeneration: true,
 		}}
-		svc := NewGroupService(repo, nil)
+		svc := NewGroupService(repo, nil, nil)
 		_, err := svc.Update(ctx, 2, UpdateGroupRequest{ImageCountBilling: boolPtrForImageBillingTest(true)})
 		require.ErrorContains(t, err, "image_count_billing")
 	})
@@ -168,7 +171,7 @@ func TestGroupService_ImageCountBillingValidation(t *testing.T) {
 		repo := &groupRepoStubForAdmin{getByID: &Group{
 			ID: 3, Platform: PlatformComposite, AllowImageGeneration: true,
 		}}
-		svc := NewGroupService(repo, nil)
+		svc := NewGroupService(repo, nil, nil)
 		updated, err := svc.Update(ctx, 3, UpdateGroupRequest{ImageCountBilling: boolPtrForImageBillingTest(true)})
 		require.NoError(t, err)
 		require.True(t, updated.ImageCountBilling)
@@ -178,7 +181,7 @@ func TestGroupService_ImageCountBillingValidation(t *testing.T) {
 		repo := &groupRepoStubForAdmin{getByID: &Group{
 			ID: 4, Platform: PlatformComposite, AllowImageGeneration: false, ImageCountBilling: true,
 		}}
-		svc := NewGroupService(repo, nil)
+		svc := NewGroupService(repo, nil, nil)
 		updated, err := svc.Update(ctx, 4, UpdateGroupRequest{})
 		require.NoError(t, err)
 		require.False(t, updated.ImageCountBilling)
@@ -213,11 +216,12 @@ func TestCalculateRecordUsageCost_ChannelPerRequestContextTierUsesTokens(t *test
 		apiKey := &APIKey{ID: 5, GroupID: &groupID, Group: group}
 		svc := &GatewayService{billingService: resolver.billingService, resolver: resolver}
 
-		cost := svc.calculateRecordUsageCost(context.Background(), &ForwardResult{
+		cost, err := svc.calculateRecordUsageCost(context.Background(), &ForwardResult{
 			Model: model, ImageCount: 2, ImageSize: "1K", ImageEndpoint: true,
 			Usage: ClaudeUsage{InputTokens: 5000, OutputTokens: 100},
 		}, apiKey, model, 1, 1, time.Time{})
 
+		require.NoError(t, err, "switch=%v", switchOn)
 		require.NotNil(t, cost)
 		require.InDelta(t, 0.6, cost.TotalCost, 1e-12, "switch=%v: 应按上下文档 0.3 × 2 张结算", switchOn)
 	}

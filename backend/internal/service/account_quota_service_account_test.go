@@ -102,13 +102,13 @@ func TestShouldUpdateAccountQuota(t *testing.T) {
 
 func TestBuildUsageBillingCommandAccountQuotaCostForServiceAccount(t *testing.T) {
 	build := func(account *Account) *UsageBillingCommand {
-		return buildUsageBillingCommand("req-sa-quota", nil, &postUsageBillingParams{
+		return buildUsageBillingCommand(context.Background(), "req-sa-quota", nil, &postUsageBillingParams{
 			Cost:                  &CostBreakdown{TotalCost: 2, ActualCost: 3},
 			User:                  &User{ID: 7},
 			APIKey:                &APIKey{ID: 13},
 			Account:               account,
 			AccountRateMultiplier: 1.5,
-		})
+		}, nil)
 	}
 
 	// service_account 设了上限：AccountQuotaCost = TotalCost × 账号倍率
