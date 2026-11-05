@@ -117,6 +117,13 @@ func (s *OpenAIGatewayService) resolveOpenAIImageBillingPlanForPlatforms(
 		groupID = apiKey.GroupID
 	}
 
+	// 分组「按实际出图张数计费」开关：Image API 是专用图片端点，开关开启时
+	// token 计费（渠道显式 token 价或模型目录 token 价）让位于按张价：
+	// 分组按张价（上面已优先返回）→ 渠道按次/图片价 → 模型目录按张价。
+	// 都没有按张价时才回落到 token 计费，避免因开关把可结算的请求拒掉。
+	forcePerImage := imageCountBillingApplies(apiKey, true)
+	var channelTokenPlan *OpenAIImageBillingPlan
+
 	if groupID != nil && s.channelService != nil {
 		channelPricing := s.channelService.GetChannelModelPricing(ctx, *groupID, model)
 		if channelPricing != nil {
@@ -151,21 +158,38 @@ func (s *OpenAIGatewayService) resolveOpenAIImageBillingPlanForPlatforms(
 					requireImageInput,
 				)
 				if err != nil {
+					if forcePerImage {
+						// 开关要求按张结算：渠道 token 价不可用不阻断，继续找按张价。
+						break
+					}
 					return nil, fmt.Errorf(
 						"resolve explicit channel image token pricing for %s: %w",
 						model,
 						err,
 					)
 				}
-				return &OpenAIImageBillingPlan{
+				plan := &OpenAIImageBillingPlan{
 					Mode:              BillingModeToken,
 					Model:             model,
 					Source:            resolved.Source,
 					SizeTier:          tier,
 					RequireImageInput: requireImageInput,
 					Resolved:          resolved,
-				}, nil
+				}
+				if !forcePerImage {
+					return plan, nil
+				}
+				channelTokenPlan = plan
 			}
+		}
+	}
+
+	if forcePerImage {
+		if price, ok := s.billingService.strictImageUnitPriceForPlatforms(platforms, model, tier, nil); ok {
+			return newOpenAIImageUnitBillingPlan(model, tier, PricingSourceModelPrice, price), nil
+		}
+		if channelTokenPlan != nil {
+			return channelTokenPlan, nil
 		}
 	}
 

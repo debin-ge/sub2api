@@ -264,6 +264,7 @@ func (s *GeminiMessagesCompatService) forwardClaudeBodyAsChatCompletions(
 	var usage *ClaudeUsage
 	var firstTokenMs *int
 	clientDisconnect := false
+	streamFinished := false
 	if clientStream {
 		streamRes, err := s.handleChatCompletionsStreamingResponseFromGemini(c, resp, startTime, originalModel, account.Type == AccountTypeOAuth, includeUsage)
 		if err != nil {
@@ -272,6 +273,7 @@ func (s *GeminiMessagesCompatService) forwardClaudeBodyAsChatCompletions(
 		usage = streamRes.usage
 		firstTokenMs = streamRes.firstTokenMs
 		clientDisconnect = streamRes.clientDisconnect
+		streamFinished = streamRes.finished
 	} else if useUpstreamStream {
 		collected, usageObj, err := collectGeminiSSE(resp.Body, account.Type == AccountTypeOAuth)
 		if err != nil {
@@ -295,6 +297,11 @@ func (s *GeminiMessagesCompatService) forwardClaudeBodyAsChatCompletions(
 	if usage == nil {
 		usage = &ClaudeUsage{}
 	}
+	imageCount := imageIdentity.Count
+	// 客户端在收到结束分片前断开时只计已送达的图片：Chat 流不向客户端转发图片。
+	if clientDisconnect && !streamFinished {
+		imageCount = 0
+	}
 	return &ForwardResult{
 		RequestID:        requestID,
 		UpstreamHeaders:  resp.Header,
@@ -306,11 +313,11 @@ func (s *GeminiMessagesCompatService) forwardClaudeBodyAsChatCompletions(
 		Duration:         time.Since(startTime),
 		FirstTokenMs:     firstTokenMs,
 		ReasoningEffort:  reasoningEffort,
-		ImageCount:       imageIdentity.Count,
+		ImageCount:       imageCount,
 		ImageSize:        imageIdentity.SizeTier,
 		ImageInputSize:   imageIdentity.InputSize,
 		ClientDisconnect: clientDisconnect,
-		ImageEndpoint:    imageIdentity.Count > 0,
+		ImageEndpoint:    imageCount > 0,
 	}, nil
 }
 

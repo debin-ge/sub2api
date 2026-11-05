@@ -589,3 +589,71 @@ func TestCalculateOpenAIImageCostFromPlanAppliesReasoningEffortMultiplier(t *tes
 	require.InDelta(t, price, costFor(nil).TotalCost, 1e-12)
 	require.InDelta(t, 2*price, costFor(&max).TotalCost, 1e-12)
 }
+
+// 分组「按实际出图张数计费」开关作用于 Image API：开关开启时，模型目录有按张价
+// 就按张结算，渠道显式 token 价也让位于按张价；没有任何按张价时才回落 token。
+func TestResolveOpenAIImageBillingPlanImageCountBillingSwitch(t *testing.T) {
+	const perImageModel = "gemini-2.5-flash-image"
+	keyWithSwitch := func(groupID int64, on bool) *APIKey {
+		imageRate := 1.0
+		return &APIKey{GroupID: &groupID, Group: &Group{
+			ID: groupID, Hydrated: true, AllowImageGeneration: true,
+			ImageCountBilling: on, ImageRateIndependent: true, ImageRateMultiplier: imageRate,
+		}}
+	}
+
+	t.Run("switch off keeps token plan", func(t *testing.T) {
+		svc := newOpenAIImageBillingPlanTestService(t)
+		groupID := int64(81)
+		plan, err := svc.resolveOpenAIImageBillingPlan(context.Background(), keyWithSwitch(groupID, false), &groupID, perImageModel, ImageBillingSize1K, false)
+		require.NoError(t, err)
+		require.Equal(t, BillingModeToken, plan.Mode)
+	})
+
+	t.Run("switch on prefers catalog per-image price", func(t *testing.T) {
+		svc := newOpenAIImageBillingPlanTestService(t)
+		groupID := int64(82)
+		plan, err := svc.resolveOpenAIImageBillingPlan(context.Background(), keyWithSwitch(groupID, true), &groupID, perImageModel, ImageBillingSize1K, false)
+		require.NoError(t, err)
+		require.Equal(t, BillingModeImage, plan.Mode)
+		require.Equal(t, PricingSourceModelPrice, plan.Source)
+		require.InDelta(t, 0.039, plan.Resolved.DefaultPerRequestPrice, 1e-12)
+	})
+
+	t.Run("switch on overrides explicit channel token price", func(t *testing.T) {
+		svc := newOpenAIImageBillingPlanTestService(t)
+		groupID := int64(83)
+		inputPrice := 7e-6
+		outputPrice := 9e-6
+		imageOutputPrice := 31e-6
+		setOpenAIImageChannelPricingForTest(t, svc, groupID, perImageModel, &ChannelModelPricing{
+			BillingMode:      BillingModeToken,
+			InputPrice:       &inputPrice,
+			OutputPrice:      &outputPrice,
+			ImageOutputPrice: &imageOutputPrice,
+		})
+		plan, err := svc.resolveOpenAIImageBillingPlan(context.Background(), keyWithSwitch(groupID, true), &groupID, perImageModel, ImageBillingSize1K, false)
+		require.NoError(t, err)
+		require.Equal(t, BillingModeImage, plan.Mode)
+		require.Equal(t, PricingSourceModelPrice, plan.Source)
+	})
+
+	t.Run("switch on without any per-image price falls back to channel token", func(t *testing.T) {
+		svc := newOpenAIImageBillingPlanTestService(t)
+		groupID := int64(84)
+		inputPrice := 7e-6
+		imageInputPrice := 9e-6
+		imageOutputPrice := 31e-6
+		setOpenAIImageChannelPricingForTest(t, svc, groupID, "gpt-image-2", &ChannelModelPricing{
+			BillingMode:      BillingModeToken,
+			InputPrice:       &inputPrice,
+			ImageInputPrice:  &imageInputPrice,
+			ImageOutputPrice: &imageOutputPrice,
+		})
+		plan, err := svc.resolveOpenAIImageBillingPlan(context.Background(), keyWithSwitch(groupID, true), &groupID, "gpt-image-2", ImageBillingSize1K, true)
+		require.NoError(t, err)
+		require.Equal(t, BillingModeToken, plan.Mode)
+		require.Equal(t, PricingSourceChannel, plan.Source)
+		require.InDelta(t, imageOutputPrice, plan.Resolved.BasePricing.ImageOutputPricePerToken, 1e-12)
+	})
+}
