@@ -2205,6 +2205,33 @@ describe('EditAccountModal', () => {
     expect(extra?.quota_limit).toBe(200)
     expect(extra?.quota_daily_limit).toBe(20)
     expect(extra?.quota_weekly_limit).toBeUndefined()
+    // InternalRelay 仅属于非视频 API Key 账号，Vertex SA 不应被写入该键。
+    expect(extra).not.toHaveProperty('internal_relay')
+  })
+
+  it('hides the quota section for fixed-endpoint gateway API key accounts and leaves stored quota untouched', async () => {
+    const account = buildAccount()
+    account.platform = 'kimi'
+    account.credentials = {
+      api_key: 'sk-kimi',
+      account_mode: 'payg',
+      api_protocol: 'chat_completions',
+      base_url: 'https://api.moonshot.cn/v1'
+    }
+    account.extra = { quota_limit: 50, future_key: 'keep' }
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+
+    const wrapper = mountModal(account)
+    expect(wrapper.findComponent({ name: 'QuotaLimitCard' }).exists()).toBe(false)
+
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).toMatchObject({
+      quota_limit: 50,
+      future_key: 'keep'
+    })
   })
 
   it('blocks Vertex SA save when neither credentials_status nor legacy json indicates existence', async () => {
