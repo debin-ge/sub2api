@@ -16,10 +16,12 @@ func TestOpenAIUsageDeepSeekPromptCacheHitTokensCountAsCacheRead(t *testing.T) {
 	require.Equal(t, 100, usage.InputTokens)
 	require.Equal(t, 80, usage.CacheReadInputTokens)
 
-	// 同时返回 prompt_tokens_details.cached_tokens 时以嵌套字段为准
+	// 同时返回 prompt_tokens_details.cached_tokens 时，本仓库以 DeepSeek 原生字段为准：
+	// prompt_cache_hit_tokens 与 prompt_cache_miss_tokens 必须和 prompt_tokens 对账
+	// （openAIUsageBreakdownIsConsistent），不能被通用嵌套字段替换。
 	usage, ok = openAIUsageFromGJSON(gjson.Parse(`{"prompt_tokens":100,"completion_tokens":5,"prompt_cache_hit_tokens":80,"prompt_tokens_details":{"cached_tokens":64}}`))
 	require.True(t, ok)
-	require.Equal(t, 64, usage.CacheReadInputTokens)
+	require.Equal(t, 80, usage.CacheReadInputTokens)
 
 	// 顶层 cached_tokens 保持原有行为
 	usage, ok = openAIUsageFromGJSON(gjson.Parse(`{"prompt_tokens":50,"completion_tokens":5,"cached_tokens":30}`))

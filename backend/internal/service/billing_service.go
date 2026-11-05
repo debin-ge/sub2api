@@ -725,6 +725,21 @@ func (s *BillingService) initFallbackPricing() {
 	}
 
 	// GPT-6 Sol/Luna official rates, 2026-09-22.
+	// GPT-6.1 Terra official rates（上游 342366742 引入，v0.2.19 合并时遗漏）。
+	s.fallbackPrices["gpt-6.1-terra"] = &ModelPricing{
+		InputPricePerToken:                 1e-6,
+		InputPricePerTokenPriority:         2e-6,
+		OutputPricePerToken:                5e-6,
+		OutputPricePerTokenPriority:        10e-6,
+		CacheCreationPricePerToken:         1.25e-6,
+		CacheCreationPricePerTokenPriority: 2.5e-6,
+		CacheReadPricePerToken:             0.05e-6,
+		CacheReadPricePerTokenPriority:     0.1e-6,
+		CacheCreationPriceExplicit:         true,
+		LongContextInputThreshold:          272_000,
+		LongContextInputMultiplier:         2,
+		LongContextOutputMultiplier:        1.5,
+	}
 	s.fallbackPrices["gpt-6.1-sol"] = &ModelPricing{
 		InputPricePerToken:                 2e-6,
 		InputPricePerTokenPriority:         4e-6,
@@ -1124,6 +1139,20 @@ func (s *BillingService) initFallbackPricing() {
 		LongContextThresholdInclusive: true,
 		LongContextInputMultiplier:    2,
 		LongContextOutputMultiplier:   2,
+	}
+
+	// xAI Grok 4.7 Fast (Cursor and Grok Build only): the same model on faster
+	// infrastructure at $4 input / $1 cached input / $12 output below 200k;
+	// long-context rates are $6 / $1.50 / $18 (1.5x of the Fast base card).
+	s.fallbackPrices["grok-4.7-fast"] = &ModelPricing{
+		InputPricePerToken:            4e-6,
+		OutputPricePerToken:           12e-6,
+		CacheReadPricePerToken:        1e-6,
+		SupportsCacheBreakdown:        false,
+		LongContextInputThreshold:     200000,
+		LongContextThresholdInclusive: true,
+		LongContextInputMultiplier:    1.5,
+		LongContextOutputMultiplier:   1.5,
 	}
 
 	// xAI Grok 4.3: $1.25 input / $0.20 cached / $2.50 output below 200k;
@@ -1570,7 +1599,7 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	// OpenAI（GPT-5 / Codex 族）：仅匹配已知型号，避免未知 OpenAI 型号误计价。
 	if normalized := normalizeKnownOpenAICodexModel(modelLower); normalized != "" {
 		switch normalized {
-		case "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna":
+		case "gpt-6.1-terra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna":
 			return s.fallbackPrices[normalized]
 		case "gpt-6-astra":
 			return s.fallbackPrices["gpt-6-astra"]
@@ -1602,6 +1631,11 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 		return s.fallbackPrices["grok-4.6"]
 	case "grok-4.7", "grok-4.7-latest":
 		return s.fallbackPrices["grok-4.7"]
+	// Grok 4.7 Fast IDs (grok-4.7-fast, and the Grok Build ID
+	// grok-4.7-build-fast). Without these cases both fall into the unknown-Grok
+	// family card and bill at the standard 4.7 rate (#8119).
+	case "grok-4.7-fast", "grok-4.7-build-fast":
+		return s.fallbackPrices["grok-4.7-fast"]
 	case "grok-4.5", "grok-4.5-latest":
 		return s.fallbackPrices["grok-4.5"]
 	case "grok-3-mini":
@@ -1824,9 +1858,10 @@ func (s *BillingService) modelPricingFromCatalogEntry(model string, catalogEntry
 	if !catalogEntry.PricePresenceKnown {
 		enableBreakdown = price1h > 0 && price1h > price5m
 	}
-	// Catalog/override rows are authoritative. The DeepSeek hard-coded policy is
-	// reserved for the fallback path so an upstream price-card update and an
-	// operator/platform override are never overwritten by stale constants.
+	// DeepSeek 目录价一律强制回官方低谷价：远端价目仓库（model-price-repo）
+	// 存的 DeepSeek 价是低谷价的 2 倍（旧价 / 高峰口径），而目录路径随后会标记
+	// OfficialTimeBaseIsOffPeak，若不强制会低谷多收 2 倍、高峰多收 4 倍。
+	// 管理端覆盖（OperatorOverride）不受影响，见 applyModelSpecificPricingPolicyEx。
 	pricing := s.applyModelSpecificPricingPolicyEx(model, &ModelPricing{
 		InputPricePerToken:                 catalogEntry.InputCostPerToken,
 		InputPriceExplicit:                 catalogEntry.InputPriceExplicit,
@@ -1860,7 +1895,7 @@ func (s *BillingService) modelPricingFromCatalogEntry(model string, catalogEntry
 		OutputPriorityPriceExplicit:        catalogEntry.OutputPriorityPriceExplicit,
 		CacheCreationPriorityPriceExplicit: catalogEntry.CacheCreationPriorityPriceExplicit,
 		CacheReadPriorityPriceExplicit:     catalogEntry.CacheReadPriorityPriceExplicit,
-	}, false, pricingAt)
+	}, true, pricingAt)
 	if err := validateFiniteModelPricing(model, pricing); err != nil {
 		return nil, err
 	}
@@ -2171,10 +2206,9 @@ func (s *BillingService) calculateTokenCost(resolved *ResolvedPricing, input Cos
 		pricingAt = timezone.Now()
 	}
 
-	// GetModelPricing 已在硬编码 fallback 路径应用 DeepSeek 的内置兜底价；
-	// 目录和 model-price override 则必须保留其实际价卡，不能在统一计费阶段
-	// 再用旧常量覆盖 upstream 的新价或运营者覆盖。
-	pricing = s.applyModelSpecificPricingPolicyEx(input.Model, pricing, false, pricingAt)
+	// 默认价卡（Source=LiteLLM）应用 DeepSeek 官方价强制覆盖（幂等，GetModelPricing
+	// 内部已强制过）；分组/渠道自定义定价保留运营者配置，不强制覆盖官方价。
+	pricing = s.applyModelSpecificPricingPolicyEx(input.Model, pricing, resolved.Source == PricingSourceLiteLLM, pricingAt)
 
 	// 注意：DeepSeek 官方峰谷倍率（高峰时段 01:00–04:00 与 06:00–10:00 UTC，
 	// 仅工作日 2× 低谷价）不在此处叠加——它已通过 applyModelSpecificPricingPolicyEx
@@ -2470,7 +2504,11 @@ func (s *BillingService) calculatePerRequestCost(resolved *ResolvedPricing, inpu
 	)
 	if input.SizeTier != "" {
 		unitPrice, found = input.Resolver.LookupRequestTierPrice(resolved, input.SizeTier)
-	} else {
+	}
+	// 尺寸档未命中（或无尺寸档）时按上下文分档匹配：渠道按次价只配了上下文分档时，
+	// 图片请求也要能命中（上游 3ce09c8af）。上下文查找会跳过带 label 的尺寸档，
+	// 不会让 4K 请求误命中 1K 档。
+	if !found {
 		totalContext := input.Tokens.InputTokens + input.Tokens.CacheCreationTokens + input.Tokens.CacheReadTokens
 		unitPrice, found = input.Resolver.LookupRequestTierPriceByContext(resolved, totalContext)
 	}
@@ -2554,8 +2592,8 @@ func (s *BillingService) calculateCostInternalForPlatform(
 	)
 }
 
-// applyModelSpecificPricingPolicy 对 fallback 数据做模型特定修正：DeepSeek 官方价
-// 兜底；GPT-5.6 缺 cache_write 价时按官方规则补 1.25 倍输入价；Fast/priority
+// applyModelSpecificPricingPolicy 对目录数据做模型特定修正：DeepSeek 官方价
+// 强制覆盖；GPT-5.6 缺 cache_write 价时按官方规则补 1.25 倍输入价；Fast/priority
 // 档按业务倍率改写（本地/远程目录的 priority 价可能沿用官方旧口径）。长上下文
 // 阶梯不在此处补齐：一律由目录数据（above_XXXk 折算或显式 long_context_* 字段）
 // 驱动。强制 DeepSeek 官方价且无显式计费时点（峰谷倍率按当前时刻判定），
@@ -2575,10 +2613,11 @@ func (s *BillingService) applyModelSpecificPricingPolicyEx(model string, pricing
 	if pricing == nil {
 		return nil
 	}
-	// DeepSeek fallback 模型：使用官方低谷价（Flash 三档为 2026-09-10 官方降价后
-	// 口径）。目录和 override 在 modelPricingFromCatalogEntry 中保留实际价卡；
-	// 此处只在调用方明确要求 forceDeepSeekRates 时修正 fallback，且 OperatorOverride
-	// 仍然优先，避免覆盖运营者的手动配置。
+	// DeepSeek 模型：无论 JSON/远端价格表给什么价，一律强制官方低谷价
+	// （Flash 三档为 2026-09-10 官方降价后口径）。这是覆盖远端旧价的关键——远端
+	// 仓库不可改，生产会先拉到旧价（实测为低谷价的 2 倍），必须在此兜底修正；
+	// 克隆后再覆盖，避免污染共享 fallbackPrices 指针。OperatorOverride 时不覆盖：
+	// 管理端已显式定过价，强制改写会盖掉运营者的手动配置。
 	// 档位判定：含 "deepseek-v4-pro" 的版本化名称（如 deepseek-v4-pro-0813）归 pro 档，
 	// 其余 deepseek-*（含已停服的 chat/reasoner 与未知型号）统一归 flash 档，
 	// 避免未知/新增 SKU 因无匹配分支而计费中断。
@@ -2605,7 +2644,7 @@ func (s *BillingService) applyModelSpecificPricingPolicyEx(model string, pricing
 		return &cloned
 	}
 	normalized := normalizeKnownOpenAICodexModel(model)
-	usesCacheWritePremium := isOpenAIGPT56Model(normalized) || (openai.IsGPT6SolOrLunaModelSpelling(normalized) || openai.IsGPT61SolModelSpelling(normalized))
+	usesCacheWritePremium := isOpenAIGPT56Model(normalized) || (openai.IsGPT6SolOrLunaModelSpelling(normalized) || openai.IsGPT61SolModelSpelling(normalized) || openai.IsGPT61TerraModelSpelling(normalized))
 	needsCacheCreationPolicy := usesCacheWritePremium && !pricing.CacheCreationPriceExplicit && (pricing.CacheCreationPricePerToken <= 0 ||
 		(pricing.InputPricePerTokenPriority > 0 && pricing.CacheCreationPricePerTokenPriority <= 0))
 	fastRatio := openAIModelFastPricingRatio(normalized)
@@ -2631,7 +2670,7 @@ func (s *BillingService) applyModelSpecificPricingPolicyEx(model string, pricing
 	}
 	if fastRatio > 0 {
 		enforceOpenAIFastPricingRatio(&cloned, fastRatio)
-		if (openai.IsGPT6SolOrLunaModelSpelling(normalized) || openai.IsGPT61SolModelSpelling(normalized)) && cloned.CacheCreationPriceExplicit {
+		if (openai.IsGPT6SolOrLunaModelSpelling(normalized) || openai.IsGPT61SolModelSpelling(normalized) || openai.IsGPT61TerraModelSpelling(normalized)) && cloned.CacheCreationPriceExplicit {
 			cloned.CacheCreationPricePerTokenPriority = cloned.CacheCreationPricePerToken * fastRatio
 		}
 	}
@@ -2643,7 +2682,7 @@ func (s *BillingService) applyModelSpecificPricingPolicyEx(model string, pricing
 // 档的模型（如 gpt-5.5-pro、gpt-5.4-mini/nano）返回 0。
 func openAIModelFastPricingRatio(normalized string) float64 {
 	switch normalized {
-	case "gpt-5.4", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna":
+	case "gpt-5.4", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra", "gpt-6.1-terra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna":
 		return 2.0
 	case "gpt-5.5":
 		return 2.5

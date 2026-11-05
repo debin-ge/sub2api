@@ -460,3 +460,54 @@ func TestCalculateCostUnified_DeepseekProRetainsRatesAfterSeptember14(t *testing
 	require.InDelta(t, proTotal, versioned.TotalCost, 1e-10,
 		"versioned pro names must retain Pro rates on September 14")
 }
+
+// 远端价目仓库（model-price-repo）里的 DeepSeek 价是官方低谷价的 2 倍。目录路径
+// 会把价格标记为“官方低谷基准价”再叠加峰谷倍率，所以必须先强制回官方低谷价：
+// 否则低谷多收 2 倍、高峰多收 4 倍（v0.2.19 合并曾把这里改成不强制）。
+func TestCalculateCostUnified_DeepseekRemoteCatalogPricesForcedToOfficial(t *testing.T) {
+	pricingSvc := &PricingService{pricingData: map[string]*LiteLLMModelPricing{
+		"deepseek-v4-flash": {InputCostPerToken: 3e-7, OutputCostPerToken: 1.2e-6, CacheReadInputTokenCost: 6e-9, PricingCatalogProvider: "deepseek"},
+		"deepseek-v4-pro":   {InputCostPerToken: 1.32e-6, OutputCostPerToken: 3.96e-6, CacheReadInputTokenCost: 4.4e-8, PricingCatalogProvider: "deepseek"},
+	}}
+	bs := NewBillingService(&config.Config{}, pricingSvc)
+	resolver := NewModelPricingResolver(nil, bs)
+
+	var offPeak, peak time.Time
+	for h := 0; h < 24 && (offPeak.IsZero() || peak.IsZero()); h++ {
+		at := time.Date(2026, 9, 14, h, 30, 0, 0, time.UTC) // 周一
+		if deepSeekIsPeakAt(at) {
+			if peak.IsZero() {
+				peak = at
+			}
+		} else if offPeak.IsZero() {
+			offPeak = at
+		}
+	}
+	require.False(t, offPeak.IsZero())
+	require.False(t, peak.IsZero())
+
+	tokens := UsageTokens{InputTokens: 1000, OutputTokens: 500, CacheReadTokens: 1000}
+	cases := []struct {
+		model    string
+		offTotal float64
+	}{
+		{"deepseek-v4-flash", 1000*1.5e-7 + 500*6e-7 + 1000*3e-9},
+		{"deepseek-v4-pro", 1000*6.6e-7 + 500*1.98e-6 + 1000*2.2e-8},
+	}
+	for _, tc := range cases {
+		t.Run(tc.model, func(t *testing.T) {
+			for _, at := range []struct {
+				when time.Time
+				want float64
+			}{{offPeak, tc.offTotal}, {peak, 2 * tc.offTotal}} {
+				cost, err := bs.CalculateCostUnified(CostInput{
+					Ctx: context.Background(), Model: tc.model, Tokens: tokens,
+					Platforms: []string{PlatformDeepSeek}, RateMultiplier: 1.0,
+					Resolver: resolver, PricingAt: at.when,
+				})
+				require.NoError(t, err)
+				require.InDelta(t, at.want, cost.TotalCost, 1e-12, "at=%s", at.when)
+			}
+		})
+	}
+}
