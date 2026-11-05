@@ -943,3 +943,33 @@ type grokCatalogProxyRepo struct {
 func (r grokCatalogProxyRepo) GetByID(context.Context, int64) (*Proxy, error) {
 	return r.proxy, nil
 }
+
+// 生产 wire 给 AccountTestService 注入了 UpstreamModelDiscoverer：Grok 同步走发现器时
+// 必须拿到模型列表请求以构造观测 scope，否则 MergeGrokCatalogObservation 会以
+// "invalid observation" 拒绝，手动同步整次失败（v0.2.19 合并回归）。
+func TestGrokCatalogSyncThroughProductionDiscovererRecordsScope(t *testing.T) {
+	account := grokOAuthModelSyncTestAccount("https://cli-chat-proxy.grok.com/v1")
+	repo := newGrokCatalogMemoryRepo(account)
+	upstream := newGrokCatalogUpstream(http.StatusOK, `{"data":[{"model":"grok-4.7"}]}`, http.StatusOK, `{"data":[]}`)
+	cfg := upstreamModelSyncTestConfig()
+	tokenProvider := NewGrokTokenProvider(nil, nil)
+	discoverer := NewUpstreamModelDiscoverer(repo, nil, nil, nil, tokenProvider, nil, upstream, cfg, nil)
+	svc := &AccountTestService{
+		accountRepo:       repo,
+		httpUpstream:      upstream,
+		cfg:               cfg,
+		grokTokenProvider: tokenProvider,
+		modelDiscoverer:   discoverer,
+	}
+
+	catalog, err := svc.SyncUpstreamModelCatalog(context.Background(), account)
+	require.NoError(t, err)
+	require.Equal(t, []string{"grok-4.7"}, catalog.Models)
+
+	stored, err := repo.GetByID(context.Background(), account.ID)
+	require.NoError(t, err)
+	snap := parseGrokObservedModels(stored.Extra)
+	require.Equal(t, []string{"grok-4.7"}, snap.Models)
+	require.Equal(t, grokCatalogStatusSuccess, snap.LastAttempt.Status)
+	require.Equal(t, "https://cli-chat-proxy.grok.com/v1/models", snap.Scope.Endpoint)
+}

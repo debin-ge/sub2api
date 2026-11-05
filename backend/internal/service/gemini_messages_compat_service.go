@@ -86,40 +86,18 @@ func (s *GeminiMessagesCompatService) readUpstreamErrorBody(resp *http.Response)
 	return body
 }
 
-func NewGeminiMessagesCompatService(accountRepo AccountRepository, optional ...any) *GeminiMessagesCompatService {
-	var (
-		groupRepo                 GroupRepository
-		cache                     GatewayCache
-		schedulerSnapshot         *SchedulerSnapshotService
-		tokenProvider             *GeminiTokenProvider
-		rateLimitService          *RateLimitService
-		httpUpstream              HTTPUpstream
-		antigravityGatewayService *AntigravityGatewayService
-		gatewayPricingGuard       *GatewayService
-		cfg                       *config.Config
-	)
-	for _, value := range optional {
-		switch typed := value.(type) {
-		case GroupRepository:
-			groupRepo = typed
-		case GatewayCache:
-			cache = typed
-		case *SchedulerSnapshotService:
-			schedulerSnapshot = typed
-		case *GeminiTokenProvider:
-			tokenProvider = typed
-		case *RateLimitService:
-			rateLimitService = typed
-		case HTTPUpstream:
-			httpUpstream = typed
-		case *AntigravityGatewayService:
-			antigravityGatewayService = typed
-		case *GatewayService:
-			gatewayPricingGuard = typed
-		case *config.Config:
-			cfg = typed
-		}
-	}
+func NewGeminiMessagesCompatService(
+	accountRepo AccountRepository,
+	groupRepo GroupRepository,
+	cache GatewayCache,
+	schedulerSnapshot *SchedulerSnapshotService,
+	tokenProvider *GeminiTokenProvider,
+	rateLimitService *RateLimitService,
+	httpUpstream HTTPUpstream,
+	antigravityGatewayService *AntigravityGatewayService,
+	gatewayPricingGuard *GatewayService,
+	cfg *config.Config,
+) *GeminiMessagesCompatService {
 	return &GeminiMessagesCompatService{
 		accountRepo:               accountRepo,
 		groupRepo:                 groupRepo,

@@ -108,3 +108,68 @@ func (r *manualRefundUserRepo) DeductAvailableBalance(ctx context.Context, id in
 	}
 	return amount, nil
 }
+
+// REFUND_PENDING 订单进入 pending 时已保留扣减（v0.2.19 起的上游语义），手工确认
+// 即使请求 deduct=true 也不能再扣一次。
+func TestConfirmManualRefundOnPendingOrderDoesNotDeductHeldBalanceTwice(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("manual-refund-pending@example.com").
+		SetPasswordHash("hash").
+		SetUsername("manual-refund-pending-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(50).
+		SetPayAmount(50).
+		SetFeeRate(0).
+		SetRechargeCode("MANUAL-REFUND-PENDING-ORDER").
+		SetOutTradeNo("sub2_manual_refund_pending").
+		SetPaymentType(payment.TypeWise).
+		SetPaymentTradeNo("wise-tx-pending").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusRefundPending).
+		SetRefundAmount(50).
+		SetRefundReason("gateway pending").
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetPaidAt(time.Now()).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+	_, err = client.PaymentAuditLog.Create().
+		SetOrderID(strconv.FormatInt(order.ID, 10)).
+		SetAction("REFUND_PENDING").
+		SetDetail(`{"refundID":"r-1","refundAmount":50,"deductionHeld":true,"deductionType":"balance","balanceDeducted":50,"subDaysDeducted":0}`).
+		SetOperator("admin").
+		Save(ctx)
+	require.NoError(t, err)
+
+	var deducted float64
+	svc := &PaymentService{
+		entClient: client,
+		userRepo: &manualRefundUserRepo{
+			user: &User{ID: user.ID, Balance: 500},
+			deductBalanceFn: func(ctx context.Context, id int64, amount float64) error {
+				deducted += amount
+				return nil
+			},
+		},
+	}
+
+	result, err := svc.ConfirmManualRefund(ctx, order.ID, 50, "manual completed", "wise-refund-pending", true, true)
+	require.NoError(t, err)
+	require.True(t, result.Success)
+	require.Zero(t, deducted, "held deduction must not be applied again")
+	require.Equal(t, 50.0, result.BalanceDeducted)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusRefunded, reloaded.Status)
+}

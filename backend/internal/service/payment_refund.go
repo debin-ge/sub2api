@@ -423,6 +423,18 @@ func (s *PaymentService) ConfirmManualRefund(ctx context.Context, orderID int64,
 		DeductBalance: deduct,
 		DeductionType: payment.DeductionTypeNone,
 	}
+	// REFUND_PENDING 订单在进入 pending 时已保留扣减（DeductionHeld）：手工确认只需
+	// 收敛终态，再扣一次就是重复扣减。旧记录（无 DeductionHeld）扣减已归还，照常扣。
+	if order.Status == OrderStatusRefundPending {
+		pendingDetail, err := s.latestRefundPendingDetail(ctx, orderID)
+		if err != nil {
+			return nil, err
+		}
+		if pendingDetail.DeductionHeld {
+			pendingDetail.applyTo(plan)
+			deduct = false
+		}
+	}
 	if deduct {
 		if early := s.prepDeduct(ctx, order, plan, force); early != nil {
 			return early, nil

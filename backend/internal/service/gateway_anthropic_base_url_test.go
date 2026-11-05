@@ -56,13 +56,16 @@ func TestGatewayService_AdaptiveAnthropicBaseURLRouting(t *testing.T) {
 		require.Equal(t, "https://anthropic.example.com/v1/messages/count_tokens?beta=true", countReq.URL.String())
 	})
 
-	t.Run("missing anthropic base uses provider fallback", func(t *testing.T) {
+	// 本地保留 base_url 作为所有 CN 协议的中继兜底（见 compatible_gateway_endpoint.go 与
+	// upstream_protocol_routing_matrix_test.go 的 matchesRetainedLocalRelayURL），
+	// 不回落到供应商官方 Anthropic 端点。
+	t.Run("missing anthropic base uses retained base_url relay fallback", func(t *testing.T) {
 		account := gatewayAnthropicBaseURLAccount(map[string]any{
 			APIProtocolChatCompletions: "https://chat.example.com",
 		})
 		req, _, err := svc.buildUpstreamRequest(context.Background(), gatewayAnthropicBaseURLContext(t), account, body, "test-key", "apikey", "deepseek-chat", false, false)
 		require.NoError(t, err)
-		require.Equal(t, "https://api.deepseek.com/anthropic/v1/messages?beta=true", req.URL.String())
+		require.Equal(t, "https://api.deepseek.com/v1/messages?beta=true", req.URL.String())
 	})
 
 	t.Run("ordinary anthropic api key keeps base_url fallback", func(t *testing.T) {

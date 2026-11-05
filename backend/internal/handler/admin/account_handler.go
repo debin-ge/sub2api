@@ -130,18 +130,9 @@ func NewAccountHandler(
 	sessionLimitCache service.SessionLimitCache,
 	rpmCache service.RPMCache,
 	tokenCacheInvalidator service.TokenCacheInvalidator,
-	optional ...any,
+	minimaxTokenPlanClient *service.MiniMaxTokenPlanClient,
+	catalog *service.ModelCatalogService,
 ) *AccountHandler {
-	var minimaxTokenPlanClient *service.MiniMaxTokenPlanClient
-	var catalog *service.ModelCatalogService
-	for _, value := range optional {
-		switch typed := value.(type) {
-		case *service.MiniMaxTokenPlanClient:
-			minimaxTokenPlanClient = typed
-		case *service.ModelCatalogService:
-			catalog = typed
-		}
-	}
 	handler := &AccountHandler{
 		adminService:            adminService,
 		oauthService:            oauthService,

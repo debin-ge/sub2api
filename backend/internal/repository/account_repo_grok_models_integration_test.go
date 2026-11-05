@@ -93,7 +93,11 @@ func TestGrokCatalogCASTreatsNullMissingAndKeyOrderAsSameValue(t *testing.T) {
 		account := mustCreateGrokCatalogAccount(t, tx.Client(), "grok-cas-sql-null")
 		// The column is NOT NULL today. Drop it only inside this rolled-back
 		// transaction so the COALESCE(extra, '{}') branch is actually executed.
-		_, err := tx.ExecContext(ctx, `ALTER TABLE accounts ALTER COLUMN extra DROP NOT NULL`)
+		// 本仓库 accounts 上有 DEFERRABLE 约束触发器：先让插入账号产生的待定事件立即
+		// 执行，否则 ALTER TABLE 报 "has pending trigger events"。
+		_, err := tx.ExecContext(ctx, `SET CONSTRAINTS ALL IMMEDIATE`)
+		require.NoError(t, err)
+		_, err = tx.ExecContext(ctx, `ALTER TABLE accounts ALTER COLUMN extra DROP NOT NULL`)
 		require.NoError(t, err)
 		_, err = tx.ExecContext(ctx, `UPDATE accounts SET extra = NULL WHERE id = $1`, account.ID)
 		require.NoError(t, err)

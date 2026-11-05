@@ -158,22 +158,16 @@ onMounted(async () => {
   }
 
   try {
-    if (typeof window !== 'undefined') {
-      const restored = readPaymentRecoverySnapshot(
-        window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY),
-        { resumeToken },
-      )
-      if (restored?.orderId === orderId) {
-        currency.value = normalizePaymentCurrency(restored.currency)
-        if (!resultResumeToken.value) {
-          resultResumeToken.value = restored.resumeToken
-        }
-        if (!resultOutTradeNo.value) {
-          resultOutTradeNo.value = restored.outTradeNo
-        }
+    // 走到这里时快照必然与 URL 订单匹配（否则上面已因缺少 client_secret 返回）。
+    if (restored?.orderId === orderId) {
+      currency.value = normalizePaymentCurrency(restored.currency)
+      if (!resultResumeToken.value) {
+        resultResumeToken.value = restored.resumeToken
+      }
+      if (!resultOutTradeNo.value) {
+        resultOutTradeNo.value = restored.outTradeNo
       }
     }
-    currency.value = normalizePaymentCurrency(restored?.currency)
     const res = await paymentAPI.getOrder(orderId)
     order.value = res.data
     if (!resultOutTradeNo.value) {

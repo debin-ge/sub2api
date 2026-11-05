@@ -325,7 +325,7 @@
             </div>
 
             <!-- Web Search Emulation (platform whitelist, hidden when global disabled) -->
-            <div v-if="WEB_SEARCH_EMULATION_PLATFORMS.has(section.platform) && webSearchGlobalEnabled" class="border-t border-gray-200 pt-3 dark:border-dark-600">
+            <div v-if="WEB_SEARCH_EMULATION_PLATFORMS.has(section.platform) && webSearchGlobalEnabled" class="border-t zt-border-c2 pt-3">
               <div class="flex items-center justify-between">
                 <div>
                   <label class="text-xs font-medium zt-ink-2">

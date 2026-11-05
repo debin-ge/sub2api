@@ -2044,11 +2044,14 @@ func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64,
 	}
 	if s.modelCatalog != nil {
 		models, err := s.modelCatalog.ListForPlatform(ctx, groupID, platform, true)
-		// A nil catalog means the live catalog has no authoritative entries yet;
-		// continue through the legacy account-aware fallback so OpenAI retirement
-		// filtering and unmapped-account supplementation still apply. A non-nil
-		// empty slice remains authoritative (for example, all models were retired).
-		if err == nil && models != nil {
+		// The live catalog never returns nil (normalizeCatalogModelIDs), so an
+		// empty result only means it has no entries for this scope (e.g. no
+		// schedulable accounts yet). Fall through to the legacy account-aware
+		// path: it returns nil for "use platform defaults" and a non-nil empty
+		// slice only when every OpenAI model is retired, which the handlers treat
+		// as authoritative. Returning the catalog's empty slice here would make
+		// /v1/models answer {"data":[]} instead of the default list.
+		if err == nil && len(models) > 0 {
 			return models
 		}
 	}

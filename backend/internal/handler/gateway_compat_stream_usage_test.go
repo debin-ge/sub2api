@@ -31,10 +31,32 @@ func (u *compatStreamUsageUpstream) DoWithTLS(*http.Request, string, int64, int,
 	return u.response, nil
 }
 
+// compatStreamUsageBillingRepo 实现本仓库标准模式要求的持久化计费仓储
+// （DurableUsageBillingRepository）：命令与 usage log 在 ApplyAndRecord 边界捕获。
 type compatStreamUsageBillingRepo struct {
-	service.UsageBillingRepository
+	service.DurableUsageBillingRepository
 	mu       sync.Mutex
 	commands []*service.UsageBillingCommand
+	logs     chan *service.UsageLog
+}
+
+func (r *compatStreamUsageBillingRepo) ApplyAndRecord(_ context.Context, cmd *service.UsageBillingCommand, log *service.UsageLog) (*service.UsageBillingApplyResult, error) {
+	r.mu.Lock()
+	r.commands = append(r.commands, cmd)
+	id := int64(len(r.commands))
+	r.mu.Unlock()
+	if r.logs != nil && log != nil {
+		r.logs <- log
+	}
+	return &service.UsageBillingApplyResult{
+		Applied:          true,
+		UsageLogRecorded: true,
+		OutboxReceipt:    &service.UsageBillingOutboxReceipt{ID: id, WorkerID: "compat-stream-usage-test"},
+	}, nil
+}
+
+func (r *compatStreamUsageBillingRepo) AcknowledgeUsageBillingOutbox(context.Context, string, int64) error {
+	return nil
 }
 
 func (r *compatStreamUsageBillingRepo) Apply(ctx context.Context, cmd *service.UsageBillingCommand) (*service.UsageBillingApplyResult, error) {
@@ -80,10 +102,10 @@ func runCompatStreamUsageHandler(t *testing.T, endpoint, upstreamStream string, 
 	}
 	snapshot := service.NewSchedulerSnapshotService(&fakeSchedulerCache{accounts: []*service.Account{account}}, nil, nil, nil, nil)
 	run := compatStreamUsageRun{
-		rec:         httptest.NewRecorder(),
-		usageRepo:   &openAIWSUsageHandlerUsageLogRepoStub{created: make(chan *service.UsageLog, 2)},
-		billingRepo: &compatStreamUsageBillingRepo{},
+		rec:       httptest.NewRecorder(),
+		usageRepo: &openAIWSUsageHandlerUsageLogRepoStub{created: make(chan *service.UsageLog, 2)},
 	}
+	run.billingRepo = &compatStreamUsageBillingRepo{logs: run.usageRepo.created}
 	billingCache := service.NewBillingCacheService(newHandlerInflightCache(100), nil, nil, nil, nil, nil, cfg, nil)
 	t.Cleanup(billingCache.Stop)
 
@@ -101,8 +123,8 @@ func runCompatStreamUsageHandler(t *testing.T, endpoint, upstreamStream string, 
 	}}
 	gw := service.NewGatewayService(
 		nil, &fakeGroupRepo{group: group}, run.usageRepo, run.billingRepo, nil, nil, nil, nil, cfg,
-		snapshot, nil, service.NewBillingService(cfg, nil), nil, nil, nil, run.upstream,
-		&service.DeferredService{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		snapshot, nil, service.NewBillingService(cfg, compatStreamUsagePricing()), nil, nil, nil, run.upstream,
+		&service.DeferredService{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 	)
 	h := &GatewayHandler{
 		gatewayService: gw, billingCacheService: billingCache, cfg: cfg, maxAccountSwitches: 1,
@@ -126,6 +148,19 @@ func runCompatStreamUsageHandler(t *testing.T, endpoint, upstreamStream string, 
 		h.Responses(c)
 	}
 	return run
+}
+
+// compatStreamUsagePricing 提供测试模型的目录价：本仓库的调度前价格门禁是严格模式，
+// 无目录价的模型会在转发前以 billing_configuration_error 拒绝。
+func compatStreamUsagePricing() *service.PricingService {
+	return service.NewPricingServiceForTest(map[string]*service.ModelPriceEntry{
+		"claude-sonnet-4.5": {
+			InputCostPerToken:      3e-6,
+			OutputCostPerToken:     15e-6,
+			PricingCatalogProvider: "anthropic",
+			Mode:                   "chat",
+		},
+	})
 }
 
 // compatStreamUsageMarkers 返回成功收尾与终止错误的标记。

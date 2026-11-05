@@ -522,7 +522,7 @@
         <!-- Model Restriction Section (不适用于 Antigravity) -->
         <div
           v-if="account.platform !== 'antigravity'"
-          class="border-t border-gray-200 pt-4 dark:border-dark-600"
+          class="border-t zt-border-c2 pt-4"
           :data-testid="account.platform === 'grok' ? 'grok-model-settings' : undefined"
         >
           <label class="input-label">{{ t('admin.accounts.modelRestriction') }}</label>
@@ -541,7 +541,7 @@
             <div
               :data-testid="account.platform === 'grok' ? 'grok-model-mode-tabs' : undefined"
               :class="account.platform === 'grok'
-                ? 'mb-4 flex gap-1 rounded-xl bg-gray-100 p-1 dark:bg-dark-900'
+                ? 'mb-4 flex gap-1 rounded-xl zt-surface-3 p-1'
                 : 'mb-4 flex gap-2'"
             >
               <button
@@ -552,14 +552,14 @@
                   ? [
                       'rounded-lg px-3 py-2 text-sm',
                       modelRestrictionMode === 'whitelist'
-                        ? 'bg-white text-cyan-700 shadow-sm dark:bg-dark-800 dark:text-cyan-300'
-                        : 'text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100'
+                        ? 'zt-surface text-cyan-700 shadow-sm dark:text-cyan-300'
+                        : 'zt-ink-2 hover:text-gray-900 dark:hover:text-gray-100'
                     ]
                   : [
                       'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
                       modelRestrictionMode === 'whitelist'
                         ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
+                        : 'zt-surface-3 zt-ink-2 hover:bg-gray-200 dark:hover:bg-dark-500'
                     ]"
               >
                 <svg
@@ -586,14 +586,14 @@
                   ? [
                       'rounded-lg px-3 py-2 text-sm',
                       modelRestrictionMode === 'mapping'
-                        ? 'bg-white text-purple-700 shadow-sm dark:bg-dark-800 dark:text-purple-300'
-                        : 'text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100'
+                        ? 'zt-surface text-purple-700 shadow-sm dark:text-purple-300'
+                        : 'zt-ink-2 hover:text-gray-900 dark:hover:text-gray-100'
                     ]
                   : [
                       'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
                       modelRestrictionMode === 'mapping'
                         ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
+                        : 'zt-surface-3 zt-ink-2 hover:bg-gray-200 dark:hover:bg-dark-500'
                     ]"
               >
                 <svg
@@ -641,7 +641,7 @@
 
             <!-- Whitelist Mode -->
             <div v-if="modelRestrictionMode === 'whitelist'">
-              <p class="text-xs text-gray-500 dark:text-gray-400">
+              <p class="text-xs zt-ink-3">
                 {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
                 <span v-if="allowedModels.length === 0 && modelMappings.length === 0">{{
                   t('admin.accounts.supportsAllModels')
@@ -652,7 +652,7 @@
             <!-- Mapping Mode -->
             <div v-else :data-testid="account.platform === 'grok' ? 'grok-model-mapping-editor' : undefined">
               <div :class="account.platform === 'grok' ? 'mb-3' : 'mb-3 rounded-lg bg-purple-50 p-3 dark:bg-purple-900/20'">
-                <p :class="account.platform === 'grok' ? 'text-xs text-gray-500 dark:text-dark-400' : 'text-xs text-purple-700 dark:text-purple-400'">
+                <p :class="account.platform === 'grok' ? 'text-xs zt-ink-3' : 'text-xs text-purple-700 dark:text-purple-400'">
                   <svg
                     v-if="account.platform !== 'grok'"
                     class="mr-1 inline h-4 w-4"
@@ -673,7 +673,7 @@
 
               <div
                 v-if="account.platform === 'grok'"
-                class="mb-1.5 grid grid-cols-[minmax(0,1fr)_1rem_minmax(0,1.2fr)_2rem] gap-1.5 text-xs text-gray-500 dark:text-dark-400 sm:gap-2"
+                class="mb-1.5 grid grid-cols-[minmax(0,1fr)_1rem_minmax(0,1.2fr)_2rem] gap-1.5 text-xs zt-ink-3 sm:gap-2"
               >
                 <span>{{ t('admin.accounts.grokModelDiagnostics.requestColumn') }}</span>
                 <span></span>
@@ -702,11 +702,11 @@
                   name="arrowRight"
                   size="sm"
                   aria-hidden="true"
-                  class="w-4 shrink-0 text-gray-400"
+                  class="w-4 shrink-0 zt-ink-3"
                 />
                 <svg
                   v-else
-                  class="h-4 w-4 flex-shrink-0 text-gray-400"
+                  class="h-4 w-4 flex-shrink-0 zt-ink-3"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -730,7 +730,7 @@
                   @click="removeModelMapping(index)"
                   :aria-label="account.platform === 'grok' ? t('admin.accounts.grokModelDiagnostics.removeMappingAria', { index: index + 1 }) : undefined"
                   :class="account.platform === 'grok'
-                    ? 'rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-gray-400 dark:hover:bg-dark-700'
+                    ? 'rounded-lg p-1.5 zt-ink-2 zt-hover-2 focus-visible:ring-2 focus-visible:ring-primary-500'
                     : 'rounded-lg p-2 text-red-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20'"
                 >
                   <Icon v-if="account.platform === 'grok'" name="trash" size="sm" aria-hidden="true" />
@@ -752,7 +752,7 @@
               :data-testid="account.platform === 'grok' ? 'grok-model-mapping-add' : undefined"
               :class="account.platform === 'grok'
                 ? 'mb-3 inline-flex items-center gap-1 py-2 text-xs text-primary-700 dark:text-primary-300'
-              : 'mb-3 w-full rounded-lg border-2 border-dashed border-gray-300 px-4 py-2 text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300'"
+              : 'mb-3 w-full rounded-lg border-2 border-dashed zt-border-c2 px-4 py-2 zt-ink-2 transition-colors hover:border-gray-400 hover:text-gray-700 dark:hover:border-dark-400 dark:hover:text-gray-300'"
             >
               <svg
                 class="mr-1 inline h-4 w-4"
@@ -1150,7 +1150,7 @@
       <!-- OAuth/Setup-Token Model Mapping (这些类型没有 apikey 容器，需要独立的模型映射区域；Antigravity 使用独立专属区域) -->
       <div
         v-if="(account.type === 'oauth' || account.type === 'setup-token') && account.platform !== 'antigravity'"
-        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+        class="border-t zt-border-c2 pt-4"
         :data-testid="account.platform === 'grok' ? 'grok-model-settings' : undefined"
       >
         <label class="input-label">{{ t('admin.accounts.modelRestriction') }}</label>
@@ -1169,7 +1169,7 @@
           <div
             :data-testid="account.platform === 'grok' ? 'grok-model-mode-tabs' : undefined"
             :class="account.platform === 'grok'
-              ? 'mb-4 flex gap-1 rounded-xl bg-gray-100 p-1 dark:bg-dark-900'
+              ? 'mb-4 flex gap-1 rounded-xl zt-surface-3 p-1'
               : 'mb-4 flex gap-2'"
           >
             <button
@@ -1180,14 +1180,14 @@
                 ? [
                     'rounded-lg px-3 py-2 text-sm',
                     modelRestrictionMode === 'whitelist'
-                      ? 'bg-white text-cyan-700 shadow-sm dark:bg-dark-800 dark:text-cyan-300'
-                      : 'text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100'
+                      ? 'zt-surface text-cyan-700 shadow-sm dark:text-cyan-300'
+                      : 'zt-ink-2 hover:text-gray-900 dark:hover:text-gray-100'
                   ]
                 : [
                     'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
                     modelRestrictionMode === 'whitelist'
                       ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
+                      : 'zt-surface-3 zt-ink-2 hover:bg-gray-200 dark:hover:bg-dark-500'
                   ]"
             >
               {{ t('admin.accounts.modelWhitelist') }}
@@ -1200,14 +1200,14 @@
                 ? [
                     'rounded-lg px-3 py-2 text-sm',
                     modelRestrictionMode === 'mapping'
-                      ? 'bg-white text-purple-700 shadow-sm dark:bg-dark-800 dark:text-purple-300'
-                      : 'text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100'
+                      ? 'zt-surface text-purple-700 shadow-sm dark:text-purple-300'
+                      : 'zt-ink-2 hover:text-gray-900 dark:hover:text-gray-100'
                   ]
                 : [
                     'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
                     modelRestrictionMode === 'mapping'
                       ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
+                      : 'zt-surface-3 zt-ink-2 hover:bg-gray-200 dark:hover:bg-dark-500'
                   ]"
             >
               {{ t('admin.accounts.modelMapping') }}
@@ -1241,7 +1241,7 @@
 
           <!-- Whitelist Mode -->
           <div v-if="modelRestrictionMode === 'whitelist'">
-            <p class="text-xs text-gray-500 dark:text-gray-400">
+            <p class="text-xs zt-ink-3">
               {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
               <span v-if="allowedModels.length === 0 && modelMappings.length === 0">{{
                 t('admin.accounts.supportsAllModels')
@@ -1252,14 +1252,14 @@
           <!-- Mapping Mode -->
           <div v-else :data-testid="account.platform === 'grok' ? 'grok-model-mapping-editor' : undefined">
             <div :class="account.platform === 'grok' ? 'mb-3' : 'mb-3 rounded-lg bg-purple-50 p-3 dark:bg-purple-900/20'">
-              <p :class="account.platform === 'grok' ? 'text-xs text-gray-500 dark:text-dark-400' : 'text-xs text-purple-700 dark:text-purple-400'">
+              <p :class="account.platform === 'grok' ? 'text-xs zt-ink-3' : 'text-xs text-purple-700 dark:text-purple-400'">
                 {{ t('admin.accounts.mapRequestModels') }}
               </p>
             </div>
 
             <div
               v-if="account.platform === 'grok'"
-              class="mb-1.5 grid grid-cols-[minmax(0,1fr)_1rem_minmax(0,1.2fr)_2rem] gap-1.5 text-xs text-gray-500 dark:text-dark-400 sm:gap-2"
+              class="mb-1.5 grid grid-cols-[minmax(0,1fr)_1rem_minmax(0,1.2fr)_2rem] gap-1.5 text-xs zt-ink-3 sm:gap-2"
             >
               <span>{{ t('admin.accounts.grokModelDiagnostics.requestColumn') }}</span>
               <span></span>
@@ -1287,11 +1287,11 @@
                   name="arrowRight"
                   size="sm"
                   aria-hidden="true"
-                  class="w-4 shrink-0 text-gray-400"
+                  class="w-4 shrink-0 zt-ink-3"
                 />
                 <svg
                   v-else
-                  class="h-4 w-4 flex-shrink-0 text-gray-400"
+                  class="h-4 w-4 flex-shrink-0 zt-ink-3"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -1315,7 +1315,7 @@
                   @click="removeModelMapping(index)"
                   :aria-label="account.platform === 'grok' ? t('admin.accounts.grokModelDiagnostics.removeMappingAria', { index: index + 1 }) : undefined"
                   :class="account.platform === 'grok'
-                    ? 'rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-gray-400 dark:hover:bg-dark-700'
+                    ? 'rounded-lg p-1.5 zt-ink-2 zt-hover-2 focus-visible:ring-2 focus-visible:ring-primary-500'
                     : 'rounded-lg p-2 text-red-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20'"
                 >
                   <Icon v-if="account.platform === 'grok'" name="trash" size="sm" aria-hidden="true" />
@@ -1337,7 +1337,7 @@
               :data-testid="account.platform === 'grok' ? 'grok-model-mapping-add' : undefined"
               :class="account.platform === 'grok'
                 ? 'mb-3 inline-flex items-center gap-1 py-2 text-xs text-primary-700 dark:text-primary-300'
-                : 'mb-3 w-full rounded-lg border-2 border-dashed border-gray-300 px-4 py-2 text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300'"
+                : 'mb-3 w-full rounded-lg border-2 border-dashed zt-border-c2 px-4 py-2 zt-ink-2 transition-colors hover:border-gray-400 hover:text-gray-700 dark:hover:border-dark-400 dark:hover:text-gray-300'"
             >
               + {{ t('admin.accounts.addMapping') }}
             </button>
@@ -2784,7 +2784,7 @@
       <!-- Anthropic / OpenAI API Key: Web Search Emulation (hidden when global disabled) -->
       <div
         v-if="(account?.platform === 'anthropic' || account?.platform === 'openai') && account?.type === 'apikey' && webSearchGlobalEnabled"
-        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+        class="border-t zt-border-c2 pt-4"
       >
         <div class="flex items-center justify-between">
           <div>
@@ -2854,8 +2854,8 @@
       </div>
       <!-- 配额控制 (非 Anthropic apikey/bedrock，以及 Vertex service_account) -->
       <div
-        v-else-if="supportsAccountQuota(account?.type)"
-        class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4"
+        v-else-if="!isFixedEndpointGatewayPlatform && supportsAccountQuota(account?.type)"
+        class="border-t zt-border-c2 pt-4 space-y-4"
       >
         <div class="mb-3">
           <h3 class="input-label mb-0 text-base font-semibold">{{ t('admin.accounts.quotaControl.title') }}</h3>
@@ -7139,8 +7139,7 @@ const handleSubmit = async () => {
       updatePayload.extra = newExtra
     }
 
-    // For apikey/bedrock/service_account accounts, handle quota_limit in extra
-    if (supportsAccountQuota(props.account.type)) {
+    if (props.account.type === 'apikey' && !isVideoOnlyPlatform(props.account.platform)) {
       const currentExtra = (updatePayload.extra as Record<string, unknown>) ||
         (props.account.extra as Record<string, unknown>) || {}
       const newExtra: Record<string, unknown> = { ...currentExtra }
@@ -7150,8 +7149,8 @@ const handleSubmit = async () => {
       updatePayload.extra = newExtra
     }
 
-    // For apikey/bedrock accounts, handle quota_limit in extra
-    if (!isFixedEndpointGatewayPlatform.value && (props.account.type === 'apikey' || props.account.type === 'bedrock')) {
+    // For apikey/bedrock/service_account accounts, handle quota_limit in extra
+    if (!isFixedEndpointGatewayPlatform.value && supportsAccountQuota(props.account.type)) {
       const currentExtra = (updatePayload.extra as Record<string, unknown>) ||
         (props.account.extra as Record<string, unknown>) || {}
       const newExtra: Record<string, unknown> = { ...currentExtra }

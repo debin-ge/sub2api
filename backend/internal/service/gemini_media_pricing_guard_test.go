@@ -651,7 +651,7 @@ func TestAntigravityNativeImageChannelTokenModeStillRequiresTokenPrice(t *testin
 	groupIDCopy := groupID
 	c.Set("api_key", &APIKey{
 		GroupID: &groupIDCopy,
-		Group:   &Group{ID: groupID, Platform: PlatformAntigravity},
+		Group:   &Group{ID: groupID, Platform: PlatformAntigravity, AllowImageGeneration: true},
 	})
 
 	_, err := svc.ForwardGemini(

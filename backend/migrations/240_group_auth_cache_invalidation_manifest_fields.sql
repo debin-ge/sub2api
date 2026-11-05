@@ -23,7 +23,6 @@ BEGIN
        AND OLD.monthly_limit_usd IS NOT DISTINCT FROM NEW.monthly_limit_usd
        AND OLD.allow_image_generation IS NOT DISTINCT FROM NEW.allow_image_generation
        AND OLD.allow_batch_image_generation IS NOT DISTINCT FROM NEW.allow_batch_image_generation
-       AND OLD.image_count_billing IS NOT DISTINCT FROM NEW.image_count_billing
        AND OLD.image_rate_independent IS NOT DISTINCT FROM NEW.image_rate_independent
        AND OLD.image_rate_multiplier IS NOT DISTINCT FROM NEW.image_rate_multiplier
        AND OLD.image_price_1k IS NOT DISTINCT FROM NEW.image_price_1k

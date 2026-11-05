@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	adminhandler "github.com/Wei-Shaw/sub2api/internal/handler/admin"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/adminaccess"
@@ -52,6 +53,37 @@ func (s *scopedRouteGroupModels) ScopedAdminUpdateGroupModels(ctx context.Contex
 	return g, err
 }
 
+// 本仓库的候选列表由 ModelCatalogService 解析（不走 AdminService.GetGroupModelsListCandidates），
+// 目录为 nil 时接口返回 500，测试需注入真实目录服务。
+type scopedRouteCatalogAccounts struct {
+	service.AccountRepository
+}
+
+func (scopedRouteCatalogAccounts) accounts(platform string) []service.Account {
+	if platform != service.PlatformOpenAI {
+		return nil
+	}
+	return []service.Account{{ID: 1, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey, Status: service.StatusActive, Schedulable: true,
+		Credentials: map[string]any{"api_key": "k", "model_mapping": map[string]any{"gpt-test": "gpt-test"}}}}
+}
+
+func (r scopedRouteCatalogAccounts) ListSchedulableByGroupIDAndPlatform(_ context.Context, _ int64, platform string) ([]service.Account, error) {
+	return r.accounts(platform), nil
+}
+
+func (r scopedRouteCatalogAccounts) ListSchedulableByPlatform(_ context.Context, platform string) ([]service.Account, error) {
+	return r.accounts(platform), nil
+}
+
+type scopedRouteCatalogGroups struct {
+	service.GroupRepository
+	api *scopedRouteGroupModels
+}
+
+func (r scopedRouteCatalogGroups) GetByID(ctx context.Context, id int64) (*service.Group, error) {
+	return r.api.GetGroup(ctx, id)
+}
+
 func TestScopedAdminRegisteredGroupModelInterfaces(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for _, permission := range []string{"groups.models.read", "groups.models.write", "accounts.models.write", "models.defaults.read", ""} {
@@ -71,8 +103,9 @@ func TestScopedAdminRegisteredGroupModelInterfaces(t *testing.T) {
 			users := service.NewUserService(&scopedRouteUsers{}, nil, nil, nil)
 			auth := middleware.NewAdminAuthMiddleware(nil, users, settings, nil)
 			api := &scopedRouteGroupModels{}
+			catalog := service.NewModelCatalogService(scopedRouteCatalogAccounts{}, scopedRouteCatalogGroups{api: api}, nil, nil, config.ModelCatalogConfig{})
 			r := gin.New()
-			RegisterAdminRoutes(r.Group("/api/v1"), &handler.Handlers{Admin: &handler.AdminHandlers{Group: adminhandler.NewGroupHandler(api, nil, nil)}}, auth, middleware.AuditLogMiddleware(func(c *gin.Context) { c.Next() }), middleware.StepUpAuthMiddleware(func(c *gin.Context) { c.Next() }), nil, nil)
+			RegisterAdminRoutes(r.Group("/api/v1"), &handler.Handlers{Admin: &handler.AdminHandlers{Group: adminhandler.NewGroupHandler(api, nil, nil, catalog)}}, auth, middleware.AuditLogMiddleware(func(c *gin.Context) { c.Next() }), middleware.StepUpAuthMiddleware(func(c *gin.Context) { c.Next() }), nil, nil)
 			for _, tc := range []struct {
 				method, path, body, allowed string
 			}{
@@ -110,7 +143,7 @@ func TestScopedAdminRegisteredGroupModelInterfaces(t *testing.T) {
 func TestScopedAdminGroupModelsRejectUnauthorizedGroupsAndMixedFields(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	api := &scopedRouteGroupModels{}
-	h := adminhandler.NewGroupHandler(api, nil, nil)
+	h := adminhandler.NewGroupHandler(api, nil, nil, nil)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
 		c.Request = c.Request.WithContext(adminaccess.WithPrincipal(c.Request.Context(), &adminaccess.Principal{Policy: adminaccess.Policy{Rules: []adminaccess.Rule{{Permissions: []string{"groups.models.read", "groups.models.write"}, GroupIDs: []int64{2, 4}, Platforms: []string{"openai"}}}}}))
@@ -169,14 +202,14 @@ func (r *scopedRouteAllowlistRepository) ScopedAdminUpdateGroupModels(ctx contex
 func TestScopedAdminRegisteredGroupModelsUseUpstreamAllowlistSemantics(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &scopedRouteAllowlistRepository{}
-	api := service.NewAdminService(nil, nil, repo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	api := service.NewAdminService(nil, repo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	settings := service.NewSettingService(nil, nil)
 	settings.SetScopedAdminKeyRepository(&scopedRouteKeys{})
 	key, _, err := settings.CreateScopedAdminKey(context.Background(), service.ScopedAdminKeyInput{Name: "白名单验证", Enabled: true, Policy: adminaccess.Policy{Rules: []adminaccess.Rule{{Permissions: []string{"groups.models.read", "groups.models.write"}, GroupIDs: []int64{2}, Platforms: []string{service.PlatformOpenAI}}}}}, 9)
 	require.NoError(t, err)
 	auth := middleware.NewAdminAuthMiddleware(nil, service.NewUserService(&scopedRouteUsers{}, nil, nil, nil), settings, nil)
 	r := gin.New()
-	RegisterAdminRoutes(r.Group("/api/v1"), &handler.Handlers{Admin: &handler.AdminHandlers{Group: adminhandler.NewGroupHandler(api, nil, nil)}}, auth, middleware.AuditLogMiddleware(func(c *gin.Context) { c.Next() }), middleware.StepUpAuthMiddleware(func(c *gin.Context) { c.Next() }), nil, nil)
+	RegisterAdminRoutes(r.Group("/api/v1"), &handler.Handlers{Admin: &handler.AdminHandlers{Group: adminhandler.NewGroupHandler(api, nil, nil, nil)}}, auth, middleware.AuditLogMiddleware(func(c *gin.Context) { c.Next() }), middleware.StepUpAuthMiddleware(func(c *gin.Context) { c.Next() }), nil, nil)
 	call := func(body string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest("PUT", "/api/v1/admin/groups/2", strings.NewReader(body))
 		req.Header.Set("x-api-key", key)
