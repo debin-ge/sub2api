@@ -54,7 +54,7 @@ func TestSetupRouterEmbeddedFrontendDoesNotCaptureMetrics(t *testing.T) {
 	pass := func(c *gin.Context) { c.Next() }
 	router := SetupRouter(
 		gin.New(),
-		&handler.Handlers{Radar: radarHandler, Admin: &handler.AdminHandlers{}},
+		&handler.Handlers{Radar: radarHandler, Admin: &handler.AdminHandlers{}, MCPOAuth: handler.NewMCPOAuthHandler(nil, nil, nil, nil, cfg)},
 		middleware2.JWTAuthMiddleware(pass),
 		middleware2.AdminAuthMiddleware(pass),
 		middleware2.APIKeyAuthMiddleware(pass),

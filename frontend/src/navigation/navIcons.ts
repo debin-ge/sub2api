@@ -234,6 +234,10 @@ export const PluginIcon = {
   render: () => h(Icon, { name: 'cube' })
 }
 
+export const MCPIcon = {
+  render: () => h(Icon, { name: 'mcp' })
+}
+
 export const BellIcon = {
   render: () =>
     h(

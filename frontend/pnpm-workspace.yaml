@@ -10,4 +10,5 @@ overrides:
   'lodash@<4.18.1': '>=4.18.1'
   'esbuild@<0.25.0': '^0.25.0'
   'source-map-js@<1.2.2': '>=1.2.2'
-  'follow-redirects@<1.16.1': '>=1.16.1'
+  'follow-redirects@<1.16.2': '>=1.16.2'
+  'decode-uri-component@<0.5.1': '>=0.5.1'

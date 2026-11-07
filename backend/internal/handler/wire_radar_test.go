@@ -11,6 +11,7 @@ func TestProvideHandlersIncludesRadarHandler(t *testing.T) {
 	handlers := ProvideHandlers(
 		nil, // authHandler
 		nil, // userHandler
+		nil, // mcpOAuthHandler
 		nil, // apiKeyHandler
 		nil, // usageHandler
 		nil, // redeemHandler

@@ -724,8 +724,7 @@ func (s *BillingService) initFallbackPricing() {
 		LongContextOutputMultiplier:        1.5,
 	}
 
-	// GPT-6 Sol/Luna official rates, 2026-09-22.
-	// GPT-6.1 Terra official rates（上游 342366742 引入，v0.2.19 合并时遗漏）。
+	// GPT-6.1 Terra official rates, 2026-10-26.
 	s.fallbackPrices["gpt-6.1-terra"] = &ModelPricing{
 		InputPricePerToken:                 1e-6,
 		InputPricePerTokenPriority:         2e-6,
@@ -740,6 +739,7 @@ func (s *BillingService) initFallbackPricing() {
 		LongContextInputMultiplier:         2,
 		LongContextOutputMultiplier:        1.5,
 	}
+	// GPT-6 Sol/Luna official rates, 2026-09-22.
 	s.fallbackPrices["gpt-6.1-sol"] = &ModelPricing{
 		InputPricePerToken:                 2e-6,
 		InputPricePerTokenPriority:         4e-6,
@@ -1380,6 +1380,14 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	// pricing SKUs. Normalize them before exact/family fallback matching so a
 	// 5.5 tier cannot fall through to the older Opus 5/Sonnet 4.5 cards.
 	modelLower = normalizeAntigravityClaudeTierAlias(modelLower)
+	if modelLower == "gpt-image-2.6-flare" || modelLower == "gpt-image-2.6-sunburst" {
+		p := openAIGPTImage25FallbackPricing
+		return &ModelPricing{
+			InputPricePerToken: p.InputCostPerToken, CacheReadPricePerToken: p.CacheReadInputTokenCost,
+			ImageInputPricePerToken: p.InputCostPerImageToken, ImageCacheReadPricePerToken: p.CacheReadInputImageTokenCost,
+			ImageOutputPricePerToken: p.OutputCostPerImageToken,
+		}
+	}
 	if pricing := s.fallbackPrices[modelLower]; pricing != nil {
 		return pricing
 	}
