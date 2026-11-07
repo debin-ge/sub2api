@@ -30,6 +30,7 @@ export function useConsoleNav() {
   const flagAffiliate = makeSidebarFlag(FeatureFlags.affiliate)
   const flagRiskControl = makeSidebarFlag(FeatureFlags.riskControl)
   const flagPluginManagement = makeSidebarFlag(FeatureFlags.pluginManagement)
+  const flagMCP = makeSidebarFlag(FeatureFlags.mcp)
 
   const { t } = useI18n()
   const route = useRoute()
@@ -76,6 +77,7 @@ export function useConsoleNav() {
       affiliate: flagAffiliate,
       riskControl: flagRiskControl,
       pluginManagement: flagPluginManagement,
+      mcp: flagMCP,
       opsMonitoring: () => adminSettingsStore.opsMonitoringEnabled,
       adminPayment: () => adminSettingsStore.paymentEnabled,
       batchImage: () => canUseBatchImage.value,

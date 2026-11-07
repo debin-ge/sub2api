@@ -21,6 +21,7 @@ import {
   GiftIcon,
   GlobeIcon,
   KeyIcon,
+  MCPIcon,
   OrderIcon,
   OrderListIcon,
   PluginIcon,
@@ -76,6 +77,7 @@ export interface NavContext {
     affiliate: FlagGetter
     riskControl: FlagGetter
     pluginManagement: FlagGetter
+    mcp: FlagGetter
     opsMonitoring: FlagGetter
     adminPayment: FlagGetter
     batchImage: FlagGetter
@@ -151,7 +153,10 @@ export function buildSelfGroups(ctx: NavContext, withDashboard: boolean): NavGro
     {
       key: 'account',
       label: t('nav.group.account'),
-      items: [{ path: '/profile', label: t('nav.profile'), icon: UserIcon }],
+      items: [
+        { path: '/profile', label: t('nav.profile'), icon: UserIcon },
+        { path: '/settings/mcp', label: t('mcp.title'), icon: MCPIcon, featureFlag: flags.mcp },
+      ],
     },
     { key: 'more', label: t('nav.group.more'), items: customItems(ctx.customMenuItems.user) },
   ]
@@ -173,6 +178,8 @@ export function buildAdminGroups(ctx: NavContext): NavGroup[] {
   // 简单模式：改版前在系统设置前插入「API 密钥」，并且不渲染「我的账户」区。
   if (ctx.isSimpleMode) {
     systemItems.push({ path: '/keys', label: t('nav.apiKeys'), icon: KeyIcon })
+    // 与上游 AppSidebar 一致：简单模式只在 MCP 显式开启时插入入口（opt-in，未加载视为关闭）。
+    if (flags.mcp()) systemItems.push({ path: '/settings/mcp', label: t('mcp.title'), icon: MCPIcon })
   }
   systemItems.push(settingsItem)
 

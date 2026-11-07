@@ -201,6 +201,24 @@ func (s *GroupRepoSuite) TestCreate() {
 	s.Require().Equal("test-create", got.Name)
 }
 
+// 创建路径必须持久化「按实际出图张数计费」开关（v0.2.19 合并曾在 createGroupRecord 漏掉）。
+func (s *GroupRepoSuite) TestCreatePersistsImageCountBilling() {
+	group := &service.Group{
+		Name:                 "test-create-image-count-billing",
+		Platform:             service.PlatformOpenAI,
+		RateMultiplier:       1.0,
+		Status:               service.StatusActive,
+		SubscriptionType:     service.SubscriptionTypeStandard,
+		AllowImageGeneration: true,
+		ImageCountBilling:    true,
+	}
+	s.Require().NoError(s.repo.Create(s.ctx, group))
+
+	got, err := s.repo.GetByID(s.ctx, group.ID)
+	s.Require().NoError(err, "GetByID")
+	s.Require().True(got.ImageCountBilling)
+}
+
 func (s *GroupRepoSuite) TestCreateFromSourcePreservesPriorityAndFiltersIneligibleAccounts() {
 	source := &service.Group{
 		Name:             "duplicate-source",

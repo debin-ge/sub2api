@@ -1,6 +1,9 @@
 package pagination
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func TestNormalizeSortOrder(t *testing.T) {
 	t.Parallel()
@@ -157,5 +160,24 @@ func TestPaginationParamsNormalized(t *testing.T) {
 	// 原值不被修改（值接收者）。
 	if p.Page != MaxPage+7 {
 		t.Fatalf("Normalized() must not mutate receiver, got Page=%d", p.Page)
+	}
+}
+
+func TestPaginationParamsOffsetDoesNotOverflow(t *testing.T) {
+	t.Parallel()
+
+	pages := []int{math.MinInt, -1, 0, 1, math.MaxInt, math.MaxInt - 1, math.MaxInt / 2, math.MaxInt/20 + 1, math.MaxInt/1000 + 1}
+	pageSizes := []int{math.MinInt, -1, 0, 1, 2, 3, 20, 21, 999, 1000, 1001, math.MaxInt}
+	for _, page := range pages {
+		for _, pageSize := range pageSizes {
+			params := PaginationParams{Page: page, PageSize: pageSize}
+			offset, limit := params.Offset(), params.Limit()
+			if offset < 0 || offset > math.MaxInt-limit {
+				t.Fatalf("Offset() for Page=%d, PageSize=%d = %d, want 0 <= offset <= MaxInt-%d", page, pageSize, offset, limit)
+			}
+			if again := params.Offset(); again != offset {
+				t.Fatalf("Offset() for Page=%d, PageSize=%d is unstable: %d then %d", page, pageSize, offset, again)
+			}
+		}
 	}
 }

@@ -49,10 +49,11 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	redeemCodeRepository := repository.NewRedeemCodeRepository(client)
 	redisClient := repository.ProvideRedis(configConfig)
 	refreshTokenCache := repository.NewRefreshTokenCache(redisClient)
+	scopedAdminKeyRepository := repository.NewScopedAdminKeyRepository(db)
 	settingRepository := repository.NewSettingRepository(client)
 	groupRepository := repository.NewGroupRepository(client, db)
 	proxyRepository := repository.NewProxyRepository(client, db)
-	settingService := service.ProvideSettingService(settingRepository, groupRepository, proxyRepository, configConfig)
+	settingService := service.ProvideSettingService(scopedAdminKeyRepository, settingRepository, groupRepository, proxyRepository, configConfig)
 	emailCache := repository.NewEmailCache(redisClient)
 	emailService := service.NewEmailService(settingRepository, emailCache)
 	turnstileVerifier := repository.NewTurnstileVerifier()
@@ -90,7 +91,9 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	affiliateService := service.NewAffiliateService(affiliateRepository, settingService, apiKeyAuthCacheInvalidator, billingCacheService)
 	disposableEmailCache := repository.NewDisposableEmailCache(redisClient)
 	disposableEmailService := service.ProvideDisposableEmailService(disposableEmailCache)
-	authService := service.ProvideAuthService(client, userRepository, redeemCodeRepository, refreshTokenCache, configConfig, settingService, emailService, turnstileService, tencentCaptchaService, aliyunCaptchaService, goCaptchaService, emailQueueService, promoService, subscriptionService, affiliateService, disposableEmailService, serviceUserPlatformQuotaRepository, apiKeyService, groupRepository)
+	mcpoAuthRepository := repository.NewMCPOAuthRepository(client, db)
+	mcpoAuthService := service.NewMCPOAuthService(mcpoAuthRepository, userRepository)
+	authService := service.ProvideAuthService(client, userRepository, redeemCodeRepository, refreshTokenCache, configConfig, settingService, emailService, turnstileService, tencentCaptchaService, aliyunCaptchaService, goCaptchaService, emailQueueService, promoService, subscriptionService, affiliateService, disposableEmailService, serviceUserPlatformQuotaRepository, apiKeyService, groupRepository, mcpoAuthService)
 	userService := service.NewUserService(userRepository, settingRepository, apiKeyAuthCacheInvalidator, billingCache)
 	redeemCache := repository.NewRedeemCache(redisClient)
 	redeemService := service.NewRedeemService(redeemCodeRepository, userRepository, subscriptionService, redeemCache, billingCacheService, client, apiKeyAuthCacheInvalidator, affiliateService)
@@ -105,6 +108,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	userAttributeService := service.NewUserAttributeService(userAttributeDefinitionRepository, userAttributeValueRepository)
 	authHandler := handler.NewAuthHandler(configConfig, authService, userService, settingService, promoService, redeemService, totpService, userAttributeService)
 	userHandler := handler.NewUserHandler(userService, authService, emailService, emailCache, affiliateService, serviceUserPlatformQuotaRepository)
+	mcpoAuthHandler := handler.NewMCPOAuthHandler(mcpoAuthService, totpService, userService, settingService, configConfig)
 	apiKeyHandler := handler.NewAPIKeyHandler(apiKeyService, apiKeyEmailVerificationService)
 	usageLogRepository := repository.NewUsageLogRepository(client, db)
 	usageService := service.NewUsageService(usageLogRepository, userRepository, client, apiKeyAuthCacheInvalidator)
@@ -411,7 +415,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	videoTaskRuntime := service.ProvideVideoTaskRuntime(videoTaskWorker, configConfig)
 	videoCallbackWorker := service.NewVideoCallbackWorker(videoCallbackRepository, secretEncryptor, videoTaskService, configConfig)
 	videoCallbackRuntime := service.ProvideVideoCallbackRuntime(videoCallbackWorker, configConfig)
-	handlers := handler.ProvideHandlers(authHandler, userHandler, apiKeyHandler, usageHandler, redeemHandler, subscriptionHandler, announcementHandler, channelMonitorUserHandler, channelMonitorV2Handler, adminHandlers, gatewayHandler, openAIGatewayHandler, miniMaxGatewayHandler, windsurfGatewayHandler, handlerSettingHandler, captchaHandler, totpHandler, passkeyHandler, handlerPaymentHandler, paymentWebhookHandler, availableChannelHandler, handlerRadarHandler, asyncImageHandler, batchImageHandler, handlerVideoHandler, buildInfo, idempotencyCoordinator, idempotencyCleanupService, openAIQuotaAutoResetService, videoSpoolRuntime, videoTaskRuntime, videoCallbackRuntime)
+	handlers := handler.ProvideHandlers(authHandler, userHandler, mcpoAuthHandler, apiKeyHandler, usageHandler, redeemHandler, subscriptionHandler, announcementHandler, channelMonitorUserHandler, channelMonitorV2Handler, adminHandlers, gatewayHandler, openAIGatewayHandler, miniMaxGatewayHandler, windsurfGatewayHandler, handlerSettingHandler, captchaHandler, totpHandler, passkeyHandler, handlerPaymentHandler, paymentWebhookHandler, availableChannelHandler, handlerRadarHandler, asyncImageHandler, batchImageHandler, handlerVideoHandler, buildInfo, idempotencyCoordinator, idempotencyCleanupService, openAIQuotaAutoResetService, videoSpoolRuntime, videoTaskRuntime, videoCallbackRuntime)
 	jwtAuthMiddleware := middleware.NewJWTAuthMiddleware(authService, userService, settingService, auditLogService)
 	adminAuthMiddleware := middleware.NewAdminAuthMiddleware(authService, userService, settingService, auditLogService)
 	apiKeyAuthMiddleware := middleware.NewAPIKeyAuthMiddleware(apiKeyService, subscriptionService, configConfig)
@@ -453,7 +457,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	channelMonitorV2Aggregator := service.ProvideChannelMonitorV2Aggregator(channelMonitorV2Repository, db, settingService)
 	modelCatalogRefreshRunner := service.ProvideModelCatalogRefreshRunner(modelCatalogService, modelCatalogConfig)
 	userPlatformQuotaUsageFlusher := service.ProvideUserPlatformQuotaUsageFlusher(configConfig, billingCache, serviceUserPlatformQuotaRepository, timingWheelService)
-	mainCleanupFactory := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, opsService, opsIngressRejectAggregator, apiKeyService, authCacheInvalidationWorker, notificationEmailOutboxWorker, apiKeyRotationService, usageBillingOutboxWorker, schedulerSnapshotService, tokenRefreshService, accountExpiryService, cnProviderBalanceCheckService, flovaCreditsSyncService, openAICodexVersionSyncService, claudeCodeVersionSyncService, proxyExpiryService, subscriptionExpiryService, vipReconcileService, vipIncrementalReconcileService, usageCleanupService, idempotencyCleanupService, geminiCachedContentService, batchImageCleanupService, batchImageWorkerRuntime, videoSpoolRuntime, videoTaskRuntime, grokVideoTaskService, videoCallbackRuntime, videoCapabilityProbeRuntime, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, billingRecoveryService, miniMaxRemainsSyncRunner, deepSeekBalanceHealthRunner, channelMonitorRunner, channelMonitorV2Aggregator, modelCatalogRefreshRunner, userPlatformQuotaUsageFlusher, upstreamBillingProbeService, ollamaCloudUsageService, openCodeGoUsageService, auditLogService, openAIQuotaAutoResetService, promptService, pluginManager)
+	mainCleanupFactory := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, opsService, opsIngressRejectAggregator, apiKeyService, authCacheInvalidationWorker, notificationEmailOutboxWorker, apiKeyRotationService, usageBillingOutboxWorker, schedulerSnapshotService, tokenRefreshService, accountExpiryService, cnProviderBalanceCheckService, flovaCreditsSyncService, openAICodexVersionSyncService, claudeCodeVersionSyncService, proxyExpiryService, subscriptionExpiryService, vipReconcileService, vipIncrementalReconcileService, usageCleanupService, idempotencyCleanupService, geminiCachedContentService, batchImageCleanupService, batchImageWorkerRuntime, videoSpoolRuntime, videoTaskRuntime, grokVideoTaskService, videoCallbackRuntime, videoCapabilityProbeRuntime, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, balanceNotifyService, digestSessionStore, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, billingRecoveryService, miniMaxRemainsSyncRunner, deepSeekBalanceHealthRunner, channelMonitorRunner, channelMonitorV2Aggregator, modelCatalogRefreshRunner, userPlatformQuotaUsageFlusher, upstreamBillingProbeService, ollamaCloudUsageService, openCodeGoUsageService, auditLogService, openAIQuotaAutoResetService, promptService, pluginManager)
 	mainRadarQuotaAggregatorConstructor := provideRadarQuotaAggregatorConstructor(accountRepository, accountUsageService, usageLogRepository, radarCacheRepository, configConfig)
 	mainRadarFetchersConstructor := provideRadarFetchersConstructor(modelCatalogService)
 	application, err := provideApplication(httpServer, promptService, pluginManager, concurrencyService, configConfig, radarCacheRepository, radarRuntimeSettingReader, radarAdminController, mainCleanupFactory, mainRadarQuotaAggregatorConstructor, mainRadarFetchersConstructor)
@@ -638,6 +642,8 @@ func provideCleanup(
 	emailQueue *service.EmailQueueService,
 	billingCache *service.BillingCacheService,
 	usageRecordWorkerPool *service.UsageRecordWorkerPool,
+	balanceNotify *service.BalanceNotifyService,
+	digestSessions *service.DigestSessionStore,
 	subscriptionService *service.SubscriptionService,
 	oauth *service.OAuthService,
 	openaiOAuth *service.OpenAIOAuthService,
@@ -705,6 +711,8 @@ func provideCleanup(
 			emailQueue,
 			billingCache,
 			usageRecordWorkerPool,
+			balanceNotify,
+			digestSessions,
 			subscriptionService,
 			oauth,
 			openaiOAuth,
@@ -775,6 +783,8 @@ func provideFinalCleanup(
 	emailQueue *service.EmailQueueService,
 	billingCache *service.BillingCacheService,
 	usageRecordWorkerPool *service.UsageRecordWorkerPool,
+	balanceNotify *service.BalanceNotifyService,
+	digestSessions *service.DigestSessionStore,
 	subscriptionService *service.SubscriptionService,
 	oauth *service.OAuthService,
 	openaiOAuth *service.OpenAIOAuthService,
@@ -817,6 +827,18 @@ func provideFinalCleanup(
 				}
 				if notificationEmailWorker != nil {
 					notificationEmailWorker.Stop()
+				}
+				return nil
+			}},
+			{"DigestSessionStore", func() error {
+				if digestSessions != nil {
+					digestSessions.Close()
+				}
+				return nil
+			}},
+			{"BalanceNotifyService", func() error {
+				if balanceNotify != nil {
+					balanceNotify.Stop()
 				}
 				return nil
 			}},

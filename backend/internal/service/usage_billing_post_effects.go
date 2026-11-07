@@ -324,11 +324,17 @@ func (s *UsageBillingPostEffectsService) finalize(
 			p.AccountRateMultiplier = cmd.AccountQuotaCost / cmd.TotalCost
 		}
 		deps := &billingDeps{balanceNotifyService: s.balanceNotifyService}
-		if cmd.BalanceCost > 0 {
-			go notifyBalanceLow(p, deps, result)
+		if cmd.BalanceCost <= 0 {
+			// 余额部分未扣费：只保留账号配额通知。
+			p.IsSubscriptionBill = true
 		}
-		if cmd.AccountQuotaCost > 0 {
-			go notifyAccountQuota(p, deps, result)
+		if cmd.AccountQuotaCost <= 0 {
+			p.Account = nil
+		}
+		// 与正常计费路径一致，交给 BalanceNotifyService 的有界通知队列（满则丢弃并计数），
+		// 不再为每条补偿计费各开两个无界 goroutine。
+		if s.balanceNotifyService != nil {
+			s.balanceNotifyService.submitUsageNotifications(p, deps, result)
 		}
 	}
 	return nil

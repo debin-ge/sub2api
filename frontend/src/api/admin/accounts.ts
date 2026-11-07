@@ -30,6 +30,7 @@ import type {
   OllamaCloudUsageState,
   GrokMediaEligibilityMode,
   GrokMediaEligibilityState,
+  GrokModelDiagnostics,
   OpenCodeGoUsageSettings,
   OpenCodeGoUsageState
 } from '@/types'
@@ -734,6 +735,8 @@ export interface SyncUpstreamModelsResult {
   models: string[]
   metadata?: Record<string, UpstreamModelMetadata>
   warnings?: UpstreamModelSyncWarning[]
+  discovery_source?: 'upstream' | 'configured_fallback'
+  grok_model_diagnostics?: GrokModelDiagnostics
 }
 
 export interface UpstreamModelSyncWarning {
@@ -768,10 +771,10 @@ export async function syncUpstreamModels(
   id: number,
   overrides: SyncUpstreamAccountOverrides = {}
 ): Promise<SyncUpstreamModelsResult> {
-  const { data } = await apiClient.post<SyncUpstreamModelsResult>(
-    `/admin/accounts/${id}/models/sync-upstream`,
-    overrides
-  )
+  const endpoint = `/admin/accounts/${id}/models/sync-upstream`
+  const { data } = Object.keys(overrides).length === 0
+    ? await apiClient.post<SyncUpstreamModelsResult>(endpoint)
+    : await apiClient.post<SyncUpstreamModelsResult>(endpoint, overrides)
   return data
 }
 

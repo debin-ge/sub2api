@@ -58,7 +58,7 @@ func TestSetupRouterInstallsNoGlobalVideoMiddleware(t *testing.T) {
 	apiKeyCalls := 0
 	router := SetupRouter(
 		gin.New(),
-		&handler.Handlers{Radar: radarHandler, Admin: &handler.AdminHandlers{}, Video: &handler.VideoHandler{}},
+		&handler.Handlers{Radar: radarHandler, Admin: &handler.AdminHandlers{}, Video: &handler.VideoHandler{}, MCPOAuth: handler.NewMCPOAuthHandler(nil, nil, nil, nil, cfg)},
 		middleware2.JWTAuthMiddleware(pass),
 		middleware2.AdminAuthMiddleware(pass),
 		middleware2.APIKeyAuthMiddleware(func(c *gin.Context) {

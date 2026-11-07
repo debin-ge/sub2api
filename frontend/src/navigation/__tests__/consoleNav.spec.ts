@@ -26,6 +26,7 @@ function makeCtx(opts: { simple?: boolean; flags?: FlagOverrides; purchaseLabel?
       affiliate: flag('affiliate'),
       riskControl: flag('riskControl'),
       pluginManagement: flag('pluginManagement'),
+      mcp: flag('mcp'),
       opsMonitoring: flag('opsMonitoring'),
       adminPayment: flag('adminPayment'),
       batchImage: flag('batchImage'),
@@ -41,7 +42,7 @@ const custom = (id: string, label: string, visibility: 'user' | 'admin'): Custom
 // 改版前 AppSidebar.vue 的条目集合（未加开关过滤）：用于一对一核对。
 const LEGACY_USER_PATHS = [
   '/dashboard', '/keys', '/batch-image', '/video-playground', '/usage', '/available-channels', '/monitor',
-  '/subscriptions', '/purchase', '/orders', '/redeem', '/affiliate', '/profile',
+  '/subscriptions', '/purchase', '/orders', '/redeem', '/affiliate', '/profile', '/settings/mcp',
 ]
 const LEGACY_ADMIN_PATHS = [
   '/admin/dashboard', '/admin/ops', '/admin/users', '/admin/users/vip-reconcile', '/admin/groups',
@@ -136,7 +137,7 @@ describe('consoleNav feature flags', () => {
 describe('consoleNav simple mode', () => {
   it('filters hideInSimpleMode items on the console area', () => {
     const ctx = makeCtx({ simple: true })
-    expect(flattenPaths(filterGroups(buildConsoleGroups(ctx), ctx)).sort()).toEqual(['/dashboard', '/keys', '/monitor', '/profile'].sort())
+    expect(flattenPaths(filterGroups(buildConsoleGroups(ctx), ctx)).sort()).toEqual(['/dashboard', '/keys', '/monitor', '/profile', '/settings/mcp'].sort())
   })
 
   it('appends API keys before settings and drops the personal section on the admin area', () => {
@@ -149,6 +150,26 @@ describe('consoleNav simple mode', () => {
     expect(paths).not.toContain('/admin/users')
     expect(paths).not.toContain('/admin/channels/pricing')
     expect(groups.find((g) => g.key.startsWith('my-'))).toBeUndefined()
+  })
+})
+
+describe('consoleNav MCP entry', () => {
+  it('shows the MCP entry in the personal section only when the deployment enables MCP', () => {
+    const off = makeCtx({ flags: { mcp: false } })
+    expect(flattenPaths(filterGroups(buildConsoleGroups(off), off))).not.toContain('/settings/mcp')
+    const on = makeCtx({ flags: { mcp: true } })
+    const item = buildConsoleGroups(on).flatMap((g) => g.items).find((i) => i.path === '/settings/mcp')
+    expect(item?.label).toBe('mcp.title')
+    expect(flattenPaths(filterGroups(buildAdminGroups(on), on))).not.toContain('/settings/mcp')
+  })
+
+  it('inserts MCP before settings on the simple-mode admin area only when explicitly enabled', () => {
+    const on = makeCtx({ simple: true, flags: { mcp: true } })
+    const paths = flattenPaths(filterGroups(buildAdminGroups(on), on))
+    expect(paths.indexOf('/settings/mcp')).toBeGreaterThan(paths.indexOf('/keys'))
+    expect(paths.indexOf('/settings/mcp')).toBeLessThan(paths.indexOf('/admin/settings'))
+    const unloaded = makeCtx({ simple: true })
+    expect(flattenPaths(filterGroups(buildAdminGroups(unloaded), unloaded))).not.toContain('/settings/mcp')
   })
 })
 

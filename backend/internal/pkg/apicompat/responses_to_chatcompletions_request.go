@@ -124,7 +124,7 @@ func convertResponsesInputToChatMessages(input json.RawMessage) ([]ChatMessage, 
 			if item.Type == "agent_message" {
 				// Codex multi_agent_v2 用 agent_message 在父线程与子智能体之间传递任务和
 				// 回复，chat 上游没有对应条目，按原顺序拼成一条 user 消息；拼不出文本时跳过。
-				text := agentMessageText(item.Content)
+				text := AgentMessageText(item.Content)
 				pendingReasoning = ""
 				if text == "" {
 					continue

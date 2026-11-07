@@ -66,7 +66,7 @@ func TestRegisterRoutesWiresSixUnauthenticatedRadarGETs(t *testing.T) {
 	}
 	registerRoutes(
 		router,
-		&handler.Handlers{Radar: radarHandler, Admin: &handler.AdminHandlers{}},
+		&handler.Handlers{Radar: radarHandler, Admin: &handler.AdminHandlers{}, MCPOAuth: handler.NewMCPOAuthHandler(nil, nil, nil, nil, cfg)},
 		middleware2.JWTAuthMiddleware(reject(&jwtCalls)),
 		middleware2.AdminAuthMiddleware(reject(&adminCalls)),
 		middleware2.APIKeyAuthMiddleware(reject(&apiKeyCalls)),

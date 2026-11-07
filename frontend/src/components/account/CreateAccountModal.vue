@@ -2654,9 +2654,9 @@
         />
       </div>
 
-      <!-- 配额控制 (非 Anthropic apikey/bedrock) -->
+      <!-- 配额控制 (非 Anthropic apikey/bedrock，以及 Vertex service_account) -->
       <div
-        v-else-if="!isFixedEndpointGatewayPlatform && (form.type === 'apikey' || form.type === 'bedrock')"
+        v-else-if="!isFixedEndpointGatewayPlatform && supportsAccountQuota(form.type)"
         class="border-t zt-border-c2 pt-4 space-y-4"
       >
         <div class="mb-3">
@@ -4088,6 +4088,14 @@
         </button>
       </div>
 
+      <!-- OpenAI images: size tier routing -->
+      <div
+        v-if="form.platform === 'openai'"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <OpenAIImageSizeTiersField v-model="openAIImageSizeTiers" />
+      </div>
+
       <div>
         <div class="flex items-center justify-between">
           <div>
@@ -4581,6 +4589,12 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Select from '@/components/common/Select.vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import UpstreamRequestIdHeaderField from '@/components/account/UpstreamRequestIdHeaderField.vue'
+import OpenAIImageSizeTiersField from '@/components/account/OpenAIImageSizeTiersField.vue'
+import {
+  OPENAI_IMAGE_SIZE_TIERS,
+  applyOpenAIImageSizeTiersToExtra,
+  type OpenAIImageSizeTier
+} from '@/components/account/openaiImageSizeTiers'
 import Icon from '@/components/icons/Icon.vue'
 import ProxySelector from '@/components/common/ProxySelector.vue'
 import GroupSelector from '@/components/common/GroupSelector.vue'
@@ -4641,6 +4655,7 @@ import {
   parseDateTimeLocalInput
 } from '@/utils/format'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
+import { supportsAccountQuota } from '@/utils/accountQuota'
 import { getAccountExpiryTimestamp } from '@/components/account/accountExpiry'
 import {
   MINIMAX_ANTHROPIC_BASE_URL,
@@ -5204,6 +5219,7 @@ const openAICompactMode = ref<OpenAICompactMode>('auto')
 const openAIResponsesMode = ref<OpenAIResponsesMode>('auto')
 // Images 非流式响应缺 b64_json 时由网关下载 url 回填（仅 OpenAI API Key）。
 const openAIImagesUrlToB64JsonEnabled = ref(false)
+const openAIImageSizeTiers = ref<OpenAIImageSizeTier[]>([...OPENAI_IMAGE_SIZE_TIERS])
 const openAIEndpointCapabilities = ref<OpenAIEndpointCapability[]>(['chat_completions', 'embeddings'])
 const openAIEndpointCapabilitiesTouched = ref(false)
 const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
@@ -5829,6 +5845,7 @@ watch(
     headerOverrideEnabled.value = false
     headerOverrideRows.value = []
     openAIImagesUrlToB64JsonEnabled.value = false
+    openAIImageSizeTiers.value = [...OPENAI_IMAGE_SIZE_TIERS]
     grokOAuthCustomBaseUrlEnabled.value = false
     grokOAuthBaseUrl.value = ''
     // Reset OAuth states
@@ -6284,6 +6301,7 @@ const resetForm = () => {
   headerOverrideEnabled.value = false
   headerOverrideRows.value = []
   openAIImagesUrlToB64JsonEnabled.value = false
+  openAIImageSizeTiers.value = [...OPENAI_IMAGE_SIZE_TIERS]
   grokOAuthCustomBaseUrlEnabled.value = false
   grokOAuthBaseUrl.value = ''
   interceptWarmupRequests.value = false
@@ -6443,6 +6461,7 @@ const buildOpenAIExtra = (base?: Record<string, unknown>): Record<string, unknow
   } else {
     delete extra.images_url_to_b64_json
   }
+  applyOpenAIImageSizeTiersToExtra(extra, openAIImageSizeTiers.value)
 
   return Object.keys(extra).length > 0 ? extra : undefined
 }
@@ -7036,9 +7055,9 @@ const createAccountAndFinish = async (
   if (!isFixedEndpointGatewayPlatformValue(platform) && !applyTempUnschedConfig(credentials)) {
     return
   }
-  // Inject quota limits for apikey/bedrock accounts
+  // Inject quota limits for apikey/bedrock/service_account accounts
   let finalExtra = withUpstreamRequestIdHeader(extra)
-  if (!isFixedEndpointGatewayPlatformValue(platform) && (type === 'apikey' || type === 'bedrock')) {
+  if (!isFixedEndpointGatewayPlatformValue(platform) && supportsAccountQuota(type)) {
     const quotaExtra: Record<string, unknown> = { ...(finalExtra || {}) }
     if (editQuotaLimit.value != null && editQuotaLimit.value > 0) {
       quotaExtra.quota_limit = editQuotaLimit.value

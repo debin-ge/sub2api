@@ -43,7 +43,7 @@ var (
 	// cache_creation_input_token_cost_above_1hr_above_200k_tokens 等）。
 	// 组 1 为基础价字段名主干，组 2 为 1h 缓存时长段（可为空），组 3 为服务档后缀（可为空）。
 	cacheTierPricePattern = regexp.MustCompile(`^(cache_(?:creation|read)_input_token_cost)(_above_1hr)?_above_\d+k_tokens((?:_[a-z]+)?)$`)
-	// Official GPT Image 2.5 token rates (2026-09-08):
+	// Official GPT Image 2.5 / 2.6 token rates (verified 2026-11-06):
 	// https://developers.openai.com/api/docs/pricing#image-generation-models
 	openAIGPTImage25FallbackPricing = &LiteLLMModelPricing{
 		InputCostPerToken:       5e-06,
@@ -76,6 +76,23 @@ var (
 		LongContextOutputCostMultiplier:     1.5,
 		SupportsServiceTier:                 true,
 		PricingCatalogProvider:              "openai",
+		Mode:                                "chat",
+		SupportsPromptCaching:               true,
+	}
+	openAIGPT61TerraFallbackPricing = &LiteLLMModelPricing{
+		InputCostPerToken:                   1e-6,
+		InputCostPerTokenPriority:           2e-6,
+		OutputCostPerToken:                  5e-6,
+		OutputCostPerTokenPriority:          10e-6,
+		CacheCreationInputTokenCost:         1.25e-6,
+		CacheCreationInputTokenCostPriority: 2.5e-6,
+		CacheReadInputTokenCost:             0.05e-6,
+		CacheReadInputTokenCostPriority:     0.1e-6,
+		LongContextInputTokenThreshold:      272_000,
+		LongContextInputCostMultiplier:      2,
+		LongContextOutputCostMultiplier:     1.5,
+		SupportsServiceTier:                 true,
+		LiteLLMProvider:                     "openai",
 		Mode:                                "chat",
 		SupportsPromptCaching:               true,
 	}
@@ -231,6 +248,7 @@ type ModelPriceEntry struct {
 	LongContextOutputCostMultiplier     float64             `json:"long_context_output_cost_multiplier,omitempty"`
 	SupportsServiceTier                 bool                `json:"supports_service_tier"`
 	PricingCatalogProvider              string              `json:"litellm_provider"`
+	LiteLLMProvider                     string              `json:"-"`
 	Mode                                string              `json:"mode"`
 	SupportsPromptCaching               bool                `json:"supports_prompt_caching"`
 	OutputCostPerImage                  float64             `json:"output_cost_per_image"`       // 图片生成模型每张图片价格
@@ -336,15 +354,19 @@ func rawModelTokenPricingIncomplete(model string, entry *RawModelPriceEntry) boo
 	}
 	hasDerivedGPT56CacheWritePolicy := isOpenAIGPT56Model(normalizeKnownOpenAICodexModel(model))
 	usesOpenAINativeCacheBilling := strings.EqualFold(strings.TrimSpace(entry.PricingCatalogProvider), "openai")
+	// xAI publishes cached-input read pricing without a separate cache-write
+	// dimension. Cache writes are not reported as an independent billable bucket
+	// for these catalog entries, so the read-only card remains authoritative.
+	usesXAICacheBilling := strings.EqualFold(strings.TrimSpace(entry.PricingCatalogProvider), "xai")
 
 	// A cache-capable catalog entry must say what both cache operations cost.
 	// Explicit zero is valid; omission is not, except for native OpenAI pricing:
 	// OpenAI publishes a cached-input read discount but no separate cache-write
-	// price because cache-populating input remains ordinary input. OpenAI usage
-	// also normally reports only total/cached input, so no cache-write bucket is
-	// created. If an OpenAI-compatible upstream unexpectedly reports explicit
-	// cache-write tokens, validateUsedModelPricingDimensions still fails closed
-	// unless a model policy or channel price supplies that dimension.
+	// price because cache-populating input remains ordinary input. xAI likewise
+	// publishes a read-only cache card. Their usage normally reports no separate
+	// cache-write bucket. If an OpenAI-compatible upstream unexpectedly reports
+	// explicit cache-write tokens, validateUsedModelPricingDimensions still fails
+	// closed unless a model policy or channel price supplies that dimension.
 	cachePricingDeclared := entry.SupportsPromptCaching ||
 		entry.CacheCreationInputTokenCost != nil ||
 		entry.CacheCreationInputTokenCostAbove1hr != nil ||
@@ -353,7 +375,7 @@ func rawModelTokenPricingIncomplete(model string, entry *RawModelPriceEntry) boo
 		return true
 	}
 	if cachePricingDeclared && entry.CacheCreationInputTokenCost == nil &&
-		!hasDerivedGPT56CacheWritePolicy && !usesOpenAINativeCacheBilling {
+		!hasDerivedGPT56CacheWritePolicy && !usesOpenAINativeCacheBilling && !usesXAICacheBilling {
 		return true
 	}
 	if entry.CacheCreationInputTokenCostAbove1hr != nil &&
@@ -1652,7 +1674,7 @@ func explicitPricingAliasTarget(model string) (string, bool) {
 	if !strings.Contains(model, "/") {
 		return model, true
 	}
-	for _, prefix := range []string{"models/", "openai/", "publishers/google/models/"} {
+	for _, prefix := range []string{"models/", "openai/", "xai/", "anthropic/", "deepseek/", "gemini/", "vertex_ai-language-models/", "publishers/google/models/"} {
 		if target, ok := strings.CutPrefix(model, prefix); ok {
 			return target, target != "" && !strings.Contains(target, "/")
 		}
@@ -1721,10 +1743,10 @@ func (s *PricingService) buildModelLookupCandidates(modelLower string) []string 
 	normalized := normalizeModelNameForPricing(modelLower)
 
 	// A tier-specific entry should take precedence when the pricing catalog gains
-	// one later. Antigravity's Gemini Flash thinking tiers share the base rate,
+	// one later. Antigravity's Gemini thinking tiers share the base rate,
 	// so the normalized base remains the fallback after the exact aliases.
 	candidates := rawCandidates
-	if normalizeGeminiThinkingTierAlias(lastSegment(modelLower)) != lastSegment(modelLower) {
+	if isAntigravityThinkingTierAlias(lastSegment(modelLower)) {
 		candidates = append(candidates, normalized)
 	} else {
 		// Prefer canonical model names for all other aliases (including models/xxx).
@@ -1802,6 +1824,15 @@ func normalizeModelNameForPricing(model string) string {
 	}
 
 	model = strings.TrimLeft(model, "/")
+	// LiteLLM and provider catalogs commonly qualify a SKU with its provider
+	// namespace (for example xai/grok-4.7-fast). Pricing keys are stored as the
+	// public model ID, so remove one known provider prefix before alias matching.
+	for _, prefix := range []string{"xai/", "openai/", "anthropic/", "deepseek/", "gemini/", "vertex_ai-language-models/"} {
+		if strings.HasPrefix(model, prefix) {
+			model = strings.TrimPrefix(model, prefix)
+			break
+		}
+	}
 	if canonical := canonicalizeOpenAIModelAliasSpelling(model); canonical != "" {
 		if openai.IsGPT61SolModelSpelling(canonical) || openai.IsGPT6SolOrLunaModelSpelling(canonical) {
 			return normalizeKnownOpenAICodexModel(canonical)
@@ -1820,15 +1851,37 @@ func normalizeModelNameForPricing(model string) string {
 	if model == "claude-opus-5-5-thinking" {
 		return "claude-opus-5-5"
 	}
-	return normalizeGeminiThinkingTierAlias(model)
+	return normalizeAntigravityClaudeTierAlias(normalizeGeminiThinkingTierAlias(model))
 }
 
-// normalizeGeminiThinkingTierAlias maps Antigravity's Gemini Flash
-// thinking-tier model IDs to the public base model. The tier controls reasoning
-// behavior, not the published token rate, so this keeps -high/-low/-medium and
-// -tiered requests on the corresponding base model's price card.
+// normalizeAntigravityClaudeTierAlias maps Antigravity's Claude 5.5 thinking-tier
+// model IDs (claude-opus-5-5-high, claude-sonnet-5-5-low, ...) to the public base
+// model. Like the Gemini tiers, the suffix selects reasoning depth rather than a
+// separate token rate; without this the IDs fall into substring family matching
+// and are billed as claude-opus-5 / claude-sonnet-4-5.
+func normalizeAntigravityClaudeTierAlias(model string) string {
+	for _, baseModel := range []string{"claude-opus-5-5", "claude-sonnet-5-5"} {
+		for _, tier := range []string{"-high", "-low", "-medium"} {
+			if model == baseModel+tier {
+				return baseModel
+			}
+		}
+	}
+	return model
+}
+
+// isAntigravityThinkingTierAlias reports whether model is an Antigravity
+// Gemini or Claude thinking-tier alias of a priced base model.
+func isAntigravityThinkingTierAlias(model string) bool {
+	return normalizeGeminiThinkingTierAlias(model) != model || normalizeAntigravityClaudeTierAlias(model) != model
+}
+
+// normalizeGeminiThinkingTierAlias maps Antigravity's Gemini thinking-tier
+// model IDs to the public base model. The tier controls reasoning behavior, not
+// the published token rate, so this keeps -high/-low/-medium and -tiered
+// requests on the corresponding base model's price card.
 func normalizeGeminiThinkingTierAlias(model string) string {
-	for _, baseModel := range []string{"gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash"} {
+	for _, baseModel := range []string{"gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.8-flash", "gemini-4-argon"} {
 		for _, tier := range []string{"-high", "-low", "-medium", "-tiered"} {
 			if model == baseModel+tier {
 				return baseModel
@@ -1847,6 +1900,7 @@ func lastSegment(model string) string {
 
 // matchByModelFamily 基于模型系列匹配
 func (s *PricingService) matchByModelFamily(model string) *ModelPriceEntry {
+	model = normalizeAntigravityClaudeTierAlias(model)
 	if claude.IsOpus55(model) {
 		if pricing, ok := s.pricingData["claude-opus-5-5"]; ok {
 			return pricing
@@ -1996,6 +2050,12 @@ func (s *PricingService) matchOpenAIModel(model string) *ModelPriceEntry {
 		}
 	}
 
+	if openai.IsGPT61TerraModelSpelling(model) {
+		if pricing, ok := s.pricingData["gpt-6.1-terra"]; ok {
+			return pricing
+		}
+		return openAIGPT61TerraFallbackPricing
+	}
 	if openai.IsGPT61SolModelSpelling(model) {
 		if pricing, ok := s.pricingData["gpt-6.1-sol"]; ok {
 			return pricing
@@ -2078,8 +2138,11 @@ func (s *PricingService) matchOpenAIModel(model string) *ModelPriceEntry {
 		return openAIGPT54FallbackPricing
 	}
 
-	// Remote price mirrors can lag new releases. Never bill GPT Image 2.5
+	// Remote price mirrors can lag new releases. Never bill GPT Image 2.5 / 2.6
 	// using the older image model's rates when its entry is absent.
+	if model == "gpt-image-2.6-flare" || model == "gpt-image-2.6-sunburst" {
+		return openAIGPTImage25FallbackPricing
+	}
 	for _, imageModel := range []string{"gpt-image-2.5-flare", "gpt-image-2.5-sunburst"} {
 		if model == imageModel || model == imageModel+"-2026-09-08" {
 			return openAIGPTImage25FallbackPricing

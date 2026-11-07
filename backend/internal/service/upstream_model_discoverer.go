@@ -133,64 +133,74 @@ func (d *UpstreamModelDiscoverer) Discover(ctx context.Context, account *Account
 // DiscoverWithBody returns the validated raw response alongside model IDs so
 // capability metadata can be extracted without creating a second HTTP path.
 func (d *UpstreamModelDiscoverer) DiscoverWithBody(ctx context.Context, account *Account) ([]string, []byte, error) {
+	models, body, _, err := d.DiscoverWithRequest(ctx, account)
+	return models, body, err
+}
+
+// DiscoverWithRequest also returns the model-list request (nil when none was
+// sent) so callers can scope per-endpoint observations such as the Grok catalog.
+func (d *UpstreamModelDiscoverer) DiscoverWithRequest(ctx context.Context, account *Account) ([]string, []byte, *http.Request, error) {
 	if d == nil || account == nil {
-		return nil, nil, newUpstreamModelSyncConfigError("Account model discoverer is not configured", nil)
+		return nil, nil, nil, newUpstreamModelSyncConfigError("Account model discoverer is not configured", nil)
 	}
 	switch account.Platform {
 	case PlatformAntigravity:
 		switch account.Type {
 		case AccountTypeOAuth:
 			models, err := d.fetchAntigravityOAuthUpstreamModels(ctx, account)
-			return models, nil, err
+			return models, nil, nil, err
 		case AccountTypeAPIKey, AccountTypeUpstream:
 			// Compatible static-key accounts use the configured HTTP upstream below.
 		default:
-			return nil, nil, newUpstreamModelSyncUnsupportedError(
+			return nil, nil, nil, newUpstreamModelSyncUnsupportedError(
 				fmt.Sprintf("Unsupported Antigravity account type for upstream model sync: %s", account.Type), nil,
 			)
 		}
 	}
 	if d.httpUpstream == nil {
-		return nil, nil, newUpstreamModelSyncConfigError("Upstream HTTP client is not configured", nil)
+		return nil, nil, nil, newUpstreamModelSyncConfigError("Upstream HTTP client is not configured", nil)
 	}
 	req, err := d.buildUpstreamModelsRequest(ctx, account)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	req = req.WithContext(WithHTTPUpstreamModelDiscovery(req.Context()))
 
 	proxyURL := upstreamModelsProxyURL(account)
 	resp, err := d.doUpstreamModelsRequest(req, proxyURL, account)
 	if err != nil {
-		return nil, nil, newUpstreamModelSyncUpstreamError("Failed to request upstream model list", err)
+		return nil, nil, req, newUpstreamModelSyncUpstreamError("Failed to request upstream model list", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	bodyLimit := resolveModelsListReadLimit(d.cfg)
 	body, err := io.ReadAll(io.LimitReader(resp.Body, bodyLimit+1))
 	if err != nil {
-		return nil, nil, newUpstreamModelSyncUpstreamError("Failed to read upstream model list", err)
+		return nil, nil, req, newUpstreamModelSyncUpstreamError("Failed to read upstream model list", err)
 	}
 	if int64(len(body)) > bodyLimit {
-		return nil, nil, newUpstreamModelSyncUpstreamError("Upstream model list response is too large", fmt.Errorf("response exceeds %d bytes", bodyLimit))
+		return nil, nil, req, newUpstreamModelSyncUpstreamError("Upstream model list response is too large", fmt.Errorf("response exceeds %d bytes", bodyLimit))
 	}
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, nil, &UpstreamModelSyncError{
+		return nil, nil, req, &UpstreamModelSyncError{
 			Kind: UpstreamModelSyncErrorUpstream, Message: fmt.Sprintf("Upstream model list request failed with HTTP %d", resp.StatusCode),
 			StatusCode: resp.StatusCode, Err: fmt.Errorf("upstream model list returned HTTP %d", resp.StatusCode),
 		}
 	}
 
 	models, err := parseDiscoveredUpstreamModelIDs(account.Platform, body)
+	if errors.Is(err, errGrokCatalogEmpty) {
+		return nil, nil, req, newUpstreamModelSyncUpstreamError("Upstream returned no supported models", err)
+	}
 	if err != nil {
-		return nil, nil, newUpstreamModelSyncUpstreamError("Upstream model list response was not valid JSON", err)
+		return nil, nil, req, newUpstreamModelSyncUpstreamError("Upstream model list response was not valid JSON", err)
 	}
 	if len(models) == 0 {
-		return nil, nil, newUpstreamModelSyncUpstreamError("Upstream returned no supported models", nil)
+		return nil, nil, req, newUpstreamModelSyncUpstreamError("Upstream returned no supported models", nil)
 	}
 
-	return models, body, nil
+	return models, body, req, nil
 }
 
 func (d *UpstreamModelDiscoverer) buildUpstreamModelsRequest(ctx context.Context, account *Account) (*http.Request, error) {
@@ -833,6 +843,7 @@ type upstreamModelEntry struct {
 
 type upstreamModelEntryMetadata struct {
 	ID           string `json:"id"`
+	Slug         string `json:"slug"`
 	Model        string `json:"model"`
 	ModelID      string `json:"modelId"`
 	ModelIDSnake string `json:"model_id"`
@@ -844,7 +855,7 @@ func extractUpstreamModelIDs(body []byte) ([]string, error) {
 }
 
 func extractGrokUpstreamModelIDs(body []byte) ([]string, error) {
-	return extractUpstreamModelIDsWithSelector(body, grokUpstreamModelEntryID)
+	return parseGrokCatalogModelIDs(body)
 }
 
 func extractUpstreamModelIDsWithSelector(body []byte, selectID func(upstreamModelEntry) string) ([]string, error) {
@@ -903,10 +914,10 @@ func parseDiscoveredUpstreamModelIDs(platform string, body []byte) ([]string, er
 func upstreamModelEntryID(entry upstreamModelEntry) string {
 	modelID := strings.TrimSpace(entry.ID)
 	if modelID == "" {
-		modelID = strings.TrimSpace(entry.Name)
+		modelID = strings.TrimSpace(entry.Slug)
 	}
 	if modelID == "" {
-		modelID = strings.TrimSpace(entry.Slug)
+		modelID = strings.TrimSpace(entry.Name)
 	}
 	return strings.TrimPrefix(modelID, "models/")
 }
@@ -917,6 +928,7 @@ func grokUpstreamModelEntryID(entry upstreamModelEntry) string {
 		entry.ModelID,
 		entry.ModelIDSnake,
 		entry.ID,
+		entry.Slug,
 	}
 	if len(entry.Meta) > 0 {
 		var meta upstreamModelEntryMetadata
@@ -926,13 +938,14 @@ func grokUpstreamModelEntryID(entry upstreamModelEntry) string {
 				meta.ModelID,
 				meta.ModelIDSnake,
 				meta.ID,
+				meta.Slug,
 				meta.Name,
 			)
 		}
 	}
 	// `name` is a display label in the Grok catalog, so keep it as the final
 	// compatibility fallback rather than preferring it over protocol model IDs.
-	candidates = append(candidates, entry.Name, entry.Slug)
+	candidates = append(candidates, entry.Name)
 	for _, candidate := range candidates {
 		modelID := strings.TrimSpace(candidate)
 		if modelID != "" {

@@ -761,7 +761,7 @@ func usageLongContextPricingEnabled(group *Group, accountGate *bool) bool {
 }
 
 // openAISubscriptionLongContextExempt 按实际凭据和最终发送模型判断订阅豁免。
-// GPT-6.1 Sol 的订阅请求不再收取模型长上下文附加费；API Key 仍使用 API 价卡。
+// GPT-6.1 Sol / Terra 的订阅请求不再收取模型长上下文附加费；API Key 仍使用 API 价卡。
 // 使用发送模型，避免客户别名、渠道计费模型或响应模型计费切换改变上游订阅规则。
 func openAISubscriptionLongContextExempt(account *Account, result *OpenAIForwardResult) bool {
 	if !account.IsOpenAIOAuthLike() || result == nil {
@@ -771,7 +771,7 @@ func openAISubscriptionLongContextExempt(account *Account, result *OpenAIForward
 	if model == "" {
 		model = result.Model
 	}
-	return openai.IsGPT61SolModelSpelling(model)
+	return openai.IsGPT61SolModelSpelling(model) || openai.IsGPT61TerraModelSpelling(model)
 }
 
 func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
@@ -889,10 +889,16 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCostForPlatforms(
 		return s.billingService.CalculateAudioCost(result.AudioUsage.Mode, result.AudioUsage.DurationOrUnits, cfg, webSearchMultiplier), nil
 	}
 
-	if kind != BillingKindImage && result != nil && result.ImageCount > 0 {
-		// 渠道定价为 token 计费时走 token 路径，否则走图片计费
-		if resolved := s.resolveOpenAIChannelPricingForPlatforms(ctx, billingModel, apiKey, platforms); resolved == nil || resolved.Mode != BillingModeToken {
+	if result != nil && result.ImageCount > 0 {
+		// 专用图片端点的分组按张开关优先；混合请求仍保留文本 token 计费。
+		if imageCountBillingApplies(apiKey, result.ImageEndpoint) {
 			return s.calculateOpenAIImageCostForPlatforms(ctx, billingModel, apiKey, platforms, result, imageMultiplier)
+		}
+		if kind != BillingKindImage {
+			// 渠道定价为 token 计费时走 token 路径，否则走图片计费。
+			if resolved := s.resolveOpenAIChannelPricingForPlatforms(ctx, billingModel, apiKey, platforms); resolved == nil || resolved.Mode != BillingModeToken {
+				return s.calculateOpenAIImageCostForPlatforms(ctx, billingModel, apiKey, platforms, result, imageMultiplier)
+			}
 		}
 	}
 	if kind == BillingKindToken || kind == BillingKindUnspecified {
