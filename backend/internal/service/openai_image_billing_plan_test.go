@@ -121,9 +121,10 @@ func TestResolveOpenAIImageBillingPlanUsesProviderOverrideUnderComposite(t *test
 		pricingService := NewPricingService(&config.Config{}, nil)
 		pricingService.SeedCatalogForTest(map[string]*ModelPriceEntry{})
 		pricingService.SeedOverridesForTest([]ModelPriceOverride{{
-			Platform:  PlatformOpenAI,
-			ModelName: model,
-			Enabled:   true,
+			Platform:    PlatformOpenAI,
+			ModelName:   model,
+			Enabled:     true,
+			BillingMode: BillingModeImage,
 			Payload: ModelPriceOverridePayload{
 				OutputCostPerImage: &perImagePrice,
 			},
@@ -151,9 +152,10 @@ func TestOpenAIMediaPricingGuardAcceptsImageTokenOverride(t *testing.T) {
 		Platform:    PlatformOpenAI,
 		ModelName:   model,
 		Enabled:     true,
-		BillingMode: BillingModeImage,
+		BillingMode: BillingModeToken,
 		Payload: ModelPriceOverridePayload{
 			InputCostPerToken:       &inputPrice,
+			InputCostPerImageToken:  &inputPrice,
 			OutputCostPerImageToken: &imageOutputPrice,
 		},
 	}})

@@ -281,6 +281,10 @@ type ModelPriceEntry struct {
 	// image 档不改动 VideoPricing 本身——渠道/分组视频定价仍要用它的 estimator 与
 	// resolution 归一化——只由 catalogVideoPricingActive 屏蔽目录视频价兜底。
 	BillingMode BillingMode `json:"-"`
+	// ImageBillingMode 是该条目声明的出图方式（方案 §6.3）：BillingModeImage = 按张，
+	// BillingModeToken = 按 token（图片输入价 + 图片输出价），空 = 没有声明（非出图模型，
+	// 或覆盖行没有出图价）。由 deriveImageBillingMode 在构建条目时推导。
+	ImageBillingMode BillingMode `json:"-"`
 	// Cache storage is independently priced in USD per token-hour.
 	CacheStorageCostPerTokenPerHour float64 `json:"cache_storage_cost_per_token_per_hour"`
 	CacheStoragePriceExplicit       bool    `json:"-"`

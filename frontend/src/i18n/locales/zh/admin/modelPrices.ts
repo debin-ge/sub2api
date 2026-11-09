@@ -52,8 +52,21 @@ export default {
     wildcard: '全部平台',
     tabs: {
       token: 'Token',
-      image: '图片',
+      image: '图片（按张）',
       video: '视频'
+    },
+    imageBillingMode: {
+      image: '按张',
+      token: '按 token',
+      none: '—'
+    },
+    imageTokenGroup: {
+      title: '出图按 token',
+      hint: '按 token 出图只用这两项价：提示词、输入图和缓存都按图片输入价计，输出按图片输出价计。两项都要有，可以继承目录值。'
+    },
+    ignoredFields: {
+      badge: '有被忽略字段',
+      notice: '以下字段不属于当前计费方式，已被忽略，保存后清除：{fields}'
     },
     video: {
       badge: '视频价 · {count} 条规则',
@@ -175,6 +188,7 @@ export default {
       source: '来源',
       input: '输入',
       output: '输出',
+      imageBillingMode: '出图方式',
       actions: '操作'
     },
     fields: {
@@ -196,13 +210,14 @@ export default {
     },
     imageTiers: {
       title: '图片按张档位价（可选）',
-      hint: '按输出尺寸分别配置 1K、2K、4K；未配置的档位回退到默认图片价格。',
+      hint: '按输出尺寸分别配置 1K、2K、4K；未配置的档位回退到默认按张价（2K 按 1.5 倍、4K 按 2 倍推算）。',
       label: '{tier} 单张价格',
       inherit: '继承默认价格'
     },
     invalidNumber: '{field} 不是有效的非负数字',
     errors: {
       INCOMPLETE_PRICING: '价格维度不完整：{missing_dimension}',
+      INCOMPLETE_IMAGE_TOKEN_PRICING: '按 token 出图需要图片输入价和图片输出价，缺少：{missing_dimension}',
       EMPTY_PRICING: '至少填写一项 token、图片或视频价',
       INVALID_PAYLOAD: '价格字段不合法',
       INVALID_VIDEO_PRICING: '视频价格配置不合法：{detail}',
@@ -215,8 +230,8 @@ export default {
     billingMode: {
       label: '计费方式',
       hint: {
-        token: '按输入/输出 token 计费，目录中的图片、视频价格保持不变。',
-        image: '按图片计费。可填图片价（按张或按图片 token），也可填普通 token 价——出图按 token 计价同样归这一档。目录视频价会被停用。',
+        token: '按 token 计费：文本 token 价用于对话；出图按 token 只用下方「出图按 token」的两项价。按张价不属于这一档，目录里的按张价会被屏蔽。',
+        image: '出图按张计费：只有默认按张价和 1K/2K/4K 档位价。目录里的 token 价（含图片 token 价）会被屏蔽，对话请求将被拒绝；目录视频价会被停用。',
         video: '按视频计费，价格来自下方视频定价。继承的 token 与图片价格会被移除。'
       },
       discardNotice: '其他计费方式下填写的 {count} 项不会被保存。',

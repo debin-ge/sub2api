@@ -228,10 +228,19 @@ func TestModelPriceHandlerUpsertBillingMode(t *testing.T) {
 	require.Len(t, store.row.Payload.Intervals, 2)
 	require.Equal(t, service.ImageBillingSize1K, store.row.Payload.Intervals[0].TierLabel)
 
-	// 出图按普通 token 计价是正常配置：image 档接受 token 字段
+	// 图片按张与按 token 二选一：image 档不接受 token 字段，token 档不接受按张价
 	response = put(`{"platform":"openai","model":"my-image","currency":"USD","billing_mode":"image",
 		"payload":{"output_cost_per_image":0.04,"input_cost_per_token":0.000001,"output_cost_per_token":0.000002}}`)
-	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	require.Equal(t, http.StatusBadRequest, response.Code)
+	require.Contains(t, response.Body.String(), "FIELD_NOT_IN_BILLING_MODE")
+	response = put(`{"platform":"openai","model":"my-image","currency":"USD","billing_mode":"token",
+		"payload":{"output_cost_per_image":0.04}}`)
+	require.Equal(t, http.StatusBadRequest, response.Code)
+	require.Contains(t, response.Body.String(), "FIELD_NOT_IN_BILLING_MODE")
+	response = put(`{"platform":"openai","model":"my-image","currency":"USD","billing_mode":"token",
+		"payload":{"output_cost_per_image_token":0.00003}}`)
+	require.Equal(t, http.StatusBadRequest, response.Code)
+	require.Contains(t, response.Body.String(), "INCOMPLETE_IMAGE_TOKEN_PRICING")
 
 	// video 档的价格只在 video_pricing 里
 	response = put(`{"platform":"openai","model":"my-video","currency":"USD","billing_mode":"video",
@@ -242,6 +251,60 @@ func TestModelPriceHandlerUpsertBillingMode(t *testing.T) {
 	response = put(`{"platform":"openai","model":"my-image","currency":"USD","billing_mode":"per_request","payload":{}}`)
 	require.Equal(t, http.StatusBadRequest, response.Code)
 	require.Contains(t, response.Body.String(), "INVALID_BILLING_MODE")
+}
+
+// 列表与详情返回出图方式和被忽略字段：289 迁移规则外的存量行（token 档带按张价）
+// 在运行时忽略按张价，后台据此提示运营者。
+func TestModelPriceHandlerReturnsImageBillingModeAndIgnoredFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	perImage := 0.1
+	store := &handlerModelPriceOverrideStore{row: &service.ModelPriceOverride{
+		ID: 1, Platform: service.PlatformOpenAI, ModelName: "my-image", Currency: service.ModelPriceCurrencyUSD,
+		BillingMode: service.BillingModeToken, Enabled: true,
+		Payload: service.ModelPriceOverridePayload{OutputCostPerImage: &perImage},
+	}}
+	svc := service.NewPricingService(nil, nil)
+	svc.SetOverrideDependencies(store, nil)
+	require.NoError(t, svc.ReloadOverrides(context.Background()))
+	handler := NewModelPriceHandler(svc, stubCallableCatalog{
+		models: map[string][]string{service.PlatformOpenAI: {"my-image"}},
+	}, nil)
+
+	router := gin.New()
+	router.GET("/", handler.List)
+	router.GET("/entry", handler.Detail)
+	router.PUT("/entry", handler.Upsert)
+	get := func(target string) map[string]any {
+		request := httptest.NewRequest(http.MethodGet, target, nil)
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(response.Body.Bytes(), &body))
+		data, _ := body["data"].(map[string]any)
+		return data
+	}
+
+	detail := get("/entry?platform=openai&model=my-image")
+	require.Equal(t, []any{"output_cost_per_image"}, detail["ignored_fields"])
+	require.Equal(t, "", detail["image_billing_mode"])
+
+	list := get("/?page=1&page_size=50")
+	items, _ := list["items"].([]any)
+	require.Len(t, items, 1)
+	item, _ := items[0].(map[string]any)
+	require.Equal(t, []any{"output_cost_per_image"}, item["ignored_fields"])
+
+	request := httptest.NewRequest(http.MethodPut, "/entry", strings.NewReader(`{"platform":"openai","model":"my-image",
+		"currency":"USD","billing_mode":"image","payload":{"output_cost_per_image":0.1}}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+
+	detail = get("/entry?platform=openai&model=my-image")
+	require.Equal(t, []any{}, detail["ignored_fields"])
+	require.Equal(t, "image", detail["image_billing_mode"])
 }
 
 func TestModelPriceHandlerPreviewVideoReturnsRuleMismatches(t *testing.T) {

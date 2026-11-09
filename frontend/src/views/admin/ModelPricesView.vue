@@ -63,6 +63,7 @@
                 <span v-if="row.video_pricing_error" class="badge-danger">{{ t('admin.modelPrices.video.invalid') }}</span>
                 <span v-if="row.sync_invalidated" class="badge-danger">{{ t('admin.modelPrices.syncInvalidated') }}</span>
                 <span v-if="row.redundant" class="badge-muted">{{ t('admin.modelPrices.redundant') }}</span>
+                <span v-if="row.ignored_fields?.length" class="badge-warn">{{ t('admin.modelPrices.ignoredFields.badge') }}</span>
                 <span v-if="row.enabled === false" class="badge-muted">{{ t('admin.modelPrices.disabled') }}</span>
               </div>
             </div>
@@ -91,6 +92,9 @@
                 {{ row.video_billing_units?.join(' / ') }} · {{ row.video_resolutions?.join(', ') }}
               </span>
             </div>
+          </template>
+          <template #cell-imageBilling="{ row }">
+            <span class="text-xs">{{ imageBillingModeLabel(row.image_billing_mode) }}</span>
           </template>
           <template #cell-actions="{ row }">
             <div class="flex items-center gap-1">
@@ -167,31 +171,47 @@
           >
             {{ t('admin.modelPrices.billingMode.discardNotice', { count: discardedFieldCount }) }}
           </p>
+          <p
+            v-if="detail?.ignored_fields?.length"
+            class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200"
+          >
+            {{ t('admin.modelPrices.ignoredFields.notice', { fields: detail.ignored_fields.map(ignoredFieldLabel).join(', ') }) }}
+          </p>
         </div>
         <div v-if="billingMode !== 'video'" class="space-y-3">
-          <div v-for="field in activePriceFields" :key="field" class="grid items-end gap-2 sm:grid-cols-[1fr,1fr,1fr,auto]">
-            <div class="text-xs zt-ink-3">
-              <div class="font-medium zt-ink">{{ fieldLabel(field) }}</div>
-              <div>{{ t('admin.modelPrices.catalogValue') }}: {{ formatFieldPrice(detail?.catalog?.[field], field, detail?.catalog_currency) }}</div>
+          <div
+            v-for="group in priceFieldGroups"
+            :key="group.key"
+            :class="group.boxed ? 'space-y-3 rounded-lg border border-sky-200 bg-sky-50/40 p-3 dark:border-sky-900/40 dark:bg-sky-950/20' : 'space-y-3'"
+          >
+            <div v-if="group.title">
+              <div class="text-sm font-medium zt-ink">{{ group.title }}</div>
+              <div class="mt-1 text-xs zt-ink-3">{{ group.hint }}</div>
             </div>
-            <input
-              v-model="form.fields[field]"
-              class="input"
-              :placeholder="fieldPlaceholder(field)"
-            />
-            <div class="text-xs zt-ink-3">
-              {{ t('admin.modelPrices.effectiveValue') }}:
-              {{ formatFieldPrice(detail?.effective?.[field], field, detail?.currency) }}
-              <span v-if="detail?.time_schedule && !isUnscaledField(field)" class="ml-1">
-                / {{ t('admin.modelPrices.peakPrice') }}
-                {{ scheduledPrice(detail?.effective?.[field], detail.time_schedule, 'peak', detail.currency) }}
-                / {{ t('admin.modelPrices.offPeakPrice') }}
-                {{ scheduledPrice(detail?.effective?.[field], detail.time_schedule, 'offPeak', detail.currency) }}
-              </span>
+            <div v-for="field in group.fields" :key="field" class="grid items-end gap-2 sm:grid-cols-[1fr,1fr,1fr,auto]">
+              <div class="text-xs zt-ink-3">
+                <div class="font-medium zt-ink">{{ fieldLabel(field) }}</div>
+                <div>{{ t('admin.modelPrices.catalogValue') }}: {{ formatFieldPrice(detail?.catalog?.[field], field, detail?.catalog_currency) }}</div>
+              </div>
+              <input
+                v-model="form.fields[field]"
+                class="input"
+                :placeholder="fieldPlaceholder(field)"
+              />
+              <div class="text-xs zt-ink-3">
+                {{ t('admin.modelPrices.effectiveValue') }}:
+                {{ formatFieldPrice(detail?.effective?.[field], field, detail?.currency) }}
+                <span v-if="detail?.time_schedule && !isUnscaledField(field)" class="ml-1">
+                  / {{ t('admin.modelPrices.peakPrice') }}
+                  {{ scheduledPrice(detail?.effective?.[field], detail.time_schedule, 'peak', detail.currency) }}
+                  / {{ t('admin.modelPrices.offPeakPrice') }}
+                  {{ scheduledPrice(detail?.effective?.[field], detail.time_schedule, 'offPeak', detail.currency) }}
+                </span>
+              </div>
+              <button type="button" class="btn btn-secondary btn-sm" @click="form.fields[field] = ''">
+                {{ t('admin.modelPrices.clearField') }}
+              </button>
             </div>
-            <button type="button" class="btn btn-secondary btn-sm" @click="form.fields[field] = ''">
-              {{ t('admin.modelPrices.clearField') }}
-            </button>
           </div>
         </div>
         <div v-if="billingMode === 'image'" class="space-y-3 rounded-lg border border-fuchsia-200 bg-fuchsia-50/40 p-3 dark:border-fuchsia-900/40 dark:bg-fuchsia-950/20">
@@ -277,11 +297,13 @@ import VideoPricingEditor from '@/components/admin/model-price/VideoPricingEdito
 import { prepareVideoPricingForSave } from '@/components/admin/model-price/videoPricingForm'
 import {
   FIELDS_BY_BILLING_MODE,
+  IMAGE_TOKEN_PRICE_FIELDS,
   PRICE_FIELDS,
   deleteModelPrice,
   getModelPriceEntry,
   getModelPriceSyncStatus,
   isImageField,
+  isImageTokenField,
   isRawNumberField,
   isUnscaledField,
   listModelPricePlatforms,
@@ -336,17 +358,34 @@ const form = reactive({
   videoPricing: null as VideoPricingConfig | null,
 })
 
-// 迁移 275 把存量覆盖行一律标成 token，而旧行可能带着图片价或 video_pricing。
-// 后端 token 档接受全部字段且继续让它们生效，所以编辑这类行时必须把它们
-// 原样带回去；否则只是改个备注再保存，就会悄悄删掉已生效的图片/视频价。
+// 迁移 275 把存量覆盖行一律标成 token，而旧行可能带着 video_pricing。后端 token 档
+// 仍放行它并让它生效，所以编辑这类行时必须原样带回去；否则只是改个备注再保存，
+// 就会悄悄删掉已生效的视频价。旧行里的按张价不同：图片按张与按 token 二选一后，
+// token 档运行时已忽略按张价（后端 ignored_fields），保存时按当前方式清除。
 const legacyTokenExtras = reactive({
-  fields: new Set<PriceField>(),
   video: false,
 })
-const activePriceFields = computed(() => {
-  const base = FIELDS_BY_BILLING_MODE[billingMode.value]
-  if (billingMode.value !== 'token' || legacyTokenExtras.fields.size === 0) return base
-  return PRICE_FIELDS.filter((field) => base.includes(field) || legacyTokenExtras.fields.has(field))
+const activePriceFields = computed(() => FIELDS_BY_BILLING_MODE[billingMode.value])
+// token 档的出图两项价单独成组，提示「提示词和缓存都按图片输入价」。
+const priceFieldGroups = computed(() => {
+  const fields = activePriceFields.value
+  const groups = [{
+    key: 'main',
+    title: '',
+    hint: '',
+    boxed: false,
+    fields: fields.filter((field) => billingMode.value !== 'token' || !isImageTokenField(field)),
+  }]
+  if (billingMode.value === 'token') {
+    groups.push({
+      key: 'imageToken',
+      title: t('admin.modelPrices.imageTokenGroup.title'),
+      hint: t('admin.modelPrices.imageTokenGroup.hint'),
+      boxed: true,
+      fields: IMAGE_TOKEN_PRICE_FIELDS.filter((field) => fields.includes(field)),
+    })
+  }
+  return groups
 })
 const videoPricingSubmitted = computed(() =>
   billingMode.value === 'video' || (billingMode.value === 'token' && legacyTokenExtras.video),
@@ -378,6 +417,7 @@ const columns = computed<Column[]>(() => [
   { key: 'source', label: t('admin.modelPrices.columns.source') },
   { key: 'input', label: t('admin.modelPrices.columns.input') },
   { key: 'output', label: t('admin.modelPrices.columns.output') },
+  { key: 'imageBilling', label: t('admin.modelPrices.columns.imageBillingMode') },
   { key: 'actions', label: t('admin.modelPrices.columns.actions') },
 ])
 
@@ -416,6 +456,19 @@ const editorTitle = computed(() =>
 
 function fieldLabel(field: PriceField): string {
   return t(`admin.modelPrices.fields.${field}`)
+}
+
+function imageBillingModeLabel(mode: string | undefined): string {
+  if (mode === 'image') return t('admin.modelPrices.imageBillingMode.image')
+  if (mode === 'token') return t('admin.modelPrices.imageBillingMode.token')
+  return t('admin.modelPrices.imageBillingMode.none')
+}
+
+function ignoredFieldLabel(field: string): string {
+  if ((PRICE_FIELDS as readonly string[]).includes(field)) return fieldLabel(field as PriceField)
+  if (field === 'intervals') return t('admin.modelPrices.imageTiers.title')
+  if (field === 'video_pricing') return t('admin.modelPrices.tabs.video')
+  return field
 }
 
 function sourceLabel(source: string): string {
@@ -542,7 +595,6 @@ function resetForm() {
   for (const tier of IMAGE_TIERS) form.imageIntervals[tier] = ''
   videoPricingErrors.value = []
   billingMode.value = 'token'
-  legacyTokenExtras.fields = new Set()
   legacyTokenExtras.video = false
   for (const field of PRICE_FIELDS) {
     form.fields[field] = ''
@@ -570,12 +622,6 @@ function fillFormFromDetail(entry: ModelPriceDetail) {
     }
     form.fields[field] = isUnscaledField(field) ? String(raw) : String(tokenToMTok(Number(raw)))
   }
-  const tokenFields = FIELDS_BY_BILLING_MODE.token
-  legacyTokenExtras.fields = new Set(
-    billingMode.value === 'token'
-      ? PRICE_FIELDS.filter((field) => !tokenFields.includes(field) && form.fields[field] !== '')
-      : [],
-  )
   legacyTokenExtras.video = billingMode.value === 'token' && form.videoPricing !== null
 }
 

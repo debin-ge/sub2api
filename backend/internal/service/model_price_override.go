@@ -170,6 +170,8 @@ type ModelPriceListItem struct {
 	CatalogCurrency    string                  `json:"catalog_currency,omitempty"`
 	OverrideCurrency   string                  `json:"override_currency,omitempty"`
 	BillingMode        BillingMode             `json:"billing_mode"`
+	ImageBillingMode   BillingMode             `json:"image_billing_mode"`
+	IgnoredFields      []string                `json:"ignored_fields"`
 	TokenPricingAbsent bool                    `json:"token_pricing_absent"`
 	HasImagePricing    bool                    `json:"has_image_pricing"`
 	HasVideoPricing    bool                    `json:"has_video_pricing"`
@@ -204,6 +206,8 @@ type ModelPriceDetail struct {
 	Catalog            map[string]any             `json:"catalog"`
 	Override           *ModelPriceOverridePayload `json:"override,omitempty"`
 	BillingMode        BillingMode                `json:"billing_mode"`
+	ImageBillingMode   BillingMode                `json:"image_billing_mode"`
+	IgnoredFields      []string                   `json:"ignored_fields"`
 	Effective          map[string]any             `json:"effective"`
 	Enabled            bool                       `json:"enabled"`
 	TokenPricingAbsent bool                       `json:"token_pricing_absent"`
@@ -517,7 +521,10 @@ func buildOverrideModelPriceEntry(model string, base *ModelPriceEntry, row *Mode
 		return base
 	}
 	currency := modelPriceCurrencyOrUSD(row.Currency)
-	raw := mergeRawPriceEntry(overrideBaseRaw(base, currency, modelPriceOverrideBillingModeOrToken(row.BillingMode)), &row.Payload)
+	mode := modelPriceOverrideBillingModeOrToken(row.BillingMode)
+	// 存量行里不属于本档的字段（289 迁移规则外）在运行时直接忽略，见 projectPayloadToBillingMode。
+	payload, _ := projectPayloadToBillingMode(&row.Payload, mode)
+	raw := mergeRawPriceEntry(overrideBaseRaw(base, currency, mode), &payload)
 	raw.Currency = currency
 	entry := buildModelPriceEntry(model, raw)
 	if base != nil {
@@ -527,9 +534,10 @@ func buildOverrideModelPriceEntry(model string, base *ModelPriceEntry, row *Mode
 	// OperatorOverride 表示 token 价由运营者定死，不再套 DeepSeek 官方峰谷翻倍。只有
 	// payload 真的改了 token 价才算：空 payload（全部继承）或只改图片/视频价的行，
 	// token 价仍是目录里的官方空闲价，必须照常按北京时间高峰翻倍，否则高峰少收一半。
-	entry.OperatorOverride = payloadOverridesTokenPrices(&row.Payload) || (base != nil && base.OperatorOverride)
-	entry.BillingMode = modelPriceOverrideBillingModeOrToken(row.BillingMode)
-	entry.VideoPricingOperatorOverride = row.Payload.VideoPricing != nil || (base != nil && base.VideoPricingOperatorOverride)
+	entry.OperatorOverride = payloadOverridesTokenPrices(&payload) || (base != nil && base.OperatorOverride)
+	entry.BillingMode = mode
+	entry.ImageBillingMode = deriveImageBillingMode(entry, mode, true)
+	entry.VideoPricingOperatorOverride = payload.VideoPricing != nil || (base != nil && base.VideoPricingOperatorOverride)
 	return entry
 }
 
@@ -618,6 +626,7 @@ func buildModelPriceEntry(model string, raw *RawModelPriceEntry) *ModelPriceEntr
 	if raw.CacheReadInputImageTokenCost != nil {
 		entry.CacheReadInputImageTokenCost = *raw.CacheReadInputImageTokenCost
 	}
+	entry.ImageBillingMode = deriveImageBillingMode(entry, "", false)
 	return entry
 }
 
@@ -778,13 +787,13 @@ func (s *PricingService) validateOverrideWrite(platform, model, currency string,
 	// An entirely empty token-mode override is an explicit "inherit everything"
 	// record. This is useful when the admin form is saved without filling any
 	// price fields; non-empty partial payloads still go through the normal
-	// completeness validation below. An image-mode override also builds on the
-	// catalog (an image model priced by plain tokens just inherits them), and a
-	// video-mode override suppresses the other dimensions, so both must still
-	// find a price of their own mode in the catalog.
-	if len(payloadToMap(payload)) == 0 && mode == BillingModeToken {
-		return warnings, nil
-	}
+	// completeness validation below. Image- and video-mode overrides suppress the
+	// other dimensions, so both must still find a price of their own mode (a
+	// per-image price, or video pricing) in the payload or the catalog.
+	// An empty token-mode payload on an image-generation model still has to
+	// inherit both image token prices, otherwise its image requests could not
+	// be billed at all (the per-image price is suppressed in token mode).
+	emptyTokenPayload := len(payloadToMap(payload)) == 0 && mode == BillingModeToken
 	var catalog *ModelPriceEntry
 	if s != nil {
 		s.mu.RLock()
@@ -793,18 +802,36 @@ func (s *PricingService) validateOverrideWrite(platform, model, currency string,
 	}
 	raw := mergeRawPriceEntry(overrideBaseRaw(catalog, currency, mode), payload)
 	if mode == BillingModeToken {
-		if !rawHasBillingModePricing(raw, BillingModeToken) && !rawHasBillingModePricing(raw, BillingModeImage) &&
-			!rawHasBillingModePricing(raw, BillingModeVideo) {
-			return nil, infraerrors.BadRequest("EMPTY_PRICING", "at least one token, image, or video price is required")
+		// 按张价不属于 token 档（继承的会被抹掉，payload 里写了上面已拒绝），不算数。
+		if !emptyTokenPayload && !rawHasBillingModePricing(raw, BillingModeToken) && !rawHasBillingModePricing(raw, BillingModeVideo) {
+			return nil, infraerrors.BadRequest("EMPTY_PRICING", "at least one token, image token, or video price is required")
+		}
+		// 按 token 出图只有两项价：图片输入价、图片输出价，缺一项就无法结算（方案 §6.1）。
+		if rawRequiresImageTokenPair(raw, payload) {
+			missing := ""
+			switch {
+			case raw.InputCostPerImageToken == nil:
+				missing = "input_cost_per_image_token"
+			case raw.OutputCostPerImageToken == nil:
+				missing = "output_cost_per_image_token"
+			}
+			if missing != "" {
+				return nil, infraerrors.BadRequest("INCOMPLETE_IMAGE_TOKEN_PRICING",
+					fmt.Sprintf("image token pricing requires both input and output image prices; missing %s", missing)).
+					WithMetadata(map[string]string{"missing_dimension": missing})
+			}
+		}
+		if emptyTokenPayload {
+			return warnings, nil
 		}
 	} else {
 		if !rawHasBillingModePricing(raw, mode) {
 			return nil, infraerrors.BadRequest("EMPTY_PRICING", fmt.Sprintf("billing mode %s requires at least one %s price", mode, mode)).
 				WithMetadata(map[string]string{"billing_mode": string(mode)})
 		}
-		// video 档抑制从目录继承的 token / 图片价，目录里带 token 价的模型切到 video 后，
-		// 走 token 计费的请求会因缺价被拒绝。允许保存，但要明确告知运营者。
-		if mode == BillingModeVideo && catalog != nil && modelPriceEntryCurrency(catalog) == currency &&
+		// image / video 档抑制从目录继承的 token 价（含图片 token 价）。目录里带 token 价的
+		// 模型切过来后，走 token 计费的请求会因缺价被拒绝。允许保存，但要明确告知运营者。
+		if catalog != nil && modelPriceEntryCurrency(catalog) == currency &&
 			rawHasBillingModePricing(rawOf(catalog), BillingModeToken) {
 			warnings = append(warnings, ModelPriceWarning{Code: "BILLING_MODE_SUPPRESSES_TOKEN", Field: "billing_mode"})
 		}
@@ -1181,7 +1208,10 @@ func (s *PricingService) buildListItemLocked(
 		}
 	}
 	applyVideoPricingSummaryToList(&item, effective)
+	item.ImageBillingMode = entryImageBillingMode(effective)
+	item.IgnoredFields = []string{}
 	if row != nil {
+		item.IgnoredFields = overrideIgnoredFields(row)
 		item.OverrideCurrency = modelPriceCurrencyOrUSD(row.Currency)
 		item.BillingMode = modelPriceOverrideBillingModeOrToken(row.BillingMode)
 		item.OverridePlatform = row.Platform
@@ -1329,6 +1359,7 @@ func (s *PricingService) GetPriceDetailWithOfficial(platform, model string, offi
 			Effective:          map[string]any{},
 			Enabled:            true,
 			BillingMode:        BillingModeToken,
+			IgnoredFields:      []string{},
 			TokenPricingAbsent: true,
 			TimeSchedule:       deepSeekOfficialPriceTimeSchedule(platform, model, baseIsOffPeak),
 		}, nil
@@ -1358,7 +1389,10 @@ func (s *PricingService) GetPriceDetailWithOfficial(platform, model string, offi
 		TimeSchedule:       deepSeekOfficialPriceTimeSchedule(platform, model, baseIsOffPeak),
 	}
 	applyVideoPricingSummaryToDetail(detail, effective)
+	detail.ImageBillingMode = entryImageBillingMode(effective)
+	detail.IgnoredFields = []string{}
 	if row != nil {
+		detail.IgnoredFields = overrideIgnoredFields(row)
 		payload := cloneModelPriceOverridePayload(row.Payload)
 		detail.Override = &payload
 		detail.OverrideCurrency = modelPriceCurrencyOrUSD(row.Currency)
@@ -1372,6 +1406,26 @@ func (s *PricingService) GetPriceDetailWithOfficial(platform, model string, offi
 		detail.Redundant = isRedundantPayload(catalog, detail.OverrideCurrency, row.BillingMode, &row.Payload)
 	}
 	return detail, nil
+}
+
+func entryImageBillingMode(entry *ModelPriceEntry) BillingMode {
+	if entry == nil {
+		return ""
+	}
+	return entry.ImageBillingMode
+}
+
+// overrideIgnoredFields 列出覆盖行里不属于其计费档、运行时被忽略的字段（289 迁移规则外的
+// 存量行）。后台据此提示运营者：保存后这些字段会被清除。
+func overrideIgnoredFields(row *ModelPriceOverride) []string {
+	if row == nil {
+		return []string{}
+	}
+	_, ignored := projectPayloadToBillingMode(&row.Payload, row.BillingMode)
+	if ignored == nil {
+		return []string{}
+	}
+	return ignored
 }
 
 // storedOverrideBillingMode 返回已存覆盖行的计费方式；行不存在时为 token。

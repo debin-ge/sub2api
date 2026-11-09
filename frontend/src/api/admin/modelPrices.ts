@@ -28,22 +28,31 @@ export type ModelPriceBillingMode =
   | typeof BILLING_MODE_IMAGE
   | typeof BILLING_MODE_VIDEO
 
-const IMAGE_PRICE_FIELDS = [
-  'output_cost_per_image',
-  'output_cost_per_image_token',
+/** 出图按 token 的两项价：图片输入价、图片输出价（提示词、输入图与缓存都按图片输入价）。 */
+export const IMAGE_TOKEN_PRICE_FIELDS = [
   'input_cost_per_image_token',
+  'output_cost_per_image_token',
 ] as const satisfies readonly PriceField[]
+
+export function isImageTokenField(field: string): boolean {
+  return (IMAGE_TOKEN_PRICE_FIELDS as readonly string[]).includes(field)
+}
 
 /**
  * 每个计费方式可填的价格字段，与后端 `validatePayloadFieldsInBillingMode` 对齐。
- * 图片与视频都可能按 token 计费，所以 image 档同时接受图片字段与 token 字段
- * （出图按普通 token 计价是正常配置）；video 档的价格全在 video_pricing 里。
+ * 图片按张与按 token 二选一：
+ * - image 档 = 按张：只有默认按张价（1K/2K/4K 档位价另行编辑）；
+ * - token 档 = 文本 token 价 + 出图按 token 的两项价，不含按张价；
+ * - video 档的价格全在 video_pricing 里。
  */
 export const FIELDS_BY_BILLING_MODE: Record<ModelPriceBillingMode, readonly PriceField[]> = {
-  token: PRICE_FIELDS.filter((field) => !(IMAGE_PRICE_FIELDS as readonly PriceField[]).includes(field)),
-  image: PRICE_FIELDS,
+  token: PRICE_FIELDS.filter((field) => field !== 'output_cost_per_image'),
+  image: ['output_cost_per_image'],
   video: [],
 }
+
+/** 条目声明的出图方式：image = 按张，token = 按 token，空 = 没有声明。 */
+export type ModelPriceImageBillingMode = typeof BILLING_MODE_IMAGE | typeof BILLING_MODE_TOKEN | ''
 
 export interface ModelPriceWarning {
   code: string
@@ -190,6 +199,9 @@ export interface ModelPriceListItem {
   catalog_currency?: ModelPriceCurrency
   override_currency?: ModelPriceCurrency
   billing_mode: ModelPriceBillingMode
+  image_billing_mode?: ModelPriceImageBillingMode
+  /** 覆盖行里不属于其计费方式、运行时被忽略的字段；保存后清除。 */
+  ignored_fields?: string[]
   token_pricing_absent: boolean
   has_image_pricing: boolean
   has_video_pricing: boolean
@@ -219,6 +231,9 @@ export interface ModelPriceDetail {
   catalog: Record<string, unknown>
   override?: ModelPricePayload
   billing_mode: ModelPriceBillingMode
+  image_billing_mode?: ModelPriceImageBillingMode
+  /** 覆盖行里不属于其计费方式、运行时被忽略的字段；保存后清除。 */
+  ignored_fields?: string[]
   effective: Record<string, unknown>
   enabled: boolean
   token_pricing_absent: boolean

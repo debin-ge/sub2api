@@ -52,8 +52,21 @@ export default {
     wildcard: 'All platforms',
     tabs: {
       token: 'Token',
-      image: 'Image',
+      image: 'Image (per image)',
       video: 'Video'
+    },
+    imageBillingMode: {
+      image: 'Per image',
+      token: 'By token',
+      none: '—'
+    },
+    imageTokenGroup: {
+      title: 'Image generation by token',
+      hint: 'Token-priced image generation uses only these two prices: prompt, input image and cached tokens are billed at the image input price; output at the image output price. Both are required and may be inherited from the catalog.'
+    },
+    ignoredFields: {
+      badge: 'Ignored fields',
+      notice: 'These fields do not belong to the current billing mode. They are ignored and will be removed on save: {fields}'
     },
     video: {
       badge: 'Video · {count} rules',
@@ -175,6 +188,7 @@ export default {
       source: 'Source',
       input: 'Input',
       output: 'Output',
+      imageBillingMode: 'Image billing',
       actions: 'Actions'
     },
     fields: {
@@ -196,13 +210,14 @@ export default {
     },
     imageTiers: {
       title: 'Per-image tier prices (optional)',
-      hint: 'Configure 1K, 2K and 4K independently; unconfigured tiers fall back to the default image price.',
+      hint: 'Configure 1K, 2K and 4K independently; unconfigured tiers fall back to the default per-image price (2K at 1.5x, 4K at 2x).',
       label: '{tier} per-image price',
       inherit: 'Inherit default price'
     },
     invalidNumber: '{field} must be a valid non-negative number',
     errors: {
       INCOMPLETE_PRICING: 'Pricing dimension is incomplete: {missing_dimension}',
+      INCOMPLETE_IMAGE_TOKEN_PRICING: 'Token-priced image generation needs both image input and image output prices; missing: {missing_dimension}',
       EMPTY_PRICING: 'Enter at least one token, image, or video price',
       INVALID_PAYLOAD: 'Invalid pricing field',
       INVALID_VIDEO_PRICING: 'Invalid video pricing configuration: {detail}',
@@ -215,8 +230,8 @@ export default {
     billingMode: {
       label: 'Billing mode',
       hint: {
-        token: 'Bill by input/output tokens. Catalog image and video prices are kept as they are.',
-        image: 'Bill by image. Enter image prices (per image or per image token) or plain token prices — image generation billed by tokens belongs here too. Catalog video prices are disabled.',
+        token: 'Bill by tokens. Text token prices apply to chat; token-priced image generation uses only the two prices under "Image generation by token". Per-image prices do not belong here, and catalog per-image prices are suppressed.',
+        image: 'Bill image generation per image: a default per-image price plus optional 1K/2K/4K tier prices. Catalog token prices (including image token prices) are suppressed, so chat requests are rejected; catalog video prices are disabled.',
         video: 'Bill by video, using the video pricing below. Inherited token and image prices are dropped.'
       },
       discardNotice: '{count} value(s) entered under other billing modes will not be saved.',

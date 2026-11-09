@@ -2,7 +2,7 @@ import { defineComponent } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { PRICE_FIELDS } from '@/api/admin/modelPrices'
+import { FIELDS_BY_BILLING_MODE, PRICE_FIELDS } from '@/api/admin/modelPrices'
 import ModelPricesView from '@/views/admin/ModelPricesView.vue'
 
 const {
@@ -61,8 +61,9 @@ const TablePageLayoutStub = defineComponent({
 const DataTableStub = defineComponent({
   props: {
     data: { type: Array, default: () => [] },
+    columns: { type: Array, default: () => [] },
   },
-  template: '<div data-test="table"><div v-for="row in data" :key="row.model"><span>{{ row.model }}</span><slot name="cell-input" :row="row" /><slot name="cell-output" :row="row" /><slot name="cell-actions" :row="row" /></div></div>',
+  template: '<div data-test="table"><div data-test="columns"><span v-for="column in columns" :key="column.key">{{ column.label }}</span></div><div v-for="row in data" :key="row.model"><slot name="cell-model" :row="row" /><slot name="cell-input" :row="row" /><slot name="cell-output" :row="row" /><slot name="cell-imageBilling" :row="row" /><slot name="cell-actions" :row="row" /></div></div>',
 })
 const SelectStub = defineComponent({
   props: {
@@ -511,10 +512,12 @@ describe('ModelPricesView', () => {
       platform: 'anthropic',
       model: 'gemini-2.5-flash-image',
       currency: 'USD',
-      catalog: { input_cost_per_token: 3e-7, output_cost_per_token: 2.5e-6, output_cost_per_image_token: 3e-5 },
+      catalog: { input_cost_per_token: 3e-7, output_cost_per_token: 2.5e-6, output_cost_per_image_token: 3e-5, output_cost_per_image: 0.039 },
       override: { input_cost_per_token: 3e-7 },
       effective: { input_cost_per_token: 3e-7, output_cost_per_token: 2.5e-6, output_cost_per_image_token: 3e-5 },
       billing_mode: 'token',
+      image_billing_mode: 'token',
+      ignored_fields: [],
       enabled: true,
       token_pricing_absent: false,
       has_image_pricing: true,
@@ -532,23 +535,122 @@ describe('ModelPricesView', () => {
     await imageTab!.trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('admin.modelPrices.billingMode.hint.image')
-    // image 档接受 token 与图片价，编辑器里的值都不会被丢弃
-    expect(wrapper.text()).not.toContain('admin.modelPrices.billingMode.discardNotice')
+    // image 档只表示按张：已有的 token 覆盖不属于它，保存时会被丢弃
+    expect(wrapper.text()).toContain('admin.modelPrices.billingMode.discardNotice')
 
-    // input[0] 是模型名，价格输入框按 PRICE_FIELDS 顺序排在其后
-    const priceInput = (field: (typeof PRICE_FIELDS)[number]) =>
-      wrapper.findAll('[data-test="editor"] input.input')[1 + PRICE_FIELDS.indexOf(field)]
-    await priceInput('output_cost_per_image').setValue('0.04')
+    // input[0] 是模型名；image 档只有默认按张价，其后是 1K/2K/4K 档位价
+    const editorInputs = () => wrapper.findAll('[data-test="editor"] input.input')
+    expect(editorInputs()).toHaveLength(1 + FIELDS_BY_BILLING_MODE.image.length + 3)
+    await editorInputs()[1].setValue('0.04')
     const saveButton = wrapper.findAll('button').find((button) => button.text() === 'admin.modelPrices.save')
     await saveButton!.trigger('click')
     await flushPromises()
 
-    // 图片按 token 计费是正常配置：已有的 token 覆盖随 image 档一起提交
     expect(upsertModelPrice).toHaveBeenCalledWith(expect.objectContaining({
       billing_mode: 'image',
-      payload: { input_cost_per_token: 3e-7, output_cost_per_image: 0.04 },
+      payload: { output_cost_per_image: 0.04 },
     }))
     expect(showWarning).toHaveBeenCalledWith('admin.modelPrices.billingMode.suppressesTokenWarning', 8000)
+  })
+
+  it('renders per-image fields on the image tab and the image-token group on the token tab', async () => {
+    getModelPriceEntry.mockResolvedValue({
+      platform: 'openai',
+      model: 'gpt-image-2',
+      currency: 'USD',
+      catalog: { input_cost_per_token: 5e-6, input_cost_per_image_token: 8e-6, output_cost_per_image_token: 3e-5 },
+      override: { output_cost_per_image_token: 4e-5 },
+      effective: { input_cost_per_token: 5e-6, input_cost_per_image_token: 8e-6, output_cost_per_image_token: 4e-5 },
+      billing_mode: 'token',
+      image_billing_mode: 'token',
+      ignored_fields: [],
+      enabled: true,
+      token_pricing_absent: false,
+      has_image_pricing: true,
+      sync_invalidated: false,
+      redundant: false,
+    })
+    upsertModelPrice.mockResolvedValue({ override: {}, warnings: [] })
+
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.find('button.action-btn').trigger('click')
+    await flushPromises()
+
+    const editorText = () => wrapper.find('[data-test="editor"]').text()
+    expect(editorText()).toContain('admin.modelPrices.imageTokenGroup.title')
+    expect(editorText()).toContain('admin.modelPrices.fields.input_cost_per_image_token')
+    expect(editorText()).toContain('admin.modelPrices.fields.output_cost_per_image_token')
+    expect(editorText()).not.toContain('admin.modelPrices.fields.output_cost_per_image\n')
+    expect(editorText()).not.toContain('admin.modelPrices.imageTiers.title')
+
+    const imageTab = wrapper.findAll('button').find((button) => button.text() === 'admin.modelPrices.tabs.image')
+    await imageTab!.trigger('click')
+    await flushPromises()
+    expect(editorText()).toContain('admin.modelPrices.fields.output_cost_per_image')
+    expect(editorText()).toContain('admin.modelPrices.imageTiers.title')
+    expect(editorText()).not.toContain('admin.modelPrices.fields.input_cost_per_token')
+    expect(editorText()).not.toContain('admin.modelPrices.fields.output_cost_per_image_token')
+    expect(editorText()).not.toContain('admin.modelPrices.imageTokenGroup.title')
+
+    const tokenTab = wrapper.findAll('button').find((button) => button.text() === 'admin.modelPrices.tabs.token')
+    await tokenTab!.trigger('click')
+    await flushPromises()
+    const saveButton = wrapper.findAll('button').find((button) => button.text() === 'admin.modelPrices.save')
+    await saveButton!.trigger('click')
+    await flushPromises()
+    const request = upsertModelPrice.mock.calls[0][0]
+    expect(request.billing_mode).toBe('token')
+    expect(request.payload.output_cost_per_image_token).toBeCloseTo(4e-5, 15)
+    expect(request.payload.output_cost_per_image).toBeUndefined()
+    expect(request.payload.intervals).toBeUndefined()
+  })
+
+  it('shows the image billing mode column and flags rows with ignored fields', async () => {
+    listModelPrices.mockResolvedValue({
+      items: [
+        {
+          platform: 'openai',
+          model: 'gpt-image-2-1k',
+          source: 'override',
+          billing_mode: 'token',
+          image_billing_mode: '',
+          ignored_fields: ['output_cost_per_image'],
+          token_pricing_absent: false,
+          has_image_pricing: false,
+          sync_invalidated: false,
+          redundant: false,
+          effective: { input_cost_per_token: 5e-6 },
+          overridden_fields: ['input_cost_per_token', 'output_cost_per_image'],
+          override_platform: 'openai',
+          enabled: true,
+        },
+        {
+          platform: 'openai',
+          model: 'gemini-2.5-flash-image',
+          source: 'catalog',
+          billing_mode: 'token',
+          image_billing_mode: 'image',
+          ignored_fields: [],
+          token_pricing_absent: false,
+          has_image_pricing: true,
+          sync_invalidated: false,
+          redundant: false,
+          effective: { output_cost_per_image: 0.039 },
+          overridden_fields: [],
+          enabled: true,
+        },
+      ],
+      total: 2,
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+    const text = wrapper.text()
+    expect(text).toContain('admin.modelPrices.columns.imageBillingMode')
+    expect(text).toContain('admin.modelPrices.imageBillingMode.image')
+    expect(text).toContain('admin.modelPrices.imageBillingMode.none')
+    expect(text.match(/admin\.modelPrices\.ignoredFields\.badge/g)).toHaveLength(1)
   })
 
   it('warns about discarded values when switching to the video billing mode', async () => {
@@ -603,7 +705,7 @@ describe('ModelPricesView', () => {
     await flushPromises()
 
     const intervalInputs = wrapper.findAll('[data-test="editor"] input.input')
-    await intervalInputs[1 + PRICE_FIELDS.length + 1].setValue('0.15')
+    await intervalInputs[1 + FIELDS_BY_BILLING_MODE.image.length + 1].setValue('0.15')
     const saveButton = wrapper.findAll('button').find((button) => button.text() === 'admin.modelPrices.save')
     await saveButton!.trigger('click')
     await flushPromises()
@@ -620,7 +722,7 @@ describe('ModelPricesView', () => {
     }))
   })
 
-  it('keeps legacy image and video pricing when resaving a token-mode row', async () => {
+  it('drops an ignored legacy per-image price but keeps legacy video pricing when resaving a token-mode row', async () => {
     upsertModelPrice.mockResolvedValue({ override: {}, warnings: [] })
     const videoPricing = { enabled: true, rules: [{ key: 'default', billing_unit: 'second', unit_price_usd: 0.1 }] }
     getModelPriceEntry.mockResolvedValue({
@@ -629,11 +731,13 @@ describe('ModelPricesView', () => {
       currency: 'USD',
       catalog: { input_cost_per_token: 3e-7, output_cost_per_token: 2.5e-6 },
       override: { input_cost_per_token: 3e-7, output_cost_per_image: 0.04, video_pricing: videoPricing },
-      effective: { input_cost_per_token: 3e-7, output_cost_per_token: 2.5e-6, output_cost_per_image: 0.04 },
+      effective: { input_cost_per_token: 3e-7, output_cost_per_token: 2.5e-6 },
       billing_mode: 'token',
+      image_billing_mode: '',
+      ignored_fields: ['output_cost_per_image'],
       enabled: true,
       token_pricing_absent: false,
-      has_image_pricing: true,
+      has_image_pricing: false,
       sync_invalidated: false,
       redundant: false,
     })
@@ -642,7 +746,7 @@ describe('ModelPricesView', () => {
     await flushPromises()
     await wrapper.find('button.action-btn').trigger('click')
     await flushPromises()
-    expect(wrapper.text()).not.toContain('admin.modelPrices.billingMode.discardNotice')
+    expect(wrapper.text()).toContain('admin.modelPrices.ignoredFields.notice')
     expect(wrapper.text()).toContain('admin.modelPrices.billingMode.legacyVideoNotice')
 
     const saveButton = wrapper.findAll('button').find((button) => button.text() === 'admin.modelPrices.save')
@@ -653,7 +757,7 @@ describe('ModelPricesView', () => {
     const request = upsertModelPrice.mock.calls[0][0]
     expect(request.billing_mode).toBe('token')
     expect(request.payload.input_cost_per_token).toBeCloseTo(3e-7, 15)
-    expect(request.payload.output_cost_per_image).toBe(0.04)
+    expect(request.payload.output_cost_per_image).toBeUndefined()
     expect(request.payload.video_pricing).toBeTruthy()
   })
 
