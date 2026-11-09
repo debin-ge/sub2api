@@ -1852,7 +1852,18 @@ func (s *GatewayService) calculateGatewayImageCost(
 	}
 	usage := gatewayImageTokenUsage(result.Usage)
 	if usage.OutputTokens() <= 0 {
-		return nil, fmt.Errorf("%w: image output token usage is missing", ErrModelPricingUnavailable)
+		// 上游没回 usageMetadata：按档位估算输出 token（方案 §5），实际输入 token 保留。
+		estimated, basis := estimateMissingImageTokenUsage(plan.Model, result.ImageSize, "", result.ImageCount, nil, usage)
+		usage = estimated
+		result.UsageSource = UsageSourceEstimated
+		result.UsageEstimationMethod = ImageEstimateMethod
+		if result.Usage.InputTokens <= 0 {
+			result.Usage.InputTokens = estimated.InputTokens()
+		}
+		result.Usage.OutputTokens = estimated.OutputTokens()
+		result.Usage.ImageOutputTokens = estimated.ImageOutputTokens
+		logger.LegacyPrintf("service.gateway", "[Billing] image usage estimated model=%s size=%s images=%d basis=%s output_tokens=%d",
+			plan.Model, result.ImageSize, result.ImageCount, basis, estimated.OutputTokens())
 	}
 	return s.billingService.CalculateImageTokenCost(plan, usage, tokenMultiplier, optionalStringValue(result.ServiceTier), reasoningEffort)
 }

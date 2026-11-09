@@ -73,9 +73,18 @@ func TestOpenAIResponsesImageToolWithoutToolUsageSplitsImageTokens(t *testing.T)
 	require.NoError(t, err)
 	require.InDelta(t, mainCost.TotalCost+7033*3e-5, cost.TotalCost, 1e-12)
 
-	_, err = settleOpenAIImageForTest(t, svc, result, []string{PlatformOpenAI}, []string{"gpt-image-2", "gpt-5.4"}, BillingKindToken,
+	// 完全没有图片用量：按尺寸 × 质量估算工具输出（1K、未给质量按 high：7033），标记为估算。
+	estimatedResult := &OpenAIForwardResult{
+		Model: "gpt-5.4", BillingModel: "gpt-image-2", TextBillingModel: "gpt-5.4",
+		ImageCount: 1, ImageSize: ImageBillingSize1K,
+	}
+	cost, err = settleOpenAIImageForTest(t, svc, estimatedResult, []string{PlatformOpenAI}, []string{"gpt-image-2", "gpt-5.4"}, BillingKindToken,
 		UsageTokens{InputTokens: 1000, OutputTokens: 200})
-	require.ErrorIs(t, err, ErrModelPricingUnavailable, "完全没有图片用量时（P3 前）报缺价")
+	require.NoError(t, err)
+	require.InDelta(t, mainCost.TotalCost+7033*3e-5, cost.TotalCost, 1e-12)
+	require.Equal(t, ImageEstimateMethod, estimatedResult.UsageEstimationMethod)
+	require.NotNil(t, estimatedResult.Usage.ImageGen)
+	require.Equal(t, 7033, estimatedResult.Usage.ImageGen.ImageOutputTokens)
 }
 
 // gpt-image-2 配了 image 档 2K = $0.05：只收张数，主模型 token 不收（D4）。

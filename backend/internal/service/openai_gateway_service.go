@@ -304,6 +304,10 @@ type OpenAIForwardResult struct {
 	// to the Image API; native Responses image tools require separate primary
 	// and media usage components.
 	ImageBillingPlan *OpenAIImageBillingPlan
+	// ImageQuality 是出图质量（响应值优先，没有再用请求值）；按 token 出图缺用量时估算用。
+	ImageQuality string
+	// ImageEstimateInput 只放内存、不落库：按 token 出图缺用量时估算提示词与输入图 token。
+	ImageEstimateInput *ImageEstimateInput
 	// TextBillingModel 是 Responses 生图请求里主模型的计费名。出了图之后 BillingModel
 	// 会切成生图工具的模型；按 token 出图时主模型 token 仍按这个模型的价另计（D7）。
 	TextBillingModel string

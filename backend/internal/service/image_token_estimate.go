@@ -203,3 +203,50 @@ func estimateImageTokenUsage(model, size, quality string, imageCount, partialIma
 		ImageOutputTokens: perImage * max(imageCount, 1),
 	}, basis
 }
+
+// ImageEstimateInput 是按 token 出图缺用量时估算输入 token 的素材，只放内存。
+type ImageEstimateInput struct {
+	Prompt        string
+	InputImages   []ImageDims
+	PartialImages int
+}
+
+// newOpenAIImageEstimateInput 从 /v1/images 请求取估算素材。输入图的像素尺寸在这里拿不到，
+// 按 1024×1024 估（视觉分块约 765 token）。
+func newOpenAIImageEstimateInput(parsed *OpenAIImagesRequest) *ImageEstimateInput {
+	if parsed == nil {
+		return nil
+	}
+	in := &ImageEstimateInput{Prompt: parsed.Prompt}
+	if parsed.PartialImages != nil {
+		in.PartialImages = max(*parsed.PartialImages, 0)
+	}
+	inputs := len(parsed.Uploads) + len(parsed.InputImageURLs)
+	for range inputs {
+		in.InputImages = append(in.InputImages, ImageDims{})
+	}
+	return in
+}
+
+// estimateMissingImageTokenUsage 在上游没回输出 token 时估算按 token 出图的用量：输出按
+// 尺寸 × 质量 × 张数，输入按提示词 + 输入图。上游回了输入 token 就保留实际输入。
+func estimateMissingImageTokenUsage(model, size, quality string, imageCount int, in *ImageEstimateInput, actual ImageTokenUsage) (ImageTokenUsage, string) {
+	promptTokens := 0
+	partials := 0
+	var inputImages []ImageDims
+	if in != nil {
+		if prompt := strings.TrimSpace(in.Prompt); prompt != "" {
+			promptTokens, _ = estimateFallbackTextTokens(model, []byte(prompt))
+		}
+		partials = in.PartialImages
+		inputImages = in.InputImages
+	}
+	estimated, basis := estimateImageTokenUsage(model, size, quality, imageCount, partials, promptTokens, inputImages)
+	if actual.InputTokens() > 0 {
+		estimated.TextInputTokens = actual.TextInputTokens
+		estimated.ImageInputTokens = actual.ImageInputTokens
+		estimated.CacheReadTokens = actual.CacheReadTokens
+		estimated.CacheCreationTokens = actual.CacheCreationTokens
+	}
+	return estimated, basis
+}

@@ -291,6 +291,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	imageBillingModel := ""
 	imageSizeTier := ""
 	imageInputSize := ""
+	imageQuality := ""
 	if imageIntent {
 		var imageCfgErr error
 		imageCfg, imageCfgErr := resolveOpenAIResponsesImageBillingConfigDetailedFromBody(body, reqModel)
@@ -308,6 +309,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		imageBillingModel = imageCfg.Model
 		imageSizeTier = imageCfg.SizeTier
 		imageInputSize = imageCfg.InputSize
+		imageQuality = imageCfg.Quality
 	}
 	// Passthrough can rewrite the request after the handler-level pricing
 	// check (compact mapping, OAuth normalization and fast-policy mutation).
@@ -567,6 +569,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		forwardResult.ImageCount = imageCount
 		forwardResult.ImageSize = imageSizeTier
 		forwardResult.ImageInputSize = imageInputSize
+		forwardResult.ImageQuality = imageQuality
 		forwardResult.ImageOutputSizes = imageOutputSizes
 		forwardResult.TextBillingModel = forwardResult.BillingModel
 		if forwardResult.TextBillingModel == "" {

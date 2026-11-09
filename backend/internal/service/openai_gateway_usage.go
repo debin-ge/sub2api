@@ -357,6 +357,11 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		modelLongContextExempt,
 		pricingAt,
 	)
+	if result.UsageEstimationMethod == ImageEstimateMethod {
+		// 按 token 出图缺用量时，结算按尺寸 × 质量估算并把估算写回了 result.Usage；
+		// 用量记录的输入列跟着更新，保证记录与扣费一致。
+		actualInputTokens = max(result.Usage.InputTokens-result.Usage.CacheReadInputTokens-result.Usage.CacheCreationInputTokens, 0)
+	}
 	// 定价缺失的 fail-closed 属于准入层（转发前拒绝）；走到这里上游成本已真实
 	// 发生，丢弃整条记录会连用量、配额计数和对账线索一起丢掉。改为 fail-loud：
 	// 不扣费、标记为待结算、照常落库并告警。非定价错误仍然上抛。
@@ -1021,7 +1026,7 @@ func (s *OpenAIGatewayService) calculateOpenAIImageCostFromPlan(
 	case BillingModeToken:
 		usage := openAIImageTokenUsage(result, tokens)
 		if usage.OutputTokens() <= 0 {
-			return nil, fmt.Errorf("%w: image output token usage is missing", ErrModelPricingUnavailable)
+			usage = estimateOpenAIImageTokenUsage(result, plan.Model, usage, false)
 		}
 		return s.billingService.CalculateImageTokenCost(plan, usage, tokenMultiplier, serviceTier, reasoningEffort)
 	case BillingModeImage:
@@ -1076,14 +1081,14 @@ func (s *OpenAIGatewayService) calculateOpenAIImageCostResolved(
 	if kind == BillingKindImage || result.ImageEndpoint {
 		usage := openAIImageTokenUsage(result, tokens)
 		if usage.OutputTokens() <= 0 {
-			return nil, fmt.Errorf("%w: image output token usage is missing", ErrModelPricingUnavailable)
+			usage = estimateOpenAIImageTokenUsage(result, plan.Model, usage, false)
 		}
 		return s.billingService.CalculateImageTokenCost(plan, usage, tokenMultiplier, serviceTier, reasoningEffort)
 	}
 
 	toolUsage, mainTokens := openAIResponsesImageToolUsage(result, tokens)
 	if toolUsage.OutputTokens() <= 0 {
-		return nil, fmt.Errorf("%w: image generation tool usage is missing", ErrModelPricingUnavailable)
+		toolUsage = estimateOpenAIImageTokenUsage(result, plan.Model, toolUsage, true)
 	}
 	toolCost, err := s.billingService.CalculateImageTokenCost(plan, toolUsage, tokenMultiplier, serviceTier, reasoningEffort)
 	if err != nil {
@@ -1203,6 +1208,46 @@ func openAIImageGenToolImageOutputTokens(tool *OpenAIImageGenUsage) int {
 		return 0
 	}
 	return max(tool.ImageOutputTokens, 0)
+}
+
+// estimateOpenAIImageTokenUsage 在上游没回输出 token 时按尺寸 × 质量估算（方案 §5），
+// 并标记用量来源；估算出的 token 写回 result.Usage，让用量记录与扣费一致。
+// tool=true 表示估算的是 Responses 生图工具的用量（写进 ImageGen）。
+func estimateOpenAIImageTokenUsage(result *OpenAIForwardResult, model string, actual ImageTokenUsage, tool bool) ImageTokenUsage {
+	if result == nil {
+		return actual
+	}
+	size := firstNonEmpty(result.ImageOutputSize, result.ImageInputSize, result.ImageSize)
+	estimated, basis := estimateMissingImageTokenUsage(model, size, result.ImageQuality, result.ImageCount, result.ImageEstimateInput, actual)
+	result.UsageSource = UsageSourceEstimated
+	result.UsageEstimationMethod = ImageEstimateMethod
+	if tool {
+		result.Usage.ImageGen = &OpenAIImageGenUsage{
+			InputTokens:       estimated.InputTokens(),
+			ImageInputTokens:  estimated.ImageInputTokens,
+			CachedInputTokens: estimated.CacheReadTokens,
+			OutputTokens:      estimated.OutputTokens(),
+			ImageOutputTokens: estimated.ImageOutputTokens,
+		}
+	} else {
+		if result.Usage.InputTokens <= 0 {
+			result.Usage.InputTokens = estimated.InputTokens()
+			result.Usage.ImageInputTokens = estimated.ImageInputTokens
+		}
+		result.Usage.OutputTokens = estimated.OutputTokens()
+		result.Usage.ImageOutputTokens = estimated.ImageOutputTokens
+	}
+	logger.L().Warn("openai_usage.image_usage_estimated",
+		zap.String("request_id", result.RequestID),
+		zap.String("model", model),
+		zap.String("size", size),
+		zap.String("quality", result.ImageQuality),
+		zap.Int("image_count", result.ImageCount),
+		zap.String("basis", basis),
+		zap.Int("estimated_input_tokens", estimated.InputTokens()),
+		zap.Int("estimated_output_tokens", estimated.OutputTokens()),
+	)
+	return estimated
 }
 
 // openAIImageTokenUsage 把 /v1/images 的用量按方案 §3.4 分桶：全部输入按图片输入价、

@@ -392,7 +392,9 @@ func TestCalculateOpenAIImageCostSupportsCatalogWithoutTextOutputPrice(t *testin
 	require.Zero(t, cost.OutputCost)
 }
 
-func TestCalculateOpenAIImageCostFromTokenPlanRejectsMissingUsage(t *testing.T) {
+// 上游没回 usage：不再报缺价进补账，按尺寸 × 质量估算（方案 §5，D3）。没写尺寸与质量时
+// 按 1024×1024、high 估：gpt-image-2 每张 7033 输出 token。
+func TestCalculateOpenAIImageCostFromTokenPlanEstimatesMissingUsage(t *testing.T) {
 	svc := newOpenAIImageBillingPlanTestService(t)
 	plan, err := svc.resolveOpenAIImageBillingPlan(
 		context.Background(),
@@ -407,7 +409,7 @@ func TestCalculateOpenAIImageCostFromTokenPlanRejectsMissingUsage(t *testing.T) 
 		ImageBillingPlan: plan,
 		ImageCount:       1,
 	}
-	_, err = svc.calculateOpenAIRecordUsageCost(
+	cost, err := svc.calculateOpenAIRecordUsageCost(
 		context.Background(),
 		result,
 		&APIKey{},
@@ -422,11 +424,17 @@ func TestCalculateOpenAIImageCostFromTokenPlanRejectsMissingUsage(t *testing.T) 
 		boolPtr(false),
 		time.Time{},
 	)
-	require.ErrorIs(t, err, ErrModelPricingUnavailable)
-	require.ErrorContains(t, err, "image output token usage")
+	require.NoError(t, err)
+	require.Equal(t, string(BillingModeToken), cost.BillingMode)
+	require.InDelta(t, 7033*3e-5, cost.TotalCost, 1e-12)
+	require.Equal(t, UsageSourceEstimated, result.UsageSource)
+	require.Equal(t, ImageEstimateMethod, result.UsageEstimationMethod)
+	require.Equal(t, 7033, result.Usage.ImageOutputTokens, "估算的 token 写回用量，记录与扣费一致")
 }
 
-func TestRecordUsageKeepsMissingImageTokenUsagePending(t *testing.T) {
+// 场景 2：/v1/images 按 token、上游没回 usage → 按估算扣费，用量记录标 estimated / image_estimate，
+// 不再零扣费进补账。
+func TestRecordUsageEstimatesMissingImageTokenUsage(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
 	userRepo := &openAIRecordUsageUserRepoStub{}
 	subRepo := &openAIRecordUsageSubRepoStub{}
@@ -466,23 +474,14 @@ func TestRecordUsageKeepsMissingImageTokenUsagePending(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, usageRepo.lastLog)
-	require.Equal(t, BillingStatePricingUnavailable, usageRepo.lastLog.BillingState)
+	require.Equal(t, BillingStateSettled, usageRepo.lastLog.BillingState)
 	require.NotNil(t, usageRepo.lastLog.BillingMode)
 	require.Equal(t, string(BillingModeToken), *usageRepo.lastLog.BillingMode)
-	require.Zero(t, usageRepo.lastLog.ActualCost)
-	require.Equal(t, 0, userRepo.deductCalls)
-
-	recovery := &BillingRecoveryService{
-		billingService: pricingSvc.billingService,
-		resolver:       pricingSvc.resolver,
-	}
-	require.False(t, recovery.hasStrictPricingForUsage(
-		context.Background(),
-		"gpt-image-2",
-		usageRepo.lastLog,
-		&APIKey{},
-		nil,
-	))
+	require.Equal(t, UsageSourceEstimated, usageRepo.lastLog.UsageSource)
+	require.Equal(t, ImageEstimateMethod, usageRepo.lastLog.UsageEstimationMethod)
+	require.Equal(t, 7033, usageRepo.lastLog.ImageOutputTokens)
+	require.InDelta(t, 7033*3e-5, usageRepo.lastLog.TotalCost, 1e-12)
+	require.Positive(t, usageRepo.lastLog.ActualCost)
 }
 
 func TestBillingRecoveryRecomputesCompleteImageTokenUsage(t *testing.T) {
