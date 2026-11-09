@@ -1074,6 +1074,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			if wsResult.ImageCount > 0 {
 				wsResult.ImageSize = imageSizeTier
 				wsResult.ImageInputSize = imageInputSize
+				wsResult.TextBillingModel = firstNonEmpty(wsResult.BillingModel, billingModel, wsResult.UpstreamModel)
 				wsResult.BillingModel = imageBillingModel
 			}
 			return wsResult, nil
@@ -1401,6 +1402,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			forwardResult.ImageSize = imageSizeTier
 			forwardResult.ImageInputSize = imageInputSize
 			forwardResult.ImageOutputSizes = imageOutputSizes
+			forwardResult.TextBillingModel = forwardResult.BillingModel
+			if forwardResult.TextBillingModel == "" {
+				forwardResult.TextBillingModel = billingModel
+			}
 			forwardResult.BillingModel = imageBillingModel
 		}
 		// Grok-native web_search / x_search / tool_search tool invocations (per-1k pricing).

@@ -41,37 +41,36 @@ type BatchImageModelPricingResolver struct {
 	Resolver *ModelPricingResolver
 }
 
+// BatchImageUnitPrice 按出图计划给批量出图（Gemini，固定 1K）定单价：
+//   - 按张：先取 1K 档位价，再取默认按张价；
+//   - 按 token：用 1K 估算单价（每张输出 token 估算 × 图片输出价 + 平均提示词 × 图片输入价）。
+//
+// 批量提交不经过网关准入，所以只看模型价格与内置价，不做跨模型推断；分组 1K 价由提交
+// 入口在调用前处理。
 func (r *BatchImageModelPricingResolver) BatchImageUnitPrice(ctx context.Context, job *BatchImageJob) (float64, error) {
 	if r == nil || r.Resolver == nil || job == nil || strings.TrimSpace(job.Model) == "" {
 		return 0, ErrBatchImageSettlementPricingMissing
 	}
-	// Batch submission happens outside the gateway pricing guard. It must not
-	// use Resolve's family/OpenAI inference, otherwise an unknown image SKU can
-	// borrow a known model's image-output price and pass the pre-charge check.
-	input := PricingInput{
-		Model:    job.Model,
-		Platform: batchImageProviderPlatform(job.Provider),
+	plan, err := r.Resolver.ResolveImageBilling(ctx, ImageBillingInput{
+		Model:         job.Model,
+		Platforms:     []string{batchImageProviderPlatform(job.Provider)},
+		SizeTier:      ImageBillingSize1K,
+		ImageEndpoint: true,
+	})
+	if err != nil || plan == nil {
+		return 0, ErrBatchImageSettlementPricingMissing
 	}
-	resolved, err := r.Resolver.ResolveStrictToken(ctx, input)
-	if err == nil && resolved != nil {
-		switch resolved.Mode {
-		case BillingModeImage, BillingModePerRequest:
-			if resolved.DefaultPerRequestPriceSet && isFiniteNonNegativePrice(resolved.DefaultPerRequestPrice) {
-				return resolved.DefaultPerRequestPrice, nil
-			}
-			if len(resolved.RequestTiers) == 1 && validConfiguredPrice(resolved.RequestTiers[0].PerRequestPrice) {
-				return *resolved.RequestTiers[0].PerRequestPrice, nil
-			}
-			return 0, ErrBatchImageSettlementPricingMissing
+	switch plan.Mode {
+	case BillingModeImage:
+		if isFiniteNonNegativePrice(plan.UnitPrice) {
+			return plan.UnitPrice, nil
 		}
-	}
-	// 批量出图按张计价，单价只能来自目录的每张价 output_cost_per_image。
-	// 不能用 ImageOutputPricePerToken：那是每 token 单价，拿来当每张价会少收约
-	// 三个数量级（1K 图 ≈1290 image tokens）。批量尺寸固定为 1K，无需尺寸倍率。
-	// token 定价缺失（例如 billing_mode=image 的覆盖只配了每张价）不影响按张计价，
-	// 所以 ResolveStrictToken 失败时同样走这里；目录没有每张价则 fail closed。
-	if price, ok := r.Resolver.strictCatalogImageUnitPrice(pricingInputPlatforms(input), job.Model); ok {
-		return price, nil
+	case BillingModeToken:
+		usage, _ := estimateImageTokenUsage(job.Model, ImageBillingSize1K, "", 1, 0, job.EstimatedPromptTokens, nil)
+		unit := float64(usage.InputTokens())*plan.ImageInputPrice + float64(usage.OutputTokens())*plan.ImageOutputPrice
+		if isFiniteNonNegativePrice(unit) {
+			return unit, nil
+		}
 	}
 	return 0, ErrBatchImageSettlementPricingMissing
 }

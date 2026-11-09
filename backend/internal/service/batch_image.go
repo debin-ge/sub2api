@@ -99,21 +99,24 @@ var (
 )
 
 type BatchImageJob struct {
-	ID                int64
-	BatchID           string
-	UserID            int64
-	APIKeyID          *int64
-	AccountID         *int64
-	Provider          string
-	Model             string
-	TaskName          string
-	ParentBatchID     *string
-	Status            string
-	ProviderJobName   *string
-	ProviderInputRef  *string
-	ProviderOutputRef *string
-	GCSInputURI       *string
-	GCSOutputURI      *string
+	ID        int64
+	BatchID   string
+	UserID    int64
+	APIKeyID  *int64
+	AccountID *int64
+	Provider  string
+	Model     string
+	TaskName  string
+	// EstimatedPromptTokens 是提交时按请求估算的平均提示词 token，只放内存、不落库，
+	// 供按 token 出图的模型估算批量单价。
+	EstimatedPromptTokens int
+	ParentBatchID         *string
+	Status                string
+	ProviderJobName       *string
+	ProviderInputRef      *string
+	ProviderOutputRef     *string
+	GCSInputURI           *string
+	GCSOutputURI          *string
 
 	ItemCount      int
 	SuccessCount   int

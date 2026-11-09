@@ -262,6 +262,10 @@ func (u *OpenAIImageGenUsage) tokenUsage() ImageTokenUsage {
 	}
 }
 
+func (u *OpenAIImageGenUsage) hasTokens() bool {
+	return u != nil && (u.InputTokens > 0 || u.OutputTokens > 0 || u.ImageInputTokens > 0 || u.ImageOutputTokens > 0)
+}
+
 // OpenAIForwardResult represents the result of forwarding
 type OpenAIForwardResult struct {
 	RequestID  string
@@ -300,6 +304,9 @@ type OpenAIForwardResult struct {
 	// to the Image API; native Responses image tools require separate primary
 	// and media usage components.
 	ImageBillingPlan *OpenAIImageBillingPlan
+	// TextBillingModel 是 Responses 生图请求里主模型的计费名。出了图之后 BillingModel
+	// 会切成生图工具的模型；按 token 出图时主模型 token 仍按这个模型的价另计（D7）。
+	TextBillingModel string
 	// ServiceTier is the final tier sent upstream after policy rewriting.
 	// The upstream response declaration remains separate above and is reconciled
 	// at usage-recording time, where the credential protocol is available.

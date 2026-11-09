@@ -1355,6 +1355,7 @@ func (s *GatewayService) recordUsageBillingModel(ctx context.Context, apiKey *AP
 				billingModel,
 				result.ImageSize,
 				result.UpstreamModel,
+				result.UpstreamModel,
 				result.Model,
 			)
 		}
@@ -1478,14 +1479,9 @@ func (s *GatewayService) calculateRecordUsageCost(
 			return nil, fmt.Errorf("%w: cache storage pricing or quantity unavailable for %s", ErrModelPricingUnavailable, billingModel)
 		}
 	}
-	// 图片生成：渠道定价为 token 计费时走 token 路径，否则走图片计费
+	// 图片生成：按出图计划结算（按张或按 token，二选一）。
 	if result.ImageCount > 0 {
-		if !imageCountBillingApplies(apiKey, result.ImageEndpoint) {
-			if resolved := s.resolveChannelPricingForPlatforms(ctx, billingModel, apiKey, opts.PricingPlatforms); resolved != nil && resolved.Mode == BillingModeToken {
-				return s.calculateTokenCost(ctx, result, apiKey, billingModel, multiplier, pricingAt, opts)
-			}
-		}
-		return s.calculateImageCost(ctx, result, apiKey, opts.PricingPlatforms, billingModel, imageMultiplier)
+		return s.calculateGatewayImageCost(ctx, result, apiKey, opts.PricingPlatforms, billingModel, multiplier, imageMultiplier)
 	}
 
 	// Voice audio (TTS / STT / realtime) when present on the forward result.
@@ -1575,7 +1571,7 @@ func (s *GatewayService) compositeImageBillableModel(
 	if concreteBillingModel == "" || billingModel == concreteBillingModel {
 		return billingModel
 	}
-	if s.hasResolvableImagePricingForPlatforms(ctx, billingModel, imageSize, apiKey, platforms) {
+	if s.hasResolvableImagePricingForPlatforms(ctx, billingModel, imageSize, apiKey, platforms, false, true) {
 		return billingModel
 	}
 	logger.LegacyPrintf(
@@ -1618,15 +1614,23 @@ func (s *GatewayService) billableModelWithFallbackForPlatforms(
 // billableImageModelWithFallbackForPlatforms applies the same fallback policy using the
 // actual media tier. It deliberately does not ask the token catalog first:
 // image-only SKUs commonly have no token price.
+//
+// upstreamModel 是实际出图的模型。候选与它不同时按跨模型规则判断（方案 §3.2 第 3 条）：
+// 只认按张，或显式配置声明的按 token，别名的目录 token 价不能拿去乘另一个模型的用量。
 func (s *GatewayService) billableImageModelWithFallbackForPlatforms(
 	ctx context.Context,
 	apiKey *APIKey,
 	platforms []string,
 	billingModel string,
 	imageSize string,
+	upstreamModel string,
 	fallbacks ...string,
 ) string {
-	if s.hasResolvableImagePricingForPlatforms(ctx, billingModel, imageSize, apiKey, platforms) {
+	crossModel := func(model string) bool {
+		upstream := strings.TrimSpace(upstreamModel)
+		return upstream != "" && !strings.EqualFold(strings.TrimSpace(model), upstream)
+	}
+	if s.hasResolvableImagePricingForPlatforms(ctx, billingModel, imageSize, apiKey, platforms, false, crossModel(billingModel)) {
 		return billingModel
 	}
 	for _, fallback := range fallbacks {
@@ -1634,7 +1638,7 @@ func (s *GatewayService) billableImageModelWithFallbackForPlatforms(
 		if fallback == "" || fallback == billingModel {
 			continue
 		}
-		if s.hasResolvableImagePricingForPlatforms(ctx, fallback, imageSize, apiKey, platforms) {
+		if s.hasResolvableImagePricingForPlatforms(ctx, fallback, imageSize, apiKey, platforms, false, crossModel(fallback)) {
 			logger.LegacyPrintf(
 				"service.gateway",
 				"[Billing] image billing model %q has no strict pricing for tier %q, falling back to concrete model %q",
@@ -1648,56 +1652,67 @@ func (s *GatewayService) billableImageModelWithFallbackForPlatforms(
 	return billingModel
 }
 
+// hasResolvableImagePricingForPlatforms 判断这个模型在本档位能否解析出出图计划
+// （按张或按 token，二选一，方案 §3.2）。imageEndpoint 表示专用图片端点（分组按张开关
+// 只作用于它）；crossModel 表示计费名和实际出图的模型不同，这时只认按张或显式配置的
+// 按 token。
 func (s *GatewayService) hasResolvableImagePricingForPlatforms(
 	ctx context.Context,
 	model string,
 	imageSize string,
 	apiKey *APIKey,
 	platforms []string,
+	imageEndpoint bool,
+	crossModel bool,
 ) bool {
+	plan, err := s.resolveGatewayImagePlan(ctx, apiKey, platforms, model, imageSize, imageEndpoint, crossModel)
+	return err == nil && plan != nil
+}
+
+func (s *GatewayService) resolveGatewayImagePlan(
+	ctx context.Context,
+	apiKey *APIKey,
+	platforms []string,
+	model string,
+	imageSize string,
+	imageEndpoint bool,
+	crossModel bool,
+	contextTokens ...int,
+) (*ImageBillingPlan, error) {
 	model = strings.TrimSpace(model)
-	if model == "" || s == nil || s.billingService == nil {
-		return false
+	if s == nil || s.billingService == nil {
+		return nil, fmt.Errorf("%w: gateway billing service unavailable", ErrModelPricingUnavailable)
 	}
-	tier, err := NormalizeImageBillingTierStrictOrDefault(imageSize)
-	if err != nil {
-		// Admission must never prove an explicit future/malformed tier by
-		// silently borrowing the documented 2K default. Empty/auto still map
-		// to that default inside the strict helper.
-		return false
+	resolver := s.resolver
+	if resolver == nil {
+		resolver = NewModelPricingResolver(s.channelService, s.billingService)
 	}
+	var (
+		group   *Group
+		groupID *int64
+	)
+	if apiKey != nil {
+		group = apiKey.Group
+		groupID = apiKey.GroupID
+	}
+	return resolver.ResolveImageBilling(ctx, ImageBillingInput{
+		Model:         model,
+		Platforms:     platforms,
+		GroupID:       groupID,
+		Group:         group,
+		SizeTier:      imageSize,
+		ImageEndpoint: imageEndpoint,
+		PerImageOnly:  imageBillingPerImageOnly(nil, model),
+		CrossModel:    crossModel,
+		ContextTokens: firstInt(contextTokens),
+	})
+}
 
-	resolved := s.resolveChannelPricing(ctx, model, apiKey)
-	if resolved != nil && resolved.Mode == BillingModeToken {
-		// A channel explicitly choosing token billing must satisfy strict
-		// token pricing; do not silently switch that request to image mode.
-		return s.hasResolvableTokenPricingForPlatforms(ctx, model, apiKey, platforms)
+func firstInt(values []int) int {
+	if len(values) == 0 {
+		return 0
 	}
-
-	// A group media price is a complete price source for this exact tier and
-	// intentionally applies independently of the model catalog.
-	if apiKey != nil && apiKey.Group != nil &&
-		validConfiguredPrice(apiKey.Group.GetImagePrice(tier)) {
-		return true
-	}
-
-	if resolved != nil {
-		if resolved.Mode == BillingModePerRequest || resolved.Mode == BillingModeImage {
-			price, found := s.resolver.LookupRequestTierPrice(resolved, tier)
-			if !found && resolved.DefaultPerRequestPriceSet {
-				price = resolved.DefaultPerRequestPrice
-				found = true
-			}
-			if found && isFiniteNonNegativePrice(price) {
-				return true
-			}
-			// calculateImageCost deliberately falls through to the strict
-			// catalog when a channel tier is missing, so do the same here.
-		}
-	}
-
-	_, ok := s.billingService.strictImageUnitPriceForPlatforms(platforms, model, tier, nil)
-	return ok
+	return values[0]
 }
 
 // hasResolvableTokenPricingForPlatforms only accepts complete explicit group/channel
@@ -1811,76 +1826,48 @@ func usageTokensFromClaudeUsage(usage ClaudeUsage) UsageTokens {
 	}
 }
 
-// calculateImageCost 计算图片生成费用：渠道级别定价优先，否则走按次计费。
-func (s *GatewayService) calculateImageCost(
+// calculateGatewayImageCost 按出图计划结算 Gemini / Antigravity / 组合分组的出图：
+//   - 按张：张数 × 档位价，非图片部分（Gemini 回的文字、主模型 token）不收（D4）；
+//   - 按 token：usageMetadata 总数 × 两项价（D2）。输入侧（提示词、缓存读写）全按图片
+//     输入价，输出侧（图片、文字）全按图片输出价。
+func (s *GatewayService) calculateGatewayImageCost(
 	ctx context.Context,
 	result *ForwardResult,
 	apiKey *APIKey,
 	platforms []string,
 	billingModel string,
-	multiplier float64,
+	tokenMultiplier float64,
+	imageMultiplier float64,
 ) (*CostBreakdown, error) {
-	sizeTier, err := NormalizeImageBillingTierStrictOrDefault(result.ImageSize)
+	upstream := strings.TrimSpace(result.UpstreamModel)
+	crossModel := upstream != "" && !strings.EqualFold(strings.TrimSpace(billingModel), upstream)
+	contextTokens := result.Usage.InputTokens + result.Usage.CacheCreationInputTokens + result.Usage.CacheReadInputTokens
+	plan, err := s.resolveGatewayImagePlan(ctx, apiKey, platforms, billingModel, result.ImageSize, result.ImageEndpoint, crossModel, contextTokens)
 	if err != nil {
 		return nil, err
 	}
-	resolved := s.resolveChannelPricingForPlatforms(ctx, billingModel, apiKey, platforms)
-	forcePerImage := imageCountBillingApplies(apiKey, result.ImageEndpoint)
-	if resolved != nil && resolved.Source == PricingSourceGroup &&
-		(resolved.Mode == BillingModePerRequest || resolved.Mode == BillingModeImage || !forcePerImage) {
-		gid := apiKey.Group.ID
-		cost, err := s.billingService.CalculateCostUnified(CostInput{
-			Ctx: ctx, Model: billingModel, GroupID: &gid, Group: apiKey.Group,
-			Platforms:    platforms,
-			RequestCount: result.ImageCount, SizeTier: sizeTier,
-			RateMultiplier: multiplier, Resolver: s.resolver, Resolved: resolved,
-			ReasoningEffort: optionalStringValue(result.ReasoningEffort),
-		})
-		if err == nil {
-			return cost, nil
-		}
+	reasoningEffort := optionalStringValue(result.ReasoningEffort)
+	if plan.Mode == BillingModeImage {
+		return s.billingService.CalculateImagePerImageCost(plan, result.ImageCount, imageMultiplier, reasoningEffort)
 	}
-	groupConfig := imagePriceConfigFromAPIKey(apiKey)
-	if apiKeyHasConfiguredImagePrice(apiKey, sizeTier) {
-		return s.billingService.CalculateImageCostStrictForPlatforms(
-			platforms, billingModel, sizeTier, result.ImageCount, groupConfig, multiplier,
-		)
+	usage := gatewayImageTokenUsage(result.Usage)
+	if usage.OutputTokens() <= 0 {
+		return nil, fmt.Errorf("%w: image output token usage is missing", ErrModelPricingUnavailable)
 	}
-	if resolved != nil && resolved.Source == PricingSourceChannel &&
-		(resolved.Mode != BillingModeToken || !forcePerImage) {
-		// 必须带上缓存 token：Gemini 的 InputTokens 已扣除 cachedContentTokenCount，
-		// 漏掉 CacheReadTokens 会让按上下文分档（LookupRequestTierPriceByContext）少算。
-		tokens := usageTokensFromClaudeUsage(result.Usage)
-		gid := apiKey.Group.ID
-		cost, err := s.billingService.CalculateCostUnified(CostInput{
-			Ctx:             ctx,
-			Model:           billingModel,
-			GroupID:         &gid,
-			Group:           apiKey.Group,
-			Platforms:       platforms,
-			Tokens:          tokens,
-			RequestCount:    result.ImageCount,
-			SizeTier:        sizeTier,
-			RateMultiplier:  multiplier,
-			Resolver:        s.resolver,
-			Resolved:        resolved,
-			ReasoningEffort: optionalStringValue(result.ReasoningEffort),
-		})
-		if err != nil {
-			// 上游成本已经发生，但渠道实际 tier 无价时不能用通用 $0.134
-			// 占位数伪装成正常结算。继续检查严格模型目录；仍无价则由上层
-			// fail-loud 路径记录 billing_state=pricing_unavailable。
-			logger.LegacyPrintf("service.gateway", "Calculate image channel cost failed, checking strict catalog price: %v", err)
-			return s.billingService.CalculateImageCostStrictForPlatforms(
-				platforms, billingModel, sizeTier, result.ImageCount, groupConfig, multiplier,
-			)
-		}
-		return cost, nil
-	}
+	return s.billingService.CalculateImageTokenCost(plan, usage, tokenMultiplier, optionalStringValue(result.ServiceTier), reasoningEffort)
+}
 
-	return s.billingService.CalculateImageCostStrictForPlatforms(
-		platforms, billingModel, sizeTier, result.ImageCount, groupConfig, multiplier,
-	)
+// gatewayImageTokenUsage 把 Gemini 等上游的用量换成按 token 出图的分桶。InputTokens 已扣掉
+// 缓存命中；OutputTokens 含图片输出 token。
+func gatewayImageTokenUsage(usage ClaudeUsage) ImageTokenUsage {
+	imageOutput := max(usage.ImageOutputTokens, 0)
+	return ImageTokenUsage{
+		TextInputTokens:     max(usage.InputTokens, 0),
+		CacheReadTokens:     max(usage.CacheReadInputTokens, 0),
+		CacheCreationTokens: max(usage.CacheCreationInputTokens, 0),
+		TextOutputTokens:    max(usage.OutputTokens-imageOutput, 0),
+		ImageOutputTokens:   imageOutput,
+	}
 }
 
 // calculateTokenCost 计算 Token 计费：路径选择（分组/渠道定价 → 内置定价）

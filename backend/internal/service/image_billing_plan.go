@@ -47,6 +47,9 @@ type ImageBillingInput struct {
 	PerImageOnly bool
 	// ForceMode 只给补账用：按用量记录里的方式重算，配置里的方式不一致时拒绝。
 	ForceMode BillingMode
+	// ContextTokens 是结算时的上下文 token 数（输入 + 缓存读写），只用于渠道或分组卡
+	// 按次档里不带档位标签的上下文分档。转发前不知道用量，传 0 按最低档判断。
+	ContextTokens int
 	// CrossModel 表示计费名和实际转发的模型不同（组合分组的公开别名、模型映射）。
 	// 这时只认按张，或由显式配置（分组卡、渠道、覆盖行）声明的按 token：token 用量
 	// 属于实际出图的模型，不能拿别名的目录 token 价去乘（方案 §3.2 第 3 条）。
@@ -219,7 +222,7 @@ func (r *ModelPricingResolver) imageBillingLayers(ctx context.Context, in ImageB
 
 	// ① 分组模型定价卡。
 	if card := matchGroupModelPricing(in.Group, model); card != nil {
-		layers = append(layers, channelRowImageBillingLayer(card, ImageBillingDeclaredByGroupCard, PricingSourceGroup))
+		layers = append(layers, channelRowImageBillingLayer(card, ImageBillingDeclaredByGroupCard, PricingSourceGroup, in.ContextTokens))
 	}
 
 	// ② 分组图片价：配了任意一档即声明按张；按张开关只作用于专用图片端点，价格向下层找。
@@ -255,7 +258,7 @@ func (r *ModelPricingResolver) imageBillingLayers(ctx context.Context, in ImageB
 	}
 	if groupID != nil && r.channelService != nil {
 		if row := r.lookupChannelPricingNormalized(ctx, *groupID, model); row != nil {
-			layers = append(layers, channelRowImageBillingLayer(row, ImageBillingDeclaredByChannel, PricingSourceChannel))
+			layers = append(layers, channelRowImageBillingLayer(row, ImageBillingDeclaredByChannel, PricingSourceChannel, in.ContextTokens))
 		}
 	}
 
@@ -290,13 +293,13 @@ func groupPlatform(group *Group) string {
 
 // channelRowImageBillingLayer 把分组卡或渠道行转成一层：image / per_request 档声明按张，
 // token 档（含空）声明按 token；video 档不声明出图方式。
-func channelRowImageBillingLayer(row *ChannelModelPricing, declaredBy, source string) imageBillingLayer {
+func channelRowImageBillingLayer(row *ChannelModelPricing, declaredBy, source string, contextTokens int) imageBillingLayer {
 	layer := imageBillingLayer{declaredBy: declaredBy, source: source, row: row}
 	switch row.BillingMode {
 	case BillingModeImage, BillingModePerRequest:
 		layer.mode = BillingModeImage
 		layer.perImage = func(tier string) (float64, bool) {
-			return channelRowPerImagePrice(row, tier)
+			return channelRowPerImagePrice(row, tier, contextTokens)
 		}
 	case BillingModeToken, "":
 		layer.mode = BillingModeToken
@@ -307,9 +310,10 @@ func channelRowImageBillingLayer(row *ChannelModelPricing, declaredBy, source st
 	return layer
 }
 
-// channelRowPerImagePrice 取按张档位价：先看档位标签，再看不带标签的上下文档的最低档
-// （渠道按次价只配了上下文分档时图片请求也要能命中），最后看该行默认按次价。
-func channelRowPerImagePrice(row *ChannelModelPricing, tier string) (float64, bool) {
+// channelRowPerImagePrice 取按张档位价：先看档位标签，再看不带标签的上下文分档（渠道
+// 按次价只配了上下文分档时图片请求也要能命中；contextTokens 为 0 时按最低档），最后看
+// 该行默认按次价。
+func channelRowPerImagePrice(row *ChannelModelPricing, tier string, contextTokens int) (float64, bool) {
 	if row == nil {
 		return 0, false
 	}
@@ -318,11 +322,12 @@ func channelRowPerImagePrice(row *ChannelModelPricing, tier string) (float64, bo
 			return *interval.PerRequestPrice, true
 		}
 	}
+	lookup := max(contextTokens, 1)
 	for _, interval := range row.Intervals {
 		if strings.TrimSpace(interval.TierLabel) != "" || !validConfiguredPrice(interval.PerRequestPrice) {
 			continue
 		}
-		if interval.MinTokens < 1 && (interval.MaxTokens == nil || *interval.MaxTokens >= 1) {
+		if lookup > interval.MinTokens && (interval.MaxTokens == nil || lookup <= *interval.MaxTokens) {
 			return *interval.PerRequestPrice, true
 		}
 	}
@@ -359,14 +364,20 @@ func modelPriceImageBillingLayer(entry *ModelPriceEntry) imageBillingLayer {
 }
 
 // imageBillingModeOfEntry 返回条目声明的出图方式。JSON 目录与覆盖行构建的条目在构建时
-// 已推导好；代码内直接构造的旧式条目（PricePresenceKnown=false、没标 mode）没有走
-// 构建流程，按价格是否存在现推。
+// 已推导好；没走构建流程的条目（代码内的兜底表、直接构造的条目）按同一规则现推：覆盖行
+// 按覆盖规则，带价格存在性标记的目录条目按目录规则，旧式条目（没标 mode）按价格是否存在。
 func imageBillingModeOfEntry(entry *ModelPriceEntry) BillingMode {
 	if entry == nil {
 		return ""
 	}
-	if entry.ImageBillingMode != "" || entry.PricePresenceKnown || entry.BillingMode != "" {
+	if entry.ImageBillingMode != "" {
 		return entry.ImageBillingMode
+	}
+	if entry.BillingMode != "" {
+		return deriveImageBillingMode(entry, entry.BillingMode, true)
+	}
+	if entry.PricePresenceKnown {
+		return deriveImageBillingMode(entry, "", false)
 	}
 	mode := strings.TrimSpace(entry.Mode)
 	if mode != "" && !strings.EqualFold(mode, imageGenerationCatalogMode) {

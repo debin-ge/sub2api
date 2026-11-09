@@ -948,9 +948,9 @@ func TestOpenAISelectAccountWithSchedulerDefaultEnforcesMediaGuardAndReleasesSlo
 		BillingKindImage,
 	)
 
-	require.NoError(t, err)
-	require.NotNil(t, selection)
-	require.Equal(t, 0, releaseCalls)
+	require.Nil(t, selection)
+	require.ErrorIs(t, err, ErrModelPricingUnavailable)
+	require.Equal(t, 1, releaseCalls)
 }
 
 // 调度阶段还不知道最终输出档位，因此只有所有图片档位都有价格时才能证明请求

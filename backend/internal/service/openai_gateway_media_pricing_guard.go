@@ -214,6 +214,7 @@ func (s *OpenAIGatewayService) enforceResolvedOpenAIMediaPricing(
 				platforms,
 				models,
 				imageSizeTier,
+				imageBillingPerImageOnly(account, billingModel),
 			)
 		} else {
 			hasPricing = s.hasResolvableOpenAIMediaPricingForPlatforms(ctx, groupID, platforms, models, kind)
@@ -288,12 +289,13 @@ func (s *OpenAIGatewayService) hasResolvableOpenAIImageTierPricingForPlatforms(
 	platforms []string,
 	models openAIPricingGuardModels,
 	imageSizeTier string,
+	perImageOnly bool,
 ) bool {
 	billingModel := strings.TrimSpace(models.Primary)
 	if billingModel == "" {
 		return false
 	}
-	plan, err := s.resolveOpenAIImagePlan(ctx, nil, groupID, platforms, billingModel, imageSizeTier, false)
+	plan, err := s.resolveOpenAIImagePlan(ctx, nil, groupID, platforms, billingModel, imageSizeTier, false, perImageOnly)
 	return err == nil && plan != nil
 }
 

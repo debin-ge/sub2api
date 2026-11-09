@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"sort"
 	"strconv"
@@ -1304,12 +1305,16 @@ func mergeOpenAIUsageNonZero(dst *OpenAIUsage, src OpenAIUsage) {
 	if src.ImageOutputTokens > 0 {
 		dst.ImageOutputTokens = src.ImageOutputTokens
 	}
+	if src.ImageGen.hasTokens() {
+		tool := *src.ImageGen
+		dst.ImageGen = &tool
+	}
 }
 
 func openAIUsageHasTokens(usage *OpenAIUsage) bool {
 	return usage != nil && (usage.InputTokens > 0 || usage.ImageInputTokens > 0 ||
 		usage.OutputTokens > 0 || usage.CacheCreationInputTokens > 0 ||
-		usage.CacheReadInputTokens > 0 || usage.ImageOutputTokens > 0)
+		usage.CacheReadInputTokens > 0 || usage.ImageOutputTokens > 0 || usage.ImageGen.hasTokens())
 }
 
 const openAIMissingUsageLogInterval = time.Minute
@@ -1410,7 +1415,7 @@ func openAIResponsesCompletedEventIsEmpty(data []byte, usage *OpenAIUsage) bool 
 	}
 	if usage != nil && (usage.InputTokens > 0 || usage.OutputTokens > 0 ||
 		usage.ImageInputTokens > 0 || usage.ImageOutputTokens > 0 ||
-		usage.CacheCreationInputTokens > 0 || usage.CacheReadInputTokens > 0) {
+		usage.CacheCreationInputTokens > 0 || usage.CacheReadInputTokens > 0 || usage.ImageGen.hasTokens()) {
 		return false
 	}
 	if gjson.GetBytes(data, "usage").Exists() || gjson.GetBytes(data, "response.usage").Exists() {
@@ -1425,20 +1430,40 @@ func openAIResponsesCompletedEventIsEmpty(data []byte, usage *OpenAIUsage) bool 
 	return true
 }
 
+// mergeHostedImageGenToolUsage 把 Responses 托管生图工具的用量（tool_usage.image_gen）
+// 完整存进 usage.ImageGen，不再并进主模型的图片 token：按 token 出图时工具用量按两项价计，
+// 主模型 token 按主模型价另计（D7）；按张时两者都不按 token 收。
 func mergeHostedImageGenToolUsage(imageGen gjson.Result, usage *OpenAIUsage) {
-	if !imageGen.Exists() || !imageGen.IsObject() {
+	if usage == nil || !imageGen.Exists() || !imageGen.IsObject() {
 		return
 	}
-	if usage.ImageOutputTokens == 0 {
-		if v := imageGen.Get("output_tokens_details.image_tokens").Int(); v > 0 {
-			usage.ImageOutputTokens = int(v)
-		}
+	tool := &OpenAIImageGenUsage{
+		InputTokens:       nonNegativeGJSONInt(imageGen.Get("input_tokens")),
+		ImageInputTokens:  nonNegativeGJSONInt(imageGen.Get("input_tokens_details.image_tokens")),
+		CachedInputTokens: nonNegativeGJSONInt(imageGen.Get("input_tokens_details.cached_tokens")),
+		OutputTokens:      nonNegativeGJSONInt(imageGen.Get("output_tokens")),
+		ImageOutputTokens: nonNegativeGJSONInt(imageGen.Get("output_tokens_details.image_tokens")),
 	}
-	if usage.ImageInputTokens == 0 {
-		if v := imageGen.Get("input_tokens_details.image_tokens").Int(); v > 0 {
-			usage.ImageInputTokens = int(v)
-		}
+	if tool.OutputTokens < tool.ImageOutputTokens {
+		tool.OutputTokens = tool.ImageOutputTokens
 	}
+	if tool.InputTokens < tool.ImageInputTokens+tool.CachedInputTokens {
+		tool.InputTokens = tool.ImageInputTokens + tool.CachedInputTokens
+	}
+	if !tool.hasTokens() {
+		return
+	}
+	usage.ImageGen = tool
+}
+
+func nonNegativeGJSONInt(value gjson.Result) int {
+	if !value.Exists() {
+		return 0
+	}
+	if v := value.Int(); v > 0 && v <= math.MaxInt32 {
+		return int(v)
+	}
+	return 0
 }
 
 func extractOpenAIResponseIDFromJSONBytes(body []byte) string {

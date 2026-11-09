@@ -1289,6 +1289,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					result.ImageSize = imageSizeTier
 					result.ImageInputSize = imageInputSize
 					result.ImageOutputSizes = imageCounter.Sizes()
+					result.TextBillingModel = firstNonEmpty(result.BillingModel, result.UpstreamModel, result.Model)
 					result.BillingModel = imageBillingModel
 				}
 				return result, nil

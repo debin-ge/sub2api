@@ -375,3 +375,32 @@ func TestChannelTokenPricingWinsOverImageModeOverride(t *testing.T) {
 	require.InDelta(t, 9e-6, plan.ImageInputPrice, 1e-15)
 	require.InDelta(t, 3.5e-5, plan.ImageOutputPrice, 1e-15)
 }
+
+// T2.8：预扣按出图计划估算。档位已知按该档；按 token 按估算 token × 两项价；没配价不再出现 $0.134。
+func TestInflightImageEstimateUsesImageBillingPlan(t *testing.T) {
+	f := newImageBillingFixture(t, []ModelPriceOverride{{
+		Platform: PlatformGemini, ModelName: "gemini-2.5-flash-image", BillingMode: BillingModeImage, Enabled: true,
+		Payload: ModelPriceOverridePayload{Intervals: []PricingInterval{
+			{TierLabel: ImageBillingSize1K, PerRequestPrice: imagePrice(0.03)},
+			{TierLabel: ImageBillingSize4K, PerRequestPrice: imagePrice(0.08)},
+		}},
+	}})
+	d := inflightEstimateDeps{billing: f.billing, resolver: f.resolver}
+	group := &Group{ID: 41, Platform: PlatformGemini}
+	apiKey := &APIKey{GroupID: &group.ID, Group: group}
+
+	cost := d.estimateInflightImageCost(context.Background(), apiKey, "gemini-2.5-flash-image",
+		InflightEstimateRequest{ImageSizeTier: ImageBillingSize1K}, 2, 0, 1, 1)
+	require.InDelta(t, 0.06, cost, 1e-12, "按精确档位预扣")
+	cost = d.estimateInflightImageCost(context.Background(), apiKey, "gemini-2.5-flash-image", InflightEstimateRequest{}, 1, 0, 1, 1)
+	require.InDelta(t, 0.08, cost, 1e-12, "档位未知取三档最高价")
+
+	openAIGroup := &Group{ID: 42, Platform: PlatformOpenAI}
+	cost = d.estimateInflightImageCost(context.Background(), &APIKey{GroupID: &openAIGroup.ID, Group: openAIGroup}, "gpt-image-2",
+		InflightEstimateRequest{ImageSizeTier: ImageBillingSize1K, ImageSize: "1024x1024", ImageQuality: "high"}, 1, 60, 1, 1)
+	require.InDelta(t, 60*8e-6+7033*3e-5, cost, 1e-12, "按 token 按估算预扣")
+
+	cost = d.estimateInflightImageCost(context.Background(), &APIKey{GroupID: &openAIGroup.ID, Group: openAIGroup}, "gpt-image-future-v99",
+		InflightEstimateRequest{}, 1, 0, 1, 1)
+	require.Zero(t, cost, "没配价时不再出现 $0.134")
+}

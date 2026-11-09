@@ -394,6 +394,63 @@ type InflightEstimateRequest struct {
 	// 音频：模式（tts/stt/realtime）与计量单位（百万字符/小时/分钟）。
 	AudioMode  string
 	AudioUnits float64
+	// 图片：档位（1K/2K/4K，空则取三档里的最高价）、像素尺寸与质量，供按 token 出图
+	// 估算输出 token；ImageEndpoint 表示专用图片端点（分组按张开关只作用于它）。
+	ImageSizeTier string
+	ImageSize     string
+	ImageQuality  string
+	ImageEndpoint bool
+}
+
+// estimateInflightImageCost 按出图计划估算预扣额：档位已知就用该档，未知取三档里的最高价。
+// 按张 = 单价 × 张数 × 图片倍率；按 token = 估算 token × 两项价 × token 倍率。解析不出
+// 计划时返回 0（准入会拒绝这类请求），不再用 $0.134 占位价。
+func (d inflightEstimateDeps) estimateInflightImageCost(
+	ctx context.Context,
+	apiKey *APIKey,
+	model string,
+	req InflightEstimateRequest,
+	units int,
+	promptTokens int,
+	textRate float64,
+	imageRate float64,
+) float64 {
+	if d.resolver == nil {
+		return 0
+	}
+	tiers := []string{ImageBillingSize1K, ImageBillingSize2K, ImageBillingSize4K}
+	if tier, ok := ClassifyImageBillingTier(req.ImageSizeTier); ok {
+		tiers = []string{tier}
+	}
+	in := ImageBillingInput{Model: model, ImageEndpoint: req.ImageEndpoint}
+	if apiKey != nil {
+		in.GroupID = apiKey.GroupID
+		in.Group = apiKey.Group
+	}
+	best := 0.0
+	for _, tier := range tiers {
+		in.SizeTier = tier
+		plan, err := d.resolver.ResolveImageBilling(ctx, in)
+		if err != nil || plan == nil {
+			continue
+		}
+		var cost float64
+		switch plan.Mode {
+		case BillingModeImage:
+			cost = plan.UnitPrice * float64(units) * imageRate
+		case BillingModeToken:
+			size := strings.TrimSpace(req.ImageSize)
+			if size == "" {
+				size = tier
+			}
+			usage, _ := estimateImageTokenUsage(model, size, req.ImageQuality, units, 0, promptTokens, nil)
+			cost = (float64(usage.InputTokens())*plan.ImageInputPrice + float64(usage.OutputTokens())*plan.ImageOutputPrice) * textRate
+		}
+		if isFiniteNonNegativePrice(cost) && cost > best {
+			best = cost
+		}
+	}
+	return best
 }
 
 // inflightEstimateDeps 两种网关 service 共用的估算依赖。
@@ -585,17 +642,7 @@ func (d inflightEstimateDeps) estimateOne(ctx context.Context, apiKey *APIKey, m
 	perRequestMode := resolved != nil && (resolved.Mode == BillingModePerRequest || resolved.Mode == BillingModeImage || resolved.Mode == BillingModeVideo)
 	switch req.Kind {
 	case InflightEstimateImage:
-		if perRequestMode {
-			cost = maxPerRequestPrice(resolved) * float64(units) * imageRate
-		}
-		if d.billing != nil {
-			cfgImg := imagePriceConfigFromAPIKey(apiKey)
-			for _, tier := range []string{ImageBillingSize1K, ImageBillingSize2K, ImageBillingSize4K} {
-				if b := d.billing.CalculateImageCost(model, tier, units, cfgImg, imageRate); b != nil && b.ActualCost > cost {
-					cost = b.ActualCost
-				}
-			}
-		}
+		cost = d.estimateInflightImageCost(ctx, apiKey, model, req, units, inputTokens, textRate, imageRate)
 		if cost <= 0 {
 			cost = tokenCost()
 		}

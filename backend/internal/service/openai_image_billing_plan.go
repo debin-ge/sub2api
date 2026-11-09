@@ -46,11 +46,12 @@ func (s *OpenAIGatewayService) resolveOpenAIImageBillingPlanForPlatforms(
 	model string,
 	imageSizeTier string,
 ) (*OpenAIImageBillingPlan, error) {
-	return s.resolveOpenAIImagePlan(ctx, apiKey, groupID, platforms, model, imageSizeTier, true)
+	return s.resolveOpenAIImagePlan(ctx, apiKey, groupID, platforms, model, imageSizeTier, true, false)
 }
 
 // resolveOpenAIImagePlan 补全分组媒体价字段后调用 ResolveImageBilling。imageEndpoint
-// 为 false 时（Responses 生图工具）分组按张开关不生效。
+// 为 false 时（Responses 生图工具）分组按张开关不生效；perImageOnly 用于只能按张的
+// 入口（Grok imagine），声明成按 token 时拒绝。
 func (s *OpenAIGatewayService) resolveOpenAIImagePlan(
 	ctx context.Context,
 	apiKey *APIKey,
@@ -59,6 +60,7 @@ func (s *OpenAIGatewayService) resolveOpenAIImagePlan(
 	model string,
 	imageSizeTier string,
 	imageEndpoint bool,
+	perImageOnly bool,
 ) (*ImageBillingPlan, error) {
 	if s == nil || s.billingService == nil {
 		return nil, fmt.Errorf("%w: OpenAI image billing service unavailable", ErrModelPricingUnavailable)
@@ -83,7 +85,17 @@ func (s *OpenAIGatewayService) resolveOpenAIImagePlan(
 		Group:         group,
 		SizeTier:      imageSizeTier,
 		ImageEndpoint: imageEndpoint,
+		PerImageOnly:  perImageOnly,
 	})
+}
+
+// imageBillingPerImageOnly 判断出图入口是否只能按张结算：Grok imagine 没有可用的
+// token 换算表（方案 §3.4）。准入时看账号，结算时看出图模型名。
+func imageBillingPerImageOnly(account *Account, model string) bool {
+	if account != nil && account.IsGrok() {
+		return true
+	}
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(model)), "grok-imagine")
 }
 
 func wrapOpenAIImageBillingPlanError(

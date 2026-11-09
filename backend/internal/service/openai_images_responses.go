@@ -1189,6 +1189,11 @@ func (s *OpenAIGatewayService) tryWriteOpenAIImagesStreamLimitError(c *gin.Conte
 
 func (s *OpenAIGatewayService) parseOpenAIImagesSSEUsageBytes(data []byte, usage *OpenAIUsage) {
 	s.parseSSEUsageBytes(data, usage)
+	if usage != nil {
+		// Image API 经 Responses 实现时只认下面严格解析的工具用量（整体替换），不用通用
+		// 解析宽松拿到的工具用量。
+		usage.ImageGen = nil
+	}
 	if usage == nil || !gjson.ValidBytes(data) || gjson.GetBytes(data, "type").String() != "response.completed" {
 		return
 	}

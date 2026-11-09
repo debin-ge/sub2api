@@ -3110,6 +3110,10 @@ func (s *BillingService) CalculateImagePerImageCost(
 	}
 	cost.ActualCost = cost.TotalCost * rateMultiplier
 	cost.BillingMode = string(BillingModeImage)
+	if plan.channelPricing != nil && plan.channelPricing.BillingMode == BillingModePerRequest {
+		// 单价来自按次档的分组卡或渠道行：用量记录沿用 per_request，与原先按次路径一致。
+		cost.BillingMode = string(BillingModePerRequest)
+	}
 	return cost, nil
 }
 

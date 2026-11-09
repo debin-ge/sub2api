@@ -301,11 +301,7 @@ func (s *OpenAIGatewayService) EstimateOpenAIImagesCost(
 		billingModel,
 		parsed.SizeTier,
 	)
-	if err != nil || plan == nil || plan.Mode != BillingModeImage {
-		return 0, false
-	}
-	unitPrice := plan.UnitPrice
-	if !isFiniteNonNegativePrice(unitPrice) {
+	if err != nil || plan == nil {
 		return 0, false
 	}
 
@@ -315,6 +311,28 @@ func (s *OpenAIGatewayService) EstimateOpenAIImagesCost(
 	}
 	if apiKey.GroupID != nil {
 		multiplier = s.ResolveUserGroupRateMultiplier(ctx, apiKey.UserID, *apiKey.GroupID, apiKey.Group.RateMultiplier)
+	}
+	if plan.Mode == BillingModeToken {
+		// 按 token：按尺寸 × 质量估算输出 token，提示词按本地估算，乘两项价与 token 倍率。
+		if multiplier < 0 {
+			multiplier = 0
+		}
+		size := strings.TrimSpace(parsed.Size)
+		if size == "" {
+			size = parsed.SizeTier
+		}
+		partials := 0
+		if parsed.PartialImages != nil {
+			partials = *parsed.PartialImages
+		}
+		promptTokens := estimateTokensForText(parsed.Prompt)
+		usage, _ := estimateImageTokenUsage(billingModel, size, parsed.Quality, parsed.N, partials, promptTokens, nil)
+		cost := (float64(usage.InputTokens())*plan.ImageInputPrice + float64(usage.OutputTokens())*plan.ImageOutputPrice) * multiplier
+		return cost, isFiniteNonNegativePrice(cost)
+	}
+	unitPrice := plan.UnitPrice
+	if !isFiniteNonNegativePrice(unitPrice) {
+		return 0, false
 	}
 	imageMultiplier := resolveImageRateMultiplier(apiKey, multiplier)
 	if imageMultiplier < 0 {

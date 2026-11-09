@@ -33,8 +33,10 @@ func TestExtractOpenAIUsageFromJSONBytes_MergesHostedImageGenToolUsage(t *testin
 	assert.True(t, ok)
 	assert.Equal(t, 43792, usage.InputTokens, "input_tokens from response.usage")
 	assert.Equal(t, 1005, usage.OutputTokens, "output_tokens from response.usage")
-	assert.Equal(t, 186, usage.ImageOutputTokens, "image output tokens merged from tool_usage.image_gen")
-	assert.Equal(t, 7620, usage.ImageInputTokens, "image input tokens merged from tool_usage.image_gen")
+	// 生图工具的用量单独存放，不并进主模型的图片 token（D7：主模型 token 按主模型价另计）。
+	assert.Zero(t, usage.ImageOutputTokens)
+	assert.Zero(t, usage.ImageInputTokens)
+	assert.Equal(t, &OpenAIImageGenUsage{InputTokens: 7918, ImageInputTokens: 7620, OutputTokens: 186, ImageOutputTokens: 186}, usage.ImageGen)
 }
 
 func TestExtractOpenAIUsageFromJSONBytes_NonStreamingMergesImageGen(t *testing.T) {
@@ -61,8 +63,9 @@ func TestExtractOpenAIUsageFromJSONBytes_NonStreamingMergesImageGen(t *testing.T
 	assert.True(t, ok)
 	assert.Equal(t, 5000, usage.InputTokens)
 	assert.Equal(t, 200, usage.OutputTokens)
-	assert.Equal(t, 150, usage.ImageOutputTokens, "image output tokens from tool_usage.image_gen")
-	assert.Equal(t, 2800, usage.ImageInputTokens, "image input tokens from tool_usage.image_gen")
+	assert.Zero(t, usage.ImageOutputTokens)
+	assert.Zero(t, usage.ImageInputTokens)
+	assert.Equal(t, &OpenAIImageGenUsage{InputTokens: 3000, ImageInputTokens: 2800, OutputTokens: 150, ImageOutputTokens: 150}, usage.ImageGen)
 }
 
 func TestExtractOpenAIUsageFromJSONBytes_NoToolUsageUnchanged(t *testing.T) {
@@ -152,6 +155,10 @@ func TestParseSSEUsageBytes_ResponseCompletedWithImageGen(t *testing.T) {
 
 	assert.Equal(t, 10000, usage.InputTokens)
 	assert.Equal(t, 500, usage.OutputTokens)
-	assert.Equal(t, 186, usage.ImageOutputTokens, "image output tokens from SSE tool_usage")
-	assert.Equal(t, 3800, usage.ImageInputTokens, "image input tokens from SSE tool_usage")
+	assert.Zero(t, usage.ImageOutputTokens)
+	assert.Zero(t, usage.ImageInputTokens)
+	if assert.NotNil(t, usage.ImageGen) {
+		assert.Equal(t, 186, usage.ImageGen.ImageOutputTokens, "image output tokens from SSE tool_usage")
+		assert.Equal(t, 3800, usage.ImageGen.ImageInputTokens, "image input tokens from SSE tool_usage")
+	}
 }

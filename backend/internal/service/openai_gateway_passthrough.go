@@ -568,6 +568,10 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		forwardResult.ImageSize = imageSizeTier
 		forwardResult.ImageInputSize = imageInputSize
 		forwardResult.ImageOutputSizes = imageOutputSizes
+		forwardResult.TextBillingModel = forwardResult.BillingModel
+		if forwardResult.TextBillingModel == "" {
+			forwardResult.TextBillingModel = upstreamPassthroughModel
+		}
 		forwardResult.BillingModel = imageBillingModel
 	}
 	applyOpenAIUsageFallback(forwardResult, upstreamPassthroughModel, body)
