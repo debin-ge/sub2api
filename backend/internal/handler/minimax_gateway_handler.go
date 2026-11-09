@@ -114,11 +114,11 @@ func (h *MiniMaxGatewayHandler) Messages(c *gin.Context) {
 
 	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
 	if err != nil {
-		if maxErr, ok := extractMaxBytesError(err); ok {
-			h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
+		bodyLog := requestLogger(c, "handler.minimax_gateway.read_body")
+		if handleRequestBodyReadError(c, bodyLog, err) {
 			return
 		}
-		status, message := pkghttputil.RequestBodyReadFailure(c.Request, err)
+		status, message := requestBodyReadFailure(bodyLog, c.Request, err)
 		h.errorResponse(c, status, "invalid_request_error", message)
 		return
 	}
@@ -325,11 +325,11 @@ func (h *MiniMaxGatewayHandler) ChatCompletions(c *gin.Context) {
 
 	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
 	if err != nil {
-		if maxErr, ok := extractMaxBytesError(err); ok {
-			h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
+		bodyLog := requestLogger(c, "handler.minimax_gateway.read_body")
+		if handleRequestBodyReadError(c, bodyLog, err) {
 			return
 		}
-		status, message := pkghttputil.RequestBodyReadFailure(c.Request, err)
+		status, message := requestBodyReadFailure(bodyLog, c.Request, err)
 		h.errorResponse(c, status, "invalid_request_error", message)
 		return
 	}
@@ -536,11 +536,11 @@ func (h *MiniMaxGatewayHandler) Responses(c *gin.Context) {
 
 	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
 	if err != nil {
-		if maxErr, ok := extractMaxBytesError(err); ok {
-			h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
+		bodyLog := requestLogger(c, "handler.minimax_gateway.read_body")
+		if handleRequestBodyReadError(c, bodyLog, err) {
 			return
 		}
-		status, message := pkghttputil.RequestBodyReadFailure(c.Request, err)
+		status, message := requestBodyReadFailure(bodyLog, c.Request, err)
 		h.errorResponse(c, status, "invalid_request_error", message)
 		return
 	}

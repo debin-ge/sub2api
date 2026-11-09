@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"mime/multipart"
@@ -142,21 +143,30 @@ func (r *groupModelAllowlistErrReader) Read(p []byte) (int, error) {
 	return n, nil
 }
 
-// 客户端上传途中断开（截断）归为 499，其它读取错误仍为 400。
+// 客户端上传途中断开归为 499，其它读取错误仍为 400。
+// 真实 HTTP/1.1 连接在客户端断开时，net/http 会在返回 io.ErrUnexpectedEOF 的
+// 同时取消请求 context（见 httputil 的 TestRequestBodyReadFailureOnRealClientAbort），
+// 这里用已取消的 context 模拟；客户端已离开，499 不再写响应体。
 func TestGroupModelAllowlistRequestBodyReadFailureStatus(t *testing.T) {
 	cases := []struct {
 		name       string
 		err        error
+		disconnect bool
 		wantStatus int
 		wantMsg    string
 	}{
-		{"truncated upload", io.ErrUnexpectedEOF, httputil.StatusClientClosedRequest, "Client closed request"},
-		{"malformed body", errors.New("malformed chunked encoding"), http.StatusBadRequest, "Failed to read request body"},
+		{"truncated upload", io.ErrUnexpectedEOF, true, httputil.StatusClientClosedRequest, ""},
+		{"malformed body", errors.New("malformed chunked encoding"), false, http.StatusBadRequest, "Failed to read request body"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			router, calls := newGroupModelAllowlistTestRouter(allowlistAPIKey(true, "claude-sonnet-4.5"), "/v1")
 			req := httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+			if tc.disconnect {
+				ctx, cancel := context.WithCancel(req.Context())
+				cancel()
+				req = req.WithContext(ctx)
+			}
 			req.Header.Set("Content-Type", "application/json")
 			req.Body = io.NopCloser(&groupModelAllowlistErrReader{data: []byte(`{"model":`), err: tc.err})
 			req.ContentLength = 1000
@@ -166,7 +176,7 @@ func TestGroupModelAllowlistRequestBodyReadFailureStatus(t *testing.T) {
 			if w.Code != tc.wantStatus {
 				t.Fatalf("expected %d, got %d: %s", tc.wantStatus, w.Code, w.Body.String())
 			}
-			if !strings.Contains(w.Body.String(), tc.wantMsg) {
+			if tc.wantMsg != "" && !strings.Contains(w.Body.String(), tc.wantMsg) {
 				t.Fatalf("expected message %q, got %s", tc.wantMsg, w.Body.String())
 			}
 			if len(*calls) != 0 {

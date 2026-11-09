@@ -55,6 +55,7 @@ type Handlers struct {
 	BuildInfo         BuildInfo
 	Auth              *AuthHandler
 	User              *UserHandler
+	MCPOAuth          *MCPOAuthHandler
 	APIKey            *APIKeyHandler
 	Usage             *UsageHandler
 	Redeem            *RedeemHandler

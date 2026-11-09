@@ -1,7 +1,6 @@
 package routes
 
 import (
-	"errors"
 	"mime"
 	"net/http"
 	"strings"
@@ -41,8 +40,9 @@ func RegisterGatewayRoutes(
 	if h != nil && h.CompatibleGateway == nil {
 		h.CompatibleGateway = h.OpenAIGateway
 	}
-	bodyLimit := middleware.RequestBodyLimit(cfg.Gateway.MaxBodySize)
-	textBodyLimit := middleware.RequestBodyLimit(cfg.Gateway.TextMaxBodySize)
+	bodyMemoryBudget := pkghttputil.NewBodyMemoryBudget(cfg.Gateway.RequestBodyMemoryBudgetBytes)
+	bodyLimit := middleware.RequestBodyLimit(cfg.Gateway.MaxBodySize, bodyMemoryBudget)
+	textBodyLimit := middleware.RequestBodyLimit(cfg.Gateway.TextMaxBodySize, bodyMemoryBudget)
 	clientRequestID := middleware.ClientRequestID()
 	opsErrorLogger := handler.OpsErrorLoggerMiddleware(opsService)
 	endpointNorm := handler.InboundEndpointMiddleware()
@@ -1009,13 +1009,10 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver,
 
 		body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
 		if err != nil {
-			status, message := http.StatusRequestEntityTooLarge, "Request body is too large"
-			var maxErr *http.MaxBytesError
-			if !errors.As(err, &maxErr) {
-				status, message = pkghttputil.RequestBodyReadFailure(c.Request, err)
+			if middleware.RejectRequestBodyReadError(c, "middleware.composite_route", err) {
+				return
 			}
-			c.JSON(status, gin.H{"error": gin.H{"type": "invalid_request_error", "message": message}})
-			c.Abort()
+			middleware.AbortWithRequestBodyReadFailure(c, "middleware.composite_route", err)
 			return
 		}
 
