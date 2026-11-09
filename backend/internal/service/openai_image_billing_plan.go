@@ -7,56 +7,15 @@ import (
 	"strings"
 )
 
-// OpenAIImageBillingPlan locks the pricing mode, billing identity and price
-// snapshot selected immediately before an Image API request reaches upstream.
-//
-// BillingKindImage describes the workload. Mode describes how that workload is
-// charged; GPT Image models may therefore legitimately use BillingModeToken.
-type OpenAIImageBillingPlan struct {
-	Mode              BillingMode
-	Model             string
-	Source            string
-	SizeTier          string
-	RequireImageInput bool
-	Resolved          *ResolvedPricing
-}
-
-// hasResolvableOpenAIImageTokenPricingForPlatforms is the scheduler-level
-// candidate check. The exact image tier and price snapshot are resolved again
-// immediately before forwarding. Native Responses image tools do not use this
-// function for their final guard.
-func (s *OpenAIGatewayService) hasResolvableOpenAIImageTokenPricingForPlatforms(
-	ctx context.Context,
-	groupID *int64,
-	platforms []string,
-	model string,
-) bool {
-	if s == nil || s.billingService == nil {
-		return false
+// imageBillingResolver 返回出图计费用的解析器；未注入时现建一个，与其他入口同一口径。
+func (s *OpenAIGatewayService) imageBillingResolver() *ModelPricingResolver {
+	if s == nil {
+		return nil
 	}
-	resolver := s.resolver
-	if resolver == nil {
-		resolver = NewModelPricingResolver(s.channelService, s.billingService)
+	if s.resolver != nil {
+		return s.resolver
 	}
-	var channelPricing *ChannelModelPricing
-	if groupID != nil && s.channelService != nil {
-		channelPricing = s.channelService.GetChannelModelPricing(ctx, *groupID, strings.TrimSpace(model))
-		if channelPricing != nil {
-			mode := channelPricing.BillingMode
-			if mode != "" && mode != BillingModeToken {
-				return false
-			}
-		}
-	}
-	resolved, err := s.resolveStrictOpenAIImageTokenPricing(
-		ctx,
-		resolver,
-		groupID,
-		platforms,
-		strings.TrimSpace(model),
-		false,
-	)
-	return err == nil && resolved != nil
+	return NewModelPricingResolver(s.channelService, s.billingService)
 }
 
 func (s *OpenAIGatewayService) resolveOpenAIImageBillingPlan(
@@ -65,7 +24,6 @@ func (s *OpenAIGatewayService) resolveOpenAIImageBillingPlan(
 	groupID *int64,
 	model string,
 	imageSizeTier string,
-	requireImageInput bool,
 ) (*OpenAIImageBillingPlan, error) {
 	return s.resolveOpenAIImageBillingPlanForPlatforms(
 		ctx,
@@ -74,10 +32,12 @@ func (s *OpenAIGatewayService) resolveOpenAIImageBillingPlan(
 		[]string{PlatformFromAPIKey(apiKey)},
 		model,
 		imageSizeTier,
-		requireImageInput,
 	)
 }
 
+// resolveOpenAIImageBillingPlanForPlatforms 在 /v1/images（含经 Responses 实现的
+// Image API）转发前锁定计费方式与价格快照。它是专用图片端点，分组「按实际出图张数
+// 计费」开关在这里生效；分组模型定价卡同样生效。
 func (s *OpenAIGatewayService) resolveOpenAIImageBillingPlanForPlatforms(
 	ctx context.Context,
 	apiKey *APIKey,
@@ -85,136 +45,45 @@ func (s *OpenAIGatewayService) resolveOpenAIImageBillingPlanForPlatforms(
 	platforms []string,
 	model string,
 	imageSizeTier string,
-	requireImageInput bool,
 ) (*OpenAIImageBillingPlan, error) {
+	return s.resolveOpenAIImagePlan(ctx, apiKey, groupID, platforms, model, imageSizeTier, true)
+}
+
+// resolveOpenAIImagePlan 补全分组媒体价字段后调用 ResolveImageBilling。imageEndpoint
+// 为 false 时（Responses 生图工具）分组按张开关不生效。
+func (s *OpenAIGatewayService) resolveOpenAIImagePlan(
+	ctx context.Context,
+	apiKey *APIKey,
+	groupID *int64,
+	platforms []string,
+	model string,
+	imageSizeTier string,
+	imageEndpoint bool,
+) (*ImageBillingPlan, error) {
 	if s == nil || s.billingService == nil {
 		return nil, fmt.Errorf("%w: OpenAI image billing service unavailable", ErrModelPricingUnavailable)
 	}
-	model = strings.TrimSpace(model)
-	if model == "" {
-		return nil, fmt.Errorf("%w: image billing model is empty", ErrModelPricingUnavailable)
-	}
-	tier, err := NormalizeImageBillingTierStrictOrDefault(imageSizeTier)
-	if err != nil {
-		return nil, err
-	}
-
 	if apiKey == nil {
 		apiKey = openAIPricingGuardAPIKey(ctx, groupID)
 	}
 	if refreshed := s.apiKeyWithFreshGroupMediaPricing(ctx, apiKey); refreshed != nil {
 		apiKey = refreshed
 	}
-	if price := configuredOpenAIImageGroupPrice(apiKey, tier); price != nil {
-		return newOpenAIImageUnitBillingPlan(model, tier, PricingSourceGroup, *price), nil
-	}
-
-	resolver := s.resolver
-	if resolver == nil {
-		resolver = NewModelPricingResolver(s.channelService, s.billingService)
-	}
 	if groupID == nil && apiKey != nil {
 		groupID = apiKey.GroupID
 	}
-
-	// 分组「按实际出图张数计费」开关：Image API 是专用图片端点，开关开启时
-	// token 计费（渠道显式 token 价或模型目录 token 价）让位于按张价：
-	// 分组按张价（上面已优先返回）→ 渠道按次/图片价 → 模型目录按张价。
-	// 都没有按张价时才回落到 token 计费，避免因开关把可结算的请求拒掉。
-	forcePerImage := imageCountBillingApplies(apiKey, true)
-	var channelTokenPlan *OpenAIImageBillingPlan
-
-	if groupID != nil && s.channelService != nil {
-		channelPricing := s.channelService.GetChannelModelPricing(ctx, *groupID, model)
-		if channelPricing != nil {
-			mode := channelPricing.BillingMode
-			if mode == "" {
-				mode = BillingModeToken
-			}
-			switch mode {
-			case BillingModePerRequest, BillingModeImage:
-				resolved := resolver.Resolve(ctx, PricingInput{Model: model, GroupID: groupID})
-				if price, ok := exactOpenAIImageRequestPrice(resolver, resolved, tier); ok {
-					plan := newOpenAIImageUnitBillingPlan(model, tier, PricingSourceChannel, price)
-					// Keep the channel row so settlement applies its reasoning-effort multipliers.
-					if resolved != nil {
-						plan.Resolved.channelPricing = resolved.channelPricing
-					}
-					return plan, nil
-				}
-				// A partial channel tier is allowed to fall through to the same
-				// model-price/default chain used by the plaza. The exact tier or
-				// channel default still wins when present above.
-			case BillingModeToken:
-				resolved, err := s.resolveStrictOpenAIImageTokenPricing(
-					ctx,
-					resolver,
-					groupID,
-					platforms,
-					model,
-					requireImageInput,
-				)
-				if err != nil {
-					if forcePerImage {
-						// 开关要求按张结算：渠道 token 价不可用不阻断，继续找按张价。
-						break
-					}
-					return nil, fmt.Errorf(
-						"resolve explicit channel image token pricing for %s: %w",
-						model,
-						err,
-					)
-				}
-				plan := &OpenAIImageBillingPlan{
-					Mode:              BillingModeToken,
-					Model:             model,
-					Source:            resolved.Source,
-					SizeTier:          tier,
-					RequireImageInput: requireImageInput,
-					Resolved:          resolved,
-				}
-				if !forcePerImage {
-					return plan, nil
-				}
-				channelTokenPlan = plan
-			}
-		}
+	var group *Group
+	if apiKey != nil {
+		group = apiKey.Group
 	}
-
-	if forcePerImage {
-		if price, ok := s.billingService.strictImageUnitPriceForPlatforms(platforms, model, tier, nil); ok {
-			return newOpenAIImageUnitBillingPlan(model, tier, PricingSourceModelPrice, price), nil
-		}
-		if channelTokenPlan != nil {
-			return channelTokenPlan, nil
-		}
-	}
-
-	if pricing, err := s.billingService.GetImageTokenPricingStrictForPlatforms(platforms, model, requireImageInput); err == nil {
-		return &OpenAIImageBillingPlan{
-			Mode:              BillingModeToken,
-			Model:             model,
-			Source:            PricingSourceModelPrice,
-			SizeTier:          tier,
-			RequireImageInput: requireImageInput,
-			Resolved: &ResolvedPricing{
-				Mode:                   BillingModeToken,
-				BasePricing:            pricing,
-				Source:                 PricingSourceModelPrice,
-				SupportsCacheBreakdown: pricing.SupportsCacheBreakdown,
-			},
-		}, nil
-	}
-
-	if price, ok := s.billingService.strictImageUnitPriceForPlatforms(platforms, model, tier, nil); ok {
-		return newOpenAIImageUnitBillingPlan(model, tier, PricingSourceModelPrice, price), nil
-	}
-	return nil, fmt.Errorf(
-		"%w for image model %s tier %s",
-		ErrModelPricingUnavailable,
-		model,
-		tier,
-	)
+	return s.imageBillingResolver().ResolveImageBilling(ctx, ImageBillingInput{
+		Model:         model,
+		Platforms:     platforms,
+		GroupID:       groupID,
+		Group:         group,
+		SizeTier:      imageSizeTier,
+		ImageEndpoint: imageEndpoint,
+	})
 }
 
 func wrapOpenAIImageBillingPlanError(
@@ -239,101 +108,4 @@ func wrapOpenAIImageBillingPlanError(
 		strings.TrimSpace(imageSizeTier),
 		err,
 	)
-}
-
-func (s *OpenAIGatewayService) resolveStrictOpenAIImageTokenPricing(
-	ctx context.Context,
-	resolver *ModelPricingResolver,
-	groupID *int64,
-	platforms []string,
-	model string,
-	requireImageInput bool,
-) (*ResolvedPricing, error) {
-	if resolver == nil {
-		return nil, fmt.Errorf("%w: image pricing resolver is nil", ErrModelPricingUnavailable)
-	}
-	return resolver.ResolveStrictImageToken(ctx, PricingInput{
-		Model:     model,
-		Platforms: platforms,
-		GroupID:   groupID,
-	}, requireImageInput)
-}
-
-func channelImageTokenPricingConfigured(pricing *ChannelModelPricing) bool {
-	if pricing == nil {
-		return false
-	}
-	mode := pricing.BillingMode
-	if mode != "" && mode != BillingModeToken {
-		return false
-	}
-	if channelTokenPricingHasInvalidPrice(pricing) {
-		return false
-	}
-	inputConfigured := validConfiguredPrice(pricing.InputPrice)
-	outputConfigured := validConfiguredPrice(pricing.ImageOutputPrice) ||
-		validConfiguredPrice(pricing.OutputPrice)
-	return inputConfigured && outputConfigured
-}
-
-// openAIImageTokenPricingComplete 判断图片 token 计费所需维度是否齐全。
-// strictImage=false 时沿用旧口径：文本价可顶替图片价；strictImage=true
-// （billing.strict_image_dimension）时图片维度必须有自己的价格。
-func openAIImageTokenPricingComplete(pricing *ModelPricing, requireImageInput, strictImage bool) bool {
-	if pricing == nil {
-		return false
-	}
-	inputConfigured := pricing.InputPriceExplicit || pricing.InputPricePerToken > 0
-	imageOutputConfigured := imageOutputPriceConfigured(pricing)
-	imageInputConfigured := imageInputPriceConfigured(pricing)
-	if !strictImage {
-		imageOutputConfigured = imageOutputConfigured || pricing.OutputPriceExplicit || pricing.OutputPricePerToken > 0
-		imageInputConfigured = imageInputConfigured || inputConfigured
-	}
-	return inputConfigured && imageOutputConfigured && (!requireImageInput || imageInputConfigured)
-}
-
-func configuredOpenAIImageGroupPrice(apiKey *APIKey, tier string) *float64 {
-	if apiKey == nil || apiKey.Group == nil {
-		return nil
-	}
-	price := apiKey.Group.GetImagePrice(tier)
-	if !validConfiguredPrice(price) {
-		return nil
-	}
-	value := *price
-	return &value
-}
-
-func exactOpenAIImageRequestPrice(
-	resolver *ModelPricingResolver,
-	resolved *ResolvedPricing,
-	tier string,
-) (float64, bool) {
-	if resolver == nil || resolved == nil ||
-		(resolved.Mode != BillingModeImage && resolved.Mode != BillingModePerRequest) {
-		return 0, false
-	}
-	if price, ok := resolver.LookupRequestTierPrice(resolved, tier); ok && isFiniteNonNegativePrice(price) {
-		return price, true
-	}
-	if resolved.DefaultPerRequestPriceSet && isFiniteNonNegativePrice(resolved.DefaultPerRequestPrice) {
-		return resolved.DefaultPerRequestPrice, true
-	}
-	return 0, false
-}
-
-func newOpenAIImageUnitBillingPlan(model, tier, source string, unitPrice float64) *OpenAIImageBillingPlan {
-	return &OpenAIImageBillingPlan{
-		Mode:     BillingModeImage,
-		Model:    model,
-		Source:   source,
-		SizeTier: tier,
-		Resolved: &ResolvedPricing{
-			Mode:                      BillingModeImage,
-			Source:                    source,
-			DefaultPerRequestPrice:    unitPrice,
-			DefaultPerRequestPriceSet: true,
-		},
-	}
 }

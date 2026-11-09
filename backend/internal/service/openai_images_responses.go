@@ -1868,7 +1868,6 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 			pricingPlatformCandidates(apiKey, account),
 			upstreamModel,
 			parsed.SizeTier,
-			parsed.IsEdits(),
 		)
 		if err != nil {
 			return nil, wrapOpenAIImageBillingPlanError(

@@ -2197,7 +2197,6 @@ func TestOpenAIGatewayServiceForwardImages_OAuthEditsMultipartUsesResponsesAPI(t
 	require.Equal(t, 1, result.ImageCount)
 	require.NotNil(t, result.ImageBillingPlan)
 	require.Equal(t, BillingModeToken, result.ImageBillingPlan.Mode)
-	require.True(t, result.ImageBillingPlan.RequireImageInput)
 	require.Equal(t, 371, result.Usage.InputTokens)
 	require.Equal(t, 352, result.Usage.ImageInputTokens)
 	require.Equal(t, 439, result.Usage.OutputTokens)

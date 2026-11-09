@@ -2719,26 +2719,6 @@ func TestComputeTokenBreakdownValidated_StrictImageDimension(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestOpenAIImageTokenPricingComplete_StrictImageDimension(t *testing.T) {
-	textOnly := &ModelPricing{
-		InputPricePerToken: 5e-06, InputPriceExplicit: true,
-		OutputPricePerToken: 4e-05, OutputPriceExplicit: true,
-	}
-	require.True(t, openAIImageTokenPricingComplete(textOnly, true, false), "宽松模式允许文本价顶替图片价")
-	require.False(t, openAIImageTokenPricingComplete(textOnly, false, true), "严格模式要求图片 output 价")
-
-	withImageOutput := *textOnly
-	withImageOutput.ImageOutputPricePerToken = 4e-05
-	withImageOutput.ImageOutputPriceExplicit = true
-	require.True(t, openAIImageTokenPricingComplete(&withImageOutput, false, true))
-	require.False(t, openAIImageTokenPricingComplete(&withImageOutput, true, true), "严格模式下需要图片输入时要求图片 input 价")
-
-	withImageInput := withImageOutput
-	withImageInput.ImageInputPricePerToken = 1e-05
-	withImageInput.ImageInputPriceExplicit = true
-	require.True(t, openAIImageTokenPricingComplete(&withImageInput, true, true))
-}
-
 func TestNewModelPricingCatalogFallbackAndContext(t *testing.T) {
 	data, err := os.ReadFile("../../resources/model-pricing/model_prices_and_context_window.json")
 	require.NoError(t, err)

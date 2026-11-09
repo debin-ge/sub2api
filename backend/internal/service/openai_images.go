@@ -300,12 +300,11 @@ func (s *OpenAIGatewayService) EstimateOpenAIImagesCost(
 		pricingPlatformCandidates(apiKey, nil),
 		billingModel,
 		parsed.SizeTier,
-		parsed.IsEdits(),
 	)
-	if err != nil || plan == nil || plan.Mode != BillingModeImage || plan.Resolved == nil || !plan.Resolved.DefaultPerRequestPriceSet {
+	if err != nil || plan == nil || plan.Mode != BillingModeImage {
 		return 0, false
 	}
-	unitPrice := plan.Resolved.DefaultPerRequestPrice
+	unitPrice := plan.UnitPrice
 	if !isFiniteNonNegativePrice(unitPrice) {
 		return 0, false
 	}
@@ -921,7 +920,6 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 			pricingPlatformCandidates(apiKey, account),
 			upstreamModel,
 			parsed.SizeTier,
-			parsed.IsEdits(),
 		)
 		if err != nil {
 			return nil, wrapOpenAIImageBillingPlanError(
