@@ -37,11 +37,10 @@ const messages: Record<string, string> = {
   'plaza.kind.image': 'Image',
   'plaza.kind.video': 'Video',
   'plaza.card.tokenCaption': 'Token pricing',
-  'plaza.card.imageTokenCaption': 'Token pricing (preferred)',
+  'plaza.card.imageTokenCaption': 'Image token pricing',
   'plaza.card.perImageCaption': 'Per-image pricing',
   'plaza.card.videoCaption': 'Resolution',
   'plaza.card.videoExample': 'Example: a {seconds}s {tier} video',
-  'plaza.card.imageTokenFirst': 'Billed by tokens first',
   'plaza.card.imageInput': 'Image input',
   'plaza.card.textInput': 'Text input',
   'plaza.card.details': 'Details',
@@ -391,7 +390,7 @@ describe('ModelCard', () => {
     expect(example.text()).toContain('¥0.6')
   })
 
-  it('renders token pricing first and per-image tiers for image models', () => {
+  it('renders only the two image token prices for token-billed image models', () => {
     const imageModel: AggregatedModel = {
       ...model,
       model: 'gpt-image-2',
@@ -401,8 +400,34 @@ describe('ModelCard', () => {
       standardPricing: {
         minPricing: {
           ...emptyPricing(),
-          input: 0.000005,
-          imageOutput: 0.00004,
+          imageInput: 0.000008,
+          imageOutput: 0.00003
+        },
+        minPricingRateMultipliers: rates(1),
+        displayRateMultiplier: 1
+      }
+    }
+
+    const wrapper = mount(ModelCard, { props: { model: imageModel } })
+
+    expect(wrapper.attributes('data-billing-kind')).toBe('image')
+    expect(wrapper.text()).toContain('Image token pricing')
+    expect(wrapper.text()).toContain('Image input')
+    expect(wrapper.text()).toContain('Image output')
+    expect(wrapper.text()).not.toContain('Text input')
+    expect(wrapper.text()).not.toContain('Per-image pricing')
+  })
+
+  it('renders only per-image tiers for per-image billed image models', () => {
+    const imageModel: AggregatedModel = {
+      ...model,
+      model: 'gemini-2.5-flash-image',
+      displayName: 'gemini-2.5-flash-image',
+      platform: 'gemini',
+      billingKind: 'image',
+      standardPricing: {
+        minPricing: {
+          ...emptyPricing(),
           image1K: 0.04,
           image2K: 0.06,
           image4K: 0.08
@@ -414,13 +439,10 @@ describe('ModelCard', () => {
 
     const wrapper = mount(ModelCard, { props: { model: imageModel } })
 
-    expect(wrapper.attributes('data-billing-kind')).toBe('image')
-    expect(wrapper.text()).toContain('Billed by tokens first')
-    expect(wrapper.text()).toContain('Token pricing (preferred)')
     expect(wrapper.text()).toContain('Per-image pricing')
-    expect(wrapper.text()).toContain('Text input')
     expect(wrapper.text()).toContain('4K')
     expect(wrapper.text()).toContain('¥0.08')
+    expect(wrapper.text()).not.toContain('Image token pricing')
   })
 })
 

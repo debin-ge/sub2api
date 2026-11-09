@@ -404,3 +404,36 @@ func TestInflightImageEstimateUsesImageBillingPlan(t *testing.T) {
 		InflightEstimateRequest{}, 1, 0, 1, 1)
 	require.Zero(t, cost, "没配价时不再出现 $0.134")
 }
+
+// T4.1：模型广场只展示实际结算的一种方式。
+func TestResolvePlazaMediaPricingShowsOneImageBillingMode(t *testing.T) {
+	f := newImageBillingFixture(t, nil)
+
+	gemini := ResolvePlazaMediaPricing(f.pricing, PlatformGemini, "gemini-2.5-flash-image", nil, AvailableGroupRef{})
+	require.Equal(t, BillingModeImage, gemini.ImageBillingMode)
+	require.Nil(t, gemini.ImageOutputPrice)
+	require.Len(t, gemini.ImageTiers, 3)
+	for i, want := range []float64{0.039, 0.0585, 0.078} {
+		require.InDelta(t, want, gemini.ImageTiers[i].Price, 1e-12)
+	}
+
+	gptImage := ResolvePlazaMediaPricing(f.pricing, PlatformOpenAI, "gpt-image-2", nil, AvailableGroupRef{})
+	require.Equal(t, BillingModeToken, gptImage.ImageBillingMode)
+	require.Empty(t, gptImage.ImageTiers)
+	require.InDelta(t, 8e-6, *gptImage.ImageInputPrice, 1e-15)
+	require.InDelta(t, 3e-5, *gptImage.ImageOutputPrice, 1e-15)
+
+	// 分组配了 1K/2K/4K 价：展示跟着变成按张。
+	grouped := ResolvePlazaMediaPricing(f.pricing, PlatformOpenAI, "gpt-image-2", nil, AvailableGroupRef{
+		ImagePrice1K: imagePrice(0.10), ImagePrice2K: imagePrice(0.15), ImagePrice4K: imagePrice(0.30),
+	})
+	require.Equal(t, BillingModeImage, grouped.ImageBillingMode)
+	require.Len(t, grouped.ImageTiers, 3)
+	require.InDelta(t, 0.15, grouped.ImageTiers[1].Price, 1e-12)
+
+	// 渠道声明按 token：Gemini 没有图片 token 价，不展示任何出图价（准入同样会拒绝）。
+	channel := &ChannelModelPricing{BillingMode: BillingModeToken, ImageInputPrice: imagePrice(1e-6), ImageOutputPrice: imagePrice(2e-5)}
+	channelPriced := ResolvePlazaMediaPricing(f.pricing, PlatformGemini, "gemini-2.5-flash-image", channel, AvailableGroupRef{})
+	require.Equal(t, BillingModeToken, channelPriced.ImageBillingMode)
+	require.InDelta(t, 2e-5, *channelPriced.ImageOutputPrice, 1e-15)
+}

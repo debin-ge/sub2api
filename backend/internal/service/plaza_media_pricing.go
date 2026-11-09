@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"math"
 	"strings"
 	"time"
@@ -19,6 +20,11 @@ type PlazaMediaPricing struct {
 	VideoTiers []PlazaMediaTierPrice
 	// VideoPerRequest 是视频模型只配了按次（request）规则时的单次价；有按秒档位时为 nil。
 	VideoPerRequest *float64
+	// ImageBillingMode 是出图方式（按张与按 token 二选一）：按张时只有 ImageTiers；
+	// 按 token 时只有 ImageInputPrice、ImageOutputPrice 两项价（每 token）。
+	ImageBillingMode BillingMode
+	ImageInputPrice  *float64
+	ImageOutputPrice *float64
 }
 
 var (
@@ -29,10 +35,8 @@ var (
 // ResolvePlazaMediaPricing 按真实结算链路的优先级推导模型广场的按张/按秒展示价，
 // 保证用户在广场看到的档位价就是实际扣费用到的单价：
 //
-//   - 图片：分组 1K/2K/4K 价 > 渠道图片档位价（同档位 > 渠道按次价）>
-//     模型价格 intervals > 模型价格 output_cost_per_image（2K ×1.5、4K ×2）>
-//     Grok 内置价，与
-//     calculateOpenAIImageCostForPlatforms / strictImageUnitPriceForPlatforms 一致；
+//   - 图片：按出图计划（ResolveImageBilling，专用图片端点口径）推导，按张与按 token
+//     二选一，与 /v1/images 的结算一致；
 //   - 视频：分组按模型族配置 > 分组统一 480p/720p/1080p 价 > 渠道视频档位价 > Grok 内置价，
 //     与 calculateOpenAIVideoCost / strictVideoUnitPrice 一致；都没有时再看模型价格里的
 //     video_pricing 规则（VideoPricingResolver 的最后一级），按秒/按视频 token 的规则折算
@@ -67,7 +71,48 @@ func ResolvePlazaMediaPricing(
 	if !isPlazaImageModel(model, channel, catalog) {
 		return PlazaMediaPricing{}
 	}
-	return PlazaMediaPricing{ImageTiers: plazaImageTierPrices(model, channel, group, catalog)}
+	return plazaImagePricing(pricing, platform, model, channel, group)
+}
+
+// plazaImagePricing 按出图计划（专用图片端点口径）给出广场展示价，保证展示的方式与
+// 档位就是实际结算用的：按张只列出能解析出价格的档位，按 token 只给两项图片价。
+func plazaImagePricing(
+	pricing *PricingService,
+	platform string,
+	model string,
+	channel *ChannelModelPricing,
+	group AvailableGroupRef,
+) PlazaMediaPricing {
+	resolver := &ModelPricingResolver{billingService: &BillingService{pricingService: pricing}}
+	in := ImageBillingInput{
+		Model:     model,
+		Platforms: plazaPlatforms(platform),
+		Group: &Group{
+			Platform:     strings.TrimSpace(platform),
+			ImagePrice1K: group.ImagePrice1K,
+			ImagePrice2K: group.ImagePrice2K,
+			ImagePrice4K: group.ImagePrice4K,
+		},
+		ChannelRow:    channel,
+		ImageEndpoint: true,
+	}
+	out := PlazaMediaPricing{}
+	for _, tier := range plazaImageTiers {
+		in.SizeTier = tier
+		plan, err := resolver.ResolveImageBilling(context.Background(), in)
+		if err != nil || plan == nil {
+			continue
+		}
+		switch plan.Mode {
+		case BillingModeImage:
+			out.ImageBillingMode = BillingModeImage
+			out.ImageTiers = append(out.ImageTiers, PlazaMediaTierPrice{Tier: tier, Price: plan.UnitPrice})
+		case BillingModeToken:
+			input, output := plan.ImageInputPrice, plan.ImageOutputPrice
+			return PlazaMediaPricing{ImageBillingMode: BillingModeToken, ImageInputPrice: &input, ImageOutputPrice: &output}
+		}
+	}
+	return out
 }
 
 func plazaPlatforms(platform string) []string {
@@ -106,83 +151,6 @@ func isPlazaImageModel(model string, channel *ChannelModelPricing, catalog *Mode
 	return len(catalog.Intervals) > 0 ||
 		(catalog.OutputCostPerImage > 0 || catalog.OutputCostPerImageExplicit) ||
 		(catalog.OutputCostPerImageToken > 0 || catalog.ImageOutputPriceExplicit)
-}
-
-func plazaImageTierPrices(
-	model string,
-	channel *ChannelModelPricing,
-	group AvailableGroupRef,
-	catalog *ModelPriceEntry,
-) []PlazaMediaTierPrice {
-	groupPrices := map[string]*float64{
-		ImageBillingSize1K: group.ImagePrice1K,
-		ImageBillingSize2K: group.ImagePrice2K,
-		ImageBillingSize4K: group.ImagePrice4K,
-	}
-	catalogBase, catalogOK := 0.0, false
-	if catalog != nil && isFiniteNonNegativePrice(catalog.OutputCostPerImage) &&
-		(catalog.OutputCostPerImage > 0 || catalog.OutputCostPerImageExplicit) {
-		catalogBase, catalogOK = catalog.OutputCostPerImage, true
-	}
-
-	out := make([]PlazaMediaTierPrice, 0, len(plazaImageTiers))
-	for _, tier := range plazaImageTiers {
-		if price := groupPrices[tier]; validConfiguredPrice(price) {
-			out = append(out, PlazaMediaTierPrice{Tier: tier, Price: *price})
-			continue
-		}
-		if channel != nil && (channel.BillingMode == BillingModeImage || channel.BillingMode == BillingModePerRequest) {
-			if price := channelMediaTierPrice(channel, tier); validConfiguredPrice(price) {
-				out = append(out, PlazaMediaTierPrice{Tier: tier, Price: *price})
-				continue
-			}
-		}
-		if catalog != nil {
-			if price, ok := catalogImageTierPrice(catalog, tier); ok {
-				out = append(out, PlazaMediaTierPrice{Tier: tier, Price: price})
-				continue
-			}
-		}
-		if price, ok := getDefaultGrokImagineImagePrice(model, tier); ok {
-			out = append(out, PlazaMediaTierPrice{Tier: tier, Price: price})
-			continue
-		}
-		if !catalogOK {
-			continue
-		}
-		switch tier {
-		case ImageBillingSize2K:
-			out = append(out, PlazaMediaTierPrice{Tier: tier, Price: catalogBase * 1.5})
-		case ImageBillingSize4K:
-			out = append(out, PlazaMediaTierPrice{Tier: tier, Price: catalogBase * 2})
-		default:
-			out = append(out, PlazaMediaTierPrice{Tier: tier, Price: catalogBase})
-		}
-	}
-	return out
-}
-
-func catalogImageTierPrice(catalog *ModelPriceEntry, tier string) (float64, bool) {
-	if catalog == nil {
-		return 0, false
-	}
-	for _, interval := range catalog.Intervals {
-		if strings.EqualFold(strings.TrimSpace(interval.TierLabel), tier) && validConfiguredPrice(interval.PerRequestPrice) {
-			return *interval.PerRequestPrice, true
-		}
-	}
-	if !isFiniteNonNegativePrice(catalog.OutputCostPerImage) ||
-		(catalog.OutputCostPerImage == 0 && !catalog.OutputCostPerImageExplicit) {
-		return 0, false
-	}
-	switch tier {
-	case ImageBillingSize2K:
-		return catalog.OutputCostPerImage * 1.5, true
-	case ImageBillingSize4K:
-		return catalog.OutputCostPerImage * 2, true
-	default:
-		return catalog.OutputCostPerImage, true
-	}
 }
 
 func plazaVideoTierPrices(model string, channel *ChannelModelPricing, group AvailableGroupRef) []PlazaMediaTierPrice {

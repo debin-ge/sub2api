@@ -150,6 +150,7 @@ export default {
         imageInputPrice: 'Image Input',
         imageTokenPrice: 'Image Output',
         imageOutputPrice: 'Image Output Price',
+        imageTokenBillingHint: 'Token-priced image generation uses only the image input and image output prices: prompt, input images and cached tokens at the image input price, output at the image output price. Both are required (they may be inherited from model prices).',
         pricePlaceholder: 'Default',
         fastMultiplier: 'Fast Multiplier',
         flexMultiplier: 'Flex Multiplier',

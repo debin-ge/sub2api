@@ -150,7 +150,7 @@ with open("edited.png", "wb") as f:
 
 ## 计费
 
-图片按 token 计价优先，上游没有回报图片 token 时按张计价，尺寸档位按长边分为 1K、2K、4K。未指定 `size` 或为 `auto` 时按 2K 计价。详见[计费与用量](/docs/billing-usage)。
+每个图片模型只按一种方式计价：按张（尺寸档位按长边分为 1K、2K、4K，未指定 `size` 或为 `auto` 时按 2K），或按图片 token（只有图片输入价、图片输出价两项，提示词也按图片输入价；上游没有回报用量时按尺寸和质量估算）。通过 `/v1/responses` 调用生图工具且按 token 计价时，主模型的 token 按主模型价格另计。详见[计费与用量](/docs/billing-usage)。
 
 ## 常见错误
 

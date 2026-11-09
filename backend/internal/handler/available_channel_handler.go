@@ -299,8 +299,10 @@ type userAvailableGroup struct {
 
 // userSupportedModelPricing 用户可见的定价字段白名单。
 type userSupportedModelPricing struct {
-	ReasoningEffortMultipliers   map[string]float64       `json:"reasoning_effort_multipliers,omitempty"`
-	BillingMode                  string                   `json:"billing_mode"`
+	ReasoningEffortMultipliers map[string]float64 `json:"reasoning_effort_multipliers,omitempty"`
+	BillingMode                string             `json:"billing_mode"`
+	// ImageBillingMode 是出图方式（按张 image / 按 token token，二选一），仅模型广场填充。
+	ImageBillingMode             string                   `json:"image_billing_mode,omitempty"`
 	Currency                     string                   `json:"currency"`
 	Source                       string                   `json:"source"`
 	InputPrice                   *float64                 `json:"input_price"`
@@ -669,7 +671,8 @@ func applyPlazaMediaPricesToChannels(pricing *service.PricingService, channels [
 					platform = section.Platform
 				}
 				media := service.ResolvePlazaMediaPricing(pricing, platform, model.Name, model.channelPricing, groupRef)
-				if len(media.ImageTiers) == 0 && len(media.VideoTiers) == 0 && media.VideoPerRequest == nil {
+				if len(media.ImageTiers) == 0 && len(media.VideoTiers) == 0 && media.VideoPerRequest == nil &&
+					media.ImageBillingMode == "" {
 					continue
 				}
 				if model.Pricing == nil {
@@ -682,6 +685,18 @@ func applyPlazaMediaPricesToChannels(pricing *service.PricingService, channels [
 				}
 				model.Pricing.ImageTierPrices = toUserMediaTierPrices(media.ImageTiers)
 				model.Pricing.VideoTierPrices = toUserMediaTierPrices(media.VideoTiers)
+				// 出图按张与按 token 二选一：只返回实际结算用的那一种价格。
+				switch media.ImageBillingMode {
+				case service.BillingModeImage:
+					model.Pricing.ImageBillingMode = string(service.BillingModeImage)
+					model.Pricing.ImageInputPrice = nil
+					model.Pricing.ImageOutputPrice = nil
+				case service.BillingModeToken:
+					model.Pricing.ImageBillingMode = string(service.BillingModeToken)
+					model.Pricing.ImageTierPrices = nil
+					model.Pricing.ImageInputPrice = media.ImageInputPrice
+					model.Pricing.ImageOutputPrice = media.ImageOutputPrice
+				}
 				if len(media.VideoTiers) > 0 {
 					model.Pricing.BillingMode = string(service.BillingModeVideo)
 				} else if media.VideoPerRequest != nil {

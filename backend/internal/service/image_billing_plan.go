@@ -47,6 +47,9 @@ type ImageBillingInput struct {
 	PerImageOnly bool
 	// ForceMode 只给补账用：按用量记录里的方式重算，配置里的方式不一致时拒绝。
 	ForceMode BillingMode
+	// ChannelRow 是调用方已经匹配好的渠道定价行（模型广场按渠道逐行展示时用）；
+	// 非空时直接作为第 ③ 层，不再按 GroupID 查渠道。
+	ChannelRow *ChannelModelPricing
 	// ContextTokens 是结算时的上下文 token 数（输入 + 缓存读写），只用于渠道或分组卡
 	// 按次档里不带档位标签的上下文分档。转发前不知道用量，传 0 按最低档判断。
 	ContextTokens int
@@ -256,7 +259,9 @@ func (r *ModelPricingResolver) imageBillingLayers(ctx context.Context, in ImageB
 		id := in.Group.ID
 		groupID = &id
 	}
-	if groupID != nil && r.channelService != nil {
+	if in.ChannelRow != nil {
+		layers = append(layers, channelRowImageBillingLayer(in.ChannelRow, ImageBillingDeclaredByChannel, PricingSourceChannel, in.ContextTokens))
+	} else if groupID != nil && r.channelService != nil {
 		if row := r.lookupChannelPricingNormalized(ctx, *groupID, model); row != nil {
 			layers = append(layers, channelRowImageBillingLayer(row, ImageBillingDeclaredByChannel, PricingSourceChannel, in.ContextTokens))
 		}

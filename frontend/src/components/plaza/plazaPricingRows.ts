@@ -31,8 +31,8 @@ export const TEXT_TOKEN_ROWS: PlazaPricingRow[] = [
   row('imageOutput', 'plaza.card.imageOutput', 'million')
 ]
 
+/** 按 token 出图只有两项价：提示词与输入图按图片输入价，输出按图片输出价。 */
 export const IMAGE_TOKEN_ROWS: PlazaPricingRow[] = [
-  row('input', 'plaza.card.textInput', 'million'),
   row('imageInput', 'plaza.card.imageInput', 'million'),
   row('imageOutput', 'plaza.card.imageOutput', 'million')
 ]

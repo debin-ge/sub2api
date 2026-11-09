@@ -67,17 +67,8 @@
       </div>
     </template>
 
-    <!-- 图片：图片 token 价 + 按张档位 -->
+    <!-- 图片：按张与按 token 二选一，后端只返回其中一种价格 -->
     <template v-else-if="model.billingKind === 'image'">
-      <div
-        v-if="imageTokenRows.length && imageTierRows.length"
-        class="mx-5 mt-3 flex items-center gap-1.5 rounded-lg bg-fuchsia-50/70 px-2.5 py-1.5 text-[11px] text-fuchsia-800 dark:bg-fuchsia-500/10 dark:text-fuchsia-200"
-      >
-        <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-          <path d="M10 2a8 8 0 100 16 8 8 0 000-16zm1 12H9v-2h2v2zm0-4H9V6h2v4z" />
-        </svg>
-        {{ t('plaza.card.imageTokenFirst') }}
-      </div>
       <div v-if="imageTokenRows.length" class="mx-5 mt-3">
         <PricingTable :model="model" :rows="imageTokenRows" :caption="t('plaza.card.imageTokenCaption')" />
       </div>
