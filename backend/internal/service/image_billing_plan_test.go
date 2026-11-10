@@ -254,10 +254,13 @@ func TestResolveImageBillingCrossModelRule(t *testing.T) {
 
 	plan, err = f.resolve(t, ImageBillingInput{Model: "gemini-2.5-flash-image", SizeTier: "1K", CrossModel: true})
 	require.NoError(t, err, "按张任何层都可以")
+	require.Equal(t, BillingModeImage, plan.Mode)
 
 	f.withChannel(19, "gpt-image-2", &ChannelModelPricing{BillingMode: BillingModeToken})
 	plan, err = f.resolve(t, ImageBillingInput{Model: "gpt-image-2", GroupID: imageInt64(19), SizeTier: "1K", CrossModel: true})
 	require.NoError(t, err, "渠道声明的按 token 是显式配置")
+	require.Equal(t, BillingModeToken, plan.Mode)
+	require.Equal(t, ImageBillingDeclaredByChannel, plan.DeclaredBy)
 }
 
 // 补账按记录里的方式重算；配置里的方式变了就不补。
