@@ -122,7 +122,7 @@ func EstimateImageOutputTokens(model, size, quality string, partialImages int) (
 	extra := max(partialImages, 0) * imageEstimatePartialImageTokens
 
 	for _, entry := range geminiImageTokenTable {
-		if !strings.HasPrefix(normalized, entry.prefix) && !(entry.prefix == "gemini-nano-banana" && strings.Contains(normalized, "nano-banana")) {
+		if !strings.HasPrefix(normalized, entry.prefix) && (entry.prefix != "gemini-nano-banana" || !strings.Contains(normalized, "nano-banana")) {
 			continue
 		}
 		tier := strings.ToUpper(strings.TrimSpace(size))
