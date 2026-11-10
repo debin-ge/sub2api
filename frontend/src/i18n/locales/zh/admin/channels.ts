@@ -149,6 +149,7 @@ export default {
         imageInputPrice: '图片输入',
         imageTokenPrice: '图片输出',
         imageOutputPrice: '图片输出价格',
+        imageTokenBillingHint: '出图按 token 计费时只用图片输入价和图片输出价：提示词、输入图和缓存都按图片输入价，输出按图片输出价；两项都要有（可从模型价格继承）。',
         pricePlaceholder: '默认',
         fastMultiplier: 'Fast 倍率',
         flexMultiplier: 'Flex 倍率',

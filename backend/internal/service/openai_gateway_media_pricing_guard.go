@@ -214,6 +214,7 @@ func (s *OpenAIGatewayService) enforceResolvedOpenAIMediaPricing(
 				platforms,
 				models,
 				imageSizeTier,
+				imageBillingPerImageOnly(account, billingModel),
 			)
 		} else {
 			hasPricing = s.hasResolvableOpenAIMediaPricingForPlatforms(ctx, groupID, platforms, models, kind)
@@ -263,12 +264,9 @@ func (s *OpenAIGatewayService) hasResolvableOpenAIMediaPricingForPlatforms(
 	if s.hasCompleteOpenAIChannelMediaPricing(ctx, groupID, billingModel, kind) {
 		return true
 	}
-	// /v1/images/* may be billed from exact image token dimensions. This is
-	// only a scheduler-level candidate check; the Image API forwarder resolves
-	// and locks the exact plan after account mapping. Native Responses image
-	// tools retain their existing exact per-image guard.
-	if kind == BillingKindImage &&
-		s.hasResolvableOpenAIImageTokenPricingForPlatforms(ctx, groupID, platforms, billingModel) {
+	// 出图按张或按 token（二选一）：调度阶段还不知道档位，任一档位能解析出计划就
+	// 放行；转发前会按确切档位再解析一次并锁定计划。
+	if kind == BillingKindImage && s.anyOpenAIImageTierResolvable(ctx, guardKey, groupID, platforms, billingModel) {
 		return true
 	}
 	// 模型价格目录 / 按 SKU 写死的默认价。
@@ -283,51 +281,58 @@ func (s *OpenAIGatewayService) hasResolvableOpenAIMediaPricingForPlatforms(
 	return false
 }
 
-// hasResolvableOpenAIImageTierPricingForPlatforms mirrors calculateOpenAIImageCost
-// for the exact tier already resolved from the Responses request. Requiring every
-// possible tier here would reject a request whose selected tier has a valid group
-// or channel price even though post-settlement can charge it exactly.
+// hasResolvableOpenAIImageTierPricingForPlatforms 按 Responses 请求已解析出的确切档位
+// 解析出图计费计划（按张或按 token），与结算同一口径。
 func (s *OpenAIGatewayService) hasResolvableOpenAIImageTierPricingForPlatforms(
 	ctx context.Context,
 	groupID *int64,
 	platforms []string,
 	models openAIPricingGuardModels,
 	imageSizeTier string,
+	perImageOnly bool,
 ) bool {
-	tier, ok := ClassifyImageBillingTier(imageSizeTier)
-	if !ok {
-		return false
-	}
-
-	guardKey := openAIPricingGuardAPIKey(ctx, groupID)
-	if groupHasConfiguredImageTierPrice(guardKey, tier) {
-		return true
-	}
 	billingModel := strings.TrimSpace(models.Primary)
 	if billingModel == "" {
 		return false
 	}
-	if s.hasExactOpenAIChannelImagePricing(ctx, groupID, billingModel, tier) {
-		return true
-	}
-	if s.catalogHasExactImagePricingForPlatforms(platforms, billingModel, tier) {
-		return true
-	}
-	if refreshed := s.apiKeyWithFreshGroupMediaPricing(ctx, guardKey); refreshed != guardKey {
-		return groupHasConfiguredImageTierPrice(refreshed, tier)
-	}
-	return false
+	plan, err := s.resolveOpenAIImagePlan(ctx, nil, groupID, platforms, billingModel, imageSizeTier, false, perImageOnly)
+	return err == nil && plan != nil
 }
 
-func groupHasConfiguredImageTierPrice(apiKey *APIKey, imageSizeTier string) bool {
-	if apiKey == nil || apiKey.Group == nil {
+// anyOpenAIImageTierResolvable 是调度阶段的候选检查：1K/2K/4K 任一档位能解析出计划
+// 即可。先用请求上下文里的分组（不打库），解析不出时再回源补全分组媒体价重试一次。
+func (s *OpenAIGatewayService) anyOpenAIImageTierResolvable(
+	ctx context.Context,
+	guardKey *APIKey,
+	groupID *int64,
+	platforms []string,
+	model string,
+) bool {
+	if s == nil || s.billingService == nil || strings.TrimSpace(model) == "" {
 		return false
 	}
-	tier, ok := ClassifyImageBillingTier(imageSizeTier)
-	if !ok {
+	resolve := func(group *Group) bool {
+		for _, tier := range []string{ImageBillingSize1K, ImageBillingSize2K, ImageBillingSize4K} {
+			plan, err := s.imageBillingResolver().ResolveImageBilling(ctx, ImageBillingInput{
+				Model: model, Platforms: platforms, GroupID: groupID, Group: group, SizeTier: tier,
+			})
+			if err == nil && plan != nil {
+				return true
+			}
+		}
 		return false
 	}
-	return validConfiguredPrice(apiKey.Group.GetImagePrice(tier))
+	var group *Group
+	if guardKey != nil {
+		group = guardKey.Group
+	}
+	if resolve(group) {
+		return true
+	}
+	if refreshed := s.apiKeyWithFreshGroupMediaPricing(ctx, guardKey); refreshed != guardKey && refreshed != nil {
+		return resolve(refreshed.Group)
+	}
+	return false
 }
 
 func groupHasConfiguredMediaPrice(apiKey *APIKey, kind BillingKind) bool {
@@ -348,34 +353,6 @@ func groupHasConfiguredMediaPrice(apiKey *APIKey, kind BillingKind) bool {
 		}
 	}
 	return true
-}
-
-func (s *OpenAIGatewayService) hasExactOpenAIChannelImagePricing(
-	ctx context.Context,
-	groupID *int64,
-	model string,
-	imageSizeTier string,
-) bool {
-	model = strings.TrimSpace(model)
-	tier, ok := ClassifyImageBillingTier(imageSizeTier)
-	if !ok || model == "" || groupID == nil || s == nil || s.channelService == nil {
-		return false
-	}
-	pricing := s.channelService.GetChannelModelPricing(ctx, *groupID, model)
-	if pricing == nil ||
-		(pricing.BillingMode != BillingModePerRequest && pricing.BillingMode != BillingModeImage) {
-		return false
-	}
-	if validConfiguredPrice(pricing.PerRequestPrice) {
-		return true
-	}
-	for _, interval := range pricing.Intervals {
-		if strings.EqualFold(strings.TrimSpace(interval.TierLabel), tier) &&
-			validConfiguredPrice(interval.PerRequestPrice) {
-			return true
-		}
-	}
-	return false
 }
 
 // hasCompleteOpenAIChannelMediaPricing checks the exact settlement model and
@@ -425,16 +402,6 @@ func (s *OpenAIGatewayService) hasCompleteOpenAIChannelMediaPricing(
 	return true
 }
 
-func (s *OpenAIGatewayService) catalogHasExactImagePricingForPlatforms(platforms []string, model string, imageSizeTier string) bool {
-	model = strings.TrimSpace(model)
-	tier, ok := ClassifyImageBillingTier(imageSizeTier)
-	if !ok || model == "" || s == nil || s.billingService == nil {
-		return false
-	}
-	_, ok = s.billingService.strictImageUnitPriceForPlatforms(platforms, model, tier, nil)
-	return ok
-}
-
 // catalogHasMediaPricingForPlatforms 判断价格目录里是否有该模型的真实媒体单价。
 //
 // 注意这里刻意**不**调用 getDefaultImagePrice：那个函数在查不到任何价格时会返回
@@ -457,26 +424,13 @@ func (s *OpenAIGatewayService) catalogHasMediaPricingForPlatforms(platforms []st
 		}
 		return true
 	case BillingKindImage:
-		// Image API models may be billed by image tokens instead of a per-image
-		// tier. The final image billing plan already resolves this through
-		// GetImageTokenPricingStrictForPlatforms; the scheduler-level probe must
-		// recognize the same exact pricing source or it will reject the account
-		// before forwarding (especially for third-party models that exist only in
-		// the operator's image-token override catalog).
-		if _, err := s.billingService.GetImageTokenPricingStrictForPlatforms(platforms, model, false); err == nil {
-			return true
-		}
-		// Scheduler selection does not carry the requested image tier. Treat this
-		// as a model-level candidate check: every generation path performs a
-		// second enforceResolvedOpenAIMediaPricing check with the exact tier
-		// before the upstream call. Requiring all tiers here would make a model
-		// with real 1K/2K prices unusable merely because its 4K tier is unpriced.
-		for _, tier := range []string{
-			ImageBillingSize1K,
-			ImageBillingSize2K,
-			ImageBillingSize4K,
-		} {
-			if _, ok := s.billingService.strictImageUnitPriceForPlatforms(platforms, model, tier, nil); ok {
+		// 只看模型价格与内置价（没有分组和渠道）。调度阶段不知道档位，任一档位能
+		// 解析出计划（按张或按 token）即可；转发前会按确切档位再检查一次。
+		for _, tier := range []string{ImageBillingSize1K, ImageBillingSize2K, ImageBillingSize4K} {
+			plan, err := s.imageBillingResolver().ResolveImageBilling(context.Background(), ImageBillingInput{
+				Model: model, Platforms: platforms, SizeTier: tier,
+			})
+			if err == nil && plan != nil {
 				return true
 			}
 		}

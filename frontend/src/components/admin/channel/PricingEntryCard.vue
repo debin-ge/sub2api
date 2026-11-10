@@ -143,6 +143,7 @@
                 type="number" step="any" min="0" class="input mt-0.5 text-sm" :placeholder="t('admin.channels.form.pricePlaceholder')" />
             </div>
           </div>
+          <p class="mt-2 text-xs zt-ink-3">{{ t('admin.channels.form.imageTokenBillingHint') }}</p>
 
           <div v-if="enableTierMultipliers" class="mt-3 grid max-w-md grid-cols-1 gap-2 sm:grid-cols-2">
             <div>

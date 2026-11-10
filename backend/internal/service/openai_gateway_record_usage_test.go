@@ -3344,6 +3344,8 @@ func newOpenAITokenImageChannelPricingResolverForTest(t *testing.T, groupID int6
 	cacheWritePrice := 3.75e-6
 	cacheReadPrice := 0.3e-6
 	imageOutputPrice := 15e-6
+	// 按 token 出图要求图片输入价、图片输出价成对（D2）。
+	imageInputPrice := 3e-6
 	cache := newEmptyChannelCache()
 	cache.pricingByGroupModel[channelModelKey{groupID: groupID, model: model}] = &ChannelModelPricing{
 		BillingMode:      BillingModeToken,
@@ -3351,6 +3353,7 @@ func newOpenAITokenImageChannelPricingResolverForTest(t *testing.T, groupID int6
 		OutputPrice:      &outputPrice,
 		CacheWritePrice:  &cacheWritePrice,
 		CacheReadPrice:   &cacheReadPrice,
+		ImageInputPrice:  &imageInputPrice,
 		ImageOutputPrice: &imageOutputPrice,
 	}
 	cache.channelByGroupID[groupID] = &Channel{ID: groupID, Status: StatusActive}

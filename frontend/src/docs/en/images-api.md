@@ -150,7 +150,7 @@ with open("edited.png", "wb") as f:
 
 ## Billing
 
-Token-based pricing is used first; when the upstream reports no image tokens, per-image pricing applies with 1K, 2K and 4K tiers decided by the longest edge. A missing `size` or `auto` is billed as 2K. See [Billing and Usage](/docs/billing-usage).
+Each image model uses exactly one method: per image (1K, 2K and 4K tiers decided by the longest edge; a missing `size` or `auto` is billed as 2K), or image tokens (only an image input price and an image output price, with the prompt billed at the image input price; usage is estimated from size and quality when the upstream reports none). When the image tool is called through `/v1/responses` with token pricing, the main model's tokens are billed separately at its own prices. See [Billing and Usage](/docs/billing-usage).
 
 ## Common errors
 

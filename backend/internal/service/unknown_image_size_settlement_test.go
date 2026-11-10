@@ -126,6 +126,8 @@ func TestGatewayServiceHasResolvableImagePricing_UnknownExplicitTierCannotBorrow
 		ImageBillingSize2K,
 		apiKey,
 		platforms,
+		false,
+		false,
 	))
 	for _, size := range []string{"8K", "8192x8192", "largest"} {
 		require.False(t, svc.hasResolvableImagePricingForPlatforms(
@@ -134,6 +136,8 @@ func TestGatewayServiceHasResolvableImagePricing_UnknownExplicitTierCannotBorrow
 			size,
 			apiKey,
 			platforms,
+			false,
+			false,
 		), size)
 	}
 }

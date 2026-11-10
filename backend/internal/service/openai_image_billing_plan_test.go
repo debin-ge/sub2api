@@ -63,16 +63,13 @@ func TestResolveOpenAIImageBillingPlanUsesRealGPTImageTokenCatalog(t *testing.T)
 				nil,
 				model,
 				ImageBillingSize1K,
-				false,
 			)
 			require.NoError(t, err)
 			require.Equal(t, BillingModeToken, plan.Mode)
 			require.Equal(t, model, plan.Model)
 			require.Equal(t, PricingSourceModelPrice, plan.Source)
-			require.NotNil(t, plan.Resolved)
-			require.NotNil(t, plan.Resolved.BasePricing)
-			require.True(t, plan.Resolved.BasePricing.ImageOutputPriceExplicit)
-			require.Positive(t, plan.Resolved.BasePricing.ImageOutputPricePerToken)
+			require.Positive(t, plan.ImageInputPrice)
+			require.Positive(t, plan.ImageOutputPrice)
 		})
 	}
 }
@@ -109,11 +106,11 @@ func TestResolveOpenAIImageBillingPlanUsesProviderOverrideUnderComposite(t *test
 		}
 
 		plan, err := svc.resolveOpenAIImageBillingPlanForPlatforms(
-			context.Background(), apiKey, &groupID, platforms, model, ImageBillingSize1K, true,
+			context.Background(), apiKey, &groupID, platforms, model, ImageBillingSize1K,
 		)
 		require.NoError(t, err)
 		require.Equal(t, BillingModeToken, plan.Mode)
-		require.InDelta(t, imageOutputPrice, plan.Resolved.BasePricing.ImageOutputPricePerToken, 1e-12)
+		require.InDelta(t, imageOutputPrice, plan.ImageOutputPrice, 1e-12)
 	})
 
 	t.Run("per image pricing", func(t *testing.T) {
@@ -121,9 +118,10 @@ func TestResolveOpenAIImageBillingPlanUsesProviderOverrideUnderComposite(t *test
 		pricingService := NewPricingService(&config.Config{}, nil)
 		pricingService.SeedCatalogForTest(map[string]*ModelPriceEntry{})
 		pricingService.SeedOverridesForTest([]ModelPriceOverride{{
-			Platform:  PlatformOpenAI,
-			ModelName: model,
-			Enabled:   true,
+			Platform:    PlatformOpenAI,
+			ModelName:   model,
+			Enabled:     true,
+			BillingMode: BillingModeImage,
 			Payload: ModelPriceOverridePayload{
 				OutputCostPerImage: &perImagePrice,
 			},
@@ -132,11 +130,11 @@ func TestResolveOpenAIImageBillingPlanUsesProviderOverrideUnderComposite(t *test
 		svc := &OpenAIGatewayService{billingService: billing}
 
 		plan, err := svc.resolveOpenAIImageBillingPlanForPlatforms(
-			context.Background(), apiKey, &groupID, platforms, model, ImageBillingSize1K, false,
+			context.Background(), apiKey, &groupID, platforms, model, ImageBillingSize1K,
 		)
 		require.NoError(t, err)
 		require.Equal(t, BillingModeImage, plan.Mode)
-		require.InDelta(t, perImagePrice, plan.Resolved.DefaultPerRequestPrice, 1e-12)
+		require.InDelta(t, perImagePrice, plan.UnitPrice, 1e-12)
 	})
 }
 
@@ -151,9 +149,10 @@ func TestOpenAIMediaPricingGuardAcceptsImageTokenOverride(t *testing.T) {
 		Platform:    PlatformOpenAI,
 		ModelName:   model,
 		Enabled:     true,
-		BillingMode: BillingModeImage,
+		BillingMode: BillingModeToken,
 		Payload: ModelPriceOverridePayload{
 			InputCostPerToken:       &inputPrice,
+			InputCostPerImageToken:  &inputPrice,
 			OutputCostPerImageToken: &imageOutputPrice,
 		},
 	}})
@@ -191,16 +190,12 @@ func TestResolveOpenAIImageBillingPlanUsesChannelTokenPrices(t *testing.T) {
 		&groupID,
 		"gpt-image-2",
 		ImageBillingSize1K,
-		true,
 	)
 	require.NoError(t, err)
 	require.Equal(t, BillingModeToken, plan.Mode)
 	require.Equal(t, PricingSourceChannel, plan.Source)
-	require.NotNil(t, plan.Resolved)
-	require.NotNil(t, plan.Resolved.BasePricing)
-	require.InDelta(t, inputPrice, plan.Resolved.BasePricing.InputPricePerToken, 1e-12)
-	require.InDelta(t, imageInputPrice, plan.Resolved.BasePricing.ImageInputPricePerToken, 1e-12)
-	require.InDelta(t, imageOutputPrice, plan.Resolved.BasePricing.ImageOutputPricePerToken, 1e-12)
+	require.InDelta(t, imageInputPrice, plan.ImageInputPrice, 1e-12)
+	require.InDelta(t, imageOutputPrice, plan.ImageOutputPrice, 1e-12)
 }
 
 func TestResolveOpenAIImageBillingPlanUsesChannelImageTierPrice(t *testing.T) {
@@ -221,38 +216,39 @@ func TestResolveOpenAIImageBillingPlanUsesChannelImageTierPrice(t *testing.T) {
 		&groupID,
 		"gpt-image-2",
 		ImageBillingSize1K,
-		false,
 	)
 	require.NoError(t, err)
 	require.Equal(t, BillingModeImage, plan.Mode)
 	require.Equal(t, PricingSourceChannel, plan.Source)
-	require.True(t, plan.Resolved.DefaultPerRequestPriceSet)
-	require.InDelta(t, price, plan.Resolved.DefaultPerRequestPrice, 1e-12)
+	require.InDelta(t, price, plan.UnitPrice, 1e-12)
 }
 
-func TestResolveOpenAIImageBillingPlanFallsBackFromIncompleteExplicitChannelImagePrice(t *testing.T) {
+// 渠道声明按张、但没配请求的档位也没有默认价：只在按张的层里往下找。gpt-image-2 的
+// 模型价格是按 token，不能被借来顶替，所以拒绝；Gemini 的模型价格是按张，可以补上档位。
+func TestResolveOpenAIImageBillingPlanIncompleteExplicitChannelImagePriceStaysPerImage(t *testing.T) {
 	svc := newOpenAIImageBillingPlanTestService(t)
 	groupID := int64(74)
 	price2K := 0.27
-	setOpenAIImageChannelPricingForTest(t, svc, groupID, "gpt-image-2", &ChannelModelPricing{
-		BillingMode: BillingModeImage,
-		Intervals: []PricingInterval{{
-			TierLabel:       ImageBillingSize2K,
-			PerRequestPrice: &price2K,
-		}},
-	})
-
-	plan, err := svc.resolveOpenAIImageBillingPlan(
-		context.Background(),
-		&APIKey{GroupID: &groupID},
-		&groupID,
-		"gpt-image-2",
-		ImageBillingSize1K,
-		false,
-	)
-	require.NoError(t, err)
-	require.NotNil(t, plan)
-	require.Equal(t, PricingSourceModelPrice, plan.Source)
+	for _, model := range []string{"gpt-image-2", "gemini-2.5-flash-image"} {
+		setOpenAIImageChannelPricingForTest(t, svc, groupID, model, &ChannelModelPricing{
+			BillingMode: BillingModeImage,
+			Intervals: []PricingInterval{{
+				TierLabel:       ImageBillingSize2K,
+				PerRequestPrice: &price2K,
+			}},
+		})
+		plan, err := svc.resolveOpenAIImageBillingPlan(context.Background(), &APIKey{GroupID: &groupID}, &groupID, model, ImageBillingSize1K)
+		if model == "gpt-image-2" {
+			require.Nil(t, plan)
+			require.ErrorIs(t, err, ErrModelPricingUnavailable)
+			continue
+		}
+		require.NoError(t, err)
+		require.Equal(t, BillingModeImage, plan.Mode)
+		require.Equal(t, ImageBillingDeclaredByChannel, plan.DeclaredBy)
+		require.Equal(t, PricingSourceModelPrice, plan.Source)
+		require.InDelta(t, 0.039, plan.UnitPrice, 1e-12)
+	}
 }
 
 func TestResolveOpenAIImageBillingPlanRejectsInvalidExplicitChannelTokenPrice(t *testing.T) {
@@ -272,11 +268,10 @@ func TestResolveOpenAIImageBillingPlanRejectsInvalidExplicitChannelTokenPrice(t 
 		&groupID,
 		"gpt-image-2",
 		ImageBillingSize1K,
-		false,
 	)
 	require.Nil(t, plan)
 	require.ErrorIs(t, err, ErrModelPricingUnavailable)
-	require.ErrorContains(t, err, "explicit channel image token pricing")
+	require.ErrorContains(t, err, "invalid explicit price at declared_by=channel")
 }
 
 func TestResolveOpenAIImageBillingPlanPrefersGroupUnitPrice(t *testing.T) {
@@ -297,13 +292,11 @@ func TestResolveOpenAIImageBillingPlanPrefersGroupUnitPrice(t *testing.T) {
 		&groupID,
 		"gpt-image-2",
 		ImageBillingSize1K,
-		false,
 	)
 	require.NoError(t, err)
 	require.Equal(t, BillingModeImage, plan.Mode)
 	require.Equal(t, PricingSourceGroup, plan.Source)
-	require.True(t, plan.Resolved.DefaultPerRequestPriceSet)
-	require.InDelta(t, price, plan.Resolved.DefaultPerRequestPrice, 1e-12)
+	require.InDelta(t, price, plan.UnitPrice, 1e-12)
 }
 
 func TestCalculateOpenAIImageCostFromTokenPlan(t *testing.T) {
@@ -314,7 +307,6 @@ func TestCalculateOpenAIImageCostFromTokenPlan(t *testing.T) {
 		nil,
 		"gpt-image-2",
 		ImageBillingSize1K,
-		false,
 	)
 	require.NoError(t, err)
 
@@ -348,7 +340,8 @@ func TestCalculateOpenAIImageCostFromTokenPlan(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Equal(t, string(BillingModeToken), cost.BillingMode)
-	require.InDelta(t, 46*5e-6, cost.InputCost, 1e-12)
+	// D2：提示词按图片输入价计（gpt-image-2 为 $8/M），不再按文本输入价。
+	require.InDelta(t, 46*8e-6, cost.InputCost, 1e-12)
 	require.InDelta(t, 2459*3e-5, cost.ImageOutputCost, 1e-12)
 	require.Zero(t, cost.OutputCost)
 }
@@ -361,11 +354,8 @@ func TestCalculateOpenAIImageCostSupportsCatalogWithoutTextOutputPrice(t *testin
 		nil,
 		"gpt-image-1",
 		ImageBillingSize1K,
-		false,
 	)
 	require.NoError(t, err)
-	require.False(t, plan.Resolved.BasePricing.OutputPriceExplicit)
-	require.Zero(t, plan.Resolved.BasePricing.OutputPricePerToken)
 
 	result := &OpenAIForwardResult{
 		Model:            "gpt-image-1",
@@ -397,12 +387,14 @@ func TestCalculateOpenAIImageCostSupportsCatalogWithoutTextOutputPrice(t *testin
 	)
 	require.NoError(t, err)
 	require.Equal(t, string(BillingModeToken), cost.BillingMode)
-	require.InDelta(t, 46*5e-6, cost.InputCost, 1e-12)
+	require.InDelta(t, 46*1e-5, cost.InputCost, 1e-12)
 	require.InDelta(t, 2459*4e-5, cost.ImageOutputCost, 1e-12)
 	require.Zero(t, cost.OutputCost)
 }
 
-func TestCalculateOpenAIImageCostFromTokenPlanRejectsMissingUsage(t *testing.T) {
+// 上游没回 usage：不再报缺价进补账，按尺寸 × 质量估算（方案 §5，D3）。没写尺寸与质量时
+// 按 1024×1024、high 估：gpt-image-2 每张 7033 输出 token。
+func TestCalculateOpenAIImageCostFromTokenPlanEstimatesMissingUsage(t *testing.T) {
 	svc := newOpenAIImageBillingPlanTestService(t)
 	plan, err := svc.resolveOpenAIImageBillingPlan(
 		context.Background(),
@@ -410,7 +402,6 @@ func TestCalculateOpenAIImageCostFromTokenPlanRejectsMissingUsage(t *testing.T) 
 		nil,
 		"gpt-image-2",
 		ImageBillingSize1K,
-		false,
 	)
 	require.NoError(t, err)
 
@@ -418,7 +409,7 @@ func TestCalculateOpenAIImageCostFromTokenPlanRejectsMissingUsage(t *testing.T) 
 		ImageBillingPlan: plan,
 		ImageCount:       1,
 	}
-	_, err = svc.calculateOpenAIRecordUsageCost(
+	cost, err := svc.calculateOpenAIRecordUsageCost(
 		context.Background(),
 		result,
 		&APIKey{},
@@ -433,11 +424,17 @@ func TestCalculateOpenAIImageCostFromTokenPlanRejectsMissingUsage(t *testing.T) 
 		boolPtr(false),
 		time.Time{},
 	)
-	require.ErrorIs(t, err, ErrModelPricingUnavailable)
-	require.ErrorContains(t, err, "image output token usage")
+	require.NoError(t, err)
+	require.Equal(t, string(BillingModeToken), cost.BillingMode)
+	require.InDelta(t, 7033*3e-5, cost.TotalCost, 1e-12)
+	require.Equal(t, UsageSourceEstimated, result.UsageSource)
+	require.Equal(t, ImageEstimateMethod, result.UsageEstimationMethod)
+	require.Equal(t, 7033, result.Usage.ImageOutputTokens, "估算的 token 写回用量，记录与扣费一致")
 }
 
-func TestRecordUsageKeepsMissingImageTokenUsagePending(t *testing.T) {
+// 场景 2：/v1/images 按 token、上游没回 usage → 按估算扣费，用量记录标 estimated / image_estimate，
+// 不再零扣费进补账。
+func TestRecordUsageEstimatesMissingImageTokenUsage(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
 	userRepo := &openAIRecordUsageUserRepoStub{}
 	subRepo := &openAIRecordUsageSubRepoStub{}
@@ -452,7 +449,6 @@ func TestRecordUsageKeepsMissingImageTokenUsagePending(t *testing.T) {
 		nil,
 		"gpt-image-2",
 		ImageBillingSize1K,
-		false,
 	)
 	require.NoError(t, err)
 
@@ -478,23 +474,14 @@ func TestRecordUsageKeepsMissingImageTokenUsagePending(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, usageRepo.lastLog)
-	require.Equal(t, BillingStatePricingUnavailable, usageRepo.lastLog.BillingState)
+	require.Equal(t, BillingStateSettled, usageRepo.lastLog.BillingState)
 	require.NotNil(t, usageRepo.lastLog.BillingMode)
 	require.Equal(t, string(BillingModeToken), *usageRepo.lastLog.BillingMode)
-	require.Zero(t, usageRepo.lastLog.ActualCost)
-	require.Equal(t, 0, userRepo.deductCalls)
-
-	recovery := &BillingRecoveryService{
-		billingService: pricingSvc.billingService,
-		resolver:       pricingSvc.resolver,
-	}
-	require.False(t, recovery.hasStrictPricingForUsage(
-		context.Background(),
-		"gpt-image-2",
-		usageRepo.lastLog,
-		&APIKey{},
-		nil,
-	))
+	require.Equal(t, UsageSourceEstimated, usageRepo.lastLog.UsageSource)
+	require.Equal(t, ImageEstimateMethod, usageRepo.lastLog.UsageEstimationMethod)
+	require.Equal(t, 7033, usageRepo.lastLog.ImageOutputTokens)
+	require.InDelta(t, 7033*3e-5, usageRepo.lastLog.TotalCost, 1e-12)
+	require.Positive(t, usageRepo.lastLog.ActualCost)
 }
 
 func TestBillingRecoveryRecomputesCompleteImageTokenUsage(t *testing.T) {
@@ -533,13 +520,23 @@ func TestBillingRecoveryRecomputesCompleteImageTokenUsage(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Equal(t, string(BillingModeToken), cost.BillingMode)
-	require.InDelta(t, 19*5e-6, cost.InputCost, 1e-12)
+	// D2：提示词也按图片输入价计（$8/M），不再按文本输入价。
+	require.InDelta(t, 19*8e-6, cost.InputCost, 1e-12)
 	require.InDelta(t, 352*8e-6, cost.ImageInputCost, 1e-12)
 	require.InDelta(t, 439*3e-5, cost.ImageOutputCost, 1e-12)
 	require.Zero(t, cost.OutputCost)
+
+	// 配置里的方式已经换成按张：不按旧方式补，记录保持待补。
+	pricingSvc.billingService.pricingService.SeedOverridesForTest([]ModelPriceOverride{{
+		Platform: ModelPriceOverrideWildcardPlatform, ModelName: "gpt-image-2", BillingMode: BillingModeImage, Enabled: true,
+		Payload: ModelPriceOverridePayload{OutputCostPerImage: imagePrice(0.05)},
+	}})
+	require.False(t, recovery.hasStrictPricingForUsage(context.Background(), "gpt-image-2", log, &APIKey{}, nil))
 }
 
-func TestNativeResponsesImageGuardDoesNotBorrowImageTokenPlan(t *testing.T) {
+// Responses 生图工具：gpt-image 系没配按张价时，以前准入直接拒绝；二选一后按模型
+// 自己的方式（按 token）放行，结算时工具 token 按两项价、主模型 token 另计（方案 §7 第 3 条）。
+func TestNativeResponsesImageGuardAdmitsImageTokenPlan(t *testing.T) {
 	svc := newOpenAIImageBillingPlanTestService(t)
 	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 
@@ -558,7 +555,7 @@ func TestNativeResponsesImageGuardDoesNotBorrowImageTokenPlan(t *testing.T) {
 		ImageBillingSize1K,
 		BillingKindImage,
 	)
-	require.ErrorIs(t, err, ErrModelPricingUnavailable)
+	require.NoError(t, err)
 }
 
 // Images API settles through the billing plan; it must apply the same channel
@@ -576,7 +573,7 @@ func TestCalculateOpenAIImageCostFromPlanAppliesReasoningEffortMultiplier(t *tes
 		}},
 	})
 	apiKey := &APIKey{GroupID: &groupID}
-	plan, err := svc.resolveOpenAIImageBillingPlan(context.Background(), apiKey, &groupID, "gpt-image-2", ImageBillingSize1K, false)
+	plan, err := svc.resolveOpenAIImageBillingPlan(context.Background(), apiKey, &groupID, "gpt-image-2", ImageBillingSize1K)
 	require.NoError(t, err)
 
 	costFor := func(effort *string) *CostBreakdown {
@@ -602,10 +599,16 @@ func TestResolveOpenAIImageBillingPlanImageCountBillingSwitch(t *testing.T) {
 		}}
 	}
 
-	t.Run("switch off keeps token plan", func(t *testing.T) {
+	t.Run("switch off uses the model's own mode", func(t *testing.T) {
 		svc := newOpenAIImageBillingPlanTestService(t)
 		groupID := int64(81)
-		plan, err := svc.resolveOpenAIImageBillingPlan(context.Background(), keyWithSwitch(groupID, false), &groupID, perImageModel, ImageBillingSize1K, false)
+		// 目录里两种价都有的 Gemini 出图模型默认按张（D8）。
+		plan, err := svc.resolveOpenAIImageBillingPlan(context.Background(), keyWithSwitch(groupID, false), &groupID, perImageModel, ImageBillingSize1K)
+		require.NoError(t, err)
+		require.Equal(t, BillingModeImage, plan.Mode)
+		require.Equal(t, ImageBillingDeclaredByModelCatalog, plan.DeclaredBy)
+		// gpt-image-2 只有图片 token 价，按 token。
+		plan, err = svc.resolveOpenAIImageBillingPlan(context.Background(), keyWithSwitch(groupID, false), &groupID, "gpt-image-2", ImageBillingSize1K)
 		require.NoError(t, err)
 		require.Equal(t, BillingModeToken, plan.Mode)
 	})
@@ -613,11 +616,11 @@ func TestResolveOpenAIImageBillingPlanImageCountBillingSwitch(t *testing.T) {
 	t.Run("switch on prefers catalog per-image price", func(t *testing.T) {
 		svc := newOpenAIImageBillingPlanTestService(t)
 		groupID := int64(82)
-		plan, err := svc.resolveOpenAIImageBillingPlan(context.Background(), keyWithSwitch(groupID, true), &groupID, perImageModel, ImageBillingSize1K, false)
+		plan, err := svc.resolveOpenAIImageBillingPlan(context.Background(), keyWithSwitch(groupID, true), &groupID, perImageModel, ImageBillingSize1K)
 		require.NoError(t, err)
 		require.Equal(t, BillingModeImage, plan.Mode)
 		require.Equal(t, PricingSourceModelPrice, plan.Source)
-		require.InDelta(t, 0.039, plan.Resolved.DefaultPerRequestPrice, 1e-12)
+		require.InDelta(t, 0.039, plan.UnitPrice, 1e-12)
 	})
 
 	t.Run("switch on overrides explicit channel token price", func(t *testing.T) {
@@ -632,13 +635,13 @@ func TestResolveOpenAIImageBillingPlanImageCountBillingSwitch(t *testing.T) {
 			OutputPrice:      &outputPrice,
 			ImageOutputPrice: &imageOutputPrice,
 		})
-		plan, err := svc.resolveOpenAIImageBillingPlan(context.Background(), keyWithSwitch(groupID, true), &groupID, perImageModel, ImageBillingSize1K, false)
+		plan, err := svc.resolveOpenAIImageBillingPlan(context.Background(), keyWithSwitch(groupID, true), &groupID, perImageModel, ImageBillingSize1K)
 		require.NoError(t, err)
 		require.Equal(t, BillingModeImage, plan.Mode)
 		require.Equal(t, PricingSourceModelPrice, plan.Source)
 	})
 
-	t.Run("switch on without any per-image price falls back to channel token", func(t *testing.T) {
+	t.Run("switch on without any per-image price is rejected", func(t *testing.T) {
 		svc := newOpenAIImageBillingPlanTestService(t)
 		groupID := int64(84)
 		inputPrice := 7e-6
@@ -650,10 +653,10 @@ func TestResolveOpenAIImageBillingPlanImageCountBillingSwitch(t *testing.T) {
 			ImageInputPrice:  &imageInputPrice,
 			ImageOutputPrice: &imageOutputPrice,
 		})
-		plan, err := svc.resolveOpenAIImageBillingPlan(context.Background(), keyWithSwitch(groupID, true), &groupID, "gpt-image-2", ImageBillingSize1K, true)
-		require.NoError(t, err)
-		require.Equal(t, BillingModeToken, plan.Mode)
-		require.Equal(t, PricingSourceChannel, plan.Source)
-		require.InDelta(t, imageOutputPrice, plan.Resolved.BasePricing.ImageOutputPricePerToken, 1e-12)
+		// 开关声明按张，同方式里找不到价就拒绝，不再回落到 token（方案 §7 第 6 条）。
+		plan, err := svc.resolveOpenAIImageBillingPlan(context.Background(), keyWithSwitch(groupID, true), &groupID, "gpt-image-2", ImageBillingSize1K)
+		require.Nil(t, plan)
+		require.ErrorIs(t, err, ErrModelPricingUnavailable)
+		require.ErrorContains(t, err, "declared_by=group_image_count_billing")
 	})
 }

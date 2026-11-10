@@ -295,7 +295,7 @@ func (s *GatewayService) ValidateUsagePricing(ctx context.Context, apiKey *APIKe
 	if mediaIntent, ok := OpenAIImageGenerationPricingIntentFromContext(ctx); ok {
 		mediaModel := strings.TrimSpace(mediaIntent.BillingModel)
 		mediaTier := NormalizeImageBillingTierOrDefault(mediaIntent.SizeTier)
-		if mediaModel == "" || !s.hasResolvableImagePricingForPlatforms(ctx, mediaModel, mediaTier, apiKey, platforms) {
+		if mediaModel == "" || !s.hasResolvableImagePricingForPlatforms(ctx, mediaModel, mediaTier, apiKey, platforms, false, false) {
 			return fmt.Errorf(
 				"%w for billing_kind=%s platform=%s requested_model=%q mapped_model=%q upstream_model=%q media_billing_model=%q media_size_tier=%q",
 				ErrModelPricingUnavailable,
@@ -316,7 +316,7 @@ func (s *GatewayService) ValidateUsagePricing(ctx context.Context, apiKey *APIKe
 	// before an output size is known, so admission must prove that at least one
 	// model in the settlement fallback chain is priced for every possible tier.
 	if OpenAIImageGenerationIntentFromContext(ctx) &&
-		!s.admitImageGenerationPricing(ctx, apiKey, platforms, billingModel, upstreamModel, requestedModel) {
+		!s.admitImageGenerationPricing(ctx, apiKey, platforms, upstreamModel, billingModel, upstreamModel, requestedModel) {
 		return fmt.Errorf(
 			"%w for billing_kind=%s platform=%s requested_model=%q mapped_model=%q upstream_model=%q selected_billing_model=%q",
 			ErrModelPricingUnavailable,
@@ -335,8 +335,10 @@ func (s *GatewayService) admitImageGenerationPricing(
 	ctx context.Context,
 	apiKey *APIKey,
 	platforms []string,
+	upstreamModel string,
 	models ...string,
 ) bool {
+	upstreamModel = strings.TrimSpace(upstreamModel)
 	seen := make(map[string]struct{}, len(models))
 	for _, model := range models {
 		model = strings.TrimSpace(model)
@@ -349,7 +351,8 @@ func (s *GatewayService) admitImageGenerationPricing(
 		seen[model] = struct{}{}
 		pricedForEveryTier := true
 		for _, tier := range []string{ImageBillingSize1K, ImageBillingSize2K, ImageBillingSize4K} {
-			if !s.hasResolvableImagePricingForPlatforms(ctx, model, tier, apiKey, platforms) {
+			crossModel := upstreamModel != "" && !strings.EqualFold(model, upstreamModel)
+			if !s.hasResolvableImagePricingForPlatforms(ctx, model, tier, apiKey, platforms, false, crossModel) {
 				pricedForEveryTier = false
 				break
 			}

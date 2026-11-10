@@ -149,12 +149,20 @@ func TestOverrideExplicitZeroIsPreserved(t *testing.T) {
 	require.True(t, got.OutputPriceExplicit)
 }
 
+// 按张价只属于 image 档：image 档只写按张价可以保存，token 档写按张价被拒。
 func TestImageOnlyOverrideIsAllowed(t *testing.T) {
 	svc := &PricingService{catalogData: map[string]*ModelPriceEntry{}}
-	_, err := svc.validateOverrideWrite("*", "gpt-image-1", ModelPriceCurrencyUSD, BillingModeToken, &ModelPriceOverridePayload{
+	_, err := svc.validateOverrideWrite("*", "gpt-image-1", ModelPriceCurrencyUSD, BillingModeImage, &ModelPriceOverridePayload{
 		OutputCostPerImage: ptrPrice(0.04),
 	}, true)
 	require.NoError(t, err)
+
+	_, err = svc.validateOverrideWrite("*", "gpt-image-1", ModelPriceCurrencyUSD, BillingModeToken, &ModelPriceOverridePayload{
+		OutputCostPerImage: ptrPrice(0.04),
+	}, true)
+	var appErr *infraerrors.ApplicationError
+	require.ErrorAs(t, err, &appErr)
+	require.Equal(t, "FIELD_NOT_IN_BILLING_MODE", appErr.Reason)
 }
 
 // TestImageOnlyOverrideAllowedAgainstAsymmetricCatalogEntry reproduces the
@@ -169,6 +177,8 @@ func TestImageOnlyOverrideAllowedAgainstAsymmetricCatalogEntry(t *testing.T) {
 			"gpt-image-1": {
 				InputCostPerToken:        5e-6,
 				InputPriceExplicit:       true,
+				ImageInputPriceExplicit:  true,
+				InputCostPerImageToken:   1e-5,
 				ImageOutputPriceExplicit: true,
 				OutputCostPerImageToken:  4e-5,
 				PricePresenceKnown:       true,
@@ -189,8 +199,9 @@ func TestImageOnlyOverrideAllowedAgainstAsymmetricCatalogEntry(t *testing.T) {
 func TestTokenOverrideStillRequiresCompletePair(t *testing.T) {
 	svc := &PricingService{catalogData: map[string]*ModelPriceEntry{}}
 	_, err := svc.validateOverrideWrite("*", "gpt-image-1", ModelPriceCurrencyUSD, BillingModeToken, &ModelPriceOverridePayload{
-		InputCostPerToken:  ptrPrice(5e-6),
-		OutputCostPerImage: ptrPrice(0.04),
+		InputCostPerToken:       ptrPrice(5e-6),
+		InputCostPerImageToken:  ptrPrice(1e-5),
+		OutputCostPerImageToken: ptrPrice(4e-5),
 	}, true)
 	require.Error(t, err)
 	var appErr *infraerrors.ApplicationError

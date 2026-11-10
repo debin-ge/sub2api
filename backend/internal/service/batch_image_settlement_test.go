@@ -809,3 +809,39 @@ func TestBatchImageSettlementService_SnapshotJobNeverConsultsResolver(t *testing
 	require.Equal(t, 0, pricing.calls)
 	require.InDelta(t, 0.5, result.ActualCost, 1e-12)
 }
+
+// T2.7：批量出图单价走出图计划（固定 1K）。
+func TestBatchImageUnitPriceUsesImageBillingPlan(t *testing.T) {
+	unit := func(overrides []ModelPriceOverride, model string, promptTokens int) (float64, error) {
+		f := newImageBillingFixture(t, overrides)
+		resolver := &BatchImageModelPricingResolver{Resolver: f.resolver}
+		return resolver.BatchImageUnitPrice(context.Background(), &BatchImageJob{
+			Provider: BatchImageProviderGeminiAPI, Model: model, EstimatedPromptTokens: promptTokens,
+		})
+	}
+
+	price, err := unit(nil, "gemini-2.5-flash-image", 0)
+	require.NoError(t, err)
+	require.InDelta(t, 0.039, price, 1e-12, "目录默认按张价")
+
+	price, err = unit([]ModelPriceOverride{{
+		Platform: PlatformGemini, ModelName: "gemini-2.5-flash-image", BillingMode: BillingModeImage, Enabled: true,
+		Payload: ModelPriceOverridePayload{Intervals: []PricingInterval{{TierLabel: ImageBillingSize1K, PerRequestPrice: imagePrice(0.05)}}},
+	}}, "gemini-2.5-flash-image", 0)
+	require.NoError(t, err)
+	require.InDelta(t, 0.05, price, 1e-12, "先看 1K 档位价")
+
+	price, err = unit([]ModelPriceOverride{{
+		Platform: PlatformGemini, ModelName: "my-batch-image", BillingMode: BillingModeImage, Enabled: true,
+		Payload: ModelPriceOverridePayload{Intervals: []PricingInterval{{TierLabel: ImageBillingSize1K, PerRequestPrice: imagePrice(0.06)}}},
+	}}, "my-batch-image", 0)
+	require.NoError(t, err, "只配了档位价也能定价（原先报缺价）")
+	require.InDelta(t, 0.06, price, 1e-12)
+
+	price, err = unit([]ModelPriceOverride{{
+		Platform: PlatformGemini, ModelName: "gemini-2.5-flash-image", BillingMode: BillingModeToken, Enabled: true,
+		Payload: ModelPriceOverridePayload{InputCostPerImageToken: imagePrice(3e-7), OutputCostPerImageToken: imagePrice(3e-5)},
+	}}, "gemini-2.5-flash-image", 40)
+	require.NoError(t, err)
+	require.InDelta(t, 40*3e-7+1290*3e-5, price, 1e-12, "按 token：1K 估算单价")
+}

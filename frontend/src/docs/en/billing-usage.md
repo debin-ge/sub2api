@@ -9,7 +9,7 @@
 | Billing type | How it is priced | Unit |
 | --- | --- | --- |
 | Text | Input, output, cache write, and cache read are priced separately | per 1M tokens |
-| Image | Image tokens first; per image by 1K / 2K / 4K size when no token usage is returned | per 1M tokens / per image |
+| Image | Each model uses exactly one method: per image (1K / 2K / 4K tiers) or image tokens | per image / per 1M tokens |
 | Video | Per-second price of the resolution tier (480p / 720p / 1080p) × duration | per second |
 | Per request | Fixed charge per successful request, regardless of tokens | per request |
 
@@ -28,10 +28,26 @@ cost = (input tokens × input price + output tokens × output price
 
 ## Image Models
 
-An image model may have both kinds of prices. They are applied in this order:
+Each image model is billed by exactly one method, and the [Model Plaza](/plaza) shows the method it actually uses.
 
-1. **Image tokens (preferred)**: when the upstream returns image token usage, text input, image input, and image output tokens are billed at their token prices.
-2. **Per image (fallback)**: when no image token usage is returned, cost = per-image price of the size tier × number of images.
+**Per image**:
+
+```text
+cost = per-image price of the size tier × number of images × group image multiplier
+```
+
+Text in the request and in the response is not charged separately for per-image models.
+
+**Image tokens**: there are only two prices, the image input price and the image output price.
+
+```text
+cost = (all input tokens × image input price + all output tokens × image output price)
+       ÷ 1,000,000 × group multiplier
+```
+
+- All input tokens include the prompt, input images, and cache hits, all billed at the image input price. All output tokens include images and text, all billed at the image output price.
+- When the upstream returns no token usage, tokens are estimated from the image size and `quality` before charging; a missing quality is estimated as high.
+- When the image tool is called through `/v1/responses`, the main model's tokens are billed separately at the main model's own prices.
 
 The size tier is decided by the long edge of the image. The actual output size returned by the upstream takes priority over the `size` request parameter:
 

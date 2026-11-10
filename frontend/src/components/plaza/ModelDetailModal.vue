@@ -89,15 +89,18 @@
                   {{ t('plaza.modal.imageTokenPricing') }}
                 </p>
                 <PricingTable :model="model" :rows="imageTokenRows" :caption="t('plaza.card.tokenCaption')" />
+                <p class="mt-3 rounded-lg bg-gray-50 px-3 py-2 text-[11px] leading-5 text-gray-500 dark:bg-dark-800/60 dark:text-gray-400">
+                  {{ t('plaza.modal.imageNote') }}
+                </p>
               </div>
               <div v-if="imageTierRows.length || perRequestRows.length">
                 <p class="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400">
-                  {{ imageTokenRows.length ? t('plaza.modal.perImageFallback') : t('plaza.modal.perImagePricing') }}
+                  {{ t('plaza.modal.perImagePricing') }}
                 </p>
                 <PricingTable v-if="imageTierRows.length" :model="model" :rows="imageTierRows" :caption="t('plaza.card.perImageCaption')" />
                 <PricingTable v-else :model="model" :rows="perRequestRows" :caption="t('plaza.price.unitPerRequest')" />
                 <p class="mt-3 rounded-lg bg-gray-50 px-3 py-2 text-[11px] leading-5 text-gray-500 dark:bg-dark-800/60 dark:text-gray-400">
-                  {{ imageTokenRows.length ? t('plaza.modal.imageNote') : t('plaza.modal.imagePerImageNote') }}
+                  {{ t('plaza.modal.imagePerImageNote') }}
                 </p>
               </div>
             </section>

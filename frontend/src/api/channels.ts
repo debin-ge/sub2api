@@ -58,6 +58,8 @@ export interface UserPricingInterval {
 
 export interface UserSupportedModelPricing {
   billing_mode: BillingMode
+  /** 出图方式（按张 / 按 token 二选一）：image 只给按张档位价，token 只给两项图片 token 价。 */
+  image_billing_mode?: 'image' | 'token' | ''
   currency?: 'USD' | 'CNY'
   source?: 'override' | 'merged' | 'catalog' | 'official' | 'channel'
   input_price: number | null

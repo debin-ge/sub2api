@@ -584,25 +584,23 @@ func (s *BillingRecoveryService) hasStrictPricingForUsage(
 		groupID = log.GroupID
 	}
 	if log != nil && log.ImageCount > 0 && billingModeIsToken(log.BillingMode) {
-		// A delivered token-billed image without image-output usage cannot be
+		// A delivered token-billed image without output usage cannot be
 		// reconstructed from pricing alone. Keep it pending instead of
 		// "recovering" it as a settled zero-cost row.
-		if log.ImageOutputTokens <= 0 || log.OutputTokens < log.ImageOutputTokens {
+		if recoveryImageTokenUsage(log).OutputTokens() <= 0 {
 			return false
 		}
-		requireImageInput := strings.Contains(
-			strings.ToLower(stringOrEmpty(log.InboundEndpoint)),
-			"/images/edits",
-		)
-		if requireImageInput && log.ImageInputTokens <= 0 {
-			return false
-		}
-		return s.hasStrictImageTokenPricing(
-			ctx, model, groupID, recoveryPricingGroup(log, apiKey), pricingPlatformCandidates(apiKey, account), requireImageInput,
-		)
+		_, err := s.recoveryImageBillingPlan(ctx, model, log, apiKey, pricingPlatformCandidates(apiKey, account), BillingModeToken)
+		return err == nil
 	}
 	switch kind {
-	case BillingKindImage, BillingKindVideo:
+	case BillingKindImage:
+		if !tierValid {
+			return false
+		}
+		_, err := s.recoveryImageBillingPlan(ctx, model, log, apiKey, pricingPlatformCandidates(apiKey, account), BillingModeImage)
+		return err == nil
+	case BillingKindVideo:
 		if !tierValid {
 			return false
 		}
@@ -614,28 +612,56 @@ func (s *BillingRecoveryService) hasStrictPricingForUsage(
 	}
 }
 
-func (s *BillingRecoveryService) hasStrictImageTokenPricing(
+// recoveryImageBillingPlan 按用量记录里的方式（ForceMode）重新解析出图计费计划。
+// 配置里已经换成另一种方式、或者已经没有该方式的价时解析失败，记录保持待补。
+func (s *BillingRecoveryService) recoveryImageBillingPlan(
 	ctx context.Context,
 	model string,
-	groupID *int64,
-	group *Group,
+	log *UsageLog,
+	apiKey *APIKey,
 	platforms []string,
-	requireImageInput bool,
-) bool {
-	if s == nil || s.billingService == nil {
-		return false
+	mode BillingMode,
+) (*ImageBillingPlan, error) {
+	if s == nil || s.billingService == nil || log == nil {
+		return nil, fmt.Errorf("%w: image billing recovery unavailable", ErrModelPricingUnavailable)
 	}
 	resolver := s.resolver
 	if resolver == nil {
 		resolver = NewModelPricingResolver(s.channelService, s.billingService)
 	}
-	_, err := resolver.ResolveStrictImageToken(ctx, PricingInput{
-		Model:     model,
-		Platforms: platforms,
-		GroupID:   groupID,
-		Group:     group,
-	}, requireImageInput)
-	return err == nil
+	// 分组图片价、按张开关挂在分组上；API Key 带的分组字段最全，优先用它。
+	group := recoveryPricingGroup(log, apiKey)
+	if apiKey != nil && apiKey.Group != nil {
+		group = apiKey.Group
+	}
+	return resolver.ResolveImageBilling(ctx, ImageBillingInput{
+		Model:         model,
+		Platforms:     platforms,
+		GroupID:       log.GroupID,
+		Group:         group,
+		SizeTier:      stringOrEmpty(log.ImageSize),
+		ImageEndpoint: strings.Contains(strings.ToLower(stringOrEmpty(log.InboundEndpoint)), "/images/"),
+		ForceMode:     mode,
+	})
+}
+
+// recoveryImageTokenUsage 把持久化的用量换成按 token 出图的分桶。input_tokens 已扣掉
+// 缓存读写，其中包含未缓存的图片输入；各桶单价相同，只需保证总数不变。
+func recoveryImageTokenUsage(log *UsageLog) ImageTokenUsage {
+	if log == nil {
+		return ImageTokenUsage{}
+	}
+	input := max(log.InputTokens, 0)
+	imageInput := min(max(log.ImageInputTokens, 0), input)
+	imageOutput := max(log.ImageOutputTokens, 0)
+	return ImageTokenUsage{
+		TextInputTokens:     input - imageInput,
+		ImageInputTokens:    imageInput,
+		CacheReadTokens:     max(log.CacheReadTokens, 0),
+		CacheCreationTokens: max(log.CacheCreationTokens, 0),
+		TextOutputTokens:    max(log.OutputTokens-imageOutput, 0),
+		ImageOutputTokens:   imageOutput,
+	}
 }
 
 func recoveryBillingKindAndTier(log *UsageLog) (BillingKind, string, bool) {
@@ -905,81 +931,26 @@ func (s *BillingRecoveryService) recomputeBaseCost(
 			billingModel, resolution, log.VideoCount, duration, nil, multiplier,
 		)
 	case log.ImageCount > 0 && !billingModeIsToken(log.BillingMode):
-		sizeTier, err := NormalizeImageBillingTierStrictOrDefault(stringOrEmpty(log.ImageSize))
+		plan, err := s.recoveryImageBillingPlan(ctx, billingModel, log, apiKey, platforms, BillingModeImage)
 		if err != nil {
 			return nil, err
 		}
-		if recoveryGroupMediaTierConfigured(apiKey, BillingKindImage, sizeTier) {
-			return s.billingService.CalculateImageCostStrictForPlatforms(
-				platforms, billingModel, sizeTier, log.ImageCount, imagePriceConfigFromAPIKey(apiKey), multiplier,
-			)
-		}
-		if resolved := s.resolveRecoveryChannelMediaPricing(ctx, billingModel, log.GroupID); resolved != nil {
-			cost, err := s.billingService.CalculateCostUnified(CostInput{
-				Ctx:             ctx,
-				Model:           billingModel,
-				GroupID:         log.GroupID,
-				Group:           recoveryPricingGroup(log, apiKey),
-				RequestCount:    log.ImageCount,
-				SizeTier:        sizeTier,
-				RateMultiplier:  multiplier,
-				PricingAt:       log.CreatedAt,
-				ReasoningEffort: stringOrEmpty(log.ReasoningEffort),
-				Resolver:        s.resolver,
-				Resolved:        resolved,
-			})
-			if err == nil {
-				return cost, nil
-			}
-		}
-		return s.billingService.CalculateImageCostStrictForPlatforms(
-			platforms, billingModel, sizeTier, log.ImageCount, nil, multiplier,
-		)
+		return s.billingService.CalculateImagePerImageCost(plan, log.ImageCount, multiplier, stringOrEmpty(log.ReasoningEffort))
 	}
 
 	tokens := recoveryUsageTokens(log)
 	if log.ImageCount > 0 && billingModeIsToken(log.BillingMode) {
-		requireImageInput := strings.Contains(
-			strings.ToLower(stringOrEmpty(log.InboundEndpoint)),
-			"/images/edits",
-		)
-		if log.ImageOutputTokens <= 0 || log.OutputTokens < log.ImageOutputTokens ||
-			(requireImageInput && log.ImageInputTokens <= 0) {
-			return nil, fmt.Errorf(
-				"%w: persisted image token usage is incomplete",
-				ErrModelPricingUnavailable,
-			)
+		usage := recoveryImageTokenUsage(log)
+		if usage.OutputTokens() <= 0 {
+			return nil, fmt.Errorf("%w: persisted image token usage is incomplete", ErrModelPricingUnavailable)
 		}
-		resolver := s.resolver
-		if resolver == nil {
-			resolver = NewModelPricingResolver(s.channelService, s.billingService)
-		}
-		resolved, err := resolver.ResolveStrictImageToken(ctx, PricingInput{
-			Model:     billingModel,
-			Platforms: platforms,
-			GroupID:   log.GroupID,
-			Group:     recoveryPricingGroup(log, apiKey),
-		}, requireImageInput)
+		plan, err := s.recoveryImageBillingPlan(ctx, billingModel, log, apiKey, platforms, BillingModeToken)
 		if err != nil {
 			return nil, err
 		}
-		longContextBillingEnabled := true
-		return s.billingService.CalculateCostUnified(CostInput{
-			Ctx:                            ctx,
-			Model:                          billingModel,
-			GroupID:                        log.GroupID,
-			Group:                          recoveryPricingGroup(log, apiKey),
-			Tokens:                         tokens,
-			RequestCount:                   1,
-			RateMultiplier:                 multiplier,
-			PricingAt:                      log.CreatedAt,
-			ServiceTier:                    stringOrEmpty(log.ServiceTier),
-			ReasoningEffort:                stringOrEmpty(log.ReasoningEffort),
-			Resolver:                       resolver,
-			Resolved:                       resolved,
-			LongContextBillingEnabled:      &longContextBillingEnabled,
-			DisableModelLongContextPricing: modelLongContextExempt,
-		})
+		return s.billingService.CalculateImageTokenCost(
+			plan, usage, multiplier, stringOrEmpty(log.ServiceTier), stringOrEmpty(log.ReasoningEffort),
+		)
 	}
 	if s.resolver != nil && log.GroupID != nil {
 		resolved, err := s.resolver.ResolveStrictToken(ctx, PricingInput{

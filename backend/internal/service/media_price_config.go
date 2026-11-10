@@ -5,13 +5,6 @@ func imageCountBillingEnabled(apiKey *APIKey) bool {
 	return apiKey != nil && apiKey.Group != nil && apiKey.Group.ImageCountBilling
 }
 
-// imageCountBillingApplies 判断分组按张计费开关是否作用于本次请求。
-// 开关只影响专用图片端点；混合的 Responses/Chat/WS 请求即使带图片工具，
-// 也必须保留 token 计费，避免整条请求被按图片单价结算而丢失文本 token 费用。
-func imageCountBillingApplies(apiKey *APIKey, imageEndpoint bool) bool {
-	return imageEndpoint && imageCountBillingEnabled(apiKey)
-}
-
 func imagePriceConfigFromAPIKey(apiKey *APIKey) *ImagePriceConfig {
 	if apiKey == nil || apiKey.Group == nil {
 		return nil
@@ -21,10 +14,6 @@ func imagePriceConfigFromAPIKey(apiKey *APIKey) *ImagePriceConfig {
 		Price2K: apiKey.Group.ImagePrice2K,
 		Price4K: apiKey.Group.ImagePrice4K,
 	}
-}
-
-func apiKeyHasConfiguredImagePrice(apiKey *APIKey, imageSize string) bool {
-	return apiKey != nil && apiKey.Group != nil && apiKey.Group.GetImagePrice(imageSize) != nil
 }
 
 func videoPriceConfigFromAPIKey(apiKey *APIKey) *VideoPriceConfig {

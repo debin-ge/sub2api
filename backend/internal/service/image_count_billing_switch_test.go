@@ -12,17 +12,9 @@ import (
 
 func boolPtrForImageBillingTest(v bool) *bool { return &v }
 
-func TestImageCountBillingApplies(t *testing.T) {
-	enabled := &APIKey{Group: &Group{ImageCountBilling: true}}
-	disabled := &APIKey{Group: &Group{ImageCountBilling: false}}
-
-	require.True(t, imageCountBillingApplies(enabled, true))
-	require.False(t, imageCountBillingApplies(enabled, false), "混合请求不能受开关影响")
-	require.False(t, imageCountBillingApplies(disabled, true))
-	require.False(t, imageCountBillingApplies(nil, true))
-}
-
 // F1：composite 分组配置了 token 定价又开启按张计费时，图片不能按 $0 结算。
+// 二选一后（D5）分组模型定价卡是第 ① 层：卡声明 token 档，整层按 token，分组图片价与
+// 按张开关（第 ② 层）不再顶替；两项图片价从下层（渠道）继承，提示词按图片输入价。
 func TestCalculateRecordUsageCost_ImageCountBillingGroupTokenPricing(t *testing.T) {
 	groupID := int64(901)
 	model := "gpt-image-2"
@@ -52,8 +44,8 @@ func TestCalculateRecordUsageCost_ImageCountBillingGroupTokenPricing(t *testing.
 
 	require.NoError(t, err)
 	require.NotNil(t, cost)
-	require.InDelta(t, 1.0, cost.TotalCost, 1e-12, "应回落分组图片价，而不是 token 定价的 $0")
-	require.Equal(t, string(BillingModeImage), cost.BillingMode)
+	require.InDelta(t, 1000*3e-6+1000*15e-6, cost.TotalCost, 1e-12, "按两项图片价结算，而不是 token 定价的 $0")
+	require.Equal(t, string(BillingModeToken), cost.BillingMode)
 }
 
 // F3：渠道 token 定价 + 开关开启时必须强制按张计费，与 OpenAI 流水线一致。
@@ -96,7 +88,7 @@ func TestCalculateRecordUsageCost_ImageCountBillingIgnoresMixedRequests(t *testi
 		Hydrated:             true,
 		AllowImageGeneration: true,
 		ImageCountBilling:    true,
-		ImagePrice1K:         f64p(0.4),
+		// 不配分组图片价：分组图片价对所有出图入口都生效（第 ② 层），这里只验证开关。
 	}
 	apiKey := &APIKey{ID: 3, GroupID: &groupID, Group: group}
 	svc := &GatewayService{billingService: resolver.billingService, resolver: resolver}
@@ -123,13 +115,14 @@ func TestCalculateOpenAIRecordUsageCost_ImageCountBillingIgnoresMixedRequests(t 
 		Hydrated:             true,
 		AllowImageGeneration: true,
 		ImageCountBilling:    true,
-		ImagePrice1K:         f64p(0.4),
+		// 不配分组图片价：分组图片价对所有出图入口都生效（第 ② 层），这里只验证开关。
 	}
 	apiKey := &APIKey{ID: 4, GroupID: &groupID, Group: group}
 	svc := &OpenAIGatewayService{billingService: resolver.billingService, resolver: resolver}
 
 	cost, err := svc.calculateOpenAIRecordUsageCost(context.Background(), &OpenAIForwardResult{
 		Model: model, ImageCount: 1, ImageSize: "1K", ImageEndpoint: false,
+		Usage: OpenAIUsage{ImageGen: &OpenAIImageGenUsage{InputTokens: 100, OutputTokens: 1000, ImageOutputTokens: 1000}},
 	}, apiKey, []string{model}, BillingKindToken, 1, 1, 1, 1,
 		UsageTokens{InputTokens: 1_000_000, OutputTokens: 10_000},
 		"", nil, time.Time{})

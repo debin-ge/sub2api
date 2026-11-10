@@ -276,6 +276,8 @@ func (s *GatewayService) validateExactResolvedImagePricing(
 		identity.SizeTier,
 		apiKey,
 		pricingPlatformCandidates(apiKey, account),
+		false,
+		false,
 	) {
 		return nil
 	}

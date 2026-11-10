@@ -148,7 +148,10 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	}
 
 	// 余额模式在途预留（与计费同口径估算；计费任务扣减余额缓存后才释放）。
-	inflightDone, inflightErr := reserveInflightBalance(c, h.billingCacheService, h.gatewayService, apiKey, subscription, service.InflightEstimateRequest{Model: routingModel, BodyBytes: len(body), Kind: service.InflightEstimateImage, Units: parsed.N})
+	inflightDone, inflightErr := reserveInflightBalance(c, h.billingCacheService, h.gatewayService, apiKey, subscription, service.InflightEstimateRequest{
+		Model: routingModel, BodyBytes: len(body), Kind: service.InflightEstimateImage, Units: parsed.N,
+		ImageSizeTier: parsed.SizeTier, ImageSize: parsed.Size, ImageQuality: parsed.Quality, ImageEndpoint: true,
+	})
 	if inflightErr != nil {
 		status, code, message, retryAfter := billingErrorDetails(inflightErr)
 		if retryAfter > 0 {

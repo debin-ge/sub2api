@@ -1189,6 +1189,11 @@ func (s *OpenAIGatewayService) tryWriteOpenAIImagesStreamLimitError(c *gin.Conte
 
 func (s *OpenAIGatewayService) parseOpenAIImagesSSEUsageBytes(data []byte, usage *OpenAIUsage) {
 	s.parseSSEUsageBytes(data, usage)
+	if usage != nil {
+		// Image API 经 Responses 实现时只认下面严格解析的工具用量（整体替换），不用通用
+		// 解析宽松拿到的工具用量。
+		usage.ImageGen = nil
+	}
 	if usage == nil || !gjson.ValidBytes(data) || gjson.GetBytes(data, "type").String() != "response.completed" {
 		return
 	}
@@ -1868,7 +1873,6 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 			pricingPlatformCandidates(apiKey, account),
 			upstreamModel,
 			parsed.SizeTier,
-			parsed.IsEdits(),
 		)
 		if err != nil {
 			return nil, wrapOpenAIImageBillingPlanError(
@@ -2041,6 +2045,8 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 					ImageCount:                    imageCount,
 					ImageSize:                     parsed.SizeTier,
 					ImageInputSize:                parsed.Size,
+					ImageQuality:                  parsed.Quality,
+					ImageEstimateInput:            newOpenAIImageEstimateInput(parsed),
 					ImageOutputSizes:              imageOutputSizes,
 				}, err
 			}
@@ -2094,6 +2100,8 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 		ImageCount:                    imageCount,
 		ImageSize:                     parsed.SizeTier,
 		ImageInputSize:                parsed.Size,
+		ImageQuality:                  parsed.Quality,
+		ImageEstimateInput:            newOpenAIImageEstimateInput(parsed),
 		ImageOutputSizes:              imageOutputSizes,
 	}, nil
 }

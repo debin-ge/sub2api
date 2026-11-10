@@ -1009,7 +1009,9 @@ func TestOpenAISelectAccountWithSchedulerMediaGuardAcceptsGroupConfiguredPrice(t
 	require.Same(t, expected, selection)
 }
 
-func TestOpenAISelectAccountWithSchedulerMediaGuardRejectsPartialGroupTiers(t *testing.T) {
+// 调度阶段还不知道档位：分组只配了 1K 也能证明有可结算的档位，放行；确切档位在转发前
+// 解析出图计划时再检查（图片按张与按 token 二选一，方案 T2.5）。
+func TestOpenAISelectAccountWithSchedulerMediaGuardAllowsPartialGroupTiers(t *testing.T) {
 	resetOpenAIAdvancedSchedulerSettingCacheForTest()
 	t.Cleanup(resetOpenAIAdvancedSchedulerSettingCacheForTest)
 	openAIAdvancedSchedulerSettingCache.Store(&cachedOpenAIAdvancedSchedulerSetting{
@@ -1053,9 +1055,9 @@ func TestOpenAISelectAccountWithSchedulerMediaGuardRejectsPartialGroupTiers(t *t
 		BillingKindImage,
 	)
 
-	require.Nil(t, selection)
-	require.ErrorIs(t, err, ErrModelPricingUnavailable)
-	require.Equal(t, 1, releaseCalls)
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.Equal(t, 0, releaseCalls)
 }
 
 func TestOpenAIMediaPricingGuardUsesExactSettlementModel(t *testing.T) {
@@ -1090,7 +1092,9 @@ func TestOpenAIMediaPricingGuardUsesExactSettlementModel(t *testing.T) {
 	require.ErrorIs(t, err, ErrModelPricingUnavailable)
 }
 
-func TestOpenAIMediaPricingGuardAllowsImageTokenChannelPriceButRejectsVideo(t *testing.T) {
+// 渠道 token 档只配了文本价：按 token 出图只认图片输入价与图片输出价（D2），渠道和下层
+// 都没有图片价时出图同样被拒；补上两项图片价后放行。视频不受渠道 token 价影响。
+func TestOpenAIMediaPricingGuardRejectsTextOnlyChannelTokenPriceForImages(t *testing.T) {
 	groupID := int64(84)
 	model := "channel-token-only-media-unpriced-v99"
 	price := 1e-6
@@ -1111,13 +1115,13 @@ func TestOpenAIMediaPricingGuardAllowsImageTokenChannelPriceButRejectsVideo(t *t
 	svc.channelService = channelService
 	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 
-	require.NoError(t, svc.ValidateSelectedOpenAIMediaPricing(
+	require.ErrorIs(t, svc.ValidateSelectedOpenAIMediaPricing(
 		context.Background(),
 		&groupID,
 		account,
 		model,
 		BillingKindImage,
-	))
+	), ErrModelPricingUnavailable)
 	require.ErrorIs(t, svc.ValidateSelectedOpenAIMediaPricing(
 		context.Background(),
 		&groupID,
@@ -1125,6 +1129,18 @@ func TestOpenAIMediaPricingGuardAllowsImageTokenChannelPriceButRejectsVideo(t *t
 		model,
 		BillingKindVideo,
 	), ErrModelPricingUnavailable)
+
+	imageInput, imageOutput := 8e-6, 3e-5
+	row := cache.pricingByGroupModel[channelModelKey{groupID: groupID, platform: PlatformOpenAI, model: model}]
+	row.ImageInputPrice = &imageInput
+	row.ImageOutputPrice = &imageOutput
+	require.NoError(t, svc.ValidateSelectedOpenAIMediaPricing(
+		context.Background(),
+		&groupID,
+		account,
+		model,
+		BillingKindImage,
+	))
 }
 
 func TestValidateSelectedOpenAIResponsesImagePricingUsesToolModel(t *testing.T) {

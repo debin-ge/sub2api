@@ -408,6 +408,8 @@ type OpenAIResponsesImageBillingConfig struct {
 	Model     string
 	SizeTier  string
 	InputSize string
+	// Quality 是 tools[].quality；按 token 出图缺用量时用于估算输出 token。
+	Quality string
 	// NativeTool is true only when the request contains exactly one native
 	// image_generation tool. In that case Model/SizeTier are the tool's own
 	// settlement identity rather than a top-level text-model fallback.
@@ -417,6 +419,7 @@ type OpenAIResponsesImageBillingConfig struct {
 func resolveOpenAIResponsesImageBillingConfigDetailed(reqBody map[string]any, fallbackModel string) (OpenAIResponsesImageBillingConfig, error) {
 	imageModel := ""
 	imageSize := ""
+	imageQuality := ""
 	imageToolCount := 0
 	var imageValueErr error
 	if reqBody != nil {
@@ -444,6 +447,9 @@ func resolveOpenAIResponsesImageBillingConfigDetailed(reqBody map[string]any, fa
 					return false
 				}
 				imageSize = strings.TrimSpace(size)
+			}
+			if quality, ok := toolMap["quality"].(string); ok {
+				imageQuality = strings.TrimSpace(quality)
 			}
 			return true
 		})
@@ -477,6 +483,7 @@ func resolveOpenAIResponsesImageBillingConfigDetailed(reqBody map[string]any, fa
 	}
 	sizeTier := normalizeOpenAIImageSizeTier(imageSize)
 	return OpenAIResponsesImageBillingConfig{
+		Quality:    imageQuality,
 		Model:      imageModel,
 		SizeTier:   sizeTier,
 		InputSize:  imageSize,
@@ -528,6 +535,7 @@ func resolveOpenAIResponsesImageBillingConfigFromBody(body []byte, fallbackModel
 func resolveOpenAIResponsesImageBillingConfigDetailedFromBody(body []byte, fallbackModel string) (OpenAIResponsesImageBillingConfig, error) {
 	imageModel := ""
 	imageSize := ""
+	imageQuality := ""
 	imageToolCount := 0
 	if len(body) > 0 && gjson.ValidBytes(body) {
 		if err := ValidateUniqueOpenAIResponsesBillingFields(body); err != nil {
@@ -544,6 +552,7 @@ func resolveOpenAIResponsesImageBillingConfigDetailedFromBody(body []byte, fallb
 			}
 			imageModel = openAIJSONString(item.Get("model"))
 			imageSize = openAIJSONString(item.Get("size"))
+			imageQuality = openAIJSONString(item.Get("quality"))
 			return true
 		})
 		if err := validateOpenAIResponsesImageToolCount(imageToolCount); err != nil {
@@ -568,6 +577,7 @@ func resolveOpenAIResponsesImageBillingConfigDetailedFromBody(body []byte, fallb
 		Model:      imageModel,
 		SizeTier:   normalizeOpenAIImageSizeTier(imageSize),
 		InputSize:  imageSize,
+		Quality:    imageQuality,
 		NativeTool: imageToolCount == 1,
 	}, nil
 }

@@ -138,14 +138,6 @@ func (r *ModelPricingResolver) resolve(ctx context.Context, input PricingInput, 
 		Source:                 source,
 		SupportsCacheBreakdown: basePricing != nil && basePricing.SupportsCacheBreakdown,
 	}
-	if basePricing != nil && basePricing.BillingMode == BillingModeImage {
-		resolved.Mode = BillingModeImage
-		resolved.RequestTiers = filterValidRequestTiers(basePricing.ImageRequestTiers)
-		if basePricing.ImageDefaultPerRequestPriceSet {
-			resolved.DefaultPerRequestPrice = basePricing.ImageDefaultPerRequestPrice
-			resolved.DefaultPerRequestPriceSet = true
-		}
-	}
 	resolved.longContextPricingEnabled = longContextPricingEnabled
 
 	// 2. 如果有 GroupID，尝试渠道覆盖
@@ -166,53 +158,6 @@ func (r *ModelPricingResolver) resolve(ctx context.Context, input PricingInput, 
 
 	if strictTokenPricing && basePricing == nil && chPricing == nil {
 		return nil, baseErr
-	}
-	return resolved, nil
-}
-
-func (r *ModelPricingResolver) ResolveStrictImageToken(
-	ctx context.Context,
-	input PricingInput,
-	requireImageInput bool,
-) (*ResolvedPricing, error) {
-	if r == nil || r.billingService == nil {
-		return nil, fmt.Errorf("%w for image model: %s: pricing resolver unavailable", ErrModelPricingUnavailable, input.Model)
-	}
-	var channelPricing *ChannelModelPricing
-	if input.GroupID != nil && r.channelService != nil {
-		channelPricing = r.channelService.GetChannelModelPricing(ctx, *input.GroupID, input.Model)
-		if channelPricing != nil {
-			mode := channelPricing.BillingMode
-			if mode != "" && mode != BillingModeToken {
-				return nil, fmt.Errorf("%w for image model: %s: channel billing mode is %s", ErrModelPricingUnavailable, input.Model, mode)
-			}
-		}
-	}
-
-	platforms := pricingInputPlatforms(input)
-	basePricing, baseErr := r.billingService.GetImageTokenPricingStrictForPlatforms(platforms, input.Model, requireImageInput)
-	if baseErr != nil && !channelImageTokenPricingConfigured(channelPricing) {
-		return nil, baseErr
-	}
-	resolved := &ResolvedPricing{
-		Mode:                   BillingModeToken,
-		BasePricing:            basePricing,
-		Source:                 PricingSourceModelPrice,
-		SupportsCacheBreakdown: basePricing != nil && basePricing.SupportsCacheBreakdown,
-	}
-	if channelPricing != nil {
-		resolved.Source = PricingSourceChannel
-		resolved.channelPricing = channelPricing
-		// 图片价不再需要快照式保护：applyChannelImagePrices 自身就区分
-		// "渠道未配置"（保留目录价）和"渠道显式配置"（覆盖），比原先
-		// 仅覆盖 output/image_output 都为 nil 的窄条件更完整。
-		r.applyTokenOverrides(channelPricing, resolved)
-	}
-	if !openAIImageTokenPricingComplete(resolved.BasePricing, requireImageInput, r.billingService.strictImageDimension()) {
-		return nil, fmt.Errorf("%w for image token model: %s: required image dimensions are incomplete", ErrModelPricingUnavailable, input.Model)
-	}
-	if err := validateFiniteModelPricing(input.Model, resolved.BasePricing); err != nil {
-		return nil, err
 	}
 	return resolved, nil
 }
@@ -601,13 +546,4 @@ func (r *ModelPricingResolver) LookupRequestTierPriceByContext(resolved *Resolve
 func (r *ModelPricingResolver) GetRequestTierPriceByContext(resolved *ResolvedPricing, totalContextTokens int) float64 {
 	price, _ := r.LookupRequestTierPriceByContext(resolved, totalContextTokens)
 	return price
-}
-
-// strictCatalogImageUnitPrice 返回目录（含手动覆盖）里显式配置的每张图片价，
-// 不做跨模型推断，也不回退到硬编码默认价。
-func (r *ModelPricingResolver) strictCatalogImageUnitPrice(platforms []string, model string) (float64, bool) {
-	if r == nil || r.billingService == nil {
-		return 0, false
-	}
-	return r.billingService.strictCatalogMediaBasePriceForPlatforms(platforms, model)
 }

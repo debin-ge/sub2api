@@ -118,7 +118,10 @@ func grokMediaInflightEstimate(endpoint service.GrokMediaEndpoint, model string,
 	}
 	switch endpoint {
 	case service.GrokMediaEndpointImagesGenerations, service.GrokMediaEndpointImagesEdits:
-		return service.InflightEstimateRequest{Model: model, BodyBytes: len(body), Kind: service.InflightEstimateImage, Units: info.N}
+		return service.InflightEstimateRequest{
+			Model: model, BodyBytes: len(body), Kind: service.InflightEstimateImage, Units: info.N,
+			ImageSizeTier: info.SizeTier, ImageSize: info.Size, ImageEndpoint: true,
+		}
 	default:
 		return service.InflightEstimateRequest{
 			Model:                model,

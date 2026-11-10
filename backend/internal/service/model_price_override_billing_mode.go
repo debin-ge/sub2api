@@ -3,27 +3,27 @@ package service
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
 
-// 模型价格覆盖的计费方式（billing_mode）：声明该模型的**用途**，而不是价格单位。
-//
-// 图片与视频都可能按 token 计费，所以“image 档”不等于“只认 output_cost_per_image”：
-// 字段按用途分档，价格单位却跨用途复用——
-//   - image 档：用途是出图。价格可以来自图片字段（按张 / 按图片 token），也可以直接
-//     复用 token 字段（出图按普通 token 计价）。目录里的 gpt-image-1 正是两者都有
-//     （input_cost_per_token 5e-06 与 output_cost_per_image_token 4e-05）。因此
-//     image 档不抑制 token 价，只屏蔽视频档。
-//   - video 档：用途是出视频。按 token 计费的视频也有专门归宿——video_pricing 里的
+// 模型价格覆盖的计费方式（billing_mode）。图片按张与按 token 二选一：
+//   - image 档 = 出图按张：只有默认按张价 output_cost_per_image 与 1K/2K/4K 档位价
+//     intervals。继承自目录的文本 token 价、图片 token 价一律抹掉，所以 image 档
+//     模型不能再走 token 计费（对话请求会因缺价被拒，不会再被按 1 张收费）。
+//   - token 档 = 按 token：文本 token 价用于对话；出图按 token 时只用两项价——
+//     图片输入价 input_cost_per_image_token、图片输出价 output_cost_per_image_token
+//     （提示词与缓存都按图片输入价）。token 档不再带按张价：继承的
+//     output_cost_per_image / intervals 会被抹掉，payload 里写了也不接受。
+//   - video 档：用途是出视频。按 token 计费的视频有专门归宿——video_pricing 里的
 //     billing_unit: video_token（见 video_pricing_config.go），所以 video 档抑制继承的
 //     token 与图片价。
-//   - token 档：默认档，也是 275 迁移前所有存量行的语义：不抑制任何目录价、不限制
-//     payload 字段。图片 token 本就按 token 档计费（见 BillingModeImage 的注释），
-//     所以 token 档不能抹掉目录图片价，否则 gpt-image 之类模型的存量覆盖会静默退化到文本价。
 //
-// 无论哪一档，video_pricing 永不置空（见 suppressInheritedDimensions）。
+// 275 迁移前的存量行都是 token 档。289 迁移把带按张价的出图行改成了 image 档；
+// 迁移规则外的存量行在运行时按档过滤（projectPayloadToBillingMode），被忽略的字段
+// 会在后台标出来。无论哪一档，video_pricing 永不置空（见 suppressInheritedDimensions）。
 var modelPriceOverrideBillingModes = []BillingMode{BillingModeToken, BillingModeImage, BillingModeVideo}
 
 // NormalizeModelPriceOverrideBillingMode 校验并归一覆盖行的计费方式，空值视为 token。
@@ -48,35 +48,48 @@ func modelPriceOverrideBillingModeOrToken(mode BillingMode) BillingMode {
 	return mode
 }
 
-// payloadFieldBillingMode 返回 payload 价格字段所属的计费档。图片模型既可能按张/按图片
-// token 计价，也可能按普通 token 计价（见文件头注释），所以 image 档与 token 档共享
-// 除 video_pricing 以外的全部价格字段，只有 video_pricing 是 video 档专属。
+// payloadFieldBillingMode 返回 payload 价格字段所属的计费档：按张价归 image 档，
+// video_pricing 归 video 档，其余（文本 token 价、图片 token 价）归 token 档。
 func payloadFieldBillingMode(field string) BillingMode {
-	if field == videoPayloadField {
+	switch field {
+	case videoPayloadField:
 		return BillingModeVideo
+	case perImagePayloadField, intervalsPayloadField:
+		return BillingModeImage
+	default:
+		return BillingModeToken
 	}
-	return BillingModeToken
 }
+
+// payloadFieldAllowedInBillingMode 判断字段能否写在 mode 档里。token 档另外放行
+// video_pricing：275 迁移前的存量 token 行可能带视频价，后台编辑这些行时不能报错。
+func payloadFieldAllowedInBillingMode(field string, mode BillingMode) bool {
+	owner := payloadFieldBillingMode(field)
+	return owner == mode || (mode == BillingModeToken && owner == BillingModeVideo)
+}
+
+const (
+	perImagePayloadField  = "output_cost_per_image"
+	intervalsPayloadField = "intervals"
+)
 
 const videoPayloadField = "video_pricing"
 
-// validatePayloadFieldsInBillingMode 检查 payload 的价格字段是否属于声明的计费档。
-// token / image 档接受除 video_pricing 以外的全部价格字段（图片按 token 计费是正常配置）；
-// 图片 intervals 是 image 档专属的按张档位结构；
-// video 档只接受 video_pricing，写入 token / 图片价格会被抑制，属于配置错误。
+// validatePayloadFieldsInBillingMode 检查 payload 的价格字段是否属于声明的计费档：
+// image 档只接受按张价；token 档不接受按张价；video 档只接受 video_pricing。
 func validatePayloadFieldsInBillingMode(payload *ModelPriceOverridePayload, mode BillingMode) error {
-	if mode == BillingModeToken && len(payload.Intervals) == 0 {
-		return nil
-	}
+	fields := make([]string, 0, 8)
 	for field := range payloadToMap(payload) {
-		if !isPayloadPriceField(field) {
+		fields = append(fields, field)
+	}
+	sort.Strings(fields)
+	for _, field := range fields {
+		if !isPayloadPriceField(field) || payloadFieldAllowedInBillingMode(field, mode) {
 			continue
 		}
-		if (payloadFieldBillingMode(field) == BillingModeVideo) != (mode == BillingModeVideo) {
-			return infraerrors.BadRequest("FIELD_NOT_IN_BILLING_MODE",
-				fmt.Sprintf("%s does not belong to billing mode %s", field, mode)).
-				WithMetadata(map[string]string{"field": field, "billing_mode": string(mode)})
-		}
+		return infraerrors.BadRequest("FIELD_NOT_IN_BILLING_MODE",
+			fmt.Sprintf("%s does not belong to billing mode %s", field, mode)).
+			WithMetadata(map[string]string{"field": field, "billing_mode": string(mode)})
 	}
 	if len(payload.Intervals) > 0 {
 		if mode != BillingModeImage {
@@ -118,18 +131,34 @@ func isPayloadPriceField(field string) bool {
 }
 
 // suppressInheritedDimensions 抹掉从目录继承、但不属于 mode 的价格。
-// token 档不抑制任何东西（存量语义）。image 档保留 token 与图片价——图片模型按普通
-// token 计价是正常配置。video 档抑制 token 与图片价：视频按 token 计费时用的是
-// video_pricing 里的 video_token 单价，不需要目录的文本/图片价。
+//   - image 档：抹掉文本 token 价与图片 token 价，只留按张价。
+//   - token 档：抹掉按张价（output_cost_per_image、intervals）。
+//   - video 档：抹掉 token 与图片价，视频按 token 计费时用的是 video_pricing 里的
+//     video_token 单价。
 //
 // video_pricing 在任何一档都原样保留：它同时承载 estimator / resolution 等技术档案，
 // 渠道/分组级视频定价在使用前会检查 Enabled，改动它会让那些定价丢失分辨率归一化
 // （命中更便宜的兜底规则）或直接报 ESTIMATOR_MISSING。image 档对目录视频价的屏蔽
 // 改由 ModelPriceEntry.BillingMode + catalogVideoPricingActive 完成。
 func suppressInheritedDimensions(raw *RawModelPriceEntry, mode BillingMode) {
-	if raw == nil || mode != BillingModeVideo {
+	if raw == nil {
 		return
 	}
+	switch mode {
+	case BillingModeImage:
+		clearRawTokenPrices(raw)
+		clearRawImageTokenPrices(raw)
+	case BillingModeVideo:
+		clearRawTokenPrices(raw)
+		clearRawImageTokenPrices(raw)
+		raw.OutputCostPerImage = nil
+	default:
+		raw.OutputCostPerImage = nil
+		raw.Intervals = nil
+	}
+}
+
+func clearRawTokenPrices(raw *RawModelPriceEntry) {
 	raw.InputCostPerToken = nil
 	raw.OutputCostPerToken = nil
 	raw.InputCostPerTokenPriority = nil
@@ -142,29 +171,162 @@ func suppressInheritedDimensions(raw *RawModelPriceEntry, mode BillingMode) {
 	raw.LongContextInputTokenThreshold = nil
 	raw.LongContextInputCostMultiplier = nil
 	raw.LongContextOutputCostMultiplier = nil
-	raw.OutputCostPerImage = nil
+}
+
+func clearRawImageTokenPrices(raw *RawModelPriceEntry) {
 	raw.OutputCostPerImageToken = nil
 	raw.InputCostPerImageToken = nil
 	raw.CacheReadInputImageTokenCost = nil
 }
 
+// projectPayloadToBillingMode 在运行时按档过滤覆盖行的 payload：不属于 mode 的价格
+// 字段（289 迁移规则外的存量行）直接忽略，不改库里的数据。ignored 按字段名排序，
+// 供后台标记「被忽略字段」。
+func projectPayloadToBillingMode(payload *ModelPriceOverridePayload, mode BillingMode) (ModelPriceOverridePayload, []string) {
+	if payload == nil {
+		return ModelPriceOverridePayload{}, nil
+	}
+	projected := cloneModelPriceOverridePayload(*payload)
+	mode = modelPriceOverrideBillingModeOrToken(mode)
+	var ignored []string
+	drop := func(field string, clear func()) {
+		if !payloadFieldAllowedInBillingMode(field, mode) {
+			ignored = append(ignored, field)
+			clear()
+		}
+	}
+	if projected.InputCostPerToken != nil {
+		drop("input_cost_per_token", func() { projected.InputCostPerToken = nil })
+	}
+	if projected.OutputCostPerToken != nil {
+		drop("output_cost_per_token", func() { projected.OutputCostPerToken = nil })
+	}
+	if projected.CacheCreationInputTokenCost != nil {
+		drop("cache_creation_input_token_cost", func() { projected.CacheCreationInputTokenCost = nil })
+	}
+	if projected.CacheCreationInputTokenCostAbove1hr != nil {
+		drop("cache_creation_input_token_cost_above_1hr", func() { projected.CacheCreationInputTokenCostAbove1hr = nil })
+	}
+	if projected.CacheReadInputTokenCost != nil {
+		drop("cache_read_input_token_cost", func() { projected.CacheReadInputTokenCost = nil })
+	}
+	if projected.InputCostPerTokenPriority != nil {
+		drop("input_cost_per_token_priority", func() { projected.InputCostPerTokenPriority = nil })
+	}
+	if projected.OutputCostPerTokenPriority != nil {
+		drop("output_cost_per_token_priority", func() { projected.OutputCostPerTokenPriority = nil })
+	}
+	if projected.CacheCreationInputTokenCostPriority != nil {
+		drop("cache_creation_input_token_cost_priority", func() { projected.CacheCreationInputTokenCostPriority = nil })
+	}
+	if projected.CacheReadInputTokenCostPriority != nil {
+		drop("cache_read_input_token_cost_priority", func() { projected.CacheReadInputTokenCostPriority = nil })
+	}
+	if projected.LongContextInputTokenThreshold != nil {
+		drop("long_context_input_token_threshold", func() { projected.LongContextInputTokenThreshold = nil })
+	}
+	if projected.LongContextInputCostMultiplier != nil {
+		drop("long_context_input_cost_multiplier", func() { projected.LongContextInputCostMultiplier = nil })
+	}
+	if projected.LongContextOutputCostMultiplier != nil {
+		drop("long_context_output_cost_multiplier", func() { projected.LongContextOutputCostMultiplier = nil })
+	}
+	if projected.OutputCostPerImage != nil {
+		drop(perImagePayloadField, func() { projected.OutputCostPerImage = nil })
+	}
+	if projected.OutputCostPerImageToken != nil {
+		drop("output_cost_per_image_token", func() { projected.OutputCostPerImageToken = nil })
+	}
+	if projected.InputCostPerImageToken != nil {
+		drop("input_cost_per_image_token", func() { projected.InputCostPerImageToken = nil })
+	}
+	if len(projected.Intervals) > 0 {
+		drop(intervalsPayloadField, func() { projected.Intervals = nil })
+	}
+	if projected.VideoPricing != nil {
+		drop(videoPayloadField, func() { projected.VideoPricing = nil })
+	}
+	sort.Strings(ignored)
+	return projected, ignored
+}
+
 // rawHasBillingModePricing 判断合并后的条目在 mode 档是否有任何价格。
-// image 档同时接受 token 价与图片价：图片按 token 计费时价格就写在 token 字段上，
-// 若只认图片字段，这类模型会被误判成 EMPTY_PRICING。
+// image 档只认按张价；token 档认文本 token 价或图片 token 价。
 func rawHasBillingModePricing(raw *RawModelPriceEntry, mode BillingMode) bool {
 	if raw == nil {
 		return false
 	}
 	switch mode {
 	case BillingModeImage:
-		return len(raw.Intervals) > 0 || raw.OutputCostPerImage != nil || raw.OutputCostPerImageToken != nil ||
-			raw.InputCostPerImageToken != nil || raw.InputCostPerToken != nil || raw.OutputCostPerToken != nil
+		return len(raw.Intervals) > 0 || raw.OutputCostPerImage != nil
 	case BillingModeVideo:
 		// 显式关闭的视频价不算有价：否则 video 档会抹掉 token 价、却没有可用的视频价。
 		return raw.VideoPricing != nil && raw.VideoPricing.Enabled
 	default:
-		return raw.InputCostPerToken != nil || raw.OutputCostPerToken != nil
+		return raw.InputCostPerToken != nil || raw.OutputCostPerToken != nil ||
+			raw.InputCostPerImageToken != nil || raw.OutputCostPerImageToken != nil
 	}
+}
+
+// rawRequiresImageTokenPair 判断 token 档条目是否是「按 token 出图」的模型：目录
+// mode=image_generation，或 payload 自己写了图片输出价。这类条目的图片输入价、
+// 图片输出价必须成对。只看图的对话模型（只有图片输入价）不受限制。
+func rawRequiresImageTokenPair(raw *RawModelPriceEntry, payload *ModelPriceOverridePayload) bool {
+	if raw != nil && strings.EqualFold(strings.TrimSpace(raw.Mode), imageGenerationCatalogMode) {
+		return true
+	}
+	return payload != nil && payload.OutputCostPerImageToken != nil
+}
+
+const imageGenerationCatalogMode = "image_generation"
+
+// deriveImageBillingMode 推导条目的出图方式（方案 §6.3）：
+//   - 覆盖行：image 档 → 按张；token 档且有图片输出价 → 按 token；其余为空。
+//   - 目录：mode 不是 image_generation → 空（gemini-3.1-pro-* 上的按张价不算数）；
+//     有按张价 → 按张（两种价都有时按张，D8）；只有图片输出 token 价 → 按 token。
+func deriveImageBillingMode(entry *ModelPriceEntry, overrideMode BillingMode, fromOverride bool) BillingMode {
+	if entry == nil {
+		return ""
+	}
+	if fromOverride {
+		switch modelPriceOverrideBillingModeOrToken(overrideMode) {
+		case BillingModeImage:
+			return BillingModeImage
+		case BillingModeToken:
+			if entryHasImageOutputTokenPrice(entry) {
+				return BillingModeToken
+			}
+		}
+		return ""
+	}
+	if !strings.EqualFold(strings.TrimSpace(entry.Mode), imageGenerationCatalogMode) {
+		return ""
+	}
+	if entryHasPerImagePrice(entry) {
+		return BillingModeImage
+	}
+	if entryHasImageOutputTokenPrice(entry) {
+		return BillingModeToken
+	}
+	return ""
+}
+
+func entryHasPerImagePrice(entry *ModelPriceEntry) bool {
+	if entry == nil {
+		return false
+	}
+	for _, interval := range entry.Intervals {
+		if validConfiguredPrice(interval.PerRequestPrice) {
+			return true
+		}
+	}
+	return isFiniteNonNegativePrice(entry.OutputCostPerImage) &&
+		(entry.OutputCostPerImage > 0 || entry.OutputCostPerImageExplicit)
+}
+
+func entryHasImageOutputTokenPrice(entry *ModelPriceEntry) bool {
+	return entry != nil && isFiniteNonNegativePrice(entry.OutputCostPerImageToken) &&
+		(entry.ImageOutputPriceExplicit || (!entry.PricePresenceKnown && entry.OutputCostPerImageToken > 0))
 }
 
 // catalogVideoPricingActive 判断条目自身的视频价能否作为最终报价来源（目录兜底）。

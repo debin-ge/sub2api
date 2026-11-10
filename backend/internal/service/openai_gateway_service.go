@@ -229,6 +229,41 @@ type OpenAIUsage struct {
 	CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"`
 	CacheReadInputTokens     int `json:"cache_read_input_tokens,omitempty"`
 	ImageOutputTokens        int `json:"image_output_tokens,omitempty"`
+	// ImageGen 是 Responses 托管生图工具自己的用量（tool_usage.image_gen），与主模型
+	// token 分开记录：按 token 出图时工具用量按两项价计，主模型 token 按主模型价另计（D7）。
+	ImageGen *OpenAIImageGenUsage `json:"image_gen,omitempty"`
+}
+
+// OpenAIImageGenUsage 是生图工具的用量。InputTokens、OutputTokens 是总数，
+// Image* 是其中图片部分。
+type OpenAIImageGenUsage struct {
+	InputTokens       int `json:"input_tokens"`
+	ImageInputTokens  int `json:"image_input_tokens,omitempty"`
+	CachedInputTokens int `json:"cached_input_tokens,omitempty"`
+	OutputTokens      int `json:"output_tokens"`
+	ImageOutputTokens int `json:"image_output_tokens,omitempty"`
+}
+
+// tokenUsage 把生图工具用量换成按 token 出图的分桶：输入侧全按图片输入价，输出侧全按
+// 图片输出价，所以只需保证各桶之和等于总数。
+func (u *OpenAIImageGenUsage) tokenUsage() ImageTokenUsage {
+	if u == nil {
+		return ImageTokenUsage{}
+	}
+	cached := max(u.CachedInputTokens, 0)
+	imageInput := max(u.ImageInputTokens, 0)
+	imageOutput := max(u.ImageOutputTokens, 0)
+	return ImageTokenUsage{
+		TextInputTokens:   max(u.InputTokens-imageInput-cached, 0),
+		ImageInputTokens:  imageInput,
+		CacheReadTokens:   cached,
+		TextOutputTokens:  max(u.OutputTokens-imageOutput, 0),
+		ImageOutputTokens: imageOutput,
+	}
+}
+
+func (u *OpenAIImageGenUsage) hasTokens() bool {
+	return u != nil && (u.InputTokens > 0 || u.OutputTokens > 0 || u.ImageInputTokens > 0 || u.ImageOutputTokens > 0)
 }
 
 // OpenAIForwardResult represents the result of forwarding
@@ -269,6 +304,13 @@ type OpenAIForwardResult struct {
 	// to the Image API; native Responses image tools require separate primary
 	// and media usage components.
 	ImageBillingPlan *OpenAIImageBillingPlan
+	// ImageQuality 是出图质量（响应值优先，没有再用请求值）；按 token 出图缺用量时估算用。
+	ImageQuality string
+	// ImageEstimateInput 只放内存、不落库：按 token 出图缺用量时估算提示词与输入图 token。
+	ImageEstimateInput *ImageEstimateInput
+	// TextBillingModel 是 Responses 生图请求里主模型的计费名。出了图之后 BillingModel
+	// 会切成生图工具的模型；按 token 出图时主模型 token 仍按这个模型的价另计（D7）。
+	TextBillingModel string
 	// ServiceTier is the final tier sent upstream after policy rewriting.
 	// The upstream response declaration remains separate above and is reconciled
 	// at usage-recording time, where the credential protocol is available.

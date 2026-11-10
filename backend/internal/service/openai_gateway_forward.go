@@ -793,6 +793,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	imageBillingModel := ""
 	imageSizeTier := ""
 	imageInputSize := ""
+	imageQuality := ""
 	if imageIntent {
 		var imageCfg OpenAIResponsesImageBillingConfig
 		var imageCfgErr error
@@ -809,6 +810,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		imageBillingModel = imageCfg.Model
 		imageSizeTier = imageCfg.SizeTier
 		imageInputSize = imageCfg.InputSize
+		imageQuality = imageCfg.Quality
 	}
 	// /responses is token-based at the route level, but native image generation
 	// can settle under an independent tools[].model. Validate that exact model
@@ -1074,6 +1076,8 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			if wsResult.ImageCount > 0 {
 				wsResult.ImageSize = imageSizeTier
 				wsResult.ImageInputSize = imageInputSize
+				wsResult.ImageQuality = imageQuality
+				wsResult.TextBillingModel = firstNonEmpty(wsResult.BillingModel, billingModel, wsResult.UpstreamModel)
 				wsResult.BillingModel = imageBillingModel
 			}
 			return wsResult, nil
@@ -1400,7 +1404,12 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			forwardResult.ImageCount = imageCount
 			forwardResult.ImageSize = imageSizeTier
 			forwardResult.ImageInputSize = imageInputSize
+			forwardResult.ImageQuality = imageQuality
 			forwardResult.ImageOutputSizes = imageOutputSizes
+			forwardResult.TextBillingModel = forwardResult.BillingModel
+			if forwardResult.TextBillingModel == "" {
+				forwardResult.TextBillingModel = billingModel
+			}
 			forwardResult.BillingModel = imageBillingModel
 		}
 		// Grok-native web_search / x_search / tool_search tool invocations (per-1k pricing).

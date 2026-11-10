@@ -98,10 +98,6 @@ type BillingCache interface {
 
 // ModelPricing 模型价格配置（per-token价格，与配置化模型价格目录格式一致）
 type ModelPricing struct {
-	BillingMode                        BillingMode
-	ImageRequestTiers                  []PricingInterval
-	ImageDefaultPerRequestPrice        float64
-	ImageDefaultPerRequestPriceSet     bool
 	InputPricePerToken                 float64  // 每token输入价格 (USD)
 	InputPriceExplicit                 bool     // 是否由目录或渠道显式配置；用于区分缺失与显式 0
 	InputPricePerTokenPriority         float64  // priority service tier 下每token输入价格 (USD)
@@ -1820,42 +1816,6 @@ func (s *BillingService) GetModelPricingStrictForPlatforms(platforms []string, m
 	return s.getModelPricingForPlatforms(platforms, model, false, timezone.Now())
 }
 
-// GetImageTokenPricingStrict resolves the exact catalog entry for an Image API
-// model without requiring a complete ordinary text input/output token pair.
-//
-// GPT Image models can expose a dedicated image-output token price while
-// omitting the ordinary text-output price. That entry is incomplete for a
-// chat/token route, but it is complete for /v1/images/* as long as the image
-// dimensions used by that endpoint are explicitly priced.
-func (s *BillingService) GetImageTokenPricingStrict(model string, requireImageInput bool) (*ModelPricing, error) {
-	return s.GetImageTokenPricingStrictForPlatform("", model, requireImageInput)
-}
-
-func (s *BillingService) GetImageTokenPricingStrictForPlatform(platform, model string, requireImageInput bool) (*ModelPricing, error) {
-	return s.GetImageTokenPricingStrictForPlatforms([]string{platform}, model, requireImageInput)
-}
-
-func (s *BillingService) GetImageTokenPricingStrictForPlatforms(platforms []string, model string, requireImageInput bool) (*ModelPricing, error) {
-	model = strings.ToLower(strings.TrimSpace(model))
-	if model == "" || s == nil || s.pricingService == nil {
-		return nil, fmt.Errorf("%w for image model: %s", ErrModelPricingUnavailable, model)
-	}
-	entry := s.pricingService.LookupModelPricingStrictForPlatforms(platforms, model)
-	inputConfigured := entry != nil && (entry.InputPriceExplicit ||
-		(!entry.PricePresenceKnown && entry.InputCostPerToken > 0))
-	imageOutputConfigured := entry != nil && (entry.ImageOutputPriceExplicit ||
-		(!entry.PricePresenceKnown && entry.OutputCostPerImageToken > 0))
-	imageInputConfigured := entry != nil && (entry.ImageInputPriceExplicit ||
-		(!entry.PricePresenceKnown && entry.InputCostPerImageToken > 0))
-	if entry == nil ||
-		!inputConfigured ||
-		!imageOutputConfigured ||
-		(requireImageInput && !imageInputConfigured) {
-		return nil, fmt.Errorf("%w for image token model: %s", ErrModelPricingUnavailable, model)
-	}
-	return s.modelPricingFromCatalogEntry(model, entry, timezone.Now())
-}
-
 func (s *BillingService) modelPricingFromCatalogEntry(model string, catalogEntry *ModelPriceEntry, pricingAt time.Time) (*ModelPricing, error) {
 	if catalogEntry == nil {
 		return nil, fmt.Errorf("%w for model: %s", ErrModelPricingUnavailable, model)
@@ -1875,10 +1835,6 @@ func (s *BillingService) modelPricingFromCatalogEntry(model string, catalogEntry
 	// OfficialTimeBaseIsOffPeak，若不强制会低谷多收 2 倍、高峰多收 4 倍。
 	// 管理端覆盖（OperatorOverride）不受影响，见 applyModelSpecificPricingPolicyEx。
 	pricing := s.applyModelSpecificPricingPolicyEx(model, &ModelPricing{
-		BillingMode:                        catalogEntry.BillingMode,
-		ImageRequestTiers:                  clonePricingIntervals(catalogEntry.Intervals),
-		ImageDefaultPerRequestPrice:        catalogEntry.OutputCostPerImage,
-		ImageDefaultPerRequestPriceSet:     catalogEntry.OutputCostPerImageExplicit || catalogEntry.OutputCostPerImage != 0,
 		InputPricePerToken:                 catalogEntry.InputCostPerToken,
 		InputPriceExplicit:                 catalogEntry.InputPriceExplicit,
 		InputPricePerTokenPriority:         catalogEntry.InputCostPerTokenPriority,
@@ -1941,11 +1897,11 @@ func (s *BillingService) getModelPricingForPlatforms(platforms []string, model s
 		// 图片计费路径（getDefaultImagePrice / getImageUnitPrice）直接读
 		// PricingService，不受影响。
 		if catalogEntry != nil && catalogEntry.TokenPricingAbsent {
-			// video 档覆盖是运营者显式声明"该模型只按视频计费"，token 价被刻意抹掉。
-			// 此时不能再回落到按模型名关键词匹配的硬编码价（claude/sonnet 等），
+			// image / video 档覆盖是运营者显式声明"该模型只按张 / 只按视频计费"，token 价
+			// 被刻意抹掉。此时不能再回落到按模型名关键词匹配的硬编码价（claude/sonnet 等），
 			// 否则对话请求会按兜底价被计费，而不是按保存时的提示被拒绝。
-			if catalogEntry.BillingMode == BillingModeVideo {
-				return nil, fmt.Errorf("%w for model: %s (billing_mode=video)", ErrModelPricingUnavailable, model)
+			if catalogEntry.BillingMode == BillingModeVideo || catalogEntry.BillingMode == BillingModeImage {
+				return nil, fmt.Errorf("%w for model: %s (billing_mode=%s)", ErrModelPricingUnavailable, model, catalogEntry.BillingMode)
 			}
 			catalogEntry = nil
 		}
@@ -3041,6 +2997,124 @@ func (s *BillingService) CalculateImageCostStrictForPlatforms(
 		ActualCost:  totalCost * rateMultiplier,
 		BillingMode: string(BillingModeImage),
 	}, nil
+}
+
+// ImageTokenUsage 是按 token 出图的用量分桶。用量记录的列不变，只换单价（方案 §3.4）：
+// 输入侧（文本、图片、缓存读写）全按图片输入价，输出侧（图片、文字）全按图片输出价。
+type ImageTokenUsage struct {
+	TextInputTokens     int
+	ImageInputTokens    int
+	CacheReadTokens     int
+	CacheCreationTokens int
+	TextOutputTokens    int
+	ImageOutputTokens   int
+}
+
+func (u ImageTokenUsage) clamped() ImageTokenUsage {
+	return ImageTokenUsage{
+		TextInputTokens:     max(u.TextInputTokens, 0),
+		ImageInputTokens:    max(u.ImageInputTokens, 0),
+		CacheReadTokens:     max(u.CacheReadTokens, 0),
+		CacheCreationTokens: max(u.CacheCreationTokens, 0),
+		TextOutputTokens:    max(u.TextOutputTokens, 0),
+		ImageOutputTokens:   max(u.ImageOutputTokens, 0),
+	}
+}
+
+// InputTokens 是全部输入 token（提示词 + 输入图 + 缓存读写）。
+func (u ImageTokenUsage) InputTokens() int {
+	u = u.clamped()
+	return u.TextInputTokens + u.ImageInputTokens + u.CacheReadTokens + u.CacheCreationTokens
+}
+
+// OutputTokens 是全部输出 token（图片 + 文字）。
+func (u ImageTokenUsage) OutputTokens() int {
+	u = u.clamped()
+	return u.TextOutputTokens + u.ImageOutputTokens
+}
+
+func imagePlanRowPricing(plan *ImageBillingPlan) *ModelPricing {
+	if plan == nil || plan.channelPricing == nil {
+		return nil
+	}
+	row := plan.channelPricing
+	return &ModelPricing{
+		FastMultiplier:               row.FastMultiplier,
+		FlexMultiplier:               row.FlexMultiplier,
+		MaxReasoningEffortMultiplier: row.MaxReasoningEffortMultiplier,
+		ReasoningEffortMultipliers:   row.EffectiveReasoningEffortMultipliers(),
+	}
+}
+
+// CalculateImageTokenCost 按两项价计算按 token 出图的费用（D2）：全部输入 × 图片输入价 +
+// 全部输出 × 图片输出价。服务档：分组卡或渠道行配了 Fast/Flex 倍率用配置值，否则用
+// serviceTierCostMultiplier；推理等级倍率与按张路径一致，取分组卡或渠道行的配置。
+// rateMultiplier 是 token 倍率（含高峰因子）。
+func (s *BillingService) CalculateImageTokenCost(
+	plan *ImageBillingPlan,
+	usage ImageTokenUsage,
+	rateMultiplier float64,
+	serviceTier, reasoningEffort string,
+) (*CostBreakdown, error) {
+	if plan == nil || plan.Mode != BillingModeToken {
+		return nil, fmt.Errorf("%w: image token billing needs a token plan", ErrModelPricingUnavailable)
+	}
+	if !isFiniteNonNegativePrice(plan.ImageInputPrice) || !isFiniteNonNegativePrice(plan.ImageOutputPrice) {
+		return nil, fmt.Errorf("%w: invalid image token price for model %s", ErrModelPricingUnavailable, plan.Model)
+	}
+	usage = usage.clamped()
+	cost := &CostBreakdown{
+		InputCost:         float64(usage.TextInputTokens) * plan.ImageInputPrice,
+		ImageInputCost:    float64(usage.ImageInputTokens) * plan.ImageInputPrice,
+		CacheReadCost:     float64(usage.CacheReadTokens) * plan.ImageInputPrice,
+		CacheCreationCost: float64(usage.CacheCreationTokens) * plan.ImageInputPrice,
+		OutputCost:        float64(usage.TextOutputTokens) * plan.ImageOutputPrice,
+		ImageOutputCost:   float64(usage.ImageOutputTokens) * plan.ImageOutputPrice,
+	}
+	cost.TotalCost = cost.InputCost + cost.ImageInputCost + cost.CacheReadCost + cost.CacheCreationCost +
+		cost.OutputCost + cost.ImageOutputCost
+	rowPricing := imagePlanRowPricing(plan)
+	applyCostBreakdownMultiplier(cost, configuredServiceTierMultiplier(serviceTier, rowPricing))
+	applyCostBreakdownMultiplier(cost, maxReasoningEffortBillingMultiplier(plan.Model, reasoningEffort, rowPricing))
+	if rateMultiplier < 0 {
+		rateMultiplier = 0
+	}
+	cost.ActualCost = cost.TotalCost * rateMultiplier
+	cost.BillingMode = string(BillingModeToken)
+	return cost, nil
+}
+
+// CalculateImagePerImageCost 按张计划的费用：张数 × 单价 × 图片倍率。单价来自分组卡或
+// 渠道行时，与按次路径一样叠加该行的推理等级倍率。
+func (s *BillingService) CalculateImagePerImageCost(
+	plan *ImageBillingPlan,
+	imageCount int,
+	rateMultiplier float64,
+	reasoningEffort string,
+) (*CostBreakdown, error) {
+	if plan == nil || plan.Mode != BillingModeImage {
+		return nil, fmt.Errorf("%w: per-image billing needs a per-image plan", ErrModelPricingUnavailable)
+	}
+	if imageCount <= 0 {
+		return nil, fmt.Errorf("%w: billable image count is missing", ErrModelPricingUnavailable)
+	}
+	if !isFiniteNonNegativePrice(plan.UnitPrice) {
+		return nil, fmt.Errorf("%w: invalid per-image price for model %s", ErrModelPricingUnavailable, plan.Model)
+	}
+	cost := &CostBreakdown{TotalCost: plan.UnitPrice * float64(imageCount)}
+	if rowPricing := imagePlanRowPricing(plan); rowPricing != nil {
+		applyCostBreakdownMultiplier(cost, maxReasoningEffortBillingMultiplier(plan.Model, reasoningEffort, rowPricing))
+	}
+	if rateMultiplier < 0 {
+		rateMultiplier = 0
+	}
+	cost.ActualCost = cost.TotalCost * rateMultiplier
+	cost.BillingMode = string(BillingModeImage)
+	if plan.channelPricing != nil && plan.channelPricing.BillingMode == BillingModePerRequest {
+		// 单价来自按次档的分组卡或渠道行：用量记录沿用 per_request，与原先按次路径一致。
+		cost.BillingMode = string(BillingModePerRequest)
+	}
+	return cost, nil
 }
 
 // CalculateVideoCost 计算视频生成费用（按秒计费，与 xAI 口径一致）。
