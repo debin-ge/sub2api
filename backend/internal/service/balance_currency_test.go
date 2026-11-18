@@ -7,10 +7,15 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/stretchr/testify/require"
 )
 
 func TestBalanceCurrencyPublicSettings(t *testing.T) {
+	// parseSettings publishes process-wide Grok mapping options; restore them so
+	// later tests do not inherit the cross-client gpt-*/claude-* wildcards.
+	original := xai.RuntimeModelMappingOptions()
+	t.Cleanup(func() { xai.SetRuntimeModelMappingOptions(original) })
 	for _, tc := range []struct{ stored, want string }{
 		{"", "USD"}, {"USD", "USD"}, {"CNY", "CNY"}, {"EUR", "USD"},
 	} {
