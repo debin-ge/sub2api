@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"errors"
+	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -245,15 +247,15 @@ func TestGetUserGroupRateMultiplier_UsesCacheAndSingleflight(t *testing.T) {
 	}
 
 	close(start)
-	// Wait for every caller to have recorded its cache miss before releasing the
-	// loader. A fixed sleep raced here: a goroutine that reached the cache after
-	// the singleflight load had already finished got a hit instead of a miss, and
-	// the miss assertion below saw 11 of 12. The miss counter is the observable
-	// that says "all callers are now inside the singleflight group".
+	// Release the loader only once every caller is inside the singleflight call:
+	// the leader blocked in the repo and the others waiting on it. A fixed sleep
+	// raced (a late caller hit the cache instead of missing), and so did waiting on
+	// the miss counter, because the miss is recorded just before sf.Do: a caller
+	// still between the two when the leader finished ran its own Do, was served by
+	// the cache re-check there, and left sfShared at 0 under CPU contention.
 	require.Eventually(t, func() bool {
-		_, miss, _, _, _ := GatewayUserGroupRateCacheStats()
-		return miss == int64(concurrent)
-	}, 5*time.Second, time.Millisecond, "all callers must miss the cache before the loader is released")
+		return goroutinesInUserGroupRateSingleflight() == concurrent
+	}, 5*time.Second, time.Millisecond, "all callers must be inside singleflight before the loader is released")
 	close(unblock)
 	wg.Wait()
 
@@ -267,12 +269,36 @@ func TestGetUserGroupRateMultiplier_UsesCacheAndSingleflight(t *testing.T) {
 	require.Equal(t, rate, got)
 	require.Equal(t, int64(1), repo.calls.Load())
 
+	// All callers coalesced on one load: every one reports a shared result, and the
+	// only cache hit is the follow-up read above.
 	hit, miss, load, sfShared, fallback := GatewayUserGroupRateCacheStats()
-	require.GreaterOrEqual(t, hit, int64(1))
-	require.Equal(t, int64(12), miss)
+	require.Equal(t, int64(1), hit)
+	require.Equal(t, int64(concurrent), miss)
 	require.Equal(t, int64(1), load)
-	require.GreaterOrEqual(t, sfShared, int64(1))
+	require.Equal(t, int64(concurrent), sfShared)
 	require.Equal(t, int64(0), fallback)
+}
+
+// goroutinesInUserGroupRateSingleflight counts goroutines currently inside the
+// user-group-rate singleflight call, either leading the load or waiting on it.
+func goroutinesInUserGroupRateSingleflight() int {
+	buf := make([]byte, 1<<20)
+	for {
+		n := runtime.Stack(buf, true)
+		if n < len(buf) {
+			buf = buf[:n]
+			break
+		}
+		buf = make([]byte, 2*len(buf))
+	}
+	count := 0
+	for _, stack := range strings.Split(string(buf), "\n\n") {
+		if strings.Contains(stack, "singleflight.(*Group).Do") &&
+			strings.Contains(stack, "(*userGroupRateResolver).Resolve") {
+			count++
+		}
+	}
+	return count
 }
 
 func TestGetUserGroupRateMultiplier_FallbackOnRepoError(t *testing.T) {
