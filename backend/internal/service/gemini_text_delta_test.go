@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/testutil/alloctest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -51,7 +52,7 @@ func TestGeminiTextDeltaMatchesLegacy(t *testing.T) {
 func TestGeminiTextDeltaIncrementalAllocationsStayLinear(t *testing.T) {
 	chunk := strings.Repeat("x", 100)
 	const chunks = 2000
-	allocs := testing.AllocsPerRun(5, func() {
+	allocs := alloctest.MinPerRun(20, 5, func() {
 		var state geminiTextDelta
 		for i := 0; i < chunks; i++ {
 			_ = state.next(chunk)

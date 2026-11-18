@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/testutil/alloctest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -88,7 +89,7 @@ func TestModelMappingSignature_DoesNotAllocate(t *testing.T) {
 		"non-string":    3.14,
 	}
 	var sink uint64
-	allocs := testing.AllocsPerRun(1000, func() {
+	allocs := alloctest.MinPerRun(20, 1000, func() {
 		sink += modelMappingSignature(mapping)
 	})
 	require.Zero(t, allocs)

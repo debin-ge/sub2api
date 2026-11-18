@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/testutil/alloctest"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -224,7 +225,7 @@ func TestNormalizeCodexBootstrapPrecheck(t *testing.T) {
 		"delegation": normalizeCodexDelegationBootstrap,
 	} {
 		t.Run(name, func(t *testing.T) {
-			allocs := testing.AllocsPerRun(10, func() {
+			allocs := alloctest.MinPerRun(20, 10, func() {
 				got, changed := normalize(plain)
 				if changed || &got[0] != &plain[0] {
 					t.Fatal("non-candidate body must be returned unchanged")

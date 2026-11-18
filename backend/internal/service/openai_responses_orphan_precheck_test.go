@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/testutil/alloctest"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -128,7 +129,7 @@ func TestOpenAIResponsesOrphanPrecheckCompatibilityErrors(t *testing.T) {
 func TestOpenAIResponsesOrphanPrecheckLargeEscapedContent(t *testing.T) {
 	body := []byte(`{"vendor":"` + strings.Repeat(`\n\"`, 1<<16) + `","input":[{"content":"` + strings.Repeat(`\n\"`, 1<<16) + `","type":"message"}]}`)
 	require.False(t, openAIResponsesInputMayNeedOrphanCleanup(body))
-	allocations := testing.AllocsPerRun(5, func() {
+	allocations := alloctest.MinPerRun(20, 5, func() {
 		if openAIResponsesInputMayNeedOrphanCleanup(body) {
 			panic("unexpected cleanup candidate")
 		}

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/testutil/alloctest"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -120,7 +121,7 @@ func TestWebSocketCompatibilityNormalizesTriggerAfterPairedOutputCleanup(t *test
 
 func TestNormalizeCompactionTriggerInputOrder_PrecheckKeepsContract(t *testing.T) {
 	plain := []byte(`{"model":"gpt-5","input":[{"type":"message","role":"user","content":"` + strings.Repeat("x", 4096) + `"}]}`)
-	allocs := testing.AllocsPerRun(10, func() {
+	allocs := alloctest.MinPerRun(20, 10, func() {
 		got, changed, err := NormalizeCompactionTriggerInputOrder(plain)
 		if err != nil || changed || &got[0] != &plain[0] {
 			t.Fatal("body without a trigger must be returned unchanged")

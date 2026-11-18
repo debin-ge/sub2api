@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/testutil/alloctest"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -590,10 +591,10 @@ func TestSanitizeOpenAIResponsesToolParameterTypes_RewriteCountIndependentOfHits
 	small := buildToolSchemaNullTypeBody(t, 4)
 	large := buildToolSchemaNullTypeBody(t, 2000)
 
-	smallAllocs := testing.AllocsPerRun(2, func() {
+	smallAllocs := alloctest.MinPerRun(20, 2, func() {
 		_, _, _ = sanitizeOpenAIResponsesToolParameterTypes(small)
 	})
-	largeAllocs := testing.AllocsPerRun(2, func() {
+	largeAllocs := alloctest.MinPerRun(20, 2, func() {
 		_, _, _ = sanitizeOpenAIResponsesToolParameterTypes(large)
 	})
 

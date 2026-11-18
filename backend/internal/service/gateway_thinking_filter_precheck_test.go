@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
+	"github.com/Wei-Shaw/sub2api/internal/testutil/alloctest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -76,21 +77,13 @@ func signedThinkingHistoryBody() []byte {
 
 func TestFilterThinkingBlocksSignedHistorySkipsDecode(t *testing.T) {
 	body := signedThinkingHistoryBody()
-	precheck := testing.AllocsPerRun(5, func() {
+	allocs := alloctest.MinPerRun(20, 5, func() {
 		got := filterThinkingBlocksInternal(body, false)
 		if &got[0] != &body[0] {
 			t.Fatal("valid signed history must be returned unchanged")
 		}
 	})
-	decoded := testing.AllocsPerRun(5, func() {
-		_ = filterThinkingBlocksDecoded(body, false)
-	})
-	// AllocsPerRun reads the process-wide malloc counter, so goroutines left
-	// running by earlier tests in this package are counted too: CI measured 31
-	// for a path that allocates nothing on its own. Compare against the decoding
-	// path (about 10k allocations for this body) instead of a small fixed bound;
-	// skipping the decode keeps the precheck far below it.
-	require.Less(t, precheck, decoded/50, "precheck allocs: %v, decoded allocs: %v", precheck, decoded)
+	require.Less(t, allocs, float64(16), "allocs: %v", allocs)
 }
 
 func FuzzThinkingBlocksNeedFiltering(f *testing.F) {
