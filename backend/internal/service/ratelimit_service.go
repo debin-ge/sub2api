@@ -43,6 +43,11 @@ type RateLimitService struct {
 	// OpenAI Team 联动熔断的进程内去重：teamID → 去重窗口截止时间
 	openaiTeamLinkedMu     sync.Mutex
 	openaiTeamLinkedRecent map[string]time.Time
+
+	// Anthropic 无限流头 429 的进程内连续计数：accountID → 连续次数
+	// （见 ratelimit_service_anthropic_headerless_429.go）
+	anthropicHeaderless429Mu sync.Mutex
+	anthropicHeaderless429   map[int64]*anthropicHeaderless429Streak
 }
 
 type AccountRuntimeBlocker interface {
@@ -1437,6 +1442,19 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 		// （failover 预算被白白烧掉，客户端稳定收到 429）。优先按上游 Retry-After 冷却
 		// （截断到 maxAnthropic429RetryAfter），没有该头再走可配置的秒级兜底，管理端可调大或关闭。
 		if account.Platform == PlatformAnthropic {
+			// 既没有任何 unified 限流头、也没有 Retry-After 时，这多半是请求级拒绝而非账号被限制：
+			// 只换号不冷却，直到账号连续多次命中且期间没有成功响应。
+			if !hasAnthropicUnifiedRateLimitHeaders(headers) && headerValue(headers, "Retry-After") == "" &&
+				!s.observeAnthropicHeaderless429(account.ID, time.Now()) {
+				slog.Warn("anthropic_429_headerless_skips_account_penalty",
+					"account_id", account.ID,
+					"account_type", account.Type,
+					"requested_model", requestedModel,
+					"upstream_message", truncateForLog([]byte(sanitizeUpstreamErrorMessage(extractUpstreamErrorMessage(responseBody))), 256),
+					"cf_ray", headerValue(headers, "cf-ray"),
+				)
+				return
+			}
 			slog.Warn("rate_limit_429_no_reset_time",
 				"account_id", account.ID,
 				"platform", account.Platform,
@@ -2491,6 +2509,7 @@ func (s *RateLimitService) handle529(ctx context.Context, account *Account) {
 
 // UpdateSessionWindow 从成功响应更新5h窗口状态并采样可用的额度窗口。
 func (s *RateLimitService) UpdateSessionWindow(ctx context.Context, account *Account, headers http.Header) {
+	s.resetAnthropicHeaderless429(account.ID)
 	status := headers.Get("anthropic-ratelimit-unified-5h-status")
 	if status == "" {
 		// Ultra 等账号可能仅返回周窗口；不能因缺少 5h 状态而丢弃真实的 7d 用量。
