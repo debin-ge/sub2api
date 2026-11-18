@@ -1098,6 +1098,16 @@ func (s *RateLimitService) handle403(ctx context.Context, account *Account, upst
 		)
 		return false
 	}
+	// 联网搜索组件未开通 / 搜索额度耗尽是功能级错误：仍按 403 换号，但不处罚账号。
+	if isUpstreamWebSearchFeature403(responseBody) {
+		slog.Warn(
+			"403_web_search_feature_skips_account_penalty",
+			"account_id", account.ID,
+			"platform", account.Platform,
+			"upstream_message", upstreamMsg,
+		)
+		return false
+	}
 
 	if account.Platform == PlatformAntigravity {
 		return s.handleAntigravity403(ctx, account, upstreamMsg, responseBody)

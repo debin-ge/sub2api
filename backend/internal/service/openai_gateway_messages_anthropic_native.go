@@ -180,6 +180,10 @@ func (s *OpenAIGatewayService) buildNativeAnthropicUpstreamRequest(
 	// 地址而非 CC/Responses 地址），详见 helper 注释。
 	body = clampOllamaCloudAnthropicMessagesMaxTokens(account, account.GetAnthropicProtocolBaseURL(), body)
 
+	// 火山方舟：web_search_20250305 对应需单独开通的「豆包搜索 Custom 版」，
+	// 改写为方舟自有的 web_search（联网内容插件），详见 helper 注释。
+	body = rewriteArkAnthropicWebSearchTools(body, targetURL)
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, nil, err
