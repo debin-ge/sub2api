@@ -428,3 +428,66 @@ func TestIsAnthropicExtraUsageRequired(t *testing.T) {
 	require.False(t, isAnthropicExtraUsageRequired([]byte(`{"error":{"type":"rate_limit_error","message":"This request would exceed your account's rate limit."}}`)))
 	require.False(t, isAnthropicExtraUsageRequired(nil))
 }
+
+// 无任何限流头、无 Retry-After 的 429（线上表现为 message 仅 "Error"）多半是请求级拒绝：
+// 前两次只换号，不写账号限流，避免账号在管理端反复显示"限流中 0m"。
+func TestHandle429_AnthropicHeaderless_SkipsAccountPenaltyBelowThreshold(t *testing.T) {
+	repo := &anthropic429RepoStub{}
+	svc := newAnthropic429TestService(repo)
+	account := &Account{ID: 601, Platform: PlatformAnthropic, Type: AccountTypeOAuth}
+	body := []byte(`{"type":"error","error":{"type":"rate_limit_error","message":"Error"}}`)
+
+	for i := 0; i < anthropicHeaderless429Threshold-1; i++ {
+		svc.handle429(context.Background(), account, http.Header{}, body, "claude-sonnet-5")
+	}
+
+	require.Zero(t, repo.rateLimitCalls)
+	require.Zero(t, repo.modelLimitCalls)
+}
+
+// 连续命中达到阈值且期间没有成功响应时，才认为账号本身被限制，走兜底冷却。
+func TestHandle429_AnthropicHeaderless_PenalizesAfterConsecutiveHits(t *testing.T) {
+	repo := &anthropic429RepoStub{}
+	svc := newAnthropic429TestService(repo)
+	account := &Account{ID: 602, Platform: PlatformAnthropic, Type: AccountTypeOAuth}
+	body := []byte(`{"type":"error","error":{"type":"rate_limit_error","message":"Error"}}`)
+
+	before := time.Now()
+	for i := 0; i < anthropicHeaderless429Threshold; i++ {
+		svc.handle429(context.Background(), account, http.Header{}, body, "claude-sonnet-5")
+	}
+	after := time.Now()
+
+	require.Equal(t, 1, repo.rateLimitCalls)
+	require.Equal(t, int64(602), repo.lastRateLimitID)
+	requireResetWithin(t, repo.lastReset, before, after, defaultRateLimit429CooldownSeconds*time.Second)
+}
+
+// 期间只要有一次成功响应，连续计数清零：其他请求照常成功的账号不会被累计到阈值。
+func TestHandle429_AnthropicHeaderless_SuccessResetsStreak(t *testing.T) {
+	repo := &anthropic429RepoStub{}
+	svc := newAnthropic429TestService(repo)
+	account := &Account{ID: 603, Platform: PlatformAnthropic, Type: AccountTypeOAuth}
+	body := []byte(`{"type":"error","error":{"type":"rate_limit_error","message":"Error"}}`)
+
+	for round := 0; round < 3; round++ {
+		for i := 0; i < anthropicHeaderless429Threshold-1; i++ {
+			svc.handle429(context.Background(), account, http.Header{}, body, "claude-sonnet-5")
+		}
+		svc.UpdateSessionWindow(context.Background(), account, http.Header{})
+	}
+
+	require.Zero(t, repo.rateLimitCalls)
+}
+
+// 距上一次命中超过计数窗口后重新计数。
+func TestObserveAnthropicHeaderless429_WindowExpiryRestartsStreak(t *testing.T) {
+	svc := newAnthropic429TestService(&anthropic429RepoStub{})
+	now := time.Now()
+
+	require.False(t, svc.observeAnthropicHeaderless429(604, now))
+	require.False(t, svc.observeAnthropicHeaderless429(604, now.Add(time.Second)))
+	require.False(t, svc.observeAnthropicHeaderless429(604, now.Add(time.Second+anthropicHeaderless429Window+time.Second)))
+	require.False(t, svc.observeAnthropicHeaderless429(604, now.Add(time.Second+anthropicHeaderless429Window+2*time.Second)))
+	require.True(t, svc.observeAnthropicHeaderless429(604, now.Add(time.Second+anthropicHeaderless429Window+3*time.Second)))
+}
