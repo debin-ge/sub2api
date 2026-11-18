@@ -16,6 +16,9 @@ vi.mock('@/api/admin', () => ({
   }
 }))
 
+// UsageProgressBar → useBalanceCurrency → useAppStore；测试中无 Pinia，按币种默认 USD 处理。
+vi.mock('@/stores', () => ({ useAppStore: () => ({ cachedPublicSettings: null }) }))
+
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
   return {

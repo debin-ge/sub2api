@@ -14,6 +14,9 @@ vi.mock('@/api/admin', () => ({
   }
 }))
 
+// UsageProgressBar → useBalanceCurrency → useAppStore；测试中无 Pinia，按币种默认 USD 处理。
+vi.mock('@/stores', () => ({ useAppStore: () => ({ cachedPublicSettings: null }) }))
+
 // 保留 vue-i18n 真实导出：UsageProgressBar 依赖 @/utils/format → @/i18n，
 // 其模块级 createI18n 需要真实 createI18n 存在。
 vi.mock('vue-i18n', async () => {
