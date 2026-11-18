@@ -12,7 +12,7 @@
           </div>
           <p class="text-sm font-medium text-primary-100">{{ t('redeem.currentBalance') }}</p>
           <p class="mt-2 text-4xl font-bold text-white">
-            ${{ formatBalanceAmount(user?.balance) }}
+            {{ balanceSymbol }}{{ formatBalanceAmount(user?.balance) }}
           </p>
           <p class="mt-2 text-sm text-primary-100">
             {{ t('redeem.concurrency') }}: {{ user?.concurrency || 0 }} {{ t('redeem.requests') }}
@@ -100,7 +100,7 @@
                   <p>{{ redeemResult.message }}</p>
                   <div class="mt-3 space-y-1">
                     <p v-if="redeemResult.type === 'balance'" class="font-medium">
-                      {{ t('redeem.added') }}: ${{ formatBalanceAmount(redeemResult.value) }}
+                      {{ t('redeem.added') }}: {{ balanceSymbol }}{{ formatBalanceAmount(redeemResult.value) }}
                     </p>
                     <p v-else-if="redeemResult.type === 'concurrency'" class="font-medium">
                       {{ t('redeem.added') }}: {{ redeemResult.value }}
@@ -117,7 +117,7 @@
                     </p>
                     <p v-if="redeemResult.new_balance !== undefined">
                       {{ t('redeem.newBalance') }}:
-                      <span class="font-semibold">${{ formatBalanceAmount(redeemResult.new_balance) }}</span>
+                      <span class="font-semibold">{{ balanceSymbol }}{{ formatBalanceAmount(redeemResult.new_balance) }}</span>
                     </p>
                     <p v-if="redeemResult.new_concurrency !== undefined">
                       {{ t('redeem.newConcurrency') }}:
@@ -384,6 +384,7 @@
 </template>
 
 <script setup lang="ts">
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
@@ -395,6 +396,8 @@ import CustomerSupportDialog from '@/components/common/CustomerSupportDialog.vue
 import Icon from '@/components/icons/Icon.vue'
 import { formatDateTime } from '@/utils/format'
 import { formatBalanceAmount } from '@/utils/formatters'
+
+const { balanceSymbol } = useBalanceCurrency()
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -459,7 +462,7 @@ const getHistoryItemTitle = (item: RedeemHistoryItem) => {
 const formatHistoryValue = (item: RedeemHistoryItem) => {
   if (isBalanceType(item.type)) {
     const sign = item.value >= 0 ? '+' : ''
-    return `${sign}$${formatBalanceAmount(item.value)}`
+    return `${sign}${balanceSymbol.value}${formatBalanceAmount(item.value)}`
   } else if (isSubscriptionType(item.type)) {
     // 订阅类型显示有效天数和分组名称
     const days = item.validity_days || Math.round(item.value)

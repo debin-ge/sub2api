@@ -71,7 +71,7 @@
             <td class="whitespace-nowrap px-4 py-3 text-right text-sm tabular-nums zt-ink-3">{{ fmtTokens(item.output_tokens) }}</td>
             <td class="whitespace-nowrap px-4 py-3 text-right text-sm tabular-nums zt-ink-3">{{ fmtTokens(item.cache_tokens) }}</td>
             <td class="whitespace-nowrap px-4 py-3 text-right text-sm font-medium tabular-nums zt-ink">{{ fmtTokens(item.total_tokens) }}</td>
-            <td class="whitespace-nowrap px-4 py-3 text-right text-sm font-medium tabular-nums zt-good-text">${{ fmtCost(item.actual_cost) }}</td>
+            <td class="whitespace-nowrap px-4 py-3 text-right text-sm font-medium tabular-nums zt-good-text">{{ balanceSymbol }}{{ fmtCost(item.actual_cost) }}</td>
           </tr>
         </tbody>
       </table>
@@ -80,6 +80,7 @@
 </template>
 
 <script setup lang="ts">
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { getUserBreakdown, type UserBreakdownParams } from '@/api/admin/dashboard'
@@ -87,6 +88,8 @@ import { formatCompactNumber, formatCostFixed } from '@/utils/format'
 import type { UserBreakdownItem } from '@/types'
 import Select from '@/components/common/Select.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
+
+const { balanceSymbol } = useBalanceCurrency()
 
 const props = defineProps<{
   startDate: string

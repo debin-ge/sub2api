@@ -203,6 +203,7 @@
 </template>
 
 <script setup lang="ts">
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
@@ -216,6 +217,8 @@ import {
   vipAccessDescriptionKey,
   vipAccessLabelKey,
 } from '@/utils/vipAccess'
+
+const { balanceSymbol } = useBalanceCurrency()
 
 const props = withDefaults(defineProps<{
   user: User | null
@@ -332,7 +335,7 @@ const providerLabels = computed<Record<UserAuthProvider, string>>(() => ({
 }))
 
 function formatCurrency(value: number): string {
-  return `$${formatBalanceAmount(value)}`
+  return `${balanceSymbol.value}${formatBalanceAmount(value)}`
 }
 
 function normalizeProvider(value: string): UserAuthProvider | null {

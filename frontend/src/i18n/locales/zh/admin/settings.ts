@@ -45,6 +45,12 @@ export default {
           enabled: '启用可用渠道',
           enabledHint: '关闭后用户端侧边栏入口隐藏，接口返回空数组。',
         },
+        balanceCurrency: {
+          label: '账户币种',
+          hint: '用于充值到账、用户余额、使用记录、消费统计、上游成本与余额退款。默认美元，切换不会换算已有金额；实际支付币种由支付渠道决定。',
+          usd: '💲美元',
+          cny: '¥人民币',
+        },
         siteBillingMode: {
           title: '站点类型',
           description: '决定用户端提供哪些购买方式。默认「充值 & 订阅」。',
@@ -815,8 +821,8 @@ export default {
         maxAmount: '最高金额',
         dailyLimit: '每日限额',
         balanceRechargeMultiplier: '余额充值倍率',
-        balanceRechargeMultiplierHint: '用户每支付 1 CNY 可获得多少 USD 余额',
-        balanceRechargePreview: '预览：1 CNY = {usd} USD',
+        balanceRechargeMultiplierHint: '用户每支付 1 CNY 可获得多少 {currency} 余额',
+        balanceRechargePreview: '预览：1 CNY = {usd} {currency}',
         subscriptionUsdToCnyRate: '订阅 CNY 换算汇率',
         subscriptionUsdToCnyRateHint:
           'CNY 支付通道下，套餐每 1 USD 价格收取多少 CNY（如 7.15）。0 或留空 = 不换算，订阅按 price 数值直接收款。启用后所有套餐 price 必须按 USD 定价',

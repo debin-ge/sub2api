@@ -32,20 +32,20 @@
         <KpiRow :cols="4">
           <KpiItem :label="t('admin.dashboard.todayTokens')" :value="formatTokens(stats.today_tokens)">
             <template #sub>
-              <span class="zt-good-text" :title="t('admin.dashboard.actual')">${{ formatCost(stats.today_actual_cost) }}</span>
+              <span class="zt-good-text" :title="t('admin.dashboard.actual')">{{ balanceSymbol }}{{ formatCost(stats.today_actual_cost) }}</span>
               <span>/</span>
-              <span class="zt-warn-text" :title="t('admin.dashboard.accountCost')">${{ formatCost(stats.today_account_cost) }}</span>
+              <span class="zt-warn-text" :title="t('admin.dashboard.accountCost')">{{ balanceSymbol }}{{ formatCost(stats.today_account_cost) }}</span>
               <span>/</span>
-              <span :title="t('admin.dashboard.standard')">${{ formatCost(stats.today_cost) }}</span>
+              <span :title="t('admin.dashboard.standard')">{{ balanceSymbol }}{{ formatCost(stats.today_cost) }}</span>
             </template>
           </KpiItem>
           <KpiItem :label="t('admin.dashboard.totalTokens')" :value="formatTokens(stats.total_tokens)">
             <template #sub>
-              <span class="zt-good-text" :title="t('admin.dashboard.actual')">${{ formatCost(stats.total_actual_cost) }}</span>
+              <span class="zt-good-text" :title="t('admin.dashboard.actual')">{{ balanceSymbol }}{{ formatCost(stats.total_actual_cost) }}</span>
               <span>/</span>
-              <span class="zt-warn-text" :title="t('admin.dashboard.accountCost')">${{ formatCost(stats.total_account_cost) }}</span>
+              <span class="zt-warn-text" :title="t('admin.dashboard.accountCost')">{{ balanceSymbol }}{{ formatCost(stats.total_account_cost) }}</span>
               <span>/</span>
-              <span :title="t('admin.dashboard.standard')">${{ formatCost(stats.total_cost) }}</span>
+              <span :title="t('admin.dashboard.standard')">{{ balanceSymbol }}{{ formatCost(stats.total_cost) }}</span>
             </template>
           </KpiItem>
           <KpiItem :label="t('admin.dashboard.performance')">
@@ -110,7 +110,7 @@
                 <button v-for="metric in (['tokens', 'actual_cost'] as const)" :key="metric" type="button"
                   class="rounded px-2 py-1 text-xs" :class="userTrendMetric === metric ? 'bg-blue-600 text-white' : 'zt-ink-2'"
                   :aria-pressed="userTrendMetric === metric" @click="setUserTrendMetric(metric)">
-                  {{ t(metric === 'tokens' ? 'admin.dashboard.tokens' : 'admin.dashboard.actualSpending') }}
+                  {{ t(metric === 'tokens' ? 'admin.dashboard.tokens' : 'admin.dashboard.actualSpending', { currency: balanceSymbol }) }}
                 </button>
               </div>
             </div>
@@ -134,6 +134,7 @@
 </template>
 
 <script setup lang="ts">
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -170,6 +171,8 @@ import {
   Filler
 } from 'chart.js'
 import { Line } from 'vue-chartjs'
+
+const { balanceSymbol } = useBalanceCurrency()
 
 // Register Chart.js components
 ChartJS.register(
@@ -381,7 +384,7 @@ const userTrendChartData = computed(() => {
 
 // Format helpers
 const formatUserTrendValue = (value: number): string =>
-  userTrendMetric.value === 'tokens' ? formatTokens(value) : `$${formatCost(value)}`
+  userTrendMetric.value === 'tokens' ? formatTokens(value) : `${balanceSymbol.value}${formatCost(value)}`
 
 const formatTokens = (value: number | undefined): string => {
   if (value === undefined || value === null) return '0'

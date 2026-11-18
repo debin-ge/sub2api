@@ -1,3 +1,4 @@
+import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import PaymentQRDialog from '../PaymentQRDialog.vue'
@@ -103,3 +104,5 @@ describe('PaymentQRDialog currency display', () => {
     expect(wrapper.text()).toContain('¥108.00')
   })
 })
+
+beforeEach(() => { setActivePinia(createPinia()) })

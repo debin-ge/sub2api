@@ -130,7 +130,7 @@
 
           <template #cell-value="{ value, row }">
             <span class="text-sm font-medium zt-ink">
-              <template v-if="row.type === 'balance'">${{ value.toFixed(2) }}</template>
+              <template v-if="row.type === 'balance'">{{ balanceSymbol }}{{ value.toFixed(2) }}</template>
               <template v-else-if="row.type === 'subscription'">
                 {{ row.validity_days || 30 }} {{ t('admin.redeem.days') }}
                 <span v-if="row.group" class="ml-1 text-xs zt-ink-3"
@@ -292,7 +292,7 @@
               <label class="input-label">
                 {{
                   generateForm.type === 'balance'
-                    ? t('admin.redeem.amount')
+                    ? t('admin.redeem.amount', { currency: balanceSymbol })
                     : t('admin.redeem.columns.value')
                 }}
               </label>
@@ -611,6 +611,7 @@
 </template>
 
 <script setup lang="ts">
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
@@ -641,6 +642,8 @@ import Select from '@/components/common/Select.vue'
 import GroupBadge from '@/components/common/GroupBadge.vue'
 import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
 import Icon from '@/components/icons/Icon.vue'
+
+const { balanceSymbol } = useBalanceCurrency()
 
 const { t } = useI18n()
 const appStore = useAppStore()

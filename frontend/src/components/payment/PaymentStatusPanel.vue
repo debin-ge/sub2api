@@ -229,6 +229,7 @@
 </template>
 
 <script setup lang="ts">
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { usePaymentStore } from '@/stores/payment'
@@ -242,7 +243,7 @@ import {
   isBuiltInWxpayMethod,
   registerPaymentPopup,
 } from '@/components/payment/providerConfig'
-import { currencySymbol, formatPaymentAmount, normalizePaymentCurrency } from '@/components/payment/currency'
+import { formatPaymentAmount, normalizePaymentCurrency } from '@/components/payment/currency'
 import type { PaymentOrder } from '@/types/payment'
 import Icon from '@/components/icons/Icon.vue'
 import QRCode from 'qrcode'
@@ -286,7 +287,8 @@ const paidOrder = ref<PaymentOrder | null>(null)
 const deepLinkState = ref<AlipayDeepLinkState>('idle')
 const deepLinkFallbackVisible = ref(false)
 const paymentCurrency = computed(() => normalizePaymentCurrency(props.currency))
-const creditedAmountSymbol = currencySymbol('USD')
+const { balanceSymbol } = useBalanceCurrency()
+const creditedAmountSymbol = computed(() => (paidOrder.value?.order_type ?? props.orderType) === 'subscription' ? '$' : balanceSymbol.value)
 const localeCode = computed(() => {
   const raw = i18n.locale as unknown
   if (typeof raw === 'string') return raw

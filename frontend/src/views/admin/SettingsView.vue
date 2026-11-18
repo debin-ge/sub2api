@@ -7630,6 +7630,21 @@
           <div class="space-y-5 p-6">
             <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div class="min-w-0">
+                <label class="text-sm font-medium zt-ink-2">{{ t('admin.settings.features.balanceCurrency.label') }}</label>
+                <p class="mt-0.5 text-xs zt-ink-3">{{ t('admin.settings.features.balanceCurrency.hint') }}</p>
+              </div>
+              <div class="w-full shrink-0 sm:w-56">
+                <Select
+                  v-model="form.balance_currency"
+                  :options="[
+                    { value: 'USD', label: t('admin.settings.features.balanceCurrency.usd') },
+                    { value: 'CNY', label: t('admin.settings.features.balanceCurrency.cny') },
+                  ]"
+                />
+              </div>
+            </div>
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div class="min-w-0">
                 <label class="text-sm font-medium zt-ink-2">
                   {{ t('admin.settings.features.siteBillingMode.label') }}
                 </label>
@@ -8341,7 +8356,7 @@
                     <p class="mt-0.5 text-xs zt-ink-3">
                       {{
                         t(
-                          "admin.settings.payment.balanceRechargeMultiplierHint",
+                          "admin.settings.payment.balanceRechargeMultiplierHint", { currency: form.balance_currency },
                         )
                       }}
                     </p>
@@ -8350,6 +8365,7 @@
                     >
                       {{
                         t("admin.settings.payment.balanceRechargePreview", {
+                          currency: form.balance_currency,
                           usd: (
                             Number(form.payment_balance_recharge_multiplier) ||
                             1
@@ -10219,6 +10235,7 @@ const form = reactive<SettingsForm>({
   default_subscriptions: [],
   force_email_on_third_party_signup: false,
   default_user_rpm_limit: 0,
+  balance_currency: "USD",
   site_name: "ZenTok",
   site_logo: "",
   site_subtitle: "AI API Gateway",
@@ -12081,6 +12098,7 @@ async function saveSettings() {
       default_subscriptions: normalizedDefaultSubscriptions,
       force_email_on_third_party_signup: form.force_email_on_third_party_signup,
       default_user_rpm_limit: form.default_user_rpm_limit,
+      balance_currency: form.balance_currency,
       site_name: form.site_name,
       site_logo: form.site_logo,
       site_subtitle: form.site_subtitle,

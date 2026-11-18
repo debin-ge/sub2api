@@ -162,3 +162,5 @@ describe('BulkEditKeysModal', () => {
     expect(bulkUpdate).toHaveBeenCalledWith([3], { status: 'active' })
   })
 })
+
+vi.mock('@/stores', () => ({ useAppStore: () => ({ cachedPublicSettings: null }) }))

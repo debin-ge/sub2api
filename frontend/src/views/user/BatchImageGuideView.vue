@@ -752,6 +752,7 @@
 </template>
 
 <script setup lang="ts">
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
@@ -785,6 +786,8 @@ import {
 } from '@/api/batchImage'
 import type { ApiKey } from '@/types'
 import type { Column } from '@/components/common/types'
+
+const { balanceSymbol } = useBalanceCurrency()
 
 type BatchImageJobRow = Pick<BatchImageJob, 'id' | 'task_name' | 'parent_batch_id' | 'status' | 'model' | 'provider' | 'item_count' | 'success_count' | 'fail_count' | 'estimated_cost' | 'hold_amount' | 'actual_cost' | 'created_at' | 'downloaded_at'> & {
   api_key_id: number
@@ -2386,7 +2389,7 @@ function friendlyItemError(error: BatchImageItem['error']) {
 
 function formatMoney(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return '$0.00'
-  return `$${Number(value).toFixed(2)}`
+  return `${balanceSymbol.value}${Number(value).toFixed(2)}`
 }
 
 function terminalZeroCost(job: Pick<BatchImageJob, 'status' | 'actual_cost'>) {

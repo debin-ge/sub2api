@@ -47,17 +47,17 @@
 
     <KpiItem
       :label="t('usage.totalCost')"
-      :value="`$${(stats?.total_actual_cost || 0).toFixed(4)}`"
+      :value="`${balanceSymbol}${(stats?.total_actual_cost || 0).toFixed(4)}`"
       value-color="var(--zt-good)"
     >
       <template #sub>
         <template v-if="showAccountCost && totalAccountCost != null">
-          <span class="zt-warn-text">{{ t('usage.accountCost') }} ${{ totalAccountCost.toFixed(4) }}</span>
+          <span class="zt-warn-text">{{ t('usage.accountCost') }} {{ balanceSymbol }}{{ totalAccountCost.toFixed(4) }}</span>
           <span>·</span>
         </template>
         <span>
           {{ t('usage.standardCost') }}
-          <span :class="{ 'line-through': strikeStandardCost }">${{ (stats?.total_cost || 0).toFixed(4) }}</span>
+          <span :class="{ 'line-through': strikeStandardCost }">{{ balanceSymbol }}{{ (stats?.total_cost || 0).toFixed(4) }}</span>
         </span>
       </template>
     </KpiItem>
@@ -67,11 +67,14 @@
 </template>
 
 <script setup lang="ts">
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { AdminUsageStatsResponse } from '@/api/admin/usage'
 import type { UsageStatsResponse } from '@/types'
 import { KpiRow, KpiItem } from '@/components/console'
+
+const { balanceSymbol } = useBalanceCurrency()
 
 const props = withDefaults(defineProps<{
   stats: (AdminUsageStatsResponse | UsageStatsResponse) | null

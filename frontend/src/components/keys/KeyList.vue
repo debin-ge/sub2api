@@ -41,7 +41,7 @@
         </div>
         <div class="zt-split-item-meta">
           <span>{{ maskApiKey(item.key) }}</span>
-          <b>${{ (usageStats[item.id]?.today_actual_cost ?? 0).toFixed(4) }}</b>
+          <b>{{ balanceSymbol }}{{ (usageStats[item.id]?.today_actual_cost ?? 0).toFixed(4) }}</b>
         </div>
         <div v-if="item.quota > 0" class="zt-meter is-thin" :class="quotaMeterClass(item)">
           <i :style="{ width: Math.min((item.quota_used / item.quota) * 100, 100) + '%' }"></i>
@@ -52,6 +52,7 @@
 </template>
 
 <script setup lang="ts">
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 /**
  * 密钥列表列（分栏视图左侧）：与表格视图共用同一份数据、筛选、分页与勾选状态，只换排布。
  */
@@ -61,6 +62,8 @@ import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import { maskApiKey } from '@/utils/maskApiKey'
 import type { ApiKey } from '@/types'
 import type { BatchApiKeyUsageStats } from '@/api/usage'
+
+const { balanceSymbol } = useBalanceCurrency()
 
 const props = withDefaults(defineProps<{
   keys: ApiKey[]

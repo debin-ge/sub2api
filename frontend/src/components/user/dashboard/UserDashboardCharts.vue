@@ -46,8 +46,8 @@
                   </td>
                   <td class="num py-1.5 text-right zt-ink-2">{{ formatNumber(model.requests) }}</td>
                   <td class="num py-1.5 text-right zt-ink-2">{{ formatTokens(model.total_tokens) }}</td>
-                  <td class="num py-1.5 text-right zt-good-text">${{ formatCost(model.actual_cost) }}</td>
-                  <td class="num py-1.5 text-right zt-ink-3">${{ formatCost(model.cost) }}</td>
+                  <td class="num py-1.5 text-right zt-good-text">{{ balanceSymbol }}{{ formatCost(model.actual_cost) }}</td>
+                  <td class="num py-1.5 text-right zt-ink-3">{{ balanceSymbol }}{{ formatCost(model.cost) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -62,6 +62,7 @@
 </template>
 
 <script setup lang="ts">
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useChartTheme } from '@/composables/useChartTheme'
@@ -73,6 +74,8 @@ import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
 import type { TrendDataPoint, ModelStat } from '@/types'
 import { formatCostFixed as formatCost, formatNumberLocaleString as formatNumber, formatTokensK as formatTokens } from '@/utils/format'
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Title, Tooltip, Legend, Filler } from 'chart.js'
+
+const { balanceSymbol } = useBalanceCurrency()
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Title, Tooltip, Legend, Filler)
 
 const props = defineProps<{ loading: boolean, startDate: string, endDate: string, startTime?: string, endTime?: string, granularity: string, trend: TrendDataPoint[], models: ModelStat[] }>()

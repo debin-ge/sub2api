@@ -367,6 +367,7 @@ export interface PublicSettings {
   aliyun_captcha_region?: string
   gocaptcha_enabled?: boolean
   gocaptcha_mode?: string
+  balance_currency?: 'USD' | 'CNY'
   site_name: string
   site_logo: string
   site_subtitle: string

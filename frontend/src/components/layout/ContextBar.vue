@@ -49,6 +49,8 @@
 </template>
 
 <script setup lang="ts">
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
+
 /**
  * 上下文条：面包屑（区域 / 分组 / 页面）+ 改版前顶栏右侧的全局入口。
  * 页面标题下沉到内容区的 PageHead；用户菜单迁到侧栏底部的 RailUserMenu。
@@ -68,6 +70,8 @@ import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
 import { resolveRouteMetaKeys } from '@/router/title'
 import { resolveSiteBillingMode } from '@/utils/siteBillingMode'
 import { useConsoleNav } from '@/composables/useConsoleNav'
+
+const { balanceSymbol } = useBalanceCurrency()
 
 const route = useRoute()
 const { t } = useI18n()
@@ -131,6 +135,6 @@ function toggleMobileSidebar() {
 }
 
 function formatHeaderMoney(value: number) {
-  return `$${formatBalanceAmount(value)}`
+  return `${balanceSymbol.value}${formatBalanceAmount(value)}`
 }
 </script>

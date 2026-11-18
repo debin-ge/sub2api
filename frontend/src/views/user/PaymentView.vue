@@ -106,14 +106,14 @@
                 </div>
                 <div v-if="showBonusRow" class="flex justify-between" :class="{ 'border-t zt-border-c2 pt-2': !showActualPay }" data-testid="recharge-bonus-row">
                   <span class="zt-ink-3">{{ t('payment.rechargeBonus.amountLabelWithPercent', { percent: formatRechargeBonusNumber(bonusQuote.percent) }) }}</span>
-                  <span class="font-medium text-red-600 dark:text-red-400">+${{ bonusQuote.bonus.toFixed(2) }}</span>
+                  <span class="font-medium text-red-600 dark:text-red-400">+{{ balanceSymbol }}{{ bonusQuote.bonus.toFixed(2) }}</span>
                 </div>
                 <div v-if="showCreditedBalance" class="flex justify-between" :class="{ 'border-t zt-border-c2 pt-2': !showActualPay && !showBonusRow }" data-testid="recharge-credited-row">
                   <span class="zt-ink-3">{{ t('payment.creditedBalance') }}</span>
-                  <span :class="bonusQuote.percent > 0 ? 'font-semibold zt-ink' : 'zt-ink'">${{ creditedAmount.toFixed(2) }}</span>
+                  <span :class="bonusQuote.percent > 0 ? 'font-semibold zt-ink' : 'zt-ink'">{{ balanceSymbol }}{{ creditedAmount.toFixed(2) }}</span>
                 </div>
                 <p v-if="balanceRechargeMultiplier !== 1" class="border-t zt-border-c2 pt-2 text-xs zt-ink-3">
-                  {{ t('payment.rechargeRatePreview', { currency: selectedCurrency, usd: balanceRechargeMultiplier.toFixed(2) }) }}
+                  {{ t('payment.rechargeRatePreview', { currency: selectedCurrency, balanceCurrency, usd: balanceRechargeMultiplier.toFixed(2) }) }}
                 </p>
               </div>
             </div>
@@ -294,6 +294,7 @@
 </template>
 
 <script setup lang="ts">
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 import { ref, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { marked } from 'marked'
@@ -336,6 +337,8 @@ import { planValiditySuffix as validitySuffixOf } from '@/components/payment/val
 import type { PaymentMethodOption } from '@/components/payment/PaymentMethodSelector.vue'
 import { buildPaymentErrorToastMessage, describePaymentScenarioError } from './paymentUx'
 import { hasWechatResumeQuery, parseWechatResumeRoute, stripWechatResumeQuery } from './paymentWechatResume'
+
+const { balanceCurrency, balanceSymbol } = useBalanceCurrency()
 
 const i18n = useI18n()
 const { t } = i18n
@@ -695,7 +698,7 @@ const payBaseAmount = computed(() => bonusQuote.value.payBase)
 const discountAmount = computed(() => roundPaymentAmount(validAmount.value - payBaseAmount.value, selectedCurrency.value))
 const creditedAmount = computed(() => bonusQuote.value.credited)
 const showBonusRow = computed(() => bonusQuote.value.mode !== 'discount' && bonusQuote.value.bonus > 0)
-const showCreditedBalance = computed(() => balanceRechargeMultiplier.value !== 1 || bonusQuote.value.percent > 0)
+const showCreditedBalance = computed(() => selectedCurrency.value !== balanceCurrency.value || balanceRechargeMultiplier.value !== 1 || bonusQuote.value.percent > 0)
 
 const methodOptions = computed<PaymentMethodOption[]>(() =>
   enabledMethods.value.map((type) => {

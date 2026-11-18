@@ -1,7 +1,9 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
+import { useAppStore } from '@/stores'
 import AccountUsageCell from '../AccountUsageCell.vue'
-import type { Account } from '@/types'
+import type { Account, PublicSettings } from '@/types'
 
 const { getUsage } = vi.hoisted(() => ({
   getUsage: vi.fn()
@@ -115,6 +117,7 @@ const cnUsageCellStubs = {
 describe('AccountUsageCell', () => {
   beforeEach(() => {
     getUsage.mockReset()
+    useAppStore().cachedPublicSettings = null
     Object.defineProperty(window, 'matchMedia', {
       writable: true,
       value: vi.fn().mockImplementation(() => ({
@@ -1078,6 +1081,16 @@ describe('AccountUsageCell', () => {
 		expect(wrapper.text()).toContain('A $12.35')
 		expect(wrapper.text()).toContain('U $6.79')
 
+    for (const currency of ['CNY', 'USD'] as const) {
+      useAppStore().cachedPublicSettings = { balance_currency: currency } as PublicSettings
+      await nextTick()
+      const symbol = currency === 'CNY' ? '¥' : '$'
+      expect(wrapper.get('[title="usage.accountBilled"]').text()).toBe(`A ${symbol}12.35`)
+      expect(wrapper.get('[title="usage.userBilled"]').text()).toBe(`U ${symbol}6.79`)
+      expect(wrapper.text()).toContain('1.0M req')
+      expect(wrapper.text()).toContain('1.0B')
+    }
+
 		const badges = wrapper.findAll('span[title]')
 		expect(badges.some(node => node.attributes('title') === 'usage.accountBilled')).toBe(true)
 		expect(badges.some(node => node.attributes('title') === 'usage.userBilled')).toBe(true)
@@ -1769,6 +1782,10 @@ describe('AccountUsageCell', () => {
 		expect(wrapper.text()).toContain('0')
 		expect(wrapper.text()).toContain('A $0.00')
 		expect(wrapper.text()).toContain('U $0.00')
+    useAppStore().cachedPublicSettings = { balance_currency: 'CNY' } as PublicSettings
+    await nextTick()
+    expect(wrapper.get('[title="usage.accountBilled"]').text()).toBe('A ¥0.00')
+    expect(wrapper.get('[title="usage.userBilled"]').text()).toBe('U ¥0.00')
 		expect(wrapper.text()).toContain('vertex')
 		expect(wrapper.text()).not.toContain('admin.accounts.gemini.quotaPolicy.title')
 		expect(wrapper.text()).not.toContain('admin.accounts.gemini.rateLimit.unlimited')
@@ -2026,4 +2043,10 @@ describe('AccountUsageCell', () => {
     expect(wrapper.text()).not.toContain('7d S')
     expect(wrapper.text()).not.toContain('7d F')
   })
+})
+
+vi.mock('@/stores', async () => {
+  const { reactive } = await import('vue')
+  const store = reactive({ cachedPublicSettings: null as PublicSettings | null })
+  return { useAppStore: () => store }
 })

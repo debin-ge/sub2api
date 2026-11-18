@@ -163,6 +163,7 @@ type SystemSettings struct {
 	GoogleOAuthRedirectURL            string
 	GoogleOAuthFrontendRedirectURL    string
 
+	BalanceCurrency             string
 	SiteName                    string
 	SiteLogo                    string
 	SiteSubtitle                string
@@ -377,6 +378,7 @@ type PublicSettings struct {
 	AliyunCaptchaRegion                 string
 	GoCaptchaEnabled                    bool
 	GoCaptchaMode                       string
+	BalanceCurrency                     string
 	SiteName                            string
 	SiteLogo                            string
 	SiteSubtitle                        string

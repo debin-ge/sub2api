@@ -66,7 +66,7 @@
         <div v-if="form.deduct_balance && userBalance != null" class="mt-3 grid grid-cols-2 gap-3">
           <div class="rounded-lg zt-surface-2 p-3 text-sm">
             <div class="zt-ink-3">{{ t('payment.admin.userBalance') }}</div>
-            <div class="mt-1 font-semibold zt-ink">{{ creditedAmountSymbol }}{{ userBalance.toFixed(2) }}</div>
+            <div class="mt-1 font-semibold zt-ink">{{ balanceSymbol }}{{ userBalance.toFixed(2) }}</div>
           </div>
           <div class="rounded-lg zt-surface-2 p-3 text-sm">
             <div class="zt-ink-3">{{ t('payment.admin.orderAmount') }}</div>
@@ -164,6 +164,7 @@
 </template>
 
 <script setup lang="ts">
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 import { reactive, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -187,7 +188,8 @@ const emit = defineEmits<{
   (e: 'cancel'): void
 }>()
 
-const creditedAmountSymbol = currencySymbol('USD')
+const { balanceSymbol } = useBalanceCurrency()
+const creditedAmountSymbol = computed(() => (props.order?.order_type) === 'subscription' ? '$' : balanceSymbol.value)
 
 const paymentAmountSymbol = computed(() => currencySymbol(props.order?.currency))
 

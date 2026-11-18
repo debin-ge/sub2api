@@ -23,13 +23,13 @@
             {{ formatTokens(user.total_tokens) }}
           </td>
           <td class="py-1 text-right zt-good-text">
-            ${{ formatCost(user.actual_cost) }}
+            {{ balanceSymbol }}{{ formatCost(user.actual_cost) }}
           </td>
           <td v-if="showAccountCost" class="py-1 text-right zt-warn-text">
-            ${{ formatCost(user.account_cost) }}
+            {{ balanceSymbol }}{{ formatCost(user.account_cost) }}
           </td>
           <td class="py-1 pr-1 text-right zt-ink-3">
-            ${{ formatCost(user.cost) }}
+            {{ balanceSymbol }}{{ formatCost(user.cost) }}
           </td>
         </tr>
       </tbody>
@@ -38,10 +38,13 @@
 </template>
 
 <script setup lang="ts">
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import type { UserBreakdownItem } from '@/types'
+
+const { balanceSymbol } = useBalanceCurrency()
 
 const { t } = useI18n()
 

@@ -59,7 +59,7 @@
           </div>
           <div class="mt-2 flex justify-between text-sm">
             <span class="zt-ink-3">{{ t('payment.orders.amount') }}</span>
-            <span class="zt-ink">${{ refundTarget.amount.toFixed(2) }}</span>
+            <span class="zt-ink">{{ refundTarget.order_type === 'subscription' ? '$' : balanceSymbol }}{{ refundTarget.amount.toFixed(2) }}</span>
           </div>
         </div>
         <div>
@@ -78,6 +78,7 @@
 </template>
 
 <script setup lang="ts">
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -91,6 +92,8 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import Select from '@/components/common/Select.vue'
 import Icon from '@/components/icons/Icon.vue'
 import OrderTable from '@/components/payment/OrderTable.vue'
+
+const { balanceSymbol } = useBalanceCurrency()
 
 const { t } = useI18n()
 const router = useRouter()

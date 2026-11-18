@@ -131,3 +131,5 @@ describe('GroupDistributionChart', () => {
     expect(wrapper.findAll('tbody tr')[0].findAll('td')).toHaveLength(5)
   })
 })
+
+vi.mock('@/stores', () => ({ useAppStore: () => ({ cachedPublicSettings: null }) }))

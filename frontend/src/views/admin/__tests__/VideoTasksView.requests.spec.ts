@@ -8,6 +8,7 @@ const { api, app } = vi.hoisted(() => ({
 }))
 vi.mock('@/api/admin/videos', () => ({ default: api }))
 vi.mock('@/stores/app', () => ({ useAppStore: () => app }))
+vi.mock('@/stores', () => ({ useAppStore: () => ({ cachedPublicSettings: null }) }))
 vi.mock('@/components/layout/AppLayout.vue', () => ({ default: { template: '<div><slot /></div>' } }))
 vi.mock('vue-i18n', async (importOriginal) => ({ ...await importOriginal<typeof import('vue-i18n')>(), useI18n: () => ({ t: (key: string) => key }) }))
 

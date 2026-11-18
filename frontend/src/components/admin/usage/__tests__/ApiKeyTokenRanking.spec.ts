@@ -78,3 +78,5 @@ describe('ApiKeyTokenRanking', () => {
     wrapper.unmount()
   })
 })
+
+vi.mock('@/stores', () => ({ useAppStore: () => ({ cachedPublicSettings: null }) }))

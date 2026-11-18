@@ -1,4 +1,8 @@
-import { describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
+import { useAppStore } from '@/stores/app'
+import type { PublicSettings } from '@/types'
+import { createPinia, setActivePinia } from 'pinia'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import type { PaymentOrder } from '@/types/payment'
 import AdminOrderDetail from '../AdminOrderDetail.vue'
@@ -150,4 +154,28 @@ describe('admin order currency display', () => {
     expect(text).toContain('¥108.00')
     expect(text).toContain('$100.00')
   })
+})
+
+beforeEach(() => { setActivePinia(createPinia()) })
+
+it('updates credited and refunded balance units while preserving the order payment currency', async () => {
+  const app = useAppStore()
+  const wrapper = mount(AdminRefundDialog, {
+    props: { show: true, order: orderFactory({ order_type: 'balance', currency: 'USD' }), userBalance: 200 },
+    global: { stubs: { BaseDialog: BaseDialogStub } },
+  })
+  expect(wrapper.text()).toContain('$200.00')
+  app.cachedPublicSettings = { balance_currency: 'CNY' } as PublicSettings
+  await nextTick()
+  expect(wrapper.text()).toContain('¥200.00')
+  expect(wrapper.text()).toContain('¥100.00')
+  expect(wrapper.text()).toContain('$108.00')
+  expect(wrapper.text()).not.toContain('$200.00')
+  await wrapper.setProps({ order: orderFactory({ order_type: 'subscription', currency: 'USD' }) })
+  expect(wrapper.text()).toContain('$100.00')
+  expect(wrapper.text()).toContain('¥200.00')
+  app.cachedPublicSettings = { balance_currency: 'USD' } as PublicSettings
+  await nextTick()
+  expect(wrapper.text()).toContain('$200.00')
+  wrapper.unmount()
 })

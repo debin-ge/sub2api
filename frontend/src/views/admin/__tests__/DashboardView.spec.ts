@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { nextTick } from 'vue'
+import { useAppStore } from '@/stores'
 
-import type { DashboardStats } from '@/types'
+import type { DashboardStats, PublicSettings } from '@/types'
 import DashboardView from '../DashboardView.vue'
 
 const { getSnapshotV2, getUserUsageTrend, getUserSpendingRanking, getUpstreamBalance } = vi.hoisted(() => ({
@@ -34,6 +36,11 @@ vi.mock('@/stores/app', () => ({
     showError: vi.fn()
   })
 }))
+vi.mock('@/stores', async () => {
+  const { reactive } = await import('vue')
+  const store = reactive({ cachedPublicSettings: null as PublicSettings | null })
+  return { useAppStore: () => store }
+})
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({
@@ -97,6 +104,7 @@ const createDashboardStats = (): DashboardStats => ({
 describe('admin DashboardView', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    useAppStore().cachedPublicSettings = null
 
     getSnapshotV2.mockReset()
     getUserUsageTrend.mockReset()
@@ -129,6 +137,28 @@ describe('admin DashboardView', () => {
       status: 'disabled',
       balance: 0
     })
+  })
+
+  it('updates today and total upstream costs when the account currency changes', async () => {
+    getSnapshotV2.mockResolvedValue({
+      stats: { ...createDashboardStats(), today_account_cost: 1.25, total_account_cost: 30.5 },
+      trend: [], models: [],
+    })
+    const wrapper = mount(DashboardView, { global: { stubs: {
+      AppLayout: { template: '<div><slot /></div>' }, LoadingSpinner: true, Icon: true,
+      DateRangePicker: true, Select: true, ModelDistributionChart: true, TokenUsageTrend: true,
+    } } })
+    try {
+      await flushPromises()
+      const costs = () => wrapper.findAll('[title="admin.dashboard.accountCost"]').map(node => node.text())
+      expect(costs()).toEqual(['$1.25', '$30.50'])
+      useAppStore().cachedPublicSettings = { balance_currency: 'CNY' } as PublicSettings
+      await nextTick()
+      expect(costs()).toEqual(['¥1.25', '¥30.50'])
+      useAppStore().cachedPublicSettings = { balance_currency: 'USD' } as PublicSettings
+      await nextTick()
+      expect(costs()).toEqual(['$1.25', '$30.50'])
+    } finally { wrapper.unmount() }
   })
 
   it('switches metrics and ignores a stale tokens response', async () => {

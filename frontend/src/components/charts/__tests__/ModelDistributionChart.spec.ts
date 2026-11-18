@@ -201,3 +201,5 @@ describe('ModelDistributionChart', () => {
     expect(rows[3].text()).toContain('$10.00')
   })
 })
+
+vi.mock('@/stores', () => ({ useAppStore: () => ({ cachedPublicSettings: null }) }))

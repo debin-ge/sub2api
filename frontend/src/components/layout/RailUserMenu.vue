@@ -94,6 +94,8 @@
 </template>
 
 <script setup lang="ts">
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
+
 /**
  * 侧栏底部用户卡 + 弹层菜单：承接改版前 AppHeader 用户下拉的全部内容
  * （资料 / 密钥 / 联系客服 / 重放引导 / 退出 / 余额明细）。
@@ -105,6 +107,8 @@ import { useAppStore, useAuthStore, useOnboardingStore } from '@/stores'
 import CustomerSupportDialog from '@/components/common/CustomerSupportDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { formatBalanceAmount } from '@/utils/formatters'
+
+const { balanceSymbol } = useBalanceCurrency()
 
 const router = useRouter()
 const { t } = useI18n()
@@ -144,7 +148,7 @@ const displayName = computed(() => {
 })
 
 function formatMoney(value: number) {
-  return `$${formatBalanceAmount(value)}`
+  return `${balanceSymbol.value}${formatBalanceAmount(value)}`
 }
 
 function toggleMenu() {

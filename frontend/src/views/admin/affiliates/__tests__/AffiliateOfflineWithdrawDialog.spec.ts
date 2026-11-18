@@ -223,3 +223,5 @@ describe('AffiliateOfflineWithdrawDialog', () => {
     expect(showSuccess).toHaveBeenCalledWith('admin.affiliates.withdraw.success {"amount":"$5.00","remaining":"$5.00"}')
   })
 })
+
+vi.mock('@/stores', () => ({ useAppStore: () => ({ cachedPublicSettings: null }) }))

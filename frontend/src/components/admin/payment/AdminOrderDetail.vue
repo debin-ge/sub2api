@@ -33,7 +33,7 @@
           <p class="text-xs zt-ink-3">{{ t('payment.orders.bonusAmount') }}</p>
           <p class="text-sm font-medium text-amber-600 dark:text-amber-400">+{{ creditedAmountSymbol }}{{ (order.bonus_amount ?? 0).toFixed(2) }}</p>
         </div>
-        <div v-if="order.amount !== order.pay_amount || (order.bonus_amount ?? 0) > 0">
+        <div v-if="paymentAmountSymbol !== creditedAmountSymbol || order.amount !== order.pay_amount || (order.bonus_amount ?? 0) > 0">
           <p class="text-xs zt-ink-3">{{ t('payment.orders.creditedAmount') }}</p>
           <p class="text-sm font-medium zt-ink">{{ creditedAmountSymbol }}{{ order.amount.toFixed(2) }}</p>
         </div>
@@ -118,6 +118,7 @@
 </template>
 
 <script setup lang="ts">
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -132,7 +133,8 @@ const props = defineProps<{
   order: PaymentOrder | null
 }>()
 
-const creditedAmountSymbol = currencySymbol('USD')
+const { balanceSymbol } = useBalanceCurrency()
+const creditedAmountSymbol = computed(() => (props.order?.order_type) === 'subscription' ? '$' : balanceSymbol.value)
 
 const paymentAmountSymbol = computed(() => currencySymbol(props.order?.currency))
 

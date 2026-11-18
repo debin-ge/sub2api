@@ -87,3 +87,5 @@ describe('UsageStatsCards', () => {
     expect(tooltip?.classes()).not.toContain('opacity-0')
   })
 })
+
+vi.mock('@/stores', () => ({ useAppStore: () => ({ cachedPublicSettings: null }) }))

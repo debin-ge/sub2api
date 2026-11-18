@@ -426,7 +426,8 @@ describe('PaymentView subscription plan grid', () => {
 })
 
 describe('PaymentView recharge rate preview', () => {
-  it('uses the selected payment method currency in both locale templates', async () => {
+  it.each(['USD', 'CNY'])('uses the payment unit and %s balance unit in the preview', async (balanceCurrency) => {
+    appStoreState.setPublicSettings({ balance_currency: balanceCurrency })
     translate.mockClear()
     routeState.path = '/purchase'
     routeState.query = {}
@@ -454,11 +455,13 @@ describe('PaymentView recharge rate preview', () => {
     await flushPromises()
 
     expect(translate).toHaveBeenCalledWith('payment.rechargeRatePreview', {
+      balanceCurrency,
       currency: 'USD',
       usd: '0.50',
     })
-    expect(en.payment.rechargeRatePreview).toBe('Current rate: 1 {currency} = {usd} USD')
-    expect(zh.payment.rechargeRatePreview).toBe('当前倍率：1 {currency} = {usd} USD')
+    expect(wrapper.get('[data-testid="recharge-credited-row"]').text()).toContain(`${balanceCurrency === 'CNY' ? '¥' : '$'}5.00`)
+    expect(en.payment.rechargeRatePreview).toBe('Current rate: 1 {currency} = {usd} {balanceCurrency}')
+    expect(zh.payment.rechargeRatePreview).toBe('当前倍率：1 {currency} = {usd} {balanceCurrency}')
   })
 })
 

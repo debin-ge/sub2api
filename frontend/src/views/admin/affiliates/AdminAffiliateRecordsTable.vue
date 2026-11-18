@@ -163,8 +163,8 @@
           <OverviewStat :label="t('admin.affiliates.overview.rebateRate')" :value="formatPercent(selectedOverview.rebate_rate_percent)" />
           <OverviewStat :label="t('admin.affiliates.overview.invitedCount')" :value="String(selectedOverview.invited_count)" />
           <OverviewStat :label="t('admin.affiliates.overview.rebatedInviteeCount')" :value="String(selectedOverview.rebated_invitee_count)" />
-          <OverviewStat :label="t('admin.affiliates.overview.availableQuota')" :value="'$' + formatAmount(selectedOverview.available_quota)" />
-          <OverviewStat :label="t('admin.affiliates.overview.historyQuota')" :value="'$' + formatAmount(selectedOverview.history_quota)" />
+          <OverviewStat :label="t('admin.affiliates.overview.availableQuota')" :value="balanceSymbol + formatAmount(selectedOverview.available_quota)" />
+          <OverviewStat :label="t('admin.affiliates.overview.historyQuota')" :value="balanceSymbol + formatAmount(selectedOverview.history_quota)" />
         </div>
       </div>
     </BaseDialog>
@@ -172,6 +172,7 @@
 </template>
 
 <script setup lang="ts">
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 import { computed, defineComponent, h, onMounted, reactive, ref, type PropType } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
@@ -188,6 +189,8 @@ import { affiliatesAPI, type AffiliateInviteRecord, type AffiliateRebateRecord, 
 import type { PaginatedResponse } from '@/types'
 import { extractI18nErrorMessage } from '@/utils/apiError'
 import { formatDateTime as formatDisplayDateTime } from '@/utils/format'
+
+const { balanceSymbol } = useBalanceCurrency()
 
 type RecordType = 'invites' | 'rebates' | 'transfers'
 type AffiliateRecord = AffiliateInviteRecord | AffiliateRebateRecord | AffiliateTransferRecord
@@ -409,7 +412,7 @@ const AmountText = defineComponent({
       class: amountProps.strong
         ? 'text-sm font-semibold zt-good-text'
         : 'text-sm zt-ink',
-    }, `$${formatAmount(amountProps.value)}`)
+    }, `${balanceSymbol.value}${formatAmount(amountProps.value)}`)
   },
 })
 

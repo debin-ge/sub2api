@@ -1,4 +1,5 @@
-import { describe, it, expect, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 
 // t() 回显 key；带参数时附上 JSON，便于断言计数
@@ -160,3 +161,5 @@ describe('UserDashboardStats 按平台拆分', () => {
     expect(w.html()).not.toContain('dashboard.platformBreakdown')
   })
 })
+
+beforeEach(() => { setActivePinia(createPinia()) })

@@ -58,13 +58,13 @@
       <!-- 用量与配额（表格「用量」列） -->
       <Panel :title="t('keys.usage')">
         <template #actions>
-          <span class="zt-detail-sub">{{ t('keys.today') }} ${{ (stats?.today_actual_cost ?? 0).toFixed(4) }}</span>
+          <span class="zt-detail-sub">{{ t('keys.today') }} {{ balanceSymbol }}{{ (stats?.today_actual_cost ?? 0).toFixed(4) }}</span>
         </template>
         <dl class="zt-dl">
           <dt>{{ t('keys.today') }}</dt>
-          <dd>${{ (stats?.today_actual_cost ?? 0).toFixed(4) }}</dd>
+          <dd>{{ balanceSymbol }}{{ (stats?.today_actual_cost ?? 0).toFixed(4) }}</dd>
           <dt>{{ t('keys.total') }}</dt>
-          <dd>${{ (stats?.total_actual_cost ?? 0).toFixed(4) }}</dd>
+          <dd>{{ balanceSymbol }}{{ (stats?.total_actual_cost ?? 0).toFixed(4) }}</dd>
           <dt>{{ t('keys.currentConcurrency') }}</dt>
           <dd>{{ apiKey.current_concurrency ?? 0 }}</dd>
         </dl>
@@ -74,7 +74,7 @@
             <div class="zt-meter" :class="quotaClass">
               <i :style="{ width: Math.min((apiKey.quota_used / apiKey.quota) * 100, 100) + '%' }"></i>
             </div>
-            <span :class="quotaTextClass">${{ apiKey.quota_used?.toFixed(2) || '0.00' }} / ${{ apiKey.quota?.toFixed(2) }}</span>
+            <span :class="quotaTextClass">{{ balanceSymbol }}{{ apiKey.quota_used?.toFixed(2) || '0.00' }} / {{ balanceSymbol }}{{ apiKey.quota?.toFixed(2) }}</span>
           </div>
         </div>
       </Panel>
@@ -95,7 +95,7 @@
                 <i :style="{ width: Math.min((w.usage / w.limit) * 100, 100) + '%' }"></i>
               </div>
               <span :class="windowTextClass(w.usage, w.limit)">
-                ${{ w.usage?.toFixed(2) || '0.00' }}/${{ w.limit?.toFixed(2) }}
+                {{ balanceSymbol }}{{ w.usage?.toFixed(2) || '0.00' }}/{{ balanceSymbol }}{{ w.limit?.toFixed(2) }}
                 <small v-if="w.resetAt && formatResetTime(w.resetAt)">⟳ {{ formatResetTime(w.resetAt) }}</small>
               </span>
             </div>
@@ -159,6 +159,7 @@
 </template>
 
 <script setup lang="ts">
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 /**
  * 密钥详情（分栏视图右侧）：字段与操作与表格列一一对应，事件全部交给 KeysView 现有函数处理。
  */
@@ -171,6 +172,8 @@ import { formatDateTime } from '@/utils/format'
 import { maskApiKey } from '@/utils/maskApiKey'
 import type { ApiKey } from '@/types'
 import type { BatchApiKeyUsageStats } from '@/api/usage'
+
+const { balanceSymbol } = useBalanceCurrency()
 
 const props = defineProps<{
   apiKey: ApiKey

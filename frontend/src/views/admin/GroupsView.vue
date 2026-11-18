@@ -350,7 +350,7 @@
                   t("admin.groups.usageToday")
                 }}</span>
                 <span class="ml-1 font-medium zt-ink-2"
-                  >${{
+                  >{{ balanceSymbol }}{{
                     formatCost(usageMap.get(row.id)?.today_cost ?? 0)
                   }}</span
                 >
@@ -360,7 +360,7 @@
                   t("admin.groups.usageYesterday")
                 }}</span>
                 <span class="ml-1 font-medium zt-ink-2"
-                  >${{
+                  >{{ balanceSymbol }}{{
                     formatCost(usageMap.get(row.id)?.yesterday_cost ?? 0)
                   }}</span
                 >
@@ -370,7 +370,7 @@
                   t("admin.groups.usageTotal")
                 }}</span>
                 <span class="ml-1 font-medium zt-ink-2"
-                  >${{
+                  >{{ balanceSymbol }}{{
                     formatCost(usageMap.get(row.id)?.total_cost ?? 0)
                   }}</span
                 >
@@ -4413,6 +4413,7 @@
 </template>
 
 <script setup lang="ts">
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAppStore } from "@/stores/app";
@@ -4537,6 +4538,8 @@ import {
   serializeVideoModelPrices,
   videoModelPriceFamilyRows,
 } from "./groupsVideoModelPricing";
+
+const { balanceSymbol } = useBalanceCurrency()
 
 const supportsLivePlatform = (platform: string): boolean =>
   platform === "openai" || platform === "composite";

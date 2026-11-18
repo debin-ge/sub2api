@@ -65,11 +65,11 @@
             </div>
             <div v-if="hasAmountFields(order) && orderBonusAmount(order) > 0" class="flex justify-between">
               <span class="zt-ink-3">{{ t('payment.orders.bonusAmount') }}</span>
-              <span class="font-medium text-amber-600 dark:text-amber-400">+${{ orderBonusAmount(order).toFixed(2) }}</span>
+              <span class="font-medium text-amber-600 dark:text-amber-400">+{{ balanceSymbol }}{{ orderBonusAmount(order).toFixed(2) }}</span>
             </div>
             <div v-if="hasAmountFields(order) && (order.amount !== order.pay_amount || orderBonusAmount(order) > 0)" class="flex justify-between">
               <span class="zt-ink-3">{{ t('payment.orders.creditedAmount') }}</span>
-              <span class="font-medium zt-ink">{{ order.order_type === 'balance' ? '$' + order.amount.toFixed(2) : formatGatewayAmount(order.amount) }}</span>
+              <span class="font-medium zt-ink">{{ order.order_type === 'balance' ? balanceSymbol + order.amount.toFixed(2) : formatGatewayAmount(order.amount) }}</span>
             </div>
             <div v-if="hasPaymentType(order)" class="flex justify-between">
               <span class="zt-ink-3">{{ t('payment.orders.paymentMethod') }}</span>
@@ -109,6 +109,7 @@
 </template>
 
 <script setup lang="ts">
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
@@ -130,6 +131,8 @@ import {
   getKnownVIPAccessState,
   type KnownVIPAccessState,
 } from '@/utils/vipAccess'
+
+const { balanceSymbol } = useBalanceCurrency()
 
 const i18n = useI18n()
 const { t } = i18n

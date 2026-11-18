@@ -1,5 +1,8 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
+import { useAppStore } from '@/stores'
+import type { PublicSettings } from '@/types'
 import VideoTasksView from '../VideoTasksView.vue'
 
 const { api, app } = vi.hoisted(() => ({
@@ -8,6 +11,11 @@ const { api, app } = vi.hoisted(() => ({
 }))
 vi.mock('@/api/admin/videos', () => ({ default: api }))
 vi.mock('@/stores/app', () => ({ useAppStore: () => app }))
+vi.mock('@/stores', async () => {
+  const { reactive } = await import('vue')
+  const store = reactive({ cachedPublicSettings: null as PublicSettings | null })
+  return { useAppStore: () => store }
+})
 vi.mock('@/components/layout/AppLayout.vue', () => ({ default: { template: '<div><slot /></div>' } }))
 vi.mock('vue-i18n', async (importOriginal) => ({ ...await importOriginal<typeof import('vue-i18n')>(), useI18n: () => ({ t: (key: string) => key }) }))
 
@@ -51,6 +59,7 @@ async function mountView(overviewValue: unknown = overview, detail: unknown = ta
 
 beforeEach(() => {
   vi.resetAllMocks()
+  useAppStore().cachedPublicSettings = null
   api.listTasks.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 })
   api.listEvents.mockResolvedValue({ items: [] })
 })
@@ -150,6 +159,30 @@ describe('video task upstream cost', () => {
       upstream_quote_error: 'quote timeout', account_rate_multiplier: 1.25,
     },
   }
+
+  it('follows currency settings for upstream costs and quotes without changing snapshot amounts', async () => {
+    const detail = { ...vendorTask, provider_cost_snapshot: { ...vendorTask.provider_cost_snapshot, cost_in_usd_ticks: 6900000000 } }
+    const { wrapper, state } = await mountView(overview, detail)
+    try {
+      await state.openTask(detail)
+      for (const currency of ['USD', 'CNY', 'USD'] as const) {
+        if (currency === 'CNY' || useAppStore().cachedPublicSettings) {
+          useAppStore().cachedPublicSettings = { balance_currency: currency } as PublicSettings
+          await nextTick()
+        }
+        const money = (value: number) => new Intl.NumberFormat(undefined, { style: 'currency', currency, maximumFractionDigits: 6 }).format(value)
+        const section = state.detailSections.find(item => item.key === 'upstream-cost')!
+        const values = (key: string) => section.fields.filter(field => field.label === `admin.videos.detail.${key}`).map(field => field.value)
+        expect(values('upstreamActualCost')).toEqual([money(0.42)])
+        expect(values('upstreamQuote')).toEqual([money(0.69), money(0.5)])
+        expect(values('configuredBase')).toEqual([money(0.4)])
+        expect(values('billableUnits')).toEqual(['3'])
+        expect(wrapper.get('[data-test="video-detail-upstream-cost"]').text()).toContain(money(0.42))
+      }
+      expect(detail.usage_snapshot.upstream_cost_usd).toBe(0.42)
+      expect(detail.provider_cost_snapshot.cost_in_usd_ticks).toBe(6900000000)
+    } finally { wrapper.unmount() }
+  })
 
   it('renders an upstream cost section from the usage and provider cost snapshots', async () => {
     const { wrapper, state } = await mountView(overview, vendorTask)

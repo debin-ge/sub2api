@@ -18,8 +18,8 @@
         </div>
         <div class="zt-recent-cost">
           <b>
-            <span class="zt-good-text" :title="t('dashboard.actual')">${{ formatCost(log.actual_cost) }}</span>
-            <span class="zt-strike" :title="t('dashboard.standard')">${{ formatCost(log.total_cost) }}</span>
+            <span class="zt-good-text" :title="t('dashboard.actual')">{{ balanceSymbol }}{{ formatCost(log.actual_cost) }}</span>
+            <span class="zt-strike" :title="t('dashboard.standard')">{{ balanceSymbol }}{{ formatCost(log.total_cost) }}</span>
           </b>
           <small>{{ (log.input_tokens + log.output_tokens).toLocaleString() }} tokens</small>
         </div>
@@ -33,6 +33,7 @@
 </template>
 
 <script setup lang="ts">
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 import { useI18n } from 'vue-i18n'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -40,6 +41,8 @@ import Icon from '@/components/icons/Icon.vue'
 import { Panel } from '@/components/console'
 import { formatDateTime } from '@/utils/format'
 import type { UsageLog } from '@/types'
+
+const { balanceSymbol } = useBalanceCurrency()
 
 defineProps<{
   data: UsageLog[]

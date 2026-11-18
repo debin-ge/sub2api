@@ -224,3 +224,5 @@ describe('UsageProgressBar', () => {
     expect(percent.classes()).toContain('text-right')
   })
 })
+
+vi.mock('@/stores', () => ({ useAppStore: () => ({ cachedPublicSettings: null }) }))

@@ -13,14 +13,14 @@
           {{ formatTokens }}
         </span>
         <span class="rounded zt-surface-3 px-1.5 py-0.5 dark:bg-gray-800" :title="t('usage.accountBilled')">
-          A ${{ formatAccountCost }}
+          A {{ balanceSymbol }}{{ formatAccountCost }}
         </span>
         <span
           v-if="windowStats?.user_cost != null"
           class="rounded zt-surface-3 px-1.5 py-0.5 dark:bg-gray-800"
           :title="t('usage.userBilled')"
         >
-          U ${{ formatUserCost }}
+          U {{ balanceSymbol }}{{ formatUserCost }}
         </span>
         <span
           v-if="estimatedTotalCost != null"
@@ -28,7 +28,7 @@
           class="rounded zt-surface-3 px-1.5 py-0.5 dark:bg-gray-800"
           :title="t('admin.accounts.usageWindow.estimatedTotalCostTooltip')"
         >
-          {{ t('admin.accounts.usageWindow.estimatedTotalCost', { cost: estimatedTotalCost.toFixed(2) }) }}
+          {{ t('admin.accounts.usageWindow.estimatedTotalCost', { cost: estimatedTotalCost.toFixed(2), symbol: balanceSymbol }) }}
         </span>
       </div>
     </div>
@@ -62,11 +62,14 @@
 </template>
 
 <script setup lang="ts">
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useIntervalFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import type { WindowStats } from '@/types'
 import { formatCompactNumber } from '@/utils/format'
+
+const { balanceSymbol } = useBalanceCurrency()
 
 const props = withDefaults(
   defineProps<{

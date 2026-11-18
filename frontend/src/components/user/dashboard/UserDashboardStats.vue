@@ -5,7 +5,7 @@
       <KpiItem
         v-if="!isSimple"
         :label="t('dashboard.balance')"
-        :value="`$${formatBalanceAmount(balance)}`"
+        :value="`${balanceSymbol}${formatBalanceAmount(balance)}`"
         value-color="var(--zt-good)"
         :sub="t('common.available')"
       />
@@ -17,13 +17,13 @@
       </KpiItem>
       <KpiItem :label="t('dashboard.todayCost')">
         <template #value>
-          <span class="zt-good-text" :title="t('dashboard.actual')">${{ formatCost(stats?.today_actual_cost || 0) }}</span>
-          <small :title="t('dashboard.standard')">/ ${{ formatCost(stats?.today_cost || 0) }}</small>
+          <span class="zt-good-text" :title="t('dashboard.actual')">{{ balanceSymbol }}{{ formatCost(stats?.today_actual_cost || 0) }}</span>
+          <small :title="t('dashboard.standard')">/ {{ balanceSymbol }}{{ formatCost(stats?.today_cost || 0) }}</small>
         </template>
         <template #sub>
           <span>{{ t('common.total') }}:</span>
-          <span class="zt-good-text" :title="t('dashboard.actual')">${{ formatCost(stats?.total_actual_cost || 0) }}</span>
-          <span :title="t('dashboard.standard')">/ ${{ formatCost(stats?.total_cost || 0) }}</span>
+          <span class="zt-good-text" :title="t('dashboard.actual')">{{ balanceSymbol }}{{ formatCost(stats?.total_actual_cost || 0) }}</span>
+          <span :title="t('dashboard.standard')">/ {{ balanceSymbol }}{{ formatCost(stats?.total_cost || 0) }}</span>
         </template>
       </KpiItem>
     </KpiRow>
@@ -66,7 +66,7 @@
           <div class="min-w-0">
             <b>{{ item.isOther ? t('dashboard.platformOther') : platformLabel(item.platform) }}</b>
             <small>
-              {{ t('dashboard.todayCost') }} ${{ formatCost(item.today_actual_cost) }}
+              {{ t('dashboard.todayCost') }} {{ balanceSymbol }}{{ formatCost(item.today_actual_cost) }}
               · {{ t('dashboard.requests') }} {{ item.total_requests > 0 ? formatNumber(item.total_requests) : '-' }}
               · {{ t('dashboard.tokens') }} {{ item.total_tokens > 0 ? formatTokens(item.total_tokens) : '-' }}
             </small>
@@ -91,7 +91,7 @@
                       <i :style="{ width: calcPercent((quotaVal(item.quota, `${w}_usage_usd`) as number) ?? 0, quotaVal(item.quota, `${w}_limit_usd`) as number) + '%' }" />
                     </div>
                     <span>
-                      <span>${{ formatUsd((quotaVal(item.quota, `${w}_usage_usd`) as number) ?? 0) }} / ${{ formatUsd(quotaVal(item.quota, `${w}_limit_usd`) as number) }}</span>
+                      <span>{{ balanceSymbol }}{{ formatUsd((quotaVal(item.quota, `${w}_usage_usd`) as number) ?? 0) }} / {{ balanceSymbol }}{{ formatUsd(quotaVal(item.quota, `${w}_limit_usd`) as number) }}</span>
                       <small v-if="quotaVal(item.quota, `${w}_window_resets_at`)">
                         {{ t('dashboard.platformQuota.resetsAt', { time: formatResetTime(quotaVal(item.quota, `${w}_window_resets_at`) as string) }) }}
                       </small>
@@ -101,7 +101,7 @@
               </template>
             </div>
           </div>
-          <div class="zt-plat-total" :title="t('dashboard.actual')">${{ formatCost(item.total_actual_cost) }}</div>
+          <div class="zt-plat-total" :title="t('dashboard.actual')">{{ balanceSymbol }}{{ formatCost(item.total_actual_cost) }}</div>
         </div>
       </div>
     </SectionBlock>
@@ -109,12 +109,15 @@
 </template>
 
 <script setup lang="ts">
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { KpiItem, KpiRow, SectionBlock } from '@/components/console'
 import type { PlatformDashboardStats, UserDashboardStats as UserStatsType } from '@/api/usage'
 import { formatBalanceAmount } from '@/utils/formatters'
 import type { PlatformQuotaItem } from '@/types'
+
+const { balanceSymbol } = useBalanceCurrency()
 
 interface FusedPlatformCard {
   platform: string

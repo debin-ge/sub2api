@@ -118,3 +118,4 @@ describe('TokenUsageTrend', () => {
     expect(hitRateDataset.data[0]).toBe(50)
   })
 })
+vi.mock('@/stores', () => ({ useAppStore: () => ({ cachedPublicSettings: null }) }))

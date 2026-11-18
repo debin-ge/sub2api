@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from 'vitest'
 import AccountCapacityCell from '../AccountCapacityCell.vue'
 import type { Account } from '@/types'
 
+vi.mock('@/stores', () => ({ useAppStore: () => ({ cachedPublicSettings: null }) }))
+
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
   return {

@@ -552,14 +552,14 @@
               {{ formatKeyTokens }}
             </span>
             <span class="rounded zt-surface-3 px-1.5 py-0.5 dark:bg-gray-800" :title="t('usage.accountBilled')">
-              A ${{ formatKeyCost }}
+              A {{ balanceSymbol }}{{ formatKeyCost }}
             </span>
             <span
               v-if="todayStats.user_cost != null"
               class="rounded zt-surface-3 px-1.5 py-0.5 dark:bg-gray-800"
               :title="t('usage.userBilled')"
             >
-              U ${{ formatKeyUserCost }}
+              U {{ balanceSymbol }}{{ formatKeyUserCost }}
             </span>
           </div>
         </div>
@@ -684,14 +684,14 @@
             {{ formatKeyTokens }}
           </span>
           <span class="rounded zt-surface-3 px-1.5 py-0.5 dark:bg-gray-800" :title="t('usage.accountBilled')">
-            A ${{ formatKeyCost }}
+            A {{ balanceSymbol }}{{ formatKeyCost }}
           </span>
           <span
             v-if="todayStats.user_cost != null"
             class="rounded zt-surface-3 px-1.5 py-0.5 dark:bg-gray-800"
             :title="t('usage.userBilled')"
           >
-            U ${{ formatKeyUserCost }}
+            U {{ balanceSymbol }}{{ formatKeyUserCost }}
           </span>
         </div>
       </div>
@@ -737,6 +737,7 @@
 </template>
 
 <script setup lang="ts">
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 import { ref, computed, onMounted, onBeforeUnmount, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
@@ -762,6 +763,8 @@ import {
 import OpenCodeGoUsageCell from './OpenCodeGoUsageCell.vue'
 import { readFlovaCreditsSnapshot } from './flovaCredentials'
 import { platformTextClass } from '@/utils/platformColors'
+
+const { balanceSymbol } = useBalanceCurrency()
 
 // Module-level cache shared across all AccountUsageCell instances
 const _usageCache = new Map<number, { data: AccountUsageInfo; ts: number }>()

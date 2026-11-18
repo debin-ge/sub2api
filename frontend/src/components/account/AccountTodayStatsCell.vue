@@ -36,14 +36,14 @@
       <div class="flex items-center gap-1">
         <span class="zt-ink-3">{{ t('usage.accountBilled') }}:</span>
         <span class="font-medium zt-good-text">{{
-          formatCurrency(props.stats.cost)
+          formatCurrency(props.stats.cost, balanceCurrency)
         }}</span>
       </div>
       <!-- Cost (User/API Key) -->
       <div v-if="props.stats.user_cost != null" class="flex items-center gap-1">
         <span class="zt-ink-3">{{ t('usage.userBilled') }}:</span>
         <span class="font-medium zt-ink-2">{{
-          formatCurrency(props.stats.user_cost)
+          formatCurrency(props.stats.user_cost, balanceCurrency)
         }}</span>
       </div>
     </div>
@@ -54,9 +54,12 @@
 </template>
 
 <script setup lang="ts">
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 import { useI18n } from 'vue-i18n'
 import type { WindowStats } from '@/types'
 import { formatNumber, formatCurrency } from '@/utils/format'
+
+const { balanceCurrency } = useBalanceCurrency()
 
 const props = withDefaults(
   defineProps<{

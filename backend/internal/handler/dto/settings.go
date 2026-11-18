@@ -159,6 +159,7 @@ type SystemSettings struct {
 	GoogleOAuthRedirectURL            string `json:"google_oauth_redirect_url"`
 	GoogleOAuthFrontendRedirectURL    string `json:"google_oauth_frontend_redirect_url"`
 
+	BalanceCurrency             string           `json:"balance_currency"`
 	SiteName                    string           `json:"site_name"`
 	SiteLogo                    string           `json:"site_logo"`
 	SiteSubtitle                string           `json:"site_subtitle"`
@@ -410,6 +411,7 @@ type PublicSettings struct {
 	AliyunCaptchaRegion                 string                   `json:"aliyun_captcha_region"`
 	GoCaptchaEnabled                    bool                     `json:"gocaptcha_enabled"`
 	GoCaptchaMode                       string                   `json:"gocaptcha_mode"`
+	BalanceCurrency                     string                   `json:"balance_currency"`
 	SiteName                            string                   `json:"site_name"`
 	SiteLogo                            string                   `json:"site_logo"`
 	SiteSubtitle                        string                   `json:"site_subtitle"`

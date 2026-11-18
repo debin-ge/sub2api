@@ -2,7 +2,7 @@
   <div class="group/usage relative text-sm">
     <div class="flex items-center gap-1.5">
       <span class="zt-ink-3">{{ t('admin.users.today') }}:</span>
-      <span class="font-medium zt-ink">${{ today.toFixed(4) }}</span>
+      <span class="font-medium zt-ink">{{ balanceSymbol }}{{ today.toFixed(4) }}</span>
       <Icon
         v-if="hasBreakdown"
         name="infoCircle"
@@ -12,7 +12,7 @@
     </div>
     <div class="mt-0.5 flex items-center gap-1.5">
       <span class="zt-ink-3">{{ t('admin.users.total') }}:</span>
-      <span class="font-medium zt-ink">${{ total.toFixed(4) }}</span>
+      <span class="font-medium zt-ink">{{ balanceSymbol }}{{ total.toFixed(4) }}</span>
     </div>
 
     <div
@@ -33,9 +33,9 @@
           {{ item.isOther ? t('admin.users.platformOther') : platformLabel(item.platform) }}
         </span>
         <span class="font-mono">
-          ${{ item.today_actual_cost.toFixed(4) }}
+          {{ balanceSymbol }}{{ item.today_actual_cost.toFixed(4) }}
           <span class="opacity-50">/</span>
-          ${{ item.total_actual_cost.toFixed(4) }}
+          {{ balanceSymbol }}{{ item.total_actual_cost.toFixed(4) }}
         </span>
       </div>
     </div>
@@ -43,10 +43,13 @@
 </template>
 
 <script setup lang="ts">
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import type { PlatformUsage } from '@/api/admin/dashboard'
+
+const { balanceSymbol } = useBalanceCurrency()
 
 const props = defineProps<{
   today: number

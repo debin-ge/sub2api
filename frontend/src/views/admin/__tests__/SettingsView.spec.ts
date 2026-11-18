@@ -1966,6 +1966,36 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(Array.isArray(receivedProviders[0].supported_types)).toBe(true);
     expect(receivedProviders[0].supported_types).toEqual([]);
   });
+
+describe("account currency setting", () => {
+  it("defaults to USD and saves CNY from the feature settings", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    await openFeaturesTab(wrapper);
+    const currencySelect = wrapper.findAll('select').find(node =>
+      node.text().includes('admin.settings.features.balanceCurrency.usd'));
+    expect(currencySelect).toBeDefined();
+    expect((currencySelect!.element as HTMLSelectElement).value).toBe('USD');
+    await currencySelect!.setValue('CNY');
+    await wrapper.find('form').trigger('submit.prevent');
+    await flushPromises();
+    expect(updateSettings).toHaveBeenCalledWith(expect.objectContaining({ balance_currency: 'CNY' }));
+    expect(fetchPublicSettings).toHaveBeenCalledWith(true);
+    wrapper.unmount();
+  });
+
+  it("loads a saved CNY setting", async () => {
+    getSettings.mockResolvedValue({ ...baseSettingsResponse, balance_currency: 'CNY' });
+    const wrapper = mountView();
+    await flushPromises();
+    await openFeaturesTab(wrapper);
+    const currencySelect = wrapper.findAll('select').find(node =>
+      node.text().includes('admin.settings.features.balanceCurrency.cny'));
+    expect((currencySelect!.element as HTMLSelectElement).value).toBe('CNY');
+    wrapper.unmount();
+  });
+});
+
 });
 
 describe("admin SettingsView wechat connect controls", () => {

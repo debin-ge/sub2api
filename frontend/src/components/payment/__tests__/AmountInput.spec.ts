@@ -1,8 +1,12 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { useAppStore } from '@/stores/app'
+import type { PublicSettings } from '@/types'
+import { createPinia, setActivePinia } from 'pinia'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, mount } from '@vue/test-utils'
 import AmountInput from '../AmountInput.vue'
 
-vi.mock('vue-i18n', () => ({
+vi.mock('vue-i18n', async () => ({
+  ...await vi.importActual<typeof import('vue-i18n')>('vue-i18n'),
   useI18n: () => ({
     t: (key: string, params?: Record<string, unknown>) =>
       key === 'payment.minimumRechargeAmount'
@@ -121,4 +125,16 @@ describe('recharge bonus hints on quick amounts', () => {
     // 500 × (1 − 30%) = 350
     expect(hit.get('[data-testid="quick-amount-credited"]').text()).toContain('350.00')
   })
+})
+
+beforeEach(() => { setActivePinia(createPinia()) })
+
+it('uses the payment currency for input and the configured account currency for credits', () => {
+  useAppStore().cachedPublicSettings = { balance_currency: 'CNY' } as PublicSettings
+  const wrapper = mount(AmountInput, { props: {
+    modelValue: null, currency: 'USD', amounts: [100],
+    bonusTiers: [{ min_amount: 100, bonus_percent: 20 }],
+  } })
+  expect(wrapper.get('[data-testid="quick-amount-credited"]').text()).toContain('¥120.00')
+  expect(wrapper.get('input').element.previousElementSibling?.textContent?.trim()).toBe('$')
 })

@@ -280,6 +280,7 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { useAppStore } from '@/stores/app'
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 import videosAPI, {
   type VideoAdminCallback,
   type VideoAdminEvent,
@@ -293,6 +294,7 @@ type TaskAction = 'get' | 'settlement' | 'delete'
 
 const { t } = useI18n()
 const appStore = useAppStore()
+const { balanceCurrency } = useBalanceCurrency()
 const activeTab = ref<TabKey>('tasks')
 const loading = ref(false)
 const actionLoading = ref(false)
@@ -398,7 +400,7 @@ function upstreamCostSection(task: VideoAdminTask): DetailSection {
 	const cost = task.provider_cost_snapshot
 	const fields: DetailField[] = []
 	const upstreamActual = snapshotNumber(usage, 'upstream_cost_usd')
-	if (upstreamActual != null) fields.push({ label: t('admin.videos.detail.upstreamActualCost'), value: formatMoney(upstreamActual, 'USD') })
+	if (upstreamActual != null) fields.push({ label: t('admin.videos.detail.upstreamActualCost'), value: formatMoney(upstreamActual, balanceCurrency.value) })
 	const billableUnits = snapshotNumber(usage, 'billable_units')
 	if (billableUnits != null) fields.push({ label: t('admin.videos.detail.billableUnits'), value: formatNumberValue(billableUnits) })
 	const inferenceMs = snapshotNumber(usage, 'inference_ms')
@@ -406,11 +408,11 @@ function upstreamCostSection(task: VideoAdminTask): DetailSection {
 	const inferenceSeconds = snapshotNumber(usage, 'inference_seconds')
 	if (inferenceSeconds != null) fields.push({ label: t('admin.videos.detail.inferenceSeconds'), value: formatDurationSeconds(inferenceSeconds) })
 	const ticks = snapshotNumber(cost, 'cost_in_usd_ticks') ?? snapshotNumber(usage, 'provider_cost_usd_ticks')
-  if (ticks != null) fields.push({ label: t('admin.videos.detail.upstreamQuote'), value: formatMoney(ticks / 1e10, 'USD') })
+  if (ticks != null) fields.push({ label: t('admin.videos.detail.upstreamQuote'), value: formatMoney(ticks / 1e10, balanceCurrency.value) })
 	const upstreamQuote = snapshotNumber(cost, 'upstream_quote_usd')
-	if (upstreamQuote != null) fields.push({ label: t('admin.videos.detail.upstreamQuote'), value: formatMoney(upstreamQuote, 'USD') })
+	if (upstreamQuote != null) fields.push({ label: t('admin.videos.detail.upstreamQuote'), value: formatMoney(upstreamQuote, balanceCurrency.value) })
 	const configuredBase = snapshotNumber(cost, 'configured_base_usd')
-	if (configuredBase != null) fields.push({ label: t('admin.videos.detail.configuredBase'), value: formatMoney(configuredBase, 'USD') })
+	if (configuredBase != null) fields.push({ label: t('admin.videos.detail.configuredBase'), value: formatMoney(configuredBase, balanceCurrency.value) })
 	const quoteError = snapshotString(cost, 'upstream_quote_error')
 	if (quoteError) fields.push({ label: t('admin.videos.detail.upstreamQuoteError'), value: quoteError })
 	const rateMultiplier = snapshotNumber(cost, 'account_rate_multiplier')

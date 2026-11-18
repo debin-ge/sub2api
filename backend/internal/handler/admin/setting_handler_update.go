@@ -167,6 +167,7 @@ type UpdateSettingsRequest struct {
 	GoogleOAuthFrontendRedirectURL string `json:"google_oauth_frontend_redirect_url"`
 
 	// OEM设置
+	BalanceCurrency             string                `json:"balance_currency" binding:"omitempty,oneof=USD CNY"`
 	SiteName                    string                `json:"site_name"`
 	SiteLogo                    string                `json:"site_logo"`
 	SiteSubtitle                string                `json:"site_subtitle"`
@@ -1712,6 +1713,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		GoogleOAuthClientSecret:                req.GoogleOAuthClientSecret,
 		GoogleOAuthRedirectURL:                 req.GoogleOAuthRedirectURL,
 		GoogleOAuthFrontendRedirectURL:         req.GoogleOAuthFrontendRedirectURL,
+		BalanceCurrency:                        req.BalanceCurrency,
 		SiteName:                               req.SiteName,
 		SiteLogo:                               req.SiteLogo,
 		SiteSubtitle:                           req.SiteSubtitle,
@@ -2406,6 +2408,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		GoogleOAuthClientSecretConfigured:                      updatedSettings.GoogleOAuthClientSecretConfigured,
 		GoogleOAuthRedirectURL:                                 updatedSettings.GoogleOAuthRedirectURL,
 		GoogleOAuthFrontendRedirectURL:                         updatedSettings.GoogleOAuthFrontendRedirectURL,
+		BalanceCurrency:                                        updatedSettings.BalanceCurrency,
 		SiteName:                                               updatedSettings.SiteName,
 		SiteLogo:                                               updatedSettings.SiteLogo,
 		SiteSubtitle:                                           updatedSettings.SiteSubtitle,

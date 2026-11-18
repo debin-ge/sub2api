@@ -3,17 +3,17 @@
     <form v-if="user" id="balance-form" @submit.prevent="handleBalanceSubmit" class="space-y-5">
       <div class="flex items-center gap-3 rounded-xl zt-surface-2 p-4">
         <div class="flex h-10 w-10 items-center justify-center rounded-full bg-primary-100"><span class="text-lg font-medium text-primary-700">{{ user.email.charAt(0).toUpperCase() }}</span></div>
-        <div class="flex-1"><p class="font-medium zt-ink">{{ user.email }}</p><p class="text-sm zt-ink-3">{{ t('admin.users.currentBalance') }}: ${{ formatBalance(user.balance) }}</p></div>
+        <div class="flex-1"><p class="font-medium zt-ink">{{ user.email }}</p><p class="text-sm zt-ink-3">{{ t('admin.users.currentBalance') }}: {{ balanceSymbol }}{{ formatBalance(user.balance) }}</p></div>
       </div>
       <div>
         <label class="input-label">{{ operation === 'add' ? t('admin.users.depositAmount') : t('admin.users.withdrawAmount') }}</label>
         <div class="relative flex gap-2">
-          <div class="relative flex-1"><div class="absolute left-3 top-1/2 -translate-y-1/2 font-medium zt-ink-3">$</div><input v-model.number="form.amount" type="number" step="any" min="0" required class="input pl-8" /></div>
+          <div class="relative flex-1"><div class="absolute left-3 top-1/2 -translate-y-1/2 font-medium zt-ink-3">{{ balanceSymbol }}</div><input v-model.number="form.amount" type="number" step="any" min="0" required class="input pl-8" /></div>
           <button v-if="operation === 'subtract'" type="button" @click="fillAllBalance" class="btn btn-secondary whitespace-nowrap">{{ t('admin.users.withdrawAll') }}</button>
         </div>
       </div>
       <div><label class="input-label">{{ t('admin.users.notes') }}</label><textarea v-model="form.notes" rows="3" class="input"></textarea></div>
-      <div v-if="form.amount > 0" class="rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950"><div class="flex items-center justify-between text-sm"><span class="zt-ink-2">{{ t('admin.users.newBalance') }}:</span><span class="font-bold zt-ink">${{ formatBalance(calculateNewBalance()) }}</span></div></div>
+      <div v-if="form.amount > 0" class="rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950"><div class="flex items-center justify-between text-sm"><span class="zt-ink-2">{{ t('admin.users.newBalance') }}:</span><span class="font-bold zt-ink">{{ balanceSymbol }}{{ formatBalance(calculateNewBalance()) }}</span></div></div>
     </form>
     <template #footer>
       <div class="flex justify-end gap-3">
@@ -25,6 +25,7 @@
 </template>
 
 <script setup lang="ts">
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 import { reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
@@ -32,6 +33,8 @@ import { adminAPI } from '@/api/admin'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import type { AdminUser } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
+
+const { balanceSymbol } = useBalanceCurrency()
 
 const props = defineProps<{ show: boolean, user: AdminUser | null, operation: 'add' | 'subtract' }>()
 const emit = defineEmits(['close', 'success']); const { t } = useI18n(); const appStore = useAppStore()

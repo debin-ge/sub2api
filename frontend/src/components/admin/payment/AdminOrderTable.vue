@@ -57,10 +57,10 @@
           <span v-if="row.fee_rate > 0" class="ml-1 text-xs zt-ink-3" :title="t('payment.orders.fee') + ': ' + row.fee_rate + '%'">
             ({{ row.fee_rate }}%)
           </span>
-          <div v-if="row.amount !== row.pay_amount || (row.bonus_amount ?? 0) > 0" class="text-xs zt-ink-3">
-            {{ t('payment.orders.creditedAmount') }}: {{ creditedAmountSymbol }}{{ row.amount.toFixed(2) }}
+          <div v-if="paymentAmountSymbol(row) !== creditedAmountSymbol(row) || row.amount !== row.pay_amount || (row.bonus_amount ?? 0) > 0" class="text-xs zt-ink-3">
+            {{ t('payment.orders.creditedAmount') }}: {{ creditedAmountSymbol(row) }}{{ row.amount.toFixed(2) }}
             <span v-if="(row.bonus_amount ?? 0) > 0" class="ml-1 text-amber-600 dark:text-amber-400">
-              ({{ t('payment.orders.bonusIncluded', { amount: creditedAmountSymbol + (row.bonus_amount ?? 0).toFixed(2) }) }})
+              ({{ t('payment.orders.bonusIncluded', { amount: creditedAmountSymbol(row) + (row.bonus_amount ?? 0).toFixed(2) }) }})
             </span>
           </div>
         </div>
@@ -137,6 +137,7 @@
 </template>
 
 <script setup lang="ts">
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 import { ref, reactive, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { PaymentOrder } from '@/types/payment'
@@ -171,7 +172,11 @@ const emit = defineEmits<{
 
 const searchQuery = ref('')
 const filters = reactive({ status: '', payment_type: '', order_type: '' })
-const creditedAmountSymbol = currencySymbol('USD')
+const { balanceSymbol } = useBalanceCurrency()
+
+function creditedAmountSymbol(order: PaymentOrder): string {
+  return order.order_type === 'subscription' ? '$' : balanceSymbol.value
+}
 
 function paymentAmountSymbol(order: PaymentOrder): string {
   return currencySymbol(order.currency)

@@ -1,3 +1,4 @@
+import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import type { AdminUser } from '@/types'
@@ -6,7 +7,8 @@ import UserBalanceHistoryModal from '../UserBalanceHistoryModal.vue'
 const mocks = vi.hoisted(() => ({ getUserBalanceHistory: vi.fn() }))
 vi.mock('@/api/admin', () => ({ adminAPI: { users: mocks } }))
 vi.mock('@/utils/format', () => ({ formatDateTime: () => 'date' }))
-vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
+vi.mock('vue-i18n', async () => ({
+  ...await vi.importActual<typeof import('vue-i18n')>('vue-i18n'), useI18n: () => ({ t: (key: string) => key }) }))
 enableAutoUnmount(afterEach)
 beforeEach(() => { vi.clearAllMocks(); vi.spyOn(console, 'error').mockImplementation(() => {}) })
 afterEach(() => vi.restoreAllMocks())
@@ -80,3 +82,5 @@ describe('UserBalanceHistoryModal request ordering', () => {
     expect(wrapper.find('svg.animate-spin').exists()).toBe(false)
   })
 })
+
+beforeEach(() => { setActivePinia(createPinia()) })

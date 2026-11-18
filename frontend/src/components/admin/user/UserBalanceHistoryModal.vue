@@ -31,7 +31,7 @@
           <div class="flex-shrink-0 text-right">
             <p class="text-xs zt-ink-3">{{ t('admin.users.currentBalance') }}</p>
             <p class="text-xl font-bold zt-ink">
-              ${{ formatBalanceAmount(user.balance) }}
+              {{ balanceSymbol }}{{ formatBalanceAmount(user.balance) }}
             </p>
           </div>
         </div>
@@ -42,7 +42,7 @@
             <template v-else>&nbsp;</template>
           </p>
           <p class="ml-4 flex-shrink-0 text-xs zt-ink-3">
-            {{ t('admin.users.totalRecharged') }}: <span class="font-semibold zt-good-text">${{ formatBalanceAmount(totalRecharged) }}</span>
+            {{ t('admin.users.totalRecharged') }}: <span class="font-semibold zt-good-text">{{ balanceSymbol }}{{ formatBalanceAmount(totalRecharged) }}</span>
           </p>
         </div>
       </div>
@@ -172,6 +172,7 @@
 </template>
 
 <script setup lang="ts">
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 import { ref, computed, watch, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI, type BalanceHistoryItem } from '@/api/admin'
@@ -181,6 +182,8 @@ import type { AdminUser } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Select from '@/components/common/Select.vue'
 import Icon from '@/components/icons/Icon.vue'
+
+const { balanceSymbol } = useBalanceCurrency()
 
 const props = defineProps<{ show: boolean; user: AdminUser | null; hideActions?: boolean }>()
 const emit = defineEmits(['close', 'deposit', 'withdraw'])
@@ -322,7 +325,7 @@ const getItemTitle = (item: BalanceHistoryItem) => {
 const formatValue = (item: BalanceHistoryItem) => {
   if (isBalanceType(item.type)) {
     const sign = item.value >= 0 ? '+' : ''
-    return `${sign}$${formatBalanceAmount(item.value)}`
+    return `${sign}${balanceSymbol.value}${formatBalanceAmount(item.value)}`
   }
   if (isSubscriptionType(item.type)) {
     const days = item.validity_days || Math.round(item.value)

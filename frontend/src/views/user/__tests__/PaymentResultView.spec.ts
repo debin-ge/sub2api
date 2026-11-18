@@ -1,3 +1,4 @@
+import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 
@@ -1014,3 +1015,5 @@ describe('PaymentResultView', () => {
     expect(wrapper.text()).not.toContain('payment.result.backToRecharge')
   })
 })
+
+beforeEach(() => { setActivePinia(createPinia()) })

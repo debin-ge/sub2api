@@ -45,6 +45,12 @@ export default {
           enabled: 'Enable Available Channels',
           enabledHint: 'When off, the sidebar entry is hidden and the endpoint returns an empty list.',
         },
+        balanceCurrency: {
+          label: 'Account currency',
+          hint: 'Used for recharge credits, account balances, usage records, spending statistics, upstream costs and balance refunds. Defaults to USD. Switching does not convert existing amounts; payment channels determine the payment currency.',
+          usd: '💲 US Dollar',
+          cny: '¥ Chinese Yuan',
+        },
         siteBillingMode: {
           title: 'Site Billing Mode',
           description: 'Controls which purchase options users see. Defaults to "Recharge & Subscription".',
@@ -821,8 +827,8 @@ export default {
         maxAmount: 'Maximum Amount',
         dailyLimit: 'Daily Limit',
         balanceRechargeMultiplier: 'Balance Recharge Multiplier',
-        balanceRechargeMultiplierHint: 'How many USD balance the user receives for each 1 CNY paid',
-        balanceRechargePreview: 'Preview: 1 CNY = {usd} USD',
+        balanceRechargeMultiplierHint: 'How much {currency} balance the user receives for each 1 CNY paid',
+        balanceRechargePreview: 'Preview: 1 CNY = {usd} {currency}',
         subscriptionUsdToCnyRate: 'Subscription USD to CNY Rate',
         subscriptionUsdToCnyRateHint:
           'CNY charged per 1 USD of plan price on CNY channels (e.g. 7.15). 0 or empty = disabled, plan price is charged as-is. When enabled, all plan prices must be set in USD',

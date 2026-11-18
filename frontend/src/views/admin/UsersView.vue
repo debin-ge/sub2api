@@ -519,7 +519,7 @@
                   class="font-medium zt-ink underline decoration-dashed decoration-gray-300 underline-offset-4 transition-colors hover:text-primary-600 dark:decoration-dark-500 dark:hover:text-primary-400"
                   @click="handleBalanceHistory(row)"
                 >
-                  ${{ formatBalanceAmount(value) }}
+                  {{ balanceSymbol }}{{ formatBalanceAmount(value) }}
                 </button>
                 <!-- Instant tooltip -->
                 <div class="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-xs text-white opacity-0 shadow-lg transition-opacity duration-75 group-hover:opacity-100 dark:bg-dark-600">
@@ -882,6 +882,7 @@
 </template>
 
 <script setup lang="ts">
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
@@ -922,6 +923,8 @@ import UserBalanceModal from '@/components/admin/user/UserBalanceModal.vue'
 import UserBalanceHistoryModal from '@/components/admin/user/UserBalanceHistoryModal.vue'
 import GroupReplaceModal from '@/components/admin/user/GroupReplaceModal.vue'
 import UserVIPAuditDrawer from '@/components/admin/user/UserVIPAuditDrawer.vue'
+
+const { balanceSymbol } = useBalanceCurrency()
 
 const appStore = useAppStore()
 

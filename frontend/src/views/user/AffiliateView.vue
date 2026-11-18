@@ -13,10 +13,10 @@
             <template #value>{{ formattedRebateRate }}<small>%</small></template>
           </KpiItem>
           <KpiItem :label="t('affiliate.stats.invitedUsers')" :value="formatCount(detail.aff_count)" />
-          <KpiItem :label="t('affiliate.stats.availableQuota')" :value="formatCurrency(detail.aff_quota)" value-color="var(--zt-good)" />
-          <KpiItem :label="t('affiliate.stats.totalQuota')" :value="formatCurrency(detail.aff_history_quota)">
+          <KpiItem :label="t('affiliate.stats.availableQuota')" :value="formatCurrency(detail.aff_quota, balanceCurrency)" value-color="var(--zt-good)" />
+          <KpiItem :label="t('affiliate.stats.totalQuota')" :value="formatCurrency(detail.aff_history_quota, balanceCurrency)">
             <template v-if="detail.aff_frozen_quota > 0" #sub>
-              <span class="zt-warn-text">{{ t('affiliate.stats.frozenQuota') }}: {{ formatCurrency(detail.aff_frozen_quota) }}</span>
+              <span class="zt-warn-text">{{ t('affiliate.stats.frozenQuota') }}: {{ formatCurrency(detail.aff_frozen_quota, balanceCurrency) }}</span>
             </template>
           </KpiItem>
         </KpiRow>
@@ -54,7 +54,7 @@
             <ol class="mt-2 list-decimal space-y-1 pl-5 text-sm zt-accent-text">
               <li>{{ t('affiliate.tips.line1') }}</li>
               <li v-if="detail.effective_registration_reward_amount > 0">
-                {{ t('affiliate.tips.registrationReward', { amount: formatCurrency(detail.effective_registration_reward_amount) }) }}
+                {{ t('affiliate.tips.registrationReward', { amount: formatCurrency(detail.effective_registration_reward_amount, balanceCurrency) }) }}
               </li>
               <li v-if="detail.effective_rebate_rate_percent > 0">
                 {{ t('affiliate.tips.line2', { rate: `${formattedRebateRate}%` }) }}
@@ -109,7 +109,7 @@
                 >
                   <td class="px-3 py-3 zt-ink">{{ item.email || '-' }}</td>
                   <td class="px-3 py-3 zt-ink-2">{{ item.username || '-' }}</td>
-                  <td class="px-3 py-3 text-right font-medium zt-good-text">{{ formatCurrency(item.total_rebate) }}</td>
+                  <td class="px-3 py-3 text-right font-medium zt-good-text">{{ formatCurrency(item.total_rebate, balanceCurrency) }}</td>
                   <td class="px-3 py-3 zt-ink-2">{{ formatDateTime(item.created_at) || '-' }}</td>
                 </tr>
               </tbody>
@@ -122,6 +122,7 @@
 </template>
 
 <script setup lang="ts">
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
@@ -134,6 +135,8 @@ import { useAuthStore } from '@/stores/auth'
 import { useClipboard } from '@/composables/useClipboard'
 import { formatCurrency, formatDateTime } from '@/utils/format'
 import { extractApiErrorMessage } from '@/utils/apiError'
+
+const { balanceCurrency } = useBalanceCurrency()
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -192,7 +195,7 @@ async function transferQuota(): Promise<void> {
   transferring.value = true
   try {
     const resp = await userAPI.transferAffiliateQuota()
-    appStore.showSuccess(t('affiliate.transfer.success', { amount: formatCurrency(resp.transferred_quota) }))
+    appStore.showSuccess(t('affiliate.transfer.success', { amount: formatCurrency(resp.transferred_quota, balanceCurrency.value) }))
     await Promise.all([
       loadAffiliateDetail(true),
       authStore.refreshUser().catch(() => undefined),

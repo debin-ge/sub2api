@@ -74,13 +74,13 @@
                   {{ formatTokens(group.total_tokens) }}
                 </td>
                 <td class="py-1.5 text-right zt-good-text">
-                  ${{ formatCost(group.actual_cost) }}
+                  {{ balanceSymbol }}{{ formatCost(group.actual_cost) }}
                 </td>
                 <td v-if="showAccountCost" class="py-1.5 text-right zt-warn-text">
-                  ${{ formatCost(group.account_cost) }}
+                  {{ balanceSymbol }}{{ formatCost(group.account_cost) }}
                 </td>
                 <td class="py-1.5 text-right zt-ink-3">
-                  ${{ formatCost(group.cost) }}
+                  {{ balanceSymbol }}{{ formatCost(group.cost) }}
                 </td>
               </tr>
               <!-- User breakdown sub-rows -->
@@ -108,6 +108,7 @@
 </template>
 
 <script setup lang="ts">
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useChartTheme } from '@/composables/useChartTheme'
@@ -117,6 +118,8 @@ import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import UserBreakdownSubTable from './UserBreakdownSubTable.vue'
 import type { GroupStat, UserBreakdownItem } from '@/types'
 import { getUserBreakdown } from '@/api/admin/dashboard'
+
+const { balanceSymbol } = useBalanceCurrency()
 
 ChartJS.register(ArcElement, Tooltip, Legend)
 
@@ -220,7 +223,7 @@ const doughnutOptions = computed(() => ({
           const total = context.dataset.data.reduce((a: number, b: number) => a + b, 0)
           const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : '0.0'
           const formattedValue = props.metric === 'actual_cost'
-            ? `$${formatCost(value)}`
+            ? `${balanceSymbol.value}${formatCost(value)}`
             : formatTokens(value)
           return `${context.label}: ${formattedValue} (${percentage}%)`
         }

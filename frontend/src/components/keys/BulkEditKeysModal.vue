@@ -56,7 +56,7 @@
               class="checkbox"
               :data-test="`enable-${field.key}`"
             />
-            {{ t(field.label) }}
+            {{ t(field.label, { currency: balanceCurrency }) }}
           </label>
           <div v-if="enabled[field.key]">
             <input
@@ -66,7 +66,7 @@
               step="any"
               required
               class="input"
-              :aria-label="t(field.label)"
+              :aria-label="t(field.label, { currency: balanceCurrency })"
               :data-test="`${field.key}-input`"
             />
             <p class="input-hint">{{ t('keys.bulkEdit.limitHint') }}</p>
@@ -103,14 +103,14 @@
               class="checkbox"
               :data-test="`enable-${field.key}`"
             />
-            {{ t(field.label) }}
+            {{ t(field.label, { currency: balanceCurrency }) }}
           </label>
           <div v-if="enabled[field.key]">
             <textarea
               v-model="ipLists[field.key]"
               rows="3"
               class="input font-mono text-sm"
-              :aria-label="t(field.label)"
+              :aria-label="t(field.label, { currency: balanceCurrency })"
               :data-test="`${field.key}-input`"
             />
             <p class="input-hint">{{ t('keys.bulkEdit.ipHint') }}</p>
@@ -149,6 +149,7 @@
 </template>
 
 <script setup lang="ts">
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { keysAPI } from '@/api'
@@ -196,6 +197,7 @@ const limits = reactive<Record<LimitField, string | number>>({
 const ipLists = reactive<Record<IPField, string>>({ ip_whitelist: '', ip_blacklist: '' })
 const neverExpires = ref(false)
 const expirationDate = ref('')
+const { balanceCurrency } = useBalanceCurrency()
 const limitFields: Array<{ key: LimitField; label: string }> = [
   { key: 'quota', label: 'keys.quotaAmount' },
   { key: 'rate_limit_5h', label: 'keys.rateLimit5h' },

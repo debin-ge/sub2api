@@ -184,6 +184,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyGoCaptchaEnabled,
 		SettingKeyGoCaptchaMode,
 		SettingKeyAPIKeyACLTrustForwardedIP,
+		SettingKeyBalanceCurrency,
 		SettingKeySiteName,
 		SettingKeySiteLogo,
 		SettingKeySiteSubtitle,
@@ -345,6 +346,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		AliyunCaptchaRegion:                 normalizeAliyunCaptchaRegion(settings[SettingKeyAliyunCaptchaRegion]),
 		GoCaptchaEnabled:                    settings[SettingKeyGoCaptchaEnabled] == "true",
 		GoCaptchaMode:                       string(NormalizeGoCaptchaMode(settings[SettingKeyGoCaptchaMode])),
+		BalanceCurrency:                     normalizeBalanceCurrency(settings[SettingKeyBalanceCurrency]),
 		SiteName:                            s.getStringOrDefault(settings, SettingKeySiteName, "Sub2API"),
 		SiteLogo:                            settings[SettingKeySiteLogo],
 		SiteSubtitle:                        s.getStringOrDefault(settings, SettingKeySiteSubtitle, "Subscription to API Conversion Platform"),
@@ -616,6 +618,7 @@ type PublicSettingsInjectionPayload struct {
 	AliyunCaptchaRegion                 string                   `json:"aliyun_captcha_region"`
 	GoCaptchaEnabled                    bool                     `json:"gocaptcha_enabled"`
 	GoCaptchaMode                       string                   `json:"gocaptcha_mode"`
+	BalanceCurrency                     string                   `json:"balance_currency"`
 	SiteName                            string                   `json:"site_name"`
 	SiteLogo                            string                   `json:"site_logo"`
 	SiteSubtitle                        string                   `json:"site_subtitle"`
@@ -719,6 +722,7 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		AliyunCaptchaRegion:                 settings.AliyunCaptchaRegion,
 		GoCaptchaEnabled:                    settings.GoCaptchaEnabled,
 		GoCaptchaMode:                       settings.GoCaptchaMode,
+		BalanceCurrency:                     settings.BalanceCurrency,
 		SiteName:                            settings.SiteName,
 		SiteLogo:                            settings.SiteLogo,
 		SiteSubtitle:                        settings.SiteSubtitle,
