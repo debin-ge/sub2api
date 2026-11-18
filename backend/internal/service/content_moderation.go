@@ -551,6 +551,12 @@ type ContentModerationService struct {
 	runtimeRefreshRetryAt    atomic.Int64
 	keyHealthMu              sync.Mutex
 	keyHealth                map[string]*contentModerationKeyHealth
+	// stopCtx parents the background workers' contexts; Stop cancels it and
+	// waits on workerWg. The server never calls Stop, so in production the
+	// workers run for the life of the process.
+	stopCtx    context.Context
+	stopCancel context.CancelFunc
+	workerWg   sync.WaitGroup
 }
 
 type contentModerationRuntimeSnapshot struct {
@@ -615,13 +621,43 @@ func NewContentModerationService(
 		asyncQueue:           make(chan contentModerationTask, maxContentModerationQueueSize),
 		keyHealth:            make(map[string]*contentModerationKeyHealth),
 	}
+	svc.stopCtx, svc.stopCancel = context.WithCancel(context.Background())
 	if settingRepo != nil && repo != nil {
+		svc.workerWg.Add(svc.workerCount + 1)
 		for i := 0; i < svc.workerCount; i++ {
-			go svc.worker(i)
+			go func(id int) {
+				defer svc.workerWg.Done()
+				svc.worker(id)
+			}(i)
 		}
-		go svc.cleanupWorker()
+		go func() {
+			defer svc.workerWg.Done()
+			svc.cleanupWorker()
+		}()
 	}
 	return svc
+}
+
+// Stop ends the async moderation workers and the retention cleanup loop and
+// waits for them to return. A task being processed has its context cancelled;
+// queued tasks are left unprocessed. Safe to call more than once and on a
+// service that never started workers.
+func (s *ContentModerationService) Stop() {
+	if s == nil || s.stopCancel == nil {
+		return
+	}
+	s.stopCancel()
+	s.workerWg.Wait()
+}
+
+// backgroundContext is the parent context for the background workers. Services
+// built without NewContentModerationService have no stop context and fall back
+// to context.Background, which is what the workers used before Stop existed.
+func (s *ContentModerationService) backgroundContext() context.Context {
+	if s.stopCtx == nil {
+		return context.Background()
+	}
+	return s.stopCtx
 }
 
 func (s *ContentModerationService) GetConfig(ctx context.Context) (*ContentModerationConfigView, error) {
@@ -1283,12 +1319,13 @@ func (s *ContentModerationService) enqueueRecord(input ContentModerationCheckInp
 }
 
 func (s *ContentModerationService) worker(id int) {
-	for {
-		ctx, cancel := context.WithTimeout(context.Background(), maxContentModerationTimeoutMS*time.Millisecond+10*time.Second)
+	stop := s.backgroundContext()
+	for stop.Err() == nil {
+		ctx, cancel := context.WithTimeout(stop, maxContentModerationTimeoutMS*time.Millisecond+10*time.Second)
 		runtimeSnapshot, err := s.loadRuntimeSnapshot(ctx)
 		if err != nil || runtimeSnapshot == nil || runtimeSnapshot.config == nil || id >= runtimeSnapshot.config.WorkerCount {
 			cancel()
-			time.Sleep(time.Second)
+			sleepOrDone(stop, time.Second)
 			continue
 		}
 		cfg := runtimeSnapshot.config
@@ -1511,10 +1548,15 @@ func (s *ContentModerationService) GetStatus(ctx context.Context) (*ContentModer
 }
 
 func (s *ContentModerationService) cleanupWorker() {
+	stop := s.backgroundContext()
 	timer := time.NewTimer(contentModerationCleanupDelay)
 	defer timer.Stop()
 	for {
-		<-timer.C
+		select {
+		case <-stop.Done():
+			return
+		case <-timer.C:
+		}
 		s.runCleanupOnce()
 		timer.Reset(contentModerationCleanupInterval)
 	}

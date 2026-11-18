@@ -145,6 +145,7 @@ func TestEnsureAgentIdentityTaskPersistsAndRedactsCredentials(t *testing.T) {
 		"chatgpt_account_id": "account-test",
 	}}
 	service := &OpenAIGatewayService{accountRepo: repo}
+	t.Cleanup(service.CloseOpenAIWSPool)
 	require.NoError(t, service.ensureAgentIdentityTask(context.Background(), account, ""))
 	require.Equal(t, "task-persisted", account.GetCredential("task_id"))
 	require.Equal(t, "task-persisted", repo.credentials["task_id"])

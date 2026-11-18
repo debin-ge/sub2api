@@ -316,7 +316,7 @@ func TestResponsesWSFirstTurnRejectsUnpricedCodexInjectedImageTool(t *testing.T)
 	svc.cfg.Gateway.OpenAIWS.OAuthEnabled = true
 	svc.cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
 	captureDialer := &openAIWSCaptureDialer{conn: &openAIWSCaptureConn{}}
-	pool := newOpenAIWSConnPool(svc.cfg)
+	pool := newOpenAIWSConnPoolForTest(t, svc.cfg)
 	pool.setClientDialerForTest(captureDialer)
 	svc.openaiWSResolver = NewOpenAIWSProtocolResolver(svc.cfg)
 	svc.openaiWSPool = pool

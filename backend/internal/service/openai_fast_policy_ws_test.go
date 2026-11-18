@@ -470,7 +470,7 @@ func TestWSResponseCreate_IngressFiltersServiceTierBeforeUpstream(t *testing.T) 
 		},
 	}
 	captureDialer := &openAIWSCaptureDialer{conn: captureConn}
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	pool.setClientDialerForTest(captureDialer)
 
 	repo := &openAIFastPolicyRepoStub{values: map[string]string{}}
@@ -590,7 +590,7 @@ func TestWSResponseCreate_IngressBlockSendsErrorEventAndSkipsUpstream(t *testing
 		// No events queued; the upstream should never get written to anyway.
 	}
 	captureDialer := &openAIWSCaptureDialer{conn: captureConn}
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	pool.setClientDialerForTest(captureDialer)
 
 	blockSettings := &OpenAIFastPolicySettings{

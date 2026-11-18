@@ -74,7 +74,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PreflightPingTol
 		},
 	}
 	dialer := &openAIWSQueueDialer{conns: []openAIWSClientConn{slowConn, fallback}}
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	pool.setClientDialerForTest(dialer)
 
 	svc := &OpenAIGatewayService{
@@ -197,7 +197,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_TurnRetryForcesF
 	dialer := &openAIWSQueueDialer{
 		conns: []openAIWSClientConn{staleA, fresh},
 	}
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	pool.setClientDialerForTest(dialer)
 
 	svc := &OpenAIGatewayService{

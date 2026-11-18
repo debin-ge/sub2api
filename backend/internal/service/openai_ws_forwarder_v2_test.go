@@ -54,7 +54,7 @@ func TestForwardOpenAIWSV2_KeepsOutboundAndObservedServiceTiersSeparate(t *testi
 				},
 			}
 			captureDialer := &openAIWSCaptureDialer{conn: captureConn}
-			pool := newOpenAIWSConnPool(cfg)
+			pool := newOpenAIWSConnPoolForTest(t, cfg)
 			pool.setClientDialerForTest(captureDialer)
 
 			svc := &OpenAIGatewayService{
@@ -132,7 +132,7 @@ func TestForwardOpenAIWSV2_MarksCyberPolicyForFailureEventShapes(t *testing.T) {
 			cfg.Security.URLAllowlist.AllowInsecureHTTP = true
 			cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
 			captureConn := &openAIWSCaptureConn{events: [][]byte{append([]byte(nil), tt.upstreamEvent...)}}
-			pool := newOpenAIWSConnPool(cfg)
+			pool := newOpenAIWSConnPoolForTest(t, cfg)
 			pool.setClientDialerForTest(&openAIWSCaptureDialer{conn: captureConn})
 			svc := &OpenAIGatewayService{
 				cfg:              cfg,

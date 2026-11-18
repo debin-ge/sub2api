@@ -97,6 +97,7 @@ func TestOpenAIGatewayService_Forward_PreservePreviousResponseIDWhenWSEnabled(t 
 		httpUpstream:     upstream,
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 
 	account := &Account{
 		ID:          1,
@@ -156,6 +157,7 @@ func TestOpenAIGatewayService_Forward_HTTPIngressStaysHTTPWhenWSEnabled(t *testi
 		httpUpstream:     upstream,
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 
 	account := &Account{
 		ID:          101,
@@ -231,6 +233,7 @@ func TestOpenAIGatewayService_Forward_HTTPIngressRetriesInvalidEncryptedContentO
 		httpUpstream:     upstream,
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 
 	account := &Account{
 		ID:          102,
@@ -320,6 +323,7 @@ func TestOpenAIGatewayService_Forward_HTTPIngressRetriesWrappedInvalidEncryptedC
 		httpUpstream:     upstream,
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 
 	account := &Account{
 		ID:          103,
@@ -389,6 +393,7 @@ func TestOpenAIGatewayService_Forward_APIKeyHTTPPreservesPreviousResponseIDWhenW
 		httpUpstream:     upstream,
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 
 	account := &Account{
 		ID:          1,
@@ -449,6 +454,7 @@ func TestOpenAIGatewayService_Forward_WSv2Dial426FallbackHTTP(t *testing.T) {
 		httpUpstream:     upstream,
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 
 	account := &Account{
 		ID:          12,
@@ -511,6 +517,7 @@ func TestOpenAIGatewayService_Forward_WSv2FallbackCoolingSkipWS(t *testing.T) {
 		httpUpstream:     upstream,
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 
 	account := &Account{
 		ID:          21,
@@ -570,6 +577,7 @@ func TestOpenAIGatewayService_Forward_ReturnErrorWhenOnlyWSv1Enabled(t *testing.
 		httpUpstream:     upstream,
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 
 	account := &Account{
 		ID:          31,
@@ -664,6 +672,7 @@ func TestOpenAIGatewayService_Forward_WSv2FallbackWhenResponseAlreadyWrittenRetu
 		httpUpstream:     upstream,
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 
 	account := &Account{
 		ID:          41,
@@ -757,6 +766,7 @@ func TestOpenAIGatewayService_Forward_WSv2StreamEarlyCloseFallbackHTTP(t *testin
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 		toolCorrector:    NewCodexToolCorrector(),
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 
 	account := &Account{
 		ID:          88,
@@ -839,6 +849,7 @@ func TestOpenAIGatewayService_Forward_WSv2RetryFiveTimesThenFallbackHTTP(t *test
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 		toolCorrector:    NewCodexToolCorrector(),
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 
 	account := &Account{
 		ID:          89,
@@ -920,6 +931,7 @@ func TestOpenAIGatewayService_Forward_WSv2PolicyViolationFastFallbackHTTP(t *tes
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 		toolCorrector:    NewCodexToolCorrector(),
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 
 	account := &Account{
 		ID:          8901,
@@ -1004,6 +1016,7 @@ func TestOpenAIGatewayService_Forward_WSv2ConnectionLimitReachedRetryThenFallbac
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 		toolCorrector:    NewCodexToolCorrector(),
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 
 	account := &Account{
 		ID:          90,
@@ -1111,6 +1124,7 @@ func TestOpenAIGatewayService_Forward_WSv2PreviousResponseNotFoundRecoversByDrop
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 		toolCorrector:    NewCodexToolCorrector(),
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 
 	account := &Account{
 		ID:          91,
@@ -1211,6 +1225,7 @@ func TestOpenAIGatewayService_Forward_WSv2PreviousResponseNotFoundSkipsRecoveryF
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 		toolCorrector:    NewCodexToolCorrector(),
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 
 	account := &Account{
 		ID:          92,
@@ -1309,6 +1324,7 @@ func TestOpenAIGatewayService_Forward_WSv2PreviousResponseNotFoundSkipsRecoveryW
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 		toolCorrector:    NewCodexToolCorrector(),
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 
 	account := &Account{
 		ID:          93,
@@ -1406,6 +1422,7 @@ func TestOpenAIGatewayService_Forward_WSv2PreviousResponseNotFoundOnlyRecoversOn
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 		toolCorrector:    NewCodexToolCorrector(),
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 
 	account := &Account{
 		ID:          94,
@@ -1521,6 +1538,7 @@ func TestOpenAIGatewayService_Forward_WSv2InvalidEncryptedContentRecoversOnce(t 
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 		toolCorrector:    NewCodexToolCorrector(),
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 
 	account := &Account{
 		ID:          95,
@@ -1625,6 +1643,7 @@ func TestOpenAIGatewayService_Forward_WSv2InvalidEncryptedContentSkipsRecoveryWi
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 		toolCorrector:    NewCodexToolCorrector(),
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 
 	account := &Account{
 		ID:          96,
@@ -1741,6 +1760,7 @@ func TestOpenAIGatewayService_Forward_WSv2InvalidEncryptedContentRecoversSingleO
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 		toolCorrector:    NewCodexToolCorrector(),
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 
 	account := &Account{
 		ID:          97,
@@ -1859,6 +1879,7 @@ func TestOpenAIGatewayService_Forward_WSv2InvalidEncryptedContentKeepsPreviousRe
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 		toolCorrector:    NewCodexToolCorrector(),
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 
 	account := &Account{
 		ID:          98,

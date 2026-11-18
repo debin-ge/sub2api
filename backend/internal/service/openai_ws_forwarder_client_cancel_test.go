@@ -53,7 +53,7 @@ func TestForwardOpenAIWSV2_ClientCancellationDrainsWithoutSyntheticFailure(t *te
 	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 5
 	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
 
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	pool.setClientDialerForTest(&openAIWSClientConnCancelDialer{conn: captureConn})
 	svc := &OpenAIGatewayService{
 		cfg:              cfg,

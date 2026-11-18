@@ -91,7 +91,7 @@ func TestProxyResponsesWebSocketFromClient_RewritesCapacityShedCodeForClient(t *
 				events = append(events, append([]byte(nil), event...))
 			}
 			captureConn := &openAIWSCaptureConn{events: events}
-			pool := newOpenAIWSConnPool(cfg)
+			pool := newOpenAIWSConnPoolForTest(t, cfg)
 			pool.setClientDialerForTest(&openAIWSCaptureDialer{conn: captureConn})
 
 			account := Account{
@@ -222,7 +222,7 @@ func TestProxyResponsesWebSocketFromClient_MarksCyberPolicyBeforeEarlyReturn(t *
 			cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
 
 			captureConn := &openAIWSCaptureConn{events: [][]byte{append([]byte(nil), tt.upstreamEvent...)}}
-			pool := newOpenAIWSConnPool(cfg)
+			pool := newOpenAIWSConnPoolForTest(t, cfg)
 			pool.setClientDialerForTest(&openAIWSCaptureDialer{conn: captureConn})
 			svc := &OpenAIGatewayService{
 				cfg:              cfg,

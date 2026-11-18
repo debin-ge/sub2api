@@ -43,6 +43,7 @@ func newOpenAIWSPassthroughHandlerHarness(t *testing.T, upstreamURL string, sett
 	}
 	moderationRepo := &contentModerationHandlerTestRepo{}
 	moderationSvc := service.NewContentModerationService(settingRepo, moderationRepo, nil, nil, nil, nil, nil, nil)
+	t.Cleanup(moderationSvc.Stop)
 	settingSvc := service.NewSettingService(settingRepo, nil)
 
 	groupID := int64(4301)

@@ -14,10 +14,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// newOpenAIWSConnPoolForTest builds a pool like newOpenAIWSConnPool and closes
+// it when the test ends, stopping its background ping and cleanup workers.
+func newOpenAIWSConnPoolForTest(t testing.TB, cfg *config.Config) *openAIWSConnPool {
+	t.Helper()
+	pool := newOpenAIWSConnPool(cfg)
+	t.Cleanup(pool.Close)
+	return pool
+}
+
 func TestOpenAIWSConnPool_CleanupStaleAndTrimIdle(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 1
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 
 	accountID := int64(10)
 	ap := pool.getOrCreateAccountPool(accountID)
@@ -45,7 +54,7 @@ func TestOpenAIWSConnPool_CleanupStaleAndTrimIdle(t *testing.T) {
 }
 
 func TestOpenAIWSConnPool_NextConnIDFormat(t *testing.T) {
-	pool := newOpenAIWSConnPool(&config.Config{})
+	pool := newOpenAIWSConnPoolForTest(t, &config.Config{})
 	id1 := pool.nextConnID(42)
 	id2 := pool.nextConnID(42)
 
@@ -99,7 +108,7 @@ func TestOpenAIWSConnPool_TargetConnCountAdaptive(t *testing.T) {
 	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 1
 	cfg.Gateway.OpenAIWS.PoolTargetUtilization = 0.5
 
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	ap := pool.getOrCreateAccountPool(88)
 
 	conn1 := newOpenAIWSConn("c1", 88, nil, nil)
@@ -129,7 +138,7 @@ func TestOpenAIWSConnPool_TargetConnCountMinIdleZero(t *testing.T) {
 	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
 	cfg.Gateway.OpenAIWS.PoolTargetUtilization = 0.8
 
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	ap := pool.getOrCreateAccountPool(66)
 
 	target := pool.targetConnCountLocked(ap, pool.maxConnsHardCap())
@@ -143,7 +152,7 @@ func TestOpenAIWSConnPool_EnsureTargetIdleAsync(t *testing.T) {
 	cfg.Gateway.OpenAIWS.PoolTargetUtilization = 0.8
 	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 1
 
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	pool.setClientDialerForTest(&openAIWSFakeDialer{})
 
 	accountID := int64(77)
@@ -180,7 +189,7 @@ func TestOpenAIWSConnPool_EnsureTargetIdleAsyncCooldown(t *testing.T) {
 	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 1
 	cfg.Gateway.OpenAIWS.PrewarmCooldownMS = 500
 
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	dialer := &openAIWSCountingDialer{}
 	pool.setClientDialerForTest(dialer)
 
@@ -237,7 +246,7 @@ func TestOpenAIWSConnPool_EnsureTargetIdleAsyncFailureSuppress(t *testing.T) {
 	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 1
 	cfg.Gateway.OpenAIWS.PrewarmCooldownMS = 0
 
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	dialer := &openAIWSAlwaysFailDialer{}
 	pool.setClientDialerForTest(dialer)
 
@@ -286,7 +295,7 @@ func TestOpenAIWSConnPool_AcquireQueueWaitMetrics(t *testing.T) {
 	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
 	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 4
 
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	accountID := int64(99)
 	account := &Account{ID: accountID, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 	conn := newOpenAIWSConn("busy", accountID, &openAIWSFakeConn{}, nil)
@@ -328,7 +337,7 @@ func TestOpenAIWSConnPool_AcquireAtCapacityWakesWhenAnotherConnReleases(t *testi
 	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
 	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 4
 
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	accountID := int64(993)
 	account := &Account{ID: accountID, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 	req := openAIWSAcquireRequest{Account: account, WSURL: "wss://example.com/v1/responses"}
@@ -386,7 +395,7 @@ func TestOpenAIWSConnPool_AcquireAtCapacityWakesWhenCapacityFreedByEviction(t *t
 	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
 	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 4
 
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	dialer := &openAIWSCountingDialer{}
 	pool.setClientDialerForTest(dialer)
 	accountID := int64(994)
@@ -449,7 +458,7 @@ func TestOpenAIWSConnPool_AcquireAtCapacityCanceledWaiterDoesNotTakeReleasedConn
 	accountID := int64(995)
 	account := &Account{ID: accountID, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 	req := openAIWSAcquireRequest{Account: account, WSURL: "wss://example.com/v1/responses"}
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	target := newOpenAIWSConn("target", accountID, &openAIWSFakeConn{}, nil)
 	other := newOpenAIWSConn("other", accountID, &openAIWSFakeConn{}, nil)
 	require.True(t, target.tryAcquire())
@@ -503,7 +512,7 @@ func TestOpenAIWSConnPool_DialSuccessWakesTopologyWaiterAndCanceledWaiterDoesNot
 	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 1
 	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 4
 
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	dialer := newOpenAIWSFirstDialBlockingCaptureDialer()
 	pool.setClientDialerForTest(dialer)
 	account := &Account{ID: 991, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
@@ -578,7 +587,7 @@ func TestOpenAIWSConnPool_PrewarmHintChangeDoesNotInvalidateHealthyDial(t *testi
 	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 1
 	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 2
 
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	dialer := newOpenAIWSFirstDialBlockingCaptureDialer()
 	pool.setClientDialerForTest(dialer)
 	account := &Account{ID: 992, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
@@ -630,7 +639,7 @@ func TestOpenAIWSConnPool_ClearAccountWakesIncompatibleTopologyWaiter(t *testing
 	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
 	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 1
 
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	dialer := &openAIWSCountingDialer{}
 	pool.setClientDialerForTest(dialer)
 	account := &Account{ID: 993, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
@@ -674,7 +683,7 @@ func TestOpenAIWSConnPool_ClearAccountDoesNotReviveInFlightDialGeneration(t *tes
 	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
 	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 1
 
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	dialer := newOpenAIWSFirstDialBlockingCaptureDialer()
 	pool.setClientDialerForTest(dialer)
 	account := &Account{ID: 994, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
@@ -715,7 +724,7 @@ func TestOpenAIWSConnPool_ForceNewConnSkipsReuse(t *testing.T) {
 	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
 	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 2
 
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	dialer := &openAIWSCountingDialer{}
 	pool.setClientDialerForTest(dialer)
 
@@ -747,7 +756,7 @@ func TestOpenAIWSConnPool_AcquireReusesOnlyMatchingBetaFeatures(t *testing.T) {
 	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
 	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 2
 
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	dialer := &openAIWSCountingDialer{}
 	pool.setClientDialerForTest(dialer)
 
@@ -827,7 +836,7 @@ func TestOpenAIWSConnPool_AcquireReusesSameStableIdentityWithDifferentTurnMetada
 	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
 	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 1
 
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	dialer := &openAIWSCountingDialer{}
 	pool.setClientDialerForTest(dialer)
 	account := activeCodexFingerprintPoolAccountForTest(132)
@@ -879,7 +888,7 @@ func TestOpenAIWSConnPool_AcquireDoesNotReuseDifferentStableIdentity(t *testing.
 			cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
 			cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 2
 
-			pool := newOpenAIWSConnPool(cfg)
+			pool := newOpenAIWSConnPoolForTest(t, cfg)
 			dialer := &openAIWSCountingDialer{}
 			pool.setClientDialerForTest(dialer)
 			account := activeCodexFingerprintPoolAccountForTest(133)
@@ -915,7 +924,7 @@ func TestOpenAIWSConnPool_AcquireRoutingHintRemainsSoftAffinity(t *testing.T) {
 	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
 	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 1
 
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	dialer := &openAIWSCountingDialer{}
 	pool.setClientDialerForTest(dialer)
 	account := activeCodexFingerprintPoolAccountForTest(134)
@@ -951,7 +960,7 @@ func TestOpenAIWSConnPool_DeviceModeKeysOnlyInstallationIdentity(t *testing.T) {
 	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
 	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 2
 
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	dialer := &openAIWSCountingDialer{}
 	pool.setClientDialerForTest(dialer)
 	account := activeCodexFingerprintPoolAccountForTest(135)
@@ -1003,7 +1012,7 @@ func TestOpenAIWSConnPool_AcquireReplacesIdleConnWithDifferentBetaFeatures(t *te
 	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
 	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 1
 
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	dialer := &openAIWSCountingDialer{}
 	pool.setClientDialerForTest(dialer)
 
@@ -1035,7 +1044,7 @@ func TestOpenAIWSConnPool_AcquireWaitsForBusyIncompatibleConnection(t *testing.T
 	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
 	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 1
 
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	dialer := &openAIWSCountingDialer{}
 	pool.setClientDialerForTest(dialer)
 	account := &Account{ID: 130, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
@@ -1079,7 +1088,7 @@ func TestOpenAIWSConnPool_AcquireReplacesIncompatibleIdleWhenMatchingBusy(t *tes
 	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
 	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 2
 
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	dialer := &openAIWSCountingDialer{}
 	pool.setClientDialerForTest(dialer)
 	account := &Account{ID: 131, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
@@ -1112,7 +1121,7 @@ func TestOpenAIWSConnPool_AcquireForcePreferredConnUnavailable(t *testing.T) {
 	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
 	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 2
 
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	account := &Account{ID: 124, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 	ap := pool.getOrCreateAccountPool(account.ID)
 	otherConn := newOpenAIWSConn("other_conn", account.ID, &openAIWSFakeConn{}, nil)
@@ -1143,7 +1152,7 @@ func TestOpenAIWSConnPool_AcquireForcePreferredConnQueuesOnPreferredOnly(t *test
 	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 2
 	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 4
 
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	account := &Account{ID: 125, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 	ap := pool.getOrCreateAccountPool(account.ID)
 	preferredConn := newOpenAIWSConn("preferred_conn", account.ID, &openAIWSFakeConn{}, nil)
@@ -1184,7 +1193,7 @@ func TestOpenAIWSConnPool_AcquireForcePreferredConnDirectAndQueueFull(t *testing
 	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 2
 	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 1
 
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	account := &Account{ID: 127, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 	ap := pool.getOrCreateAccountPool(account.ID)
 	preferredConn := newOpenAIWSConn("preferred_conn_direct", account.ID, &openAIWSFakeConn{}, nil)
@@ -1223,7 +1232,7 @@ func TestOpenAIWSConnPool_CleanupSkipsPinnedConn(t *testing.T) {
 	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 2
 	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 0
 
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	accountID := int64(126)
 	ap := pool.getOrCreateAccountPool(accountID)
 	pinnedConn := newOpenAIWSConn("pinned_conn", accountID, &openAIWSFakeConn{}, nil)
@@ -1259,7 +1268,7 @@ func TestOpenAIWSConnPool_PinUnpinConnBranches(t *testing.T) {
 	nilPool.UnpinConn(1, "x")
 
 	cfg := &config.Config{}
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	accountID := int64(128)
 	ap := &openAIWSAccountPool{
 		conns: map[string]*openAIWSConn{},
@@ -1306,7 +1315,7 @@ func TestOpenAIWSConnPool_EffectiveMaxConnsByAccount(t *testing.T) {
 	cfg.Gateway.OpenAIWS.OAuthMaxConnsFactor = 1.0
 	cfg.Gateway.OpenAIWS.APIKeyMaxConnsFactor = 0.6
 
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 
 	oauthHigh := &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 10}
 	require.Equal(t, 8, pool.effectiveMaxConnsByAccount(oauthHigh), "应受全局硬上限约束")
@@ -1333,7 +1342,7 @@ func TestOpenAIWSConnPool_EffectiveMaxConnsDisabledFallbackHardCap(t *testing.T)
 	cfg.Gateway.OpenAIWS.OAuthMaxConnsFactor = 1.0
 	cfg.Gateway.OpenAIWS.APIKeyMaxConnsFactor = 1.0
 
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 2}
 	require.Equal(t, 8, pool.effectiveMaxConnsByAccount(account), "关闭动态模式后应保持旧行为")
 }
@@ -1372,7 +1381,7 @@ func TestOpenAIWSConnPool_EffectiveMaxConnsByAccount_ModeRouterV2(t *testing.T) 
 			} else {
 				cfg.Gateway.OpenAIWS.APIKeyMaxConnsFactor = tt.factor
 			}
-			pool := newOpenAIWSConnPool(cfg)
+			pool := newOpenAIWSConnPoolForTest(t, cfg)
 			t.Cleanup(pool.Close)
 			account := &Account{Platform: PlatformOpenAI, Type: tt.accountType, Concurrency: tt.concurrency}
 			require.Equal(t, tt.want, pool.effectiveMaxConnsByAccount(account))
@@ -1397,7 +1406,7 @@ func TestOpenAIWSConnPool_AcquireRetainedSessionsUsesScaledCapacity(t *testing.T
 			cfg.Gateway.OpenAIWS.PoolTargetUtilization = 1
 			cfg.Gateway.OpenAIWS.DynamicMaxConnsByAccountConcurrencyEnabled = true
 			cfg.Gateway.OpenAIWS.OAuthMaxConnsFactor = 2
-			pool := newOpenAIWSConnPool(cfg)
+			pool := newOpenAIWSConnPoolForTest(t, cfg)
 			pool.setClientDialerForTest(&openAIWSFakeDialer{})
 			t.Cleanup(pool.Close)
 			req := openAIWSAcquireRequest{
@@ -1433,7 +1442,7 @@ func TestOpenAIWSConnPool_AcquireRejectsWhenEffectiveMaxConnsIsZero(t *testing.T
 	cfg := &config.Config{}
 	cfg.Gateway.OpenAIWS.ModeRouterV2Enabled = true
 	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 8
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 
 	account := &Account{ID: 901, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 0}
 	_, err := pool.Acquire(context.Background(), openAIWSAcquireRequest{
@@ -1515,7 +1524,7 @@ func TestOpenAIWSConn_ReadAndWriteCanProceedConcurrently(t *testing.T) {
 func TestOpenAIWSConnPool_BackgroundPingSweep_EvictsDeadIdleConn(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 2
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 
 	accountID := int64(301)
 	ap := pool.getOrCreateAccountPool(accountID)
@@ -1536,7 +1545,7 @@ func TestOpenAIWSConnPool_BackgroundCleanupSweep_WithoutAcquire(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 2
 	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 2
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 
 	accountID := int64(302)
 	ap := pool.getOrCreateAccountPool(accountID)
@@ -1708,7 +1717,7 @@ func TestOpenAIWSConnPool_QueueLimitPerConn_DefaultAndConfigured(t *testing.T) {
 
 func TestOpenAIWSConnPool_Close(t *testing.T) {
 	cfg := &config.Config{}
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 
 	// Close 应该可以安全调用
 	pool.Close()
@@ -1887,7 +1896,7 @@ func TestOpenAIWSConnPool_Close_ClosesOnlyIdleConnections(t *testing.T) {
 
 func TestOpenAIWSConnPool_RunBackgroundPingSweep_ConcurrencyLimit(t *testing.T) {
 	cfg := &config.Config{}
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	accountID := int64(505)
 	ap := pool.getOrCreateAccountPool(accountID)
 
@@ -2183,7 +2192,7 @@ func TestOpenAIWSConnPool_CanceledWaiterReturnsDeliveredLease(t *testing.T) {
 }
 
 func TestOpenAIWSConnLease_MarkBrokenEvictsConn(t *testing.T) {
-	pool := newOpenAIWSConnPool(&config.Config{})
+	pool := newOpenAIWSConnPoolForTest(t, &config.Config{})
 	accountID := int64(5001)
 	conn := newOpenAIWSConn("broken_me", accountID, &openAIWSFakeConn{}, nil)
 	ap := pool.getOrCreateAccountPool(accountID)
@@ -2208,7 +2217,7 @@ func TestOpenAIWSConnLease_MarkBrokenEvictsConn(t *testing.T) {
 func TestOpenAIWSConnPool_TargetConnCountAndPrewarmBranches(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 1
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 
 	require.Equal(t, 0, pool.targetConnCountLocked(nil, 1))
 	ap := &openAIWSAccountPool{conns: map[string]*openAIWSConn{}}
@@ -2236,7 +2245,7 @@ func TestOpenAIWSConnPool_TargetConnCountAndPrewarmBranches(t *testing.T) {
 
 	// prewarm: 拨号失败分支（prewarmFails 累加）
 	accountID := int64(1000)
-	failPool := newOpenAIWSConnPool(cfg)
+	failPool := newOpenAIWSConnPoolForTest(t, cfg)
 	failPool.setClientDialerForTest(&openAIWSAlwaysFailDialer{})
 	apFail := failPool.getOrCreateAccountPool(accountID)
 	apFail.mu.Lock()
@@ -2254,7 +2263,7 @@ func TestOpenAIWSConnPool_Acquire_ErrorBranches(t *testing.T) {
 	_, err := nilPool.Acquire(context.Background(), openAIWSAcquireRequest{})
 	require.Error(t, err)
 
-	pool := newOpenAIWSConnPool(&config.Config{})
+	pool := newOpenAIWSConnPoolForTest(t, &config.Config{})
 	_, err = pool.Acquire(context.Background(), openAIWSAcquireRequest{
 		Account: &Account{ID: 1},
 		WSURL:   "   ",
@@ -2266,7 +2275,7 @@ func TestOpenAIWSConnPool_Acquire_ErrorBranches(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 1
 	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 1
-	fullPool := newOpenAIWSConnPool(cfg)
+	fullPool := newOpenAIWSConnPoolForTest(t, cfg)
 	account := &Account{ID: 2001, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 	ap := fullPool.getOrCreateAccountPool(account.ID)
 	ap.mu.Lock()
@@ -2611,7 +2620,7 @@ func TestOpenAIWSConnPool_DialConnNilConnection(t *testing.T) {
 	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 2
 	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 1
 
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	pool.setClientDialerForTest(&openAIWSNilConnDialer{})
 	account := &Account{ID: 91, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 
@@ -2625,7 +2634,7 @@ func TestOpenAIWSConnPool_DialConnNilConnection(t *testing.T) {
 
 func TestOpenAIWSConnPool_SnapshotTransportMetrics(t *testing.T) {
 	cfg := &config.Config{}
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 
 	dialer, ok := pool.clientDialer.(*coderOpenAIWSClientDialer)
 	require.True(t, ok)

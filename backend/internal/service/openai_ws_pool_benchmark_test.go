@@ -16,7 +16,7 @@ func BenchmarkOpenAIWSPoolAcquire(b *testing.B) {
 	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 256
 	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 1
 
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(b, cfg)
 	pool.setClientDialerForTest(&openAIWSCountingDialer{})
 
 	account := &Account{ID: 1001, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}

@@ -65,6 +65,7 @@ func TestOpenAIGatewayService_Forward_WSv2_TurnStateBoundToExecutionScope(t *tes
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 		toolCorrector:    NewCodexToolCorrector(),
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 	groupID := int64(9)
 	account := &Account{
 		ID:          456,
@@ -128,7 +129,7 @@ func TestOpenAIGatewayService_Forward_WSv2_ExecutionScopeUsesOriginalIdentity(t 
 	captureConn := &openAIWSCaptureConn{events: [][]byte{completed("resp_a"), completed("resp_b"), completed("resp_c")}}
 	handshake := http.Header{}
 	handshake.Set(openAIWSTurnStateHeader, "turn-state-from-upstream")
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	pool.setClientDialerForTest(&openAIWSCaptureDialer{conn: captureConn, handshake: handshake})
 	defer pool.Close()
 
@@ -142,6 +143,7 @@ func TestOpenAIGatewayService_Forward_WSv2_ExecutionScopeUsesOriginalIdentity(t 
 		openaiWSPool:       pool,
 		openaiWSStateStore: stateStore,
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 	groupID := int64(9)
 	const apiKeyID = int64(21)
 	account := &Account{

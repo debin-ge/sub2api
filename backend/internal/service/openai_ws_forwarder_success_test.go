@@ -125,6 +125,7 @@ func TestOpenAIGatewayService_Forward_WSv2_SuccessAndBindSticky(t *testing.T) {
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 		toolCorrector:    NewCodexToolCorrector(),
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 
 	account := &Account{
 		ID:          9,
@@ -232,6 +233,7 @@ func TestOpenAIGatewayService_Forward_WSv2_UsesPatchedBodyAfterValidationDecode(
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 		toolCorrector:    NewCodexToolCorrector(),
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 
 	account := &Account{
 		ID:          10,
@@ -350,6 +352,7 @@ func TestOpenAIGatewayService_Forward_WSv2_ImageGenerationCountsOutputs(t *testi
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 		toolCorrector:    NewCodexToolCorrector(),
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 
 	account := &Account{
 		ID:          10,
@@ -408,6 +411,7 @@ func TestOpenAIGatewayService_BuildOpenAIWSHeadersPreservesCodexIdentity(t *test
 	c.Request.Header.Set("X-Test", "blocked")
 
 	svc := &OpenAIGatewayService{}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 	headers, _, err := svc.buildOpenAIWSHeaders(
 		context.Background(),
@@ -450,6 +454,7 @@ func TestOpenAIGatewayService_BuildOpenAIWSHeadersDeviceModePreservesNamespacedC
 	stageCodexFingerprintIDs(c, ids)
 
 	svc := &OpenAIGatewayService{}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 	headers, _, err := svc.buildOpenAIWSHeaders(
 		context.Background(),
 		c,
@@ -513,7 +518,7 @@ func TestOpenAIGatewayService_Forward_WSv2_RewriteModelAndToolCallsOnCompletedEv
 		},
 	}
 	captureDialer := &openAIWSCaptureDialer{conn: captureConn}
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	pool.setClientDialerForTest(captureDialer)
 
 	svc := &OpenAIGatewayService{
@@ -524,6 +529,7 @@ func TestOpenAIGatewayService_Forward_WSv2_RewriteModelAndToolCallsOnCompletedEv
 		toolCorrector:    NewCodexToolCorrector(),
 		openaiWSPool:     pool,
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 
 	account := &Account{
 		ID:          1301,
@@ -571,7 +577,7 @@ func TestOpenAIGatewayService_Forward_WSv2_ResponseFailedIsNotSchedulingSuccess(
 	captureConn := &openAIWSCaptureConn{events: [][]byte{
 		[]byte(`{"type":"response.failed","response":{"id":"resp_failed_1","model":"gpt-5.5","error":{"code":"server_error","message":"Internal error"}}}`),
 	}}
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	pool.setClientDialerForTest(&openAIWSCaptureDialer{conn: captureConn})
 
 	svc := &OpenAIGatewayService{
@@ -583,6 +589,7 @@ func TestOpenAIGatewayService_Forward_WSv2_ResponseFailedIsNotSchedulingSuccess(
 		toolCorrector:    NewCodexToolCorrector(),
 		openaiWSPool:     pool,
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 	account := &Account{
 		ID:          1302,
 		Platform:    PlatformOpenAI,
@@ -690,6 +697,7 @@ func TestOpenAIGatewayService_Forward_WSv2_PoolReuseNotOneToOne(t *testing.T) {
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 		toolCorrector:    NewCodexToolCorrector(),
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 	account := &Account{
 		ID:          19,
 		Name:        "openai-ws",
@@ -758,7 +766,7 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthStoreFalseByDefault(t *testing.T
 		},
 	}
 	captureDialer := &openAIWSCaptureDialer{conn: captureConn}
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	pool.setClientDialerForTest(captureDialer)
 
 	svc := &OpenAIGatewayService{
@@ -769,6 +777,7 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthStoreFalseByDefault(t *testing.T
 		toolCorrector:    NewCodexToolCorrector(),
 		openaiWSPool:     pool,
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 	account := &Account{
 		ID:          29,
 		Name:        "openai-oauth",
@@ -831,7 +840,7 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthSanitizesInvalidNativeToolItemID
 		[]byte(`{"type":"response.completed","response":{"id":"resp_oauth_tool_history","model":"gpt-5.6-sol","usage":{"input_tokens":1,"output_tokens":1}}}`),
 	}}
 	captureDialer := &openAIWSCaptureDialer{conn: captureConn}
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	pool.setClientDialerForTest(captureDialer)
 
 	svc := &OpenAIGatewayService{
@@ -842,6 +851,7 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthSanitizesInvalidNativeToolItemID
 		toolCorrector:    NewCodexToolCorrector(),
 		openaiWSPool:     pool,
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 
 	account := &Account{
 		ID:          5662,
@@ -927,7 +937,7 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthOriginatorCompatibility(t *testi
 				},
 			}
 			captureDialer := &openAIWSCaptureDialer{conn: captureConn}
-			pool := newOpenAIWSConnPool(cfg)
+			pool := newOpenAIWSConnPoolForTest(t, cfg)
 			pool.setClientDialerForTest(captureDialer)
 
 			svc := &OpenAIGatewayService{
@@ -938,6 +948,7 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthOriginatorCompatibility(t *testi
 				toolCorrector:    NewCodexToolCorrector(),
 				openaiWSPool:     pool,
 			}
+			t.Cleanup(svc.CloseOpenAIWSPool)
 			account := &Account{
 				ID:          129,
 				Name:        "openai-oauth",
@@ -993,7 +1004,7 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthHonorsAccountUserAgent(t *testin
 		},
 	}
 	captureDialer := &openAIWSCaptureDialer{conn: captureConn}
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	pool.setClientDialerForTest(captureDialer)
 
 	svc := &OpenAIGatewayService{
@@ -1004,6 +1015,7 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthHonorsAccountUserAgent(t *testin
 		toolCorrector:    NewCodexToolCorrector(),
 		openaiWSPool:     pool,
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 	account := &Account{
 		ID:          130,
 		Name:        "openai-oauth-custom-ua",
@@ -1059,7 +1071,7 @@ func TestOpenAIGatewayService_Forward_WSv2_HeaderSessionFallbackFromPromptCacheK
 		},
 	}
 	captureDialer := &openAIWSCaptureDialer{conn: captureConn}
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	pool.setClientDialerForTest(captureDialer)
 
 	svc := &OpenAIGatewayService{
@@ -1070,6 +1082,7 @@ func TestOpenAIGatewayService_Forward_WSv2_HeaderSessionFallbackFromPromptCacheK
 		toolCorrector:    NewCodexToolCorrector(),
 		openaiWSPool:     pool,
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 	account := &Account{
 		ID:          31,
 		Name:        "openai-oauth",
@@ -1127,7 +1140,7 @@ func TestOpenAIGatewayService_Forward_WSv2_CodexFingerprintHandshakeBodyParityAn
 		},
 	}
 	captureDialer := &openAIWSCaptureDialer{conn: captureConn}
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	pool.setClientDialerForTest(captureDialer)
 
 	svc := &OpenAIGatewayService{
@@ -1138,6 +1151,7 @@ func TestOpenAIGatewayService_Forward_WSv2_CodexFingerprintHandshakeBodyParityAn
 		toolCorrector:    NewCodexToolCorrector(),
 		openaiWSPool:     pool,
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 	account := newTestOAuthAccount(4405, map[string]any{
 		codexFingerprintModeExtraKey:      "session",
 		"responses_websockets_v2_enabled": true,
@@ -1214,7 +1228,7 @@ func TestOpenAIGatewayService_Forward_WSv2_ResponseDoneUsageParsed(t *testing.T)
 		},
 	}
 	captureDialer := &openAIWSCaptureDialer{conn: captureConn}
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	pool.setClientDialerForTest(captureDialer)
 
 	svc := &OpenAIGatewayService{
@@ -1225,6 +1239,7 @@ func TestOpenAIGatewayService_Forward_WSv2_ResponseDoneUsageParsed(t *testing.T)
 		toolCorrector:    NewCodexToolCorrector(),
 		openaiWSPool:     pool,
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 	account := &Account{
 		ID:          32,
 		Name:        "openai-ws-done",
@@ -1285,6 +1300,7 @@ func TestOpenAIGatewayService_Forward_WSv1_Unsupported(t *testing.T) {
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 		toolCorrector:    NewCodexToolCorrector(),
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 
 	account := &Account{
 		ID:          39,
@@ -1377,6 +1393,7 @@ func TestOpenAIGatewayService_Forward_WSv2_TurnStateAndMetadataReplayOnReconnect
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 		toolCorrector:    NewCodexToolCorrector(),
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 
 	account := &Account{
 		ID:          49,
@@ -1461,7 +1478,7 @@ func TestOpenAIGatewayService_Forward_WSv2_GeneratePrewarm(t *testing.T) {
 		},
 	}
 	captureDialer := &openAIWSCaptureDialer{conn: captureConn}
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	pool.setClientDialerForTest(captureDialer)
 
 	svc := &OpenAIGatewayService{
@@ -1472,6 +1489,7 @@ func TestOpenAIGatewayService_Forward_WSv2_GeneratePrewarm(t *testing.T) {
 		toolCorrector:    NewCodexToolCorrector(),
 		openaiWSPool:     pool,
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 
 	account := &Account{
 		ID:          59,
@@ -1513,6 +1531,7 @@ func TestOpenAIGatewayService_PrewarmReadHonorsParentContext(t *testing.T) {
 		cfg:           cfg,
 		toolCorrector: NewCodexToolCorrector(),
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 	account := &Account{
 		ID:          601,
 		Name:        "openai-prewarm-timeout",
@@ -1574,7 +1593,7 @@ func TestOpenAIGatewayService_Forward_WSv2_TurnMetadataInPayloadOnConnReuse(t *t
 		},
 	}
 	captureDialer := &openAIWSCaptureDialer{conn: captureConn}
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	pool.setClientDialerForTest(captureDialer)
 
 	svc := &OpenAIGatewayService{
@@ -1585,6 +1604,7 @@ func TestOpenAIGatewayService_Forward_WSv2_TurnMetadataInPayloadOnConnReuse(t *t
 		toolCorrector:    NewCodexToolCorrector(),
 		openaiWSPool:     pool,
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 
 	account := &Account{
 		ID:          69,
@@ -1696,6 +1716,7 @@ func TestOpenAIGatewayService_Forward_WSv2StoreFalseSessionConnIsolation(t *test
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 		toolCorrector:    NewCodexToolCorrector(),
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 
 	account := &Account{
 		ID:          79,
@@ -1803,6 +1824,7 @@ func TestOpenAIGatewayService_Forward_WSv2StoreFalseDisableForceNewConnAllowsReu
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 		toolCorrector:    NewCodexToolCorrector(),
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 
 	account := &Account{
 		ID:          80,
@@ -1876,7 +1898,7 @@ func TestOpenAIGatewayService_Forward_WSv2ReadTimeoutAppliesPerRead(t *testing.T
 		},
 	}
 	captureDialer := &openAIWSCaptureDialer{conn: captureConn}
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	pool.setClientDialerForTest(captureDialer)
 
 	upstream := &httpUpstreamRecorder{
@@ -1895,6 +1917,7 @@ func TestOpenAIGatewayService_Forward_WSv2ReadTimeoutAppliesPerRead(t *testing.T
 		toolCorrector:    NewCodexToolCorrector(),
 		openaiWSPool:     pool,
 	}
+	t.Cleanup(svc.CloseOpenAIWSPool)
 
 	account := &Account{
 		ID:          81,

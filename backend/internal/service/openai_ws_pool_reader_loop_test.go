@@ -298,7 +298,7 @@ func TestOpenAIWSConnPool_PeerClosedIdleConnEvictedImmediately(t *testing.T) {
 	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 1
 	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 1
 	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 1
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	defer pool.Close()
 	dialer := &openAIWSReaderLoopFakeDialer{}
 	pool.setClientDialerForTest(dialer)
@@ -338,7 +338,7 @@ func newReaderLoopTestPool(t *testing.T, maxConns int) (*openAIWSConnPool, *open
 	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = maxConns
 	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = maxConns
 	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 1
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	t.Cleanup(pool.Close)
 	dialer := &openAIWSReaderLoopFakeDialer{}
 	pool.setClientDialerForTest(dialer)
@@ -609,7 +609,7 @@ func TestOpenAIWSConnPool_AcquireIdleHealthCheckStillAppliesWithoutReaderLoop(t 
 	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 1
 	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 1
 	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 1
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	defer pool.Close()
 	dialer := &openAIWSQueueDialer{conns: []openAIWSClientConn{
 		&openAIWSSlowPingConn{pingDelay: 2200 * time.Millisecond},
@@ -739,7 +739,7 @@ func TestOpenAIWSConnPool_AcquireSnapshotsIdleBefore(t *testing.T) {
 	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 2
 	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 2
 	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 1
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	defer pool.Close()
 	pool.setClientDialerForTest(&openAIWSReaderLoopFakeDialer{})
 
@@ -767,7 +767,7 @@ func TestOpenAIWSConnPool_AcquireSkipsDirtyIdleConn(t *testing.T) {
 	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 2
 	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 2
 	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 1
-	pool := newOpenAIWSConnPool(cfg)
+	pool := newOpenAIWSConnPoolForTest(t, cfg)
 	defer pool.Close()
 	dialer := &openAIWSReaderLoopFakeDialer{}
 	pool.setClientDialerForTest(dialer)
