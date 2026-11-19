@@ -222,13 +222,19 @@ func (s *OpenAICodexUsageSnapshot) Normalize() *NormalizedCodexLimits {
 
 // OpenAIUsage represents OpenAI API response usage
 type OpenAIUsage struct {
-	InputTokens              int `json:"input_tokens"`
-	ImageInputTokens         int `json:"image_input_tokens,omitempty"`
-	ImageCacheReadTokens     int `json:"image_cache_read_tokens,omitempty"`
-	OutputTokens             int `json:"output_tokens"`
-	CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"`
-	CacheReadInputTokens     int `json:"cache_read_input_tokens,omitempty"`
-	ImageOutputTokens        int `json:"image_output_tokens,omitempty"`
+	InputTokens                 int `json:"input_tokens"`
+	ImageInputTokens            int `json:"image_input_tokens,omitempty"`
+	ImageCacheReadTokens        int `json:"image_cache_read_tokens,omitempty"`
+	OutputTokens                int `json:"output_tokens"`
+	CacheCreationInputTokens    int `json:"cache_creation_input_tokens,omitempty"`
+	CacheCreation5mTokens       int `json:"cache_creation_5m_tokens,omitempty"`
+	CacheCreation1hTokens       int `json:"cache_creation_1h_tokens,omitempty"`
+	CacheCreation30mInputTokens int `json:"cache_creation_30m_input_tokens,omitempty"`
+	CacheCreation12hInputTokens int `json:"cache_creation_12h_input_tokens,omitempty"`
+	CacheReadInputTokens        int `json:"cache_read_input_tokens,omitempty"`
+	ImageOutputTokens           int `json:"image_output_tokens,omitempty"`
+
+	cacheCreationInputTokensPresent bool
 	// ImageGen 是 Responses 托管生图工具自己的用量（tool_usage.image_gen），与主模型
 	// token 分开记录：按 token 出图时工具用量按两项价计，主模型 token 按主模型价另计（D7）。
 	ImageGen *OpenAIImageGenUsage `json:"image_gen,omitempty"`

@@ -232,7 +232,8 @@ describe('BulkEditAccountModal', () => {
     expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledTimes(1)
     expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
       extra: {
-        openai_passthrough: true
+        openai_passthrough: true,
+        openai_passthrough_model_filter: false
       }
     })
   })
@@ -462,6 +463,7 @@ describe('BulkEditAccountModal', () => {
     expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
       extra: {
         openai_passthrough: false,
+        openai_passthrough_model_filter: false,
         openai_oauth_passthrough: false
       }
     })
@@ -482,7 +484,8 @@ describe('BulkEditAccountModal', () => {
     expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledTimes(1)
     expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
       extra: {
-        openai_passthrough: true
+        openai_passthrough: true,
+        openai_passthrough_model_filter: false
       }
     })
     expect(wrapper.text()).toContain('admin.accounts.openai.modelRestrictionDisabledByPassthrough')

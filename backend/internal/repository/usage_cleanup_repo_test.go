@@ -418,16 +418,9 @@ func TestUsageCleanupRepositoryDeleteUsageLogsBatch(t *testing.T) {
 		Model:     &model,
 	}
 
-	mock.ExpectBegin()
-	mock.ExpectQuery(`SELECT id FROM usage_group_rollup_state.*FOR UPDATE`).
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1))
 	mock.ExpectQuery("DELETE FROM usage_logs").
 		WithArgs(start, end, userID, "gpt-4", 2).
 		WillReturnRows(sqlmock.NewRows([]string{"created_at"}).AddRow(start.Add(time.Hour)).AddRow(start.Add(2 * time.Hour)))
-	mock.ExpectExec(`UPDATE usage_group_rollup_state`).
-		WithArgs(start.Add(time.Hour), "Asia/Shanghai").
-		WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectCommit()
 
 	deleted, err := repo.DeleteUsageLogsBatch(context.Background(), filters, 2)
 	require.NoError(t, err)
@@ -435,59 +428,26 @@ func TestUsageCleanupRepositoryDeleteUsageLogsBatch(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestUsageCleanupRepositoryDeleteUsageLogsBatchAtomicallyInvalidatesGroupRollups(t *testing.T) {
+// 分组日桶失效由 usage_logs 的行级触发器完成，删除批次不显式锁定汇总状态行，
+// 因而不与 usage_logs 写入串行。
+func TestUsageCleanupRepositoryDeleteUsageLogsBatchDoesNotLockGroupRollupState(t *testing.T) {
 	setUsageCleanupRollupTestTimezone(t)
 	db, mock := newSQLMock(t)
 	repo := &usageCleanupRepository{sql: db}
 
 	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
 	end := start.Add(24 * time.Hour)
-	firstDeletedAt := time.Date(2026, 8, 1, 3, 0, 0, 0, time.UTC)
-	secondDeletedAt := firstDeletedAt.Add(time.Hour)
 	filters := service.UsageCleanupFilters{StartTime: start, EndTime: end}
 
-	mock.ExpectBegin()
-	mock.ExpectQuery(`SELECT id FROM usage_group_rollup_state.*FOR UPDATE`).
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1))
-	mock.ExpectQuery(`(?s)DELETE FROM usage_logs.*RETURNING created_at`).
+	mock.ExpectQuery(`(?s)WITH target AS.*DELETE FROM usage_logs.*RETURNING created_at`).
 		WithArgs(start, end, 2).
 		WillReturnRows(sqlmock.NewRows([]string{"created_at"}).
-			AddRow(firstDeletedAt).
-			AddRow(secondDeletedAt))
-	mock.ExpectExec(`UPDATE usage_group_rollup_state`).
-		WithArgs(firstDeletedAt, "Asia/Shanghai").
-		WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectCommit()
+			AddRow(start.Add(3 * time.Hour)).
+			AddRow(start.Add(4 * time.Hour)))
 
 	deleted, err := repo.DeleteUsageLogsBatch(context.Background(), filters, 2)
 	require.NoError(t, err)
 	require.Equal(t, int64(2), deleted)
-	require.NoError(t, mock.ExpectationsWereMet())
-}
-
-func TestUsageCleanupRepositoryDeleteUsageLogsBatchRollsBackWhenInvalidationFails(t *testing.T) {
-	setUsageCleanupRollupTestTimezone(t)
-	db, mock := newSQLMock(t)
-	repo := &usageCleanupRepository{sql: db}
-
-	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
-	end := start.Add(24 * time.Hour)
-	deletedAt := time.Date(2026, 8, 1, 3, 0, 0, 0, time.UTC)
-	filters := service.UsageCleanupFilters{StartTime: start, EndTime: end}
-
-	mock.ExpectBegin()
-	mock.ExpectQuery(`SELECT id FROM usage_group_rollup_state.*FOR UPDATE`).
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1))
-	mock.ExpectQuery(`(?s)DELETE FROM usage_logs.*RETURNING created_at`).
-		WithArgs(start, end, 1).
-		WillReturnRows(sqlmock.NewRows([]string{"created_at"}).AddRow(deletedAt))
-	mock.ExpectExec(`UPDATE usage_group_rollup_state`).
-		WithArgs(deletedAt, "Asia/Shanghai").
-		WillReturnError(sql.ErrConnDone)
-	mock.ExpectRollback()
-
-	_, err := repo.DeleteUsageLogsBatch(context.Background(), filters, 1)
-	require.ErrorIs(t, err, sql.ErrConnDone)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -499,13 +459,9 @@ func TestUsageCleanupRepositoryDeleteUsageLogsBatchQueryError(t *testing.T) {
 	end := start.Add(24 * time.Hour)
 	filters := service.UsageCleanupFilters{StartTime: start, EndTime: end}
 
-	mock.ExpectBegin()
-	mock.ExpectQuery(`SELECT id FROM usage_group_rollup_state.*FOR UPDATE`).
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1))
 	mock.ExpectQuery("DELETE FROM usage_logs").
 		WithArgs(start, end, 5).
 		WillReturnError(sql.ErrConnDone)
-	mock.ExpectRollback()
 
 	_, err := repo.DeleteUsageLogsBatch(context.Background(), filters, 5)
 	require.Error(t, err)
@@ -544,19 +500,19 @@ func TestDashboardAggregationCleanupUsageLogsPreservesPendingSettlement(t *testi
 	db, mock := newSQLMock(t)
 	repo := newDashboardAggregationRepositoryWithSQL(db)
 	cutoff := time.Date(2025, 5, 1, 0, 0, 0, 0, time.UTC)
+	// CleanupUsageLogs 把 cutoff 对齐到服务端时区的自然日零点。
+	alignedCutoff := service.GroupUsageTodayStart(cutoff).UTC()
 	fixedNow := time.Date(2025, 6, 1, 8, 0, 0, 0, time.UTC)
 	repo.clock = func() time.Time { return fixedNow }
 	todayStart := service.GroupUsageTodayStart(fixedNow)
 
+	expectGroupUsageRollupExpire(mock, alignedCutoff)
 	mock.ExpectQuery("SELECT EXISTS\\(").
 		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
-	mock.ExpectBegin()
-	mock.ExpectQuery(`SELECT id FROM usage_group_rollup_state.*FOR UPDATE`).
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1))
-	mock.ExpectQuery(`(?s)WITH victims AS \([\s\S]*billing_state <> \$3[\s\S]*DELETE FROM usage_logs.*RETURNING created_at`).
-		WithArgs(cutoff, usageLogsCleanupBatchSize, int16(service.BillingStatePricingUnavailable)).
-		WillReturnRows(sqlmock.NewRows([]string{"created_at"}))
-	mock.ExpectCommit()
+	// 待定价记录必须留给补偿任务：按行删除始终带 billing_state <> 待定价 的过滤。
+	mock.ExpectExec(`(?s)WITH victims AS \([\s\S]*billing_state <> \$3[\s\S]*DELETE FROM usage_logs`).
+		WithArgs(alignedCutoff, usageLogsCleanupBatchSize, int16(service.BillingStatePricingUnavailable)).
+		WillReturnResult(sqlmock.NewResult(0, 0))
 	expectGroupUsageRollupSyncAlreadyClosed(mock, todayStart)
 
 	err := repo.CleanupUsageLogs(context.Background(), cutoff)
@@ -569,35 +525,39 @@ func TestDashboardAggregationCleanupUsageLogsSkipsPartitionWithPendingSettlement
 	setUsageCleanupRollupTestTimezone(t)
 	db, mock := newSQLMock(t)
 	repo := newDashboardAggregationRepositoryWithSQL(db)
-	cutoff := time.Date(2025, 3, 1, 0, 0, 0, 0, time.UTC)
+	// 对齐后的保留下界落在 3 月（Asia/Shanghai 的 03-02 00:00），1、2 月分区都整月过期。
+	cutoff := time.Date(2025, 3, 2, 0, 0, 0, 0, time.UTC)
+	alignedCutoff := service.GroupUsageTodayStart(cutoff).UTC()
 	fixedNow := time.Date(2025, 4, 1, 8, 0, 0, 0, time.UTC)
 	repo.clock = func() time.Time { return fixedNow }
 	todayStart := service.GroupUsageTodayStart(fixedNow)
-	febStart := time.Date(2025, 2, 1, 0, 0, 0, 0, time.UTC)
 
+	expectGroupUsageRollupExpire(mock, alignedCutoff)
 	mock.ExpectQuery("SELECT EXISTS\\(").
 		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
 	mock.ExpectQuery("FROM pg_inherits").
 		WillReturnRows(sqlmock.NewRows([]string{"relname"}).
 			AddRow("usage_logs_202501").
 			AddRow("usage_logs_202502"))
+	// 1 月分区还有待定价记录：整个分区保留，不发起 DROP。
 	expectUsageLogsPartitionPendingSettlement(mock, "usage_logs_202501", true)
+	// 2 月分区没有待定价记录：按 upstream 的限时锁流程删除。
 	expectUsageLogsPartitionPendingSettlement(mock, "usage_logs_202502", false)
 	mock.ExpectBegin()
-	mock.ExpectQuery(`SELECT id FROM usage_group_rollup_state.*FOR UPDATE`).
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1))
-	mock.ExpectExec(`UPDATE usage_group_rollup_state`).
-		WithArgs(febStart, "Asia/Shanghai").
-		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`SET LOCAL lock_timeout`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`(?s)SELECT expired_before\s+FROM usage_group_rollup_state.*FOR KEY SHARE`).
+		WillReturnRows(sqlmock.NewRows([]string{"expired_before"}).AddRow(alignedCutoff))
+	mock.ExpectQuery(`SELECT MIN\(created_at\) FROM "usage_logs_202502" WHERE created_at >= \$1`).
+		WithArgs(alignedCutoff).
+		WillReturnRows(sqlmock.NewRows([]string{"min"}).AddRow(nil))
 	mock.ExpectExec(`DROP TABLE IF EXISTS "usage_logs_202502"`).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectCommit()
 	// Retained pending rows force an exact boundary cleanup; settled rows can
 	// be removed without discarding the pending settlement.
-	mock.ExpectBegin()
-	mock.ExpectQuery(`SELECT id FROM usage_group_rollup_state.*FOR UPDATE`).WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1))
-	mock.ExpectQuery(`(?s)SELECT tableoid, ctid.*billing_state <> \$3.*RETURNING created_at`).WithArgs(cutoff, usageLogsCleanupBatchSize, int16(service.BillingStatePricingUnavailable)).WillReturnRows(sqlmock.NewRows([]string{"created_at"}))
-	mock.ExpectCommit()
+	mock.ExpectExec(`(?s)SELECT tableoid, ctid.*billing_state <> \$3.*DELETE FROM usage_logs`).
+		WithArgs(alignedCutoff, usageLogsCleanupBatchSize, int16(service.BillingStatePricingUnavailable)).
+		WillReturnResult(sqlmock.NewResult(0, 0))
 	expectGroupUsageRollupSyncAlreadyClosed(mock, todayStart)
 
 	err := repo.CleanupUsageLogs(context.Background(), cutoff)
@@ -612,12 +572,19 @@ func expectUsageLogsPartitionPendingSettlement(mock sqlmock.Sqlmock, partition s
 		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(pending))
 }
 
+// expectGroupUsageRollupExpire 对应 CleanupUsageLogs 开头推进分组日汇总保留下界的语句。
+func expectGroupUsageRollupExpire(mock sqlmock.Sqlmock, alignedCutoff time.Time) {
+	mock.ExpectExec(`(?s)UPDATE usage_group_rollup_state.*expired_before = GREATEST\(expired_before, \$1\)`).
+		WithArgs(alignedCutoff).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+}
+
+// expectGroupUsageRollupSyncAlreadyClosed 对应清理结束后的 SyncGroupUsageRollups：
+// 预检发现日汇总已覆盖到今天且没有构建在进行时直接返回，不加锁、不开事务。
 func expectGroupUsageRollupSyncAlreadyClosed(mock sqlmock.Sqlmock, todayStart time.Time) {
-	mock.ExpectBegin()
-	mock.ExpectQuery(`SELECT closed_before::text, retained_from.*FOR UPDATE`).
-		WillReturnRows(sqlmock.NewRows([]string{"closed_before", "retained_from", "timezone_name"}).
-			AddRow(service.GroupUsageDate(todayStart), time.Unix(0, 0).UTC(), "Asia/Shanghai"))
-	mock.ExpectCommit()
+	mock.ExpectQuery(`SELECT closed_before::text, timezone_name, building_until IS NULL`).
+		WillReturnRows(sqlmock.NewRows([]string{"closed_before", "timezone_name", "idle"}).
+			AddRow(service.GroupUsageDate(todayStart), "Asia/Shanghai", true))
 }
 
 func TestBuildUsageCleanupWhereRequestTypePriority(t *testing.T) {

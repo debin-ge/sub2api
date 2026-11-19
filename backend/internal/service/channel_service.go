@@ -795,6 +795,7 @@ func checkPricesNotNegative(p ChannelModelPricing) error {
 		{"output_price", p.OutputPrice},
 		{"cache_write_price", p.CacheWritePrice},
 		{"cache_write_1h_price", p.CacheWrite1hPrice},
+		{"cache_write_12h_price", p.CacheWrite12hPrice},
 		{"cache_read_price", p.CacheReadPrice},
 		{"image_input_price", p.ImageInputPrice},
 		{"image_output_price", p.ImageOutputPrice},
@@ -818,6 +819,7 @@ func checkPricesNotNegative(p ChannelModelPricing) error {
 		{"fast_multiplier", p.FastMultiplier},
 		{"flex_multiplier", p.FlexMultiplier},
 		{"max_reasoning_effort_multiplier", p.MaxReasoningEffortMultiplier},
+		{"ultrafast_multiplier", p.UltrafastMultiplier},
 	} {
 		if c.val != nil && *c.val <= 0 {
 			return infraerrors.BadRequest("INVALID_MULTIPLIER", fmt.Sprintf("%s must be > 0", c.field))
@@ -839,7 +841,7 @@ func checkIntervalsHavePrices(p ChannelModelPricing) error {
 			)
 		}
 		if iv.InputPrice == nil && iv.OutputPrice == nil &&
-			iv.CacheWritePrice == nil && iv.CacheWrite1hPrice == nil && iv.CacheReadPrice == nil &&
+			iv.CacheWritePrice == nil && iv.CacheWrite1hPrice == nil && iv.CacheWrite12hPrice == nil && iv.CacheReadPrice == nil &&
 			iv.InputMultiplier == nil &&
 			iv.OutputMultiplier == nil && iv.CacheWriteMultiplier == nil &&
 			iv.CacheReadMultiplier == nil {

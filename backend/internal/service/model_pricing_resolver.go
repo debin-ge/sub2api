@@ -327,6 +327,7 @@ func (r *ModelPricingResolver) applyTokenOverrides(chPricing *ChannelModelPricin
 	if chPricing.MaxReasoningEffortMultiplier != nil {
 		resolved.BasePricing.MaxReasoningEffortMultiplier = chPricing.MaxReasoningEffortMultiplier
 	}
+	resolved.BasePricing.UltrafastMultiplierOverride = chPricing.UltrafastMultiplier
 	resolved.BasePricing.ReasoningEffortMultipliers = maps.Clone(chPricing.ReasoningEffortMultipliers)
 	applyChannelImagePrices(chPricing, resolved.BasePricing)
 }
@@ -386,7 +387,7 @@ func filterValidTokenIntervals(intervals []PricingInterval) []PricingInterval {
 	var valid []PricingInterval
 	for _, iv := range intervals {
 		if iv.InputPrice != nil || iv.OutputPrice != nil ||
-			iv.CacheWritePrice != nil || iv.CacheWrite1hPrice != nil || iv.CacheReadPrice != nil ||
+			iv.CacheWritePrice != nil || iv.CacheWrite1hPrice != nil || iv.CacheWrite12hPrice != nil || iv.CacheReadPrice != nil ||
 			iv.InputMultiplier != nil || iv.OutputMultiplier != nil ||
 			iv.CacheWriteMultiplier != nil || iv.CacheReadMultiplier != nil {
 			valid = append(valid, iv)
@@ -482,6 +483,15 @@ func intervalToModelPricing(iv *PricingInterval, base *ModelPricing, supportsCac
 		pricing.CacheCreationPricePerTokenPriority = applyMultiplier(pricing.CacheCreationPricePerTokenPriority, iv.CacheWriteMultiplier)
 		pricing.CacheCreation5mPrice = applyMultiplier(pricing.CacheCreation5mPrice, iv.CacheWriteMultiplier)
 		pricing.CacheCreation1hPrice = applyMultiplier(pricing.CacheCreation1hPrice, iv.CacheWriteMultiplier)
+		if pricing.CacheCreation12hPricePerToken != nil {
+			price := applyMultiplier(*pricing.CacheCreation12hPricePerToken, iv.CacheWriteMultiplier)
+			pricing.CacheCreation12hPricePerToken = &price
+		}
+	}
+	if iv.CacheWrite12hPrice != nil {
+		pricing.CacheCreation12hPricePerToken = iv.CacheWrite12hPrice
+	} else if iv.CacheWritePrice != nil {
+		pricing.CacheCreation12hPricePerToken = nil
 	}
 	if iv.CacheWrite1hPrice != nil {
 		pricing.CacheCreation1hPrice = *iv.CacheWrite1hPrice

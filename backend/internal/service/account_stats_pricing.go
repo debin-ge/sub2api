@@ -21,6 +21,7 @@ import (
 // pricingAt 与本次客户计费使用同一时刻，避免跨峰谷请求的成本与售价错位。
 // longContextPricingEnabled 表示上游是否对本次请求收取长上下文费率，用于优先级 3；
 // 由 accountStatsLongContextPricingEnabled 按账号开关得出，不受分组售价开关影响。
+// upstreamPriceFactor 是上游按实际请求端点计价的倍数（见 ForwardResult.UpstreamPriceMultiplier），用于优先级 3。
 // reasoningEffort 是最终转发等级；按账号统计定价中配置的等级倍率计费。
 func resolveAccountStatsCost(
 	ctx context.Context,
@@ -66,7 +67,11 @@ func resolveAccountStatsCost(
 
 	// 优先级 3：配置化模型价格目录默认价格
 	if billingService != nil {
-		return tryModelFilePricing(billingService, upstreamModel, tokens, serviceTier, pricingAt, longContextPricingEnabled, reasoningEffort, accountStatsPlatform(platform))
+		cost := tryModelFilePricing(billingService, upstreamModel, tokens, serviceTier, pricingAt, longContextPricingEnabled, reasoningEffort, accountStatsPlatform(platform))
+		if upstreamPriceFactor := accountStatsUpstreamPriceFactorOption(options...); cost != nil && upstreamPriceFactor > 0 {
+			*cost *= upstreamPriceFactor
+		}
+		return cost
 	}
 
 	return nil
@@ -221,12 +226,13 @@ func calculateTokenStatsCost(pricing *ChannelModelPricing, tokens UsageTokens) *
 		totalTokens := tokens.InputTokens + tokens.OutputTokens + tokens.CacheCreationTokens + tokens.CacheReadTokens
 		if iv := FindMatchingInterval(pricing.Intervals, totalTokens); iv != nil {
 			p = &ChannelModelPricing{
-				InputPrice:        iv.InputPrice,
-				OutputPrice:       iv.OutputPrice,
-				CacheWritePrice:   iv.CacheWritePrice,
-				CacheWrite1hPrice: iv.CacheWrite1hPrice,
-				CacheReadPrice:    iv.CacheReadPrice,
-				PerRequestPrice:   iv.PerRequestPrice,
+				InputPrice:         iv.InputPrice,
+				OutputPrice:        iv.OutputPrice,
+				CacheWritePrice:    iv.CacheWritePrice,
+				CacheWrite1hPrice:  iv.CacheWrite1hPrice,
+				CacheWrite12hPrice: iv.CacheWrite12hPrice,
+				CacheReadPrice:     iv.CacheReadPrice,
+				PerRequestPrice:    iv.PerRequestPrice,
 			}
 		}
 	}
@@ -238,11 +244,14 @@ func calculateTokenStatsCost(pricing *ChannelModelPricing, tokens UsageTokens) *
 	}
 	cacheCreationCost := float64(tokens.CacheCreationTokens) * deref(p.CacheWritePrice)
 	if p.CacheWrite1hPrice != nil {
-		cache5m, cache1h := normalizeCacheCreationBreakdown(tokens)
+		cache5m, cache1h := allocateCacheCreationBillingTokens(tokens)
 		if cache5m > 0 || cache1h > 0 {
 			cacheCreationCost = float64(cache5m)*deref(p.CacheWritePrice) +
 				float64(cache1h)*deref(p.CacheWrite1hPrice)
 		}
+	}
+	if cost, ok := openAICacheCreationTTLCost(tokens, deref(p.CacheWritePrice), p.CacheWrite12hPrice); ok {
+		cacheCreationCost = cost
 	}
 	cost := float64(tokens.InputTokens)*deref(p.InputPrice) +
 		float64(tokens.OutputTokens)*deref(p.OutputPrice) +
@@ -337,6 +346,20 @@ type accountStatsPlatform string
 // 不参与成本判断。
 func accountStatsLongContextPricingEnabled(accountGate *bool) bool {
 	return accountGate == nil || *accountGate
+}
+
+// accountStatsUpstreamPriceFactorOption 取出 options 中的上游端点价格倍数（float64）。
+// 未提供时返回 0，调用方按“不加价”处理。
+func accountStatsUpstreamPriceFactorOption(options ...any) float64 {
+	for _, option := range options {
+		switch value := option.(type) {
+		case float64:
+			return value
+		case int:
+			return float64(value)
+		}
+	}
+	return 0
 }
 
 func accountStatsLongContextOption(options ...any) bool {

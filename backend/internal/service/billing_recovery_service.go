@@ -1013,7 +1013,11 @@ func recoveryUsageTokens(log *UsageLog) UsageTokens {
 		CacheReadTokens:       log.CacheReadTokens,
 		CacheCreation5mTokens: log.CacheCreation5mTokens,
 		CacheCreation1hTokens: log.CacheCreation1hTokens,
-		ImageOutputTokens:     log.ImageOutputTokens,
+		// OpenAI 缓存写入按 TTL 拆分（upstream v0.2.21）：补偿结算必须带上 30m/12h 明细，
+		// 否则 12h 写入会按通用写入价补记，与实时扣费口径不一致。
+		CacheCreation30mTokens: log.CacheCreation30mTokens,
+		CacheCreation12hTokens: log.CacheCreation12hTokens,
+		ImageOutputTokens:      log.ImageOutputTokens,
 	}
 }
 

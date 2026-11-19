@@ -559,6 +559,23 @@ func TestRecoveryUsageTokens_PreservesImageInputDimension(t *testing.T) {
 	require.Equal(t, 439, tokens.ImageOutputTokens)
 }
 
+// OpenAI 缓存写入的 30m/12h 明细落库后，补偿结算必须原样带回计费，
+// 否则 12h 写入会按通用写入价补记，与实时扣费不一致。
+func TestRecoveryUsageTokens_PreservesOpenAICacheWriteTTLBreakdown(t *testing.T) {
+	log := &UsageLog{
+		InputTokens:            100,
+		CacheCreationTokens:    2399,
+		CacheCreation30mTokens: 9,
+		CacheCreation12hTokens: 2390,
+	}
+
+	tokens := recoveryUsageTokens(log)
+
+	require.Equal(t, 2399, tokens.CacheCreationTokens)
+	require.Equal(t, 9, tokens.CacheCreation30mTokens)
+	require.Equal(t, 2390, tokens.CacheCreation12hTokens)
+}
+
 func TestBillingRecoveryRunOnce_PrefersUpstreamModelCandidate(t *testing.T) {
 	upstream := recoveryPricedModel
 	log := pendingTokenLog(11, recoveryUnpricedModel)

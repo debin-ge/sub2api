@@ -113,7 +113,7 @@
                   <span :class="bonusQuote.percent > 0 ? 'font-semibold zt-ink' : 'zt-ink'">{{ balanceSymbol }}{{ creditedAmount.toFixed(2) }}</span>
                 </div>
                 <p v-if="balanceRechargeMultiplier !== 1" class="border-t zt-border-c2 pt-2 text-xs zt-ink-3">
-                  {{ t('payment.rechargeRatePreview', { currency: selectedCurrency, balanceCurrency, usd: balanceRechargeMultiplier.toFixed(2) }) }}
+                  {{ t('payment.rechargeRatePreview', { currency: selectedCurrency, balanceCurrency, usd: formatBalanceRechargeMultiplier(balanceRechargeMultiplier) }) }}
                 </p>
               </div>
             </div>
@@ -311,7 +311,7 @@ import { extractApiErrorMessage, extractI18nErrorMessage } from '@/utils/apiErro
 import { isMobileDevice } from '@/utils/device'
 import { hasPeakRate, formatPeakRateWindow, serverTimezoneLabel, type PeakRateFields } from '@/utils/peak-rate'
 import type { SubscriptionPlan, CheckoutInfoResponse, CreateOrderResult, OrderType } from '@/types/payment'
-import { formatRechargeBonusNumber, normalizeRechargeBonusMode, normalizeRechargeBonusTiers, quoteRechargeBonus } from '@/utils/rechargeBonus'
+import { formatBalanceRechargeMultiplier, formatRechargeBonusNumber, normalizeRechargeBonusMode, normalizeRechargeBonusTiers, quoteRechargeBonus } from '@/utils/rechargeBonus'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import { TabStrip } from '@/components/console'
 import AmountInput from '@/components/payment/AmountInput.vue'

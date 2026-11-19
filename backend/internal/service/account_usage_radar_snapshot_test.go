@@ -624,7 +624,7 @@ func TestAccountUsageService_AntigravitySuccessPersistsMinimalRadarSnapshot(t *t
 		antigravitySnapshotPersistTimeout: time.Second,
 	}
 
-	active, err := svc.getAntigravityUsage(context.Background(), account)
+	active, err := svc.getAntigravityUsage(context.Background(), account, false)
 	require.NoError(t, err)
 	require.Equal(t, 37.5, active.FiveHour.Utilization)
 
@@ -671,7 +671,7 @@ func TestAccountUsageService_AntigravityPersistenceFailureDoesNotFailActiveUsage
 		radarNow: func() time.Time { return now }, antigravitySnapshotPersistTimeout: time.Second,
 	}
 
-	active, err := svc.getAntigravityUsage(context.Background(), &Account{ID: 88, Platform: PlatformAntigravity})
+	active, err := svc.getAntigravityUsage(context.Background(), &Account{ID: 88, Platform: PlatformAntigravity}, false)
 	require.NoError(t, err)
 	require.Equal(t, 12.0, active.FiveHour.Utilization)
 	select {
@@ -709,7 +709,7 @@ func TestAccountUsageService_AntigravityPersistenceIsActuallyTimeBounded(t *test
 		radarNow: func() time.Time { return now }, antigravitySnapshotPersistTimeout: 200 * time.Millisecond,
 	}
 
-	active, err := svc.getAntigravityUsage(context.Background(), &Account{ID: 89, Platform: PlatformAntigravity})
+	active, err := svc.getAntigravityUsage(context.Background(), &Account{ID: 89, Platform: PlatformAntigravity}, false)
 	require.NoError(t, err)
 	require.Equal(t, 12.0, active.FiveHour.Utilization)
 	select {
@@ -755,7 +755,7 @@ func TestAccountUsageService_AntigravityDoesNotOverwriteLastGoodSnapshot(t *test
 				cache:                   NewUsageCache(), radarNow: func() time.Time { return now },
 				antigravitySnapshotPersistTimeout: time.Second,
 			}
-			_, err := svc.getAntigravityUsage(context.Background(), &Account{ID: 90, Platform: PlatformAntigravity})
+			_, err := svc.getAntigravityUsage(context.Background(), &Account{ID: 90, Platform: PlatformAntigravity}, false)
 			require.NoError(t, err)
 			select {
 			case updates := <-repo.updatesCh:
@@ -794,7 +794,7 @@ func TestAccountUsageService_AntigravityDoesNotPersistMissingOrInvalidTier(t *te
 				antigravitySnapshotPersistTimeout: time.Second,
 			}
 
-			active, err := svc.getAntigravityUsage(context.Background(), &Account{ID: 91, Platform: PlatformAntigravity})
+			active, err := svc.getAntigravityUsage(context.Background(), &Account{ID: 91, Platform: PlatformAntigravity}, false)
 			require.NoError(t, err)
 			require.Equal(t, 15.0, active.FiveHour.Utilization)
 			select {
@@ -821,7 +821,7 @@ func TestAccountUsageService_AntigravityPersistsExplicitUnknownTier(t *testing.T
 		antigravitySnapshotPersistTimeout: time.Second,
 	}
 
-	_, err := svc.getAntigravityUsage(context.Background(), &Account{ID: 92, Platform: PlatformAntigravity})
+	_, err := svc.getAntigravityUsage(context.Background(), &Account{ID: 92, Platform: PlatformAntigravity}, false)
 	require.NoError(t, err)
 	select {
 	case updates := <-repo.updatesCh:

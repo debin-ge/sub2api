@@ -36,9 +36,9 @@ const (
 
 var (
 	integrationDB        *sql.DB
+	integrationDSN       string
 	integrationEntClient *dbent.Client
 	integrationRedis     *redisclient.Client
-	integrationDSN       string
 
 	redisNamespaceSeq uint64
 )

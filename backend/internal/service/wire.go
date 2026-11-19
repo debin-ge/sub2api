@@ -1260,7 +1260,19 @@ var ProviderSet = wire.NewSet(
 	ProvideChannelMonitorV2Aggregator,
 	NewChannelMonitorRequestTemplateService,
 	ProvideUserPlatformQuotaUsageFlusher,
+	NewUsageBillingLaneCombiner,
 )
+
+// ProvideUsageBillingRepository 以按用户合并结算的通道作为计费仓储（upstream v0.2.22）。
+//
+// 本 fork 不把它放进 ProviderSet：生产扣费走 DurableUsageBillingRepository.ApplyAndRecord
+// （outbox + 扣费 + 用量日志同事务，见 applyUsageBilling 的 fail-closed 分支），通道合并器只
+// 实现 UsageBillingRepository.Apply，注入它会让所有请求的持久化扣费因类型断言失败而报错。
+// 各服务继续直接依赖 *usageBillingRepository（见 repository.ProviderSet 的 wire.Bind）；
+// 通道合并器本身仍被构造并在进程退出时 Stop，供显式走 Apply 的调用方使用。
+func ProvideUsageBillingRepository(lanes *UsageBillingLaneCombiner) UsageBillingRepository {
+	return lanes
+}
 
 // ProvideUserPlatformQuotaUsageFlusher 创建并启动 UserPlatformQuotaUsageFlusher。
 func ProvideUserPlatformQuotaUsageFlusher(cfg *config.Config, cache BillingCache, quotaRepo UserPlatformQuotaRepository, tw *TimingWheelService) *UserPlatformQuotaUsageFlusher {

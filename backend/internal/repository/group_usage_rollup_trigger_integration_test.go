@@ -420,12 +420,15 @@ func createGroupUsageRollupTriggerTestSchema(t *testing.T, ctx context.Context, 
 	defer func() { _ = tx.Rollback() }()
 	require.NoError(t, setGroupUsageRollupTriggerSearchPath(ctx, tx, quotedSchema))
 
+	// billing_state 是本 fork 的列（0=已结算，1=待定价）：保留期清理按它跳过待定价记录，
+	// 所以精简夹具表也要带上，默认值与正式 schema 一致。
 	usageLogsDDL := `
 		CREATE TABLE usage_logs (
 			id BIGINT PRIMARY KEY,
 			user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 			group_id BIGINT REFERENCES groups(id) ON DELETE SET NULL,
 			actual_cost NUMERIC(20, 10) NOT NULL,
+			billing_state SMALLINT NOT NULL DEFAULT 0,
 			created_at TIMESTAMPTZ NOT NULL
 		);
 	`
@@ -436,6 +439,7 @@ func createGroupUsageRollupTriggerTestSchema(t *testing.T, ctx context.Context, 
 				user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 				group_id BIGINT REFERENCES groups(id) ON DELETE SET NULL,
 				actual_cost NUMERIC(20, 10) NOT NULL,
+				billing_state SMALLINT NOT NULL DEFAULT 0,
 				created_at TIMESTAMPTZ NOT NULL
 			) PARTITION BY RANGE (created_at);
 			CREATE TABLE usage_logs_default PARTITION OF usage_logs DEFAULT;
@@ -451,6 +455,7 @@ func createGroupUsageRollupTriggerTestSchema(t *testing.T, ctx context.Context, 
 	for _, migrationName := range []string{
 		"227_group_usage_daily_rollups.sql",
 		"228_group_usage_rollup_timezone.sql",
+		"251_group_usage_rollup_nonblocking_build.sql",
 	} {
 		migrationSQL, readErr := migrations.FS.ReadFile(migrationName)
 		require.NoError(t, readErr)

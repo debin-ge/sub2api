@@ -444,6 +444,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	}
 	batchImageWorkerRuntime := service.ProvideBatchImageWorkerRuntime(batchImageRepository, accountRepository, batchImageQueue, usageBillingRepository, usageLogRepository, batchImageModelPricingResolver, apiKeyAuthCacheInvalidator, configConfig)
 	videoCapabilityProbeRuntime := service.ProvideVideoCapabilityProbeRuntime(videoCapabilityProbeService, configConfig)
+	usageBillingLaneCombiner := service.NewUsageBillingLaneCombiner(usageBillingRepository)
 	scheduledTestRunnerService := service.ProvideScheduledTestRunnerService(scheduledTestPlanRepository, scheduledTestService, accountTestService, rateLimitService, configConfig)
 	paymentOrderExpiryService := service.ProvidePaymentOrderExpiryService(paymentService, leaderLockCache, db)
 	billingRecoveryService := service.ProvideBillingRecoveryService(configConfig, usageLogRepository, apiKeyRepository, accountRepository, billingService, channelService, modelPricingResolver, dashboardAggregationService, leaderLockCache, db)
@@ -457,7 +458,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	channelMonitorV2Aggregator := service.ProvideChannelMonitorV2Aggregator(channelMonitorV2Repository, db, settingService)
 	modelCatalogRefreshRunner := service.ProvideModelCatalogRefreshRunner(modelCatalogService, modelCatalogConfig)
 	userPlatformQuotaUsageFlusher := service.ProvideUserPlatformQuotaUsageFlusher(configConfig, billingCache, serviceUserPlatformQuotaRepository, timingWheelService)
-	mainCleanupFactory := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, opsService, opsIngressRejectAggregator, apiKeyService, authCacheInvalidationWorker, notificationEmailOutboxWorker, apiKeyRotationService, usageBillingOutboxWorker, schedulerSnapshotService, tokenRefreshService, accountExpiryService, cnProviderBalanceCheckService, flovaCreditsSyncService, openAICodexVersionSyncService, claudeCodeVersionSyncService, proxyExpiryService, subscriptionExpiryService, vipReconcileService, vipIncrementalReconcileService, usageCleanupService, idempotencyCleanupService, geminiCachedContentService, batchImageCleanupService, batchImageWorkerRuntime, videoSpoolRuntime, videoTaskRuntime, grokVideoTaskService, videoCallbackRuntime, videoCapabilityProbeRuntime, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, balanceNotifyService, digestSessionStore, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, billingRecoveryService, miniMaxRemainsSyncRunner, deepSeekBalanceHealthRunner, channelMonitorRunner, channelMonitorV2Aggregator, modelCatalogRefreshRunner, userPlatformQuotaUsageFlusher, upstreamBillingProbeService, ollamaCloudUsageService, openCodeGoUsageService, auditLogService, openAIQuotaAutoResetService, promptService, pluginManager)
+	mainCleanupFactory := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, opsService, opsIngressRejectAggregator, apiKeyService, authCacheInvalidationWorker, notificationEmailOutboxWorker, apiKeyRotationService, usageBillingOutboxWorker, schedulerSnapshotService, tokenRefreshService, accountExpiryService, cnProviderBalanceCheckService, flovaCreditsSyncService, openAICodexVersionSyncService, claudeCodeVersionSyncService, proxyExpiryService, subscriptionExpiryService, vipReconcileService, vipIncrementalReconcileService, usageCleanupService, idempotencyCleanupService, geminiCachedContentService, batchImageCleanupService, batchImageWorkerRuntime, videoSpoolRuntime, videoTaskRuntime, grokVideoTaskService, videoCallbackRuntime, videoCapabilityProbeRuntime, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, usageBillingLaneCombiner, balanceNotifyService, digestSessionStore, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, billingRecoveryService, miniMaxRemainsSyncRunner, deepSeekBalanceHealthRunner, channelMonitorRunner, channelMonitorV2Aggregator, modelCatalogRefreshRunner, userPlatformQuotaUsageFlusher, upstreamBillingProbeService, ollamaCloudUsageService, openCodeGoUsageService, auditLogService, openAIQuotaAutoResetService, promptService, pluginManager)
 	mainRadarQuotaAggregatorConstructor := provideRadarQuotaAggregatorConstructor(accountRepository, accountUsageService, usageLogRepository, radarCacheRepository, configConfig)
 	mainRadarFetchersConstructor := provideRadarFetchersConstructor(modelCatalogService)
 	application, err := provideApplication(httpServer, promptService, pluginManager, concurrencyService, configConfig, radarCacheRepository, radarRuntimeSettingReader, radarAdminController, mainCleanupFactory, mainRadarQuotaAggregatorConstructor, mainRadarFetchersConstructor)
@@ -642,6 +643,7 @@ func provideCleanup(
 	emailQueue *service.EmailQueueService,
 	billingCache *service.BillingCacheService,
 	usageRecordWorkerPool *service.UsageRecordWorkerPool,
+	usageBillingLanes *service.UsageBillingLaneCombiner,
 	balanceNotify *service.BalanceNotifyService,
 	digestSessions *service.DigestSessionStore,
 	subscriptionService *service.SubscriptionService,
@@ -711,6 +713,7 @@ func provideCleanup(
 			emailQueue,
 			billingCache,
 			usageRecordWorkerPool,
+			usageBillingLanes,
 			balanceNotify,
 			digestSessions,
 			subscriptionService,
@@ -783,6 +786,7 @@ func provideFinalCleanup(
 	emailQueue *service.EmailQueueService,
 	billingCache *service.BillingCacheService,
 	usageRecordWorkerPool *service.UsageRecordWorkerPool,
+	usageBillingLanes *service.UsageBillingLaneCombiner,
 	balanceNotify *service.BalanceNotifyService,
 	digestSessions *service.DigestSessionStore,
 	subscriptionService *service.SubscriptionService,
@@ -1063,6 +1067,10 @@ func provideFinalCleanup(
 				if usageRecordWorkerPool != nil {
 					usageRecordWorkerPool.Stop()
 				}
+				return nil
+			}},
+			{"UsageBillingLaneCombiner", func() error {
+				usageBillingLanes.Stop()
 				return nil
 			}},
 			{"OAuthService", func() error {

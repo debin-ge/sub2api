@@ -119,11 +119,13 @@ func shouldKeepOpenAIResponsesToolCallNamespaces(
 // 声明」，进而清掉历史调用项上的 namespace，触发上游 400 Missing namespace。
 // 与 openAIRequestBodyHasTools 的双载体约定保持一致。
 func hasOpenAIResponsesNamespaceToolDeclaration(body []byte) bool {
-	if responsesToolsDeclareNamespace(gjson.GetBytes(body, "tools")) {
+	// Zero-copy view (upstream v0.2.22): tools/input alias body and are only read.
+	root := parseRawJSONView(body)
+	if responsesToolsDeclareNamespace(root.Get("tools")) {
 		return true
 	}
 	found := false
-	gjson.GetBytes(body, "input").ForEach(func(_, item gjson.Result) bool {
+	root.Get("input").ForEach(func(_, item gjson.Result) bool {
 		if !item.IsObject() || !isOpenAIResponsesNamespaceDeclarationCarrier(item.Get("type").String()) {
 			return true
 		}
@@ -223,7 +225,9 @@ func stripOpenAIResponsesInputNamespaces(body []byte, keepToolCallNamespaces boo
 	if !bytes.Contains(body, []byte(`"namespace"`)) {
 		return body, nil
 	}
-	input := gjson.GetBytes(body, "input")
+	// Zero-copy view: input.Raw aliases body and is only read below; the
+	// rebuilt array is written into a fresh buffer.
+	input := parseRawJSONView(body).Get("input")
 	if !input.IsArray() {
 		return body, nil
 	}

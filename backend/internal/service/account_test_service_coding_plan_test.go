@@ -137,6 +137,9 @@ func (r *codingPlanAccountTestRepo) ClearAntigravityQuotaScopes(context.Context,
 func (r *codingPlanAccountTestRepo) ClearModelRateLimits(context.Context, int64) error {
 	return nil
 }
+func (r *codingPlanAccountTestRepo) ClearModelRateLimit(context.Context, int64, string) error {
+	return nil
+}
 func (r *codingPlanAccountTestRepo) UpdateSessionWindow(context.Context, int64, *time.Time, *time.Time, string) error {
 	return nil
 }

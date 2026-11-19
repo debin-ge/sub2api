@@ -599,13 +599,17 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 		return true, result.UsageLogRecorded, nil
 	}
 
+	// Apply 可能在按用户合并的结算通道中排队，结算后的缓存同步使用独立的超时。
+	postCtx, cancelPost := detachedBillingContext(ctx)
+	defer cancelPost()
+
 	if result.APIKeyQuotaExhausted {
 		if invalidator, ok := p.APIKeyService.(apiKeyAuthCacheInvalidator); ok && p.APIKey != nil && p.APIKey.Key != "" {
-			invalidator.InvalidateAuthCacheByKey(billingCtx, p.APIKey.Key)
+			invalidator.InvalidateAuthCacheByKey(postCtx, p.APIKey.Key)
 		}
 	}
 
-	finalizePostUsageBilling(billingCtx, p, deps, result)
+	finalizePostUsageBilling(postCtx, p, deps, result)
 	return true, result.UsageLogRecorded, nil
 }
 
@@ -1207,15 +1211,9 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 			account.ID, *apiKey.GroupID, result.UpstreamModel, result.Model,
 			// Anthropic's input_tokens excludes cache_read and cache_creation (billed separately);
 			// OpenAI gateway uses actualInputTokens which also excludes cache_read for the same reason.
-			UsageTokens{
-				InputTokens:         result.Usage.InputTokens,
-				OutputTokens:        result.Usage.OutputTokens,
-				CacheCreationTokens: result.Usage.CacheCreationInputTokens,
-				CacheReadTokens:     result.Usage.CacheReadInputTokens,
-				ImageOutputTokens:   result.Usage.ImageOutputTokens,
-			},
+			result.Usage.billingUsageTokens(),
 			cost.TotalCost-cacheStorageCost, pricingAt, accountStatsPlatform(account.Platform),
-			accountStatsLongContextPricingEnabled(nil),
+			accountStatsLongContextPricingEnabled(nil), result.upstreamPriceFactor(),
 		)
 		addCacheStorageToAccountStatsCost(usageLog, cacheStorageCost)
 	}
@@ -1451,6 +1449,35 @@ func addCacheStorageToAccountStatsCost(usageLog *UsageLog, storageCost float64) 
 	usageLog.AccountStatsCost = &cost
 }
 
+// upstreamPriceFactorApplies 判断上游端点价格倍数是否作用于本次 token 费用：只作用于默认模型价（LiteLLM/fallback）。
+// 管理员配置的分组价、渠道价视为最终价，不再叠加倍数，与账号统计成本只在默认价档位加价的口径一致。
+func (s *GatewayService) upstreamPriceFactorApplies(ctx context.Context, result *ForwardResult, apiKey *APIKey, billingModel string) bool {
+	if result.upstreamPriceFactor() == 1 {
+		return false
+	}
+	return s.resolveChannelPricing(ctx, billingModel, apiKey) == nil
+}
+
+// upstreamPriceFactorAppliesForPlatforms 与 upstreamPriceFactorApplies 口径相同，
+// 但按本次计费实际使用的平台列表解析分组价/渠道价（与 calculateTokenCost 同源）。
+func (s *GatewayService) upstreamPriceFactorAppliesForPlatforms(ctx context.Context, result *ForwardResult, apiKey *APIKey, billingModel string, platforms []string) bool {
+	if result.upstreamPriceFactor() == 1 {
+		return false
+	}
+	if len(platforms) == 0 {
+		return s.upstreamPriceFactorApplies(ctx, result, apiKey, billingModel)
+	}
+	return s.resolveChannelPricingForPlatforms(ctx, billingModel, apiKey, platforms) == nil
+}
+
+// applyUpstreamPriceFactor 把上游端点价格倍数作用于按 token 计费的费用，按次等其他计费模式不受影响。
+func applyUpstreamPriceFactor(cost *CostBreakdown, result *ForwardResult) {
+	if cost == nil || (cost.BillingMode != "" && cost.BillingMode != string(BillingModeToken)) {
+		return
+	}
+	applyCostBreakdownMultiplier(cost, result.upstreamPriceFactor())
+}
+
 // calculateRecordUsageCost 根据请求类型计算费用。
 func (s *GatewayService) calculateRecordUsageCost(
 	ctx context.Context,
@@ -1513,6 +1540,9 @@ func (s *GatewayService) calculateRecordUsageCost(
 		tokenCost, err = s.calculateTokenCost(ctx, result, apiKey, billingModel, multiplier, pricingAt, opts)
 		if err != nil {
 			return nil, err
+		}
+		if s.upstreamPriceFactorAppliesForPlatforms(ctx, result, apiKey, billingModel, opts.PricingPlatforms) {
+			applyUpstreamPriceFactor(tokenCost, result)
 		}
 	}
 	if result.SearchCount > 0 {
@@ -1814,16 +1844,11 @@ func (s *GatewayService) resolveChannelPricingForPlatforms(
 
 // usageTokensFromClaudeUsage 把上游用量完整映射为计费 token，token 路径与图片路径共用，
 // 避免某条路径漏掉缓存维度。
+//
+// 实际映射由 upstream 的 ClaudeUsage.billingUsageTokens 完成（含“只回 5m/1h 明细时补出汇总量”），
+// 这里保留本地入口名，避免两条路径各写一份映射。
 func usageTokensFromClaudeUsage(usage ClaudeUsage) UsageTokens {
-	return UsageTokens{
-		InputTokens:           usage.InputTokens,
-		OutputTokens:          usage.OutputTokens,
-		CacheCreationTokens:   usage.CacheCreationInputTokens,
-		CacheReadTokens:       usage.CacheReadInputTokens,
-		CacheCreation5mTokens: usage.CacheCreation5mTokens,
-		CacheCreation1hTokens: usage.CacheCreation1hTokens,
-		ImageOutputTokens:     usage.ImageOutputTokens,
-	}
+	return usage.billingUsageTokens()
 }
 
 // calculateGatewayImageCost 按出图计划结算 Gemini / Antigravity / 组合分组的出图：
@@ -1881,6 +1906,23 @@ func gatewayImageTokenUsage(usage ClaudeUsage) ImageTokenUsage {
 	}
 }
 
+func (usage ClaudeUsage) billingUsageTokens() UsageTokens {
+	creationTokens := usage.CacheCreationInputTokens
+	if creationTokens <= 0 {
+		creationTokens = max(usage.CacheCreation5mTokens, 0) + max(usage.CacheCreation1hTokens, 0)
+	}
+	tokens := UsageTokens{
+		InputTokens:           usage.InputTokens,
+		OutputTokens:          usage.OutputTokens,
+		CacheCreationTokens:   creationTokens,
+		CacheReadTokens:       usage.CacheReadInputTokens,
+		CacheCreation5mTokens: usage.CacheCreation5mTokens,
+		CacheCreation1hTokens: usage.CacheCreation1hTokens,
+		ImageOutputTokens:     usage.ImageOutputTokens,
+	}
+	return tokens
+}
+
 // calculateTokenCost 计算 Token 计费：路径选择（分组/渠道定价 → 内置定价）
 // 统一交给 BillingService.CalculateTokenCostForRequest，与模型广场的阶梯表查询同源。
 func (s *GatewayService) calculateTokenCost(
@@ -1917,7 +1959,7 @@ func (s *GatewayService) calculateTokenCost(
 			return nil, err
 		}
 		if officialTimePricingApplies(pricing) {
-			applyCostBreakdownMultiplier(cost, deepSeekOfficialTimeMultiplier(
+			applyOfficialTimeMultiplier(cost, pricing, deepSeekOfficialTimeMultiplier(
 				basePricingPlatform(platforms), billingModel, pricingAt, pricing.OfficialTimeBaseIsOffPeak))
 		}
 		cost.BillingMode = string(BillingModeToken)

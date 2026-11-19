@@ -324,6 +324,7 @@ func (h *GatewayHandler) GeminiCachedContentsCreate(c *gin.Context) {
 			Result: &service.ForwardResult{
 				Model: modelName, UpstreamModel: mappedModel,
 				Usage: service.ClaudeUsage{InputTokens: int(tokens)}, CacheStorageTokenHours: storageTokenHours,
+				UpstreamPriceMultiplier: service.VertexUpstreamPriceMultiplier(account, mappedModel, ""),
 			},
 			APIKey: apiKey, User: apiKey.User, Account: account, Subscription: subscription, PricingAt: pricingAt, RequestPayloadHash: service.HashUsageRequestPayload(body), ChannelUsageFields: usageFields,
 		})
@@ -745,15 +746,17 @@ func (h *GatewayHandler) submitGeminiCachedContentUsage(
 	if inputTokens <= 0 && storageTokenHours <= 0 {
 		return
 	}
+	priceMultiplier := service.VertexUpstreamPriceMultiplier(account, upstreamModel, "")
 	if upstreamModel == model {
 		upstreamModel = ""
 	}
 	result := &service.ForwardResult{
-		RequestID:              requestID,
-		Model:                  model,
-		UpstreamModel:          upstreamModel,
-		Usage:                  service.ClaudeUsage{InputTokens: inputTokens},
-		CacheStorageTokenHours: storageTokenHours,
+		RequestID:               requestID,
+		Model:                   model,
+		UpstreamModel:           upstreamModel,
+		Usage:                   service.ClaudeUsage{InputTokens: inputTokens},
+		CacheStorageTokenHours:  storageTokenHours,
+		UpstreamPriceMultiplier: priceMultiplier,
 	}
 	inboundEndpoint := GetInboundEndpoint(c)
 	upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)

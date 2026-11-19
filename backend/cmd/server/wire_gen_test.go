@@ -315,6 +315,7 @@ func cleanupWithRadarTestDependencies(rdb *redis.Client, radarRunner *service.Ra
 		service.NewEmailQueueService(nil, 1),
 		service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil),
 		nil, // usageRecordWorkerPool
+		nil, // usageBillingLanes
 		nil, // balanceNotify
 		nil, // digestSessions
 		nil, // subscriptionService
@@ -476,6 +477,7 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		emailQueueSvc,
 		billingCacheSvc,
 		&service.UsageRecordWorkerPool{},
+		nil, // usageBillingLanes
 		service.ProvideBalanceNotifyService(nil, nil, nil, nil),
 		service.NewDigestSessionStore(),
 		&service.SubscriptionService{},

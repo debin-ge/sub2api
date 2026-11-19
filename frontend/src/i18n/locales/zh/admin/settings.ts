@@ -821,7 +821,7 @@ export default {
         maxAmount: '最高金额',
         dailyLimit: '每日限额',
         balanceRechargeMultiplier: '余额充值倍率',
-        balanceRechargeMultiplierHint: '用户每支付 1 CNY 可获得多少 {currency} 余额',
+        balanceRechargeMultiplierHint: '用户每支付 1 CNY 可获得多少 {currency} 余额（最多 6 位小数，可按实时汇率配置）',
         balanceRechargePreview: '预览：1 CNY = {usd} {currency}',
         subscriptionUsdToCnyRate: '订阅 CNY 换算汇率',
         subscriptionUsdToCnyRateHint:
@@ -939,6 +939,8 @@ export default {
         field_cid: '支付渠道 ID',
         field_cidAlipay: '支付宝渠道 ID',
         field_cidWxpay: '微信渠道 ID',
+        field_refundSuccessCode: '退款成功码',
+        field_refundSuccessCodeHint: '按当前网关的退款接口文档选择成功码。默认 1（如 ZPAY），仅在网关文档规定时选择 0。此设置只影响退款，下单和查单仍要求成功码为 1。',
         easypayCustomMethods: '易支付自定义支付方式',
         easypayCustomMethodsHint: '用于映射 EasyPay 返回的自定义支付类型。',
         addCustomMethod: '添加方式',

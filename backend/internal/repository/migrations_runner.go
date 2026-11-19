@@ -104,6 +104,9 @@ var usageLogsBillingStateIndexes = []string{
 	"idx_usage_logs_billing_state_pending_id",
 }
 
+const usageLogsAPIKeyCostIndexMigration = "249_add_usage_logs_api_key_cost_index_notx.sql"
+const usageLogsAPIKeyCostIndex = "idx_usage_logs_api_key_created_cost"
+
 type migrationChecksumCompatibilityRule struct {
 	fileChecksum       string
 	acceptedDBChecksum map[string]struct{}
@@ -390,6 +393,8 @@ func prepareNonTransactionalMigration(ctx context.Context, db migrationConnectio
 		return dropInvalidIndexesIfPresent(ctx, db, arkVideoListIndexNames...)
 	case videoProviderCostIndexesMigration:
 		return dropInvalidIndexesIfPresent(ctx, db, videoProviderCostIndexNames...)
+	case usageLogsAPIKeyCostIndexMigration:
+		return dropInvalidIndexIfPresent(ctx, db, usageLogsAPIKeyCostIndex)
 	default:
 		return nil
 	}
