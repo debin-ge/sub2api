@@ -261,6 +261,9 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 			default:
 				if fs.LastFailoverErr != nil {
 					h.handleCCFailoverExhausted(c, fs.LastFailoverErr, streamStarted)
+				} else if fs.LastSlotErr != nil {
+					// 等槽失败换号后已无账号可选：回写原有的并发 429，而不是 502。
+					h.handleConcurrencyError(c, fs.LastSlotErr, "account", streamStarted)
 				} else {
 					h.chatCompletionsErrorResponse(c, http.StatusBadGateway, "server_error", "All available accounts exhausted")
 				}
@@ -278,16 +281,20 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 				h.chatCompletionsErrorResponse(c, http.StatusServiceUnavailable, "api_error", "No available accounts")
 				return
 			}
-			accountReleaseFunc, err = h.concurrencyHelper.AcquireAccountSlotWithWaitTimeout(
+			accountReleaseFunc, err = h.concurrencyHelper.AcquireAccountSlotForWaitPlan(
 				c,
+				fs.SlotWaitFailed(),
 				account.ID,
-				selection.WaitPlan.MaxConcurrency,
-				selection.WaitPlan.Timeout,
+				selection.WaitPlan,
 				reqStream,
 				&streamStarted,
 			)
 			if err != nil {
 				reqLog.Warn("gateway.cc.account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+				// 等槽超时：排除该账号重新选号，让请求落到其他有空闲的账号上。
+				if fs.RecordAccountSlotUnavailable(c.Request.Context(), account.ID, err) {
+					continue
+				}
 				h.handleConcurrencyError(c, err, "account", streamStarted)
 				return
 			}

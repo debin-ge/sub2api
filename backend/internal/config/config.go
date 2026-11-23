@@ -1860,6 +1860,14 @@ type GatewaySchedulingConfig struct {
 	// 默认 true。
 	StickyPreferHigherPriority bool `mapstructure:"sticky_prefer_higher_priority"`
 
+	// StickyEscapeOnFull 开启后，粘性账号并发槽已满时，若存在其他通过全部调度门检查且
+	// 负载率低于 100 的账号（不论优先级），则本次请求放弃在粘性账号上排队，交给负载感知
+	// 选择立即调度到空闲账号；粘性绑定本身不改写（只升不降）。代价是本次请求在新账号上
+	// prompt cache 未命中。关闭时保持原行为：粘性账号满载即在其上排队
+	// （sticky_session_wait_timeout / sticky_session_max_waiting）。
+	// priority_tier_wait 开启时只会逃逸到优先级不低于粘性账号的账号。默认 true。
+	StickyEscapeOnFull bool `mapstructure:"sticky_escape_on_full"`
+
 	// PriorityTierWait 开启后，最高优先级层的账号全部满载（负载率 >= 100）但仍可调度时，
 	// 调度器对该层负载最低的账号返回等待计划（超时 fallback_wait_timeout、队列上限
 	// fallback_max_waiting），而不是立即下沉到更低优先级层。默认 false，保持原有下沉行为。
@@ -3171,6 +3179,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.scheduling.fallback_selection_mode", "last_used")
 	viper.SetDefault("gateway.scheduling.prefer_soonest_reset", false)
 	viper.SetDefault("gateway.scheduling.sticky_prefer_higher_priority", true)
+	viper.SetDefault("gateway.scheduling.sticky_escape_on_full", true)
 	viper.SetDefault("gateway.scheduling.priority_tier_wait", false)
 	viper.SetDefault("gateway.scheduling.load_batch_enabled", true)
 	viper.SetDefault("gateway.scheduling.load_batch_cache_ttl_ms", 200)

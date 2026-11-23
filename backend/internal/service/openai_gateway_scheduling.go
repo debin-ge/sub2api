@@ -1212,6 +1212,10 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	// rewriting the durable binding here would make a short burst migrate the
 	// whole conversation to a cache-cold account.
 	stickySpillover := false
+	// stickyEscapeFallback：粘性账号槽位已满但等待队列未满时（sticky_escape_on_full），
+	// 先在 Layer 2 立即尝试其他有空闲的账号（不改写绑定，同 spillover）；都抢不到时
+	// 回到该粘性账号排队，与未逃逸时的行为一致，而不是去排其他满载账号。
+	var stickyEscapeFallback *Account
 	if sessionHash != "" {
 		accountID := stickyAccountID
 		if accountID > 0 && !isExcluded(accountID) {
@@ -1243,22 +1247,50 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 							_ = s.refreshStickySessionTTL(ctx, groupID, sessionHash, openaiStickySessionTTL)
 							return markStickySessionHit(selection, true), nil
 						}
+						slotBusy := err == nil && result != nil && !result.Acquired
 
 						waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, accountID)
 						if waitingCount < cfg.StickySessionMaxWaiting {
-							selection, selectErr := s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
-								AccountID:      accountID,
-								MaxConcurrency: account.Concurrency,
-								Timeout:        cfg.StickySessionWaitTimeout,
-								MaxWaiting:     cfg.StickySessionMaxWaiting,
-							})
-							return markStickySessionHit(selection, true), selectErr
+							if !slotBusy || !cfg.StickyEscapeOnFull {
+								selection, selectErr := s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
+									AccountID:      accountID,
+									MaxConcurrency: account.Concurrency,
+									Timeout:        cfg.StickySessionWaitTimeout,
+									MaxWaiting:     cfg.StickySessionMaxWaiting,
+								})
+								return markStickySessionHit(selection, true), selectErr
+							}
+							stickyEscapeFallback = account
+							slog.Info("openai.sticky_escape_on_full",
+								"account_id", accountID,
+								"account_priority", account.Priority,
+								"waiting_count", waitingCount,
+								"session", shortSessionHash(sessionHash),
+							)
 						}
 						stickySpillover = true
 					}
 				}
 			}
 		}
+	}
+
+	stickyEscapeWaitPlan := func() (*AccountSelectionResult, error) {
+		acc := stickyEscapeFallback
+		stickyEscapeFallback = nil
+		selection, err := s.newSelectionResult(ctx, acc, false, nil, &AccountWaitPlan{
+			AccountID:      acc.ID,
+			MaxConcurrency: acc.Concurrency,
+			Timeout:        cfg.StickySessionWaitTimeout,
+			MaxWaiting:     cfg.StickySessionMaxWaiting,
+		})
+		return markStickySessionHit(selection, true), err
+	}
+	// priority_tier_wait 开启时满载逃逸不下沉到比粘性账号更低的优先级层。
+	escapePriorityCapped := stickyEscapeFallback != nil && cfg.PriorityTierWait
+	escapePriorityCap := 0
+	if escapePriorityCapped {
+		escapePriorityCap = stickyEscapeFallback.Priority
 	}
 
 	// ============ Layer 2: Load-aware selection ============
@@ -1309,6 +1341,10 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	}
 
 	if len(candidates) == 0 {
+		// 粘性账号可能因 Layer 2 门检查与 Layer 1 不同而不在候选集里：逃逸后无候选时回到粘性账号排队。
+		if stickyEscapeFallback != nil {
+			return stickyEscapeWaitPlan()
+		}
 		return nil, noAvailableOpenAISelectionError(requestedModel, false, filterStats.summary(""))
 	}
 	rateOrder := openAILegacyUpstreamRateOrder{}
@@ -1330,6 +1366,9 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			loadInfo := loadMap[acc.ID]
 			if loadInfo == nil {
 				loadInfo = &AccountLoadInfo{AccountID: acc.ID}
+			}
+			if escapePriorityCapped && acc.Priority > escapePriorityCap {
+				continue
 			}
 			if loadInfo.LoadRate < 100 {
 				available = append(available, accountWithLoad{
@@ -1428,6 +1467,9 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			ordered = prioritizeOpenAICompactAccounts(ordered)
 		}
 		for _, acc := range ordered {
+			if escapePriorityCapped && acc.Priority > escapePriorityCap {
+				continue
+			}
 			fresh := s.resolveFreshSchedulableOpenAIAccount(ctx, acc, platform, requestedModel, false, requiredCapability)
 			if fresh == nil {
 				continue
@@ -1468,6 +1510,10 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	}
 
 	// ============ Layer 3: Fallback wait ============
+	// 满载逃逸后其他账号也没能立即抢到槽位：回到原粘性账号排队。
+	if stickyEscapeFallback != nil {
+		return stickyEscapeWaitPlan()
+	}
 	sortAccountsByPriorityAndLastUsed(candidates, false)
 	if rateOrder.enabled {
 		sort.SliceStable(candidates, func(i, j int) bool {
@@ -1786,5 +1832,6 @@ func (s *OpenAIGatewayService) schedulingConfig() config.GatewaySchedulingConfig
 		FallbackMaxWaiting:       100,
 		LoadBatchEnabled:         true,
 		SlotCleanupInterval:      30 * time.Second,
+		StickyEscapeOnFull:       true,
 	}
 }

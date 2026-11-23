@@ -271,6 +271,32 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 		return needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, account, requestedModel)
 	}
 
+	// stickyEscapeFallback 记录因满载逃逸（sticky_escape_on_full）而放弃排队的粘性账号。
+	// 后续各层都没能立即抢到槽位时，回到该粘性账号排队（与未逃逸时的行为一致），
+	// 而不是改去其他满载账号上排队，尽量保住 prompt cache。
+	var stickyEscapeFallback *Account
+	stickyEscapeWaitPlan := func() (*AccountSelectionResult, bool, error) {
+		acc := stickyEscapeFallback
+		stickyEscapeFallback = nil
+		if acc == nil || !s.checkAndRegisterSession(ctx, acc, sessionHash) {
+			return nil, false, nil
+		}
+		slog.Debug("sticky.escape_fallback_wait_plan",
+			"account_id", acc.ID,
+			"session", shortSessionHash(sessionHash),
+		)
+		selection, err := s.newSelectionResult(ctx, groupID, requestedModel, acc, false, nil, &AccountWaitPlan{
+			AccountID:      acc.ID,
+			MaxConcurrency: acc.Concurrency,
+			Timeout:        cfg.StickySessionWaitTimeout,
+			MaxWaiting:     cfg.StickySessionMaxWaiting,
+		})
+		if err != nil {
+			return nil, false, err
+		}
+		return selection, true, nil
+	}
+
 	// 获取模型路由配置（anthropic / openai 目标平台；composite 分组按目标平台判断）
 	var routingAccountIDs []int64
 	if group != nil && requestedModel != "" &&
@@ -406,12 +432,17 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 									return s.newSelectionResult(ctx, groupID, requestedModel, stickyAccount, true, result.ReleaseFunc, nil)
 								}
 							}
+							slotBusy := err == nil && result != nil && !result.Acquired
 
 							if stickyCacheMissReason == "" {
 								waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, stickyAccountID)
 								if waitingCount < cfg.StickySessionMaxWaiting {
-									// 会话数量限制检查（等待计划也需要占用会话配额）
-									if !s.checkAndRegisterSession(ctx, stickyAccount, sessionHash) {
+									// 满载逃逸：路由内其他账号仍有空闲时不在粘性账号上排队（见 Layer 1.5 同名逻辑）。
+									if slotBusy && cfg.StickyEscapeOnFull &&
+										s.hasRoutingStickyAlternativeWithCapacity(ctx, routingCandidates, stickyAccount, stickyEscapeScope(cfg)) {
+										stickyEscapeFallback = stickyAccount
+										stickyCacheMissReason = "concurrency_full_escape"
+									} else if !s.checkAndRegisterSession(ctx, stickyAccount, sessionHash) {
 										stickyCacheMissReason = "session_limit"
 										// 会话限制已满，继续到负载感知选择
 									} else {
@@ -520,6 +551,12 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 				}
 
 				// 5. 所有路由账号槽位满，尝试返回等待计划（选择负载最低的）
+				// 因满载逃逸而跳过的粘性账号优先：回到原粘性账号排队以保住 prompt cache。
+				if selection, ok, err := stickyEscapeWaitPlan(); err != nil {
+					return nil, err
+				} else if ok {
+					return selection, nil
+				}
 				// 遍历找到第一个满足会话限制的账号
 				for _, item := range routingAvailable {
 					if !s.checkAndRegisterSession(ctx, item.account, sessionHash) {
@@ -623,7 +660,9 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 							}
 							return s.newSelectionResult(ctx, groupID, requestedModel, account, true, result.ReleaseFunc, nil)
 						}
-					} else {
+					}
+					slotBusy := err == nil && result != nil && !result.Acquired
+					if slotBusy {
 						slog.Debug("sticky.layer1_5_no_routing_slot_busy",
 							"account_id", accountID,
 							"session", shortSessionHash(sessionHash),
@@ -632,8 +671,18 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 
 					waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, accountID)
 					if waitingCount < cfg.StickySessionMaxWaiting {
-						// 会话数量限制检查（等待计划也需要占用会话配额）
-						if !s.checkAndRegisterSession(ctx, account, sessionHash) {
+						// 满载逃逸：粘性账号槽位已满但还有其他账号空闲时，不在粘性账号上排队，
+						// 交给 Layer 2 立即调度到空闲账号（绑定只升不降，不会被降级改写）。
+						if slotBusy && cfg.StickyEscapeOnFull &&
+							s.hasStickyAlternativeWithCapacity(ctx, accounts, account, platform, useMixed, requestedModel, isExcluded, isChannelRestricted, stickyEscapeScope(cfg), false) {
+							stickyEscapeFallback = account
+							slog.Info("sticky.layer1_5_escape_on_full",
+								"account_id", accountID,
+								"account_priority", account.Priority,
+								"waiting_count", waitingCount,
+								"session", shortSessionHash(sessionHash),
+							)
+						} else if !s.checkAndRegisterSession(ctx, account, sessionHash) {
 							// 会话限制已满，继续到 Layer 2
 						} else {
 							slog.Debug("sticky.layer1_5_no_routing_hit",
@@ -730,6 +779,12 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 	}
 
 	if len(candidates) == 0 {
+		// 粘性账号的非粘性门（窗口费用 / RPM）更严格，可能不在候选集里：逃逸后无候选时回到粘性账号排队。
+		if selection, ok, err := stickyEscapeWaitPlan(); err != nil {
+			return nil, err
+		} else if ok {
+			return selection, nil
+		}
 		if channelRestrictedCount > 0 {
 			slog.Warn("channel pricing restriction blocked request",
 				"group_id", derefGroupID(groupID),
@@ -829,6 +884,12 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 	}
 
 	// ============ Layer 3: 兜底排队 ============
+	// 满载逃逸后其他账号也没能立即抢到槽位（负载缓存滞后 / 并发竞争）：回到原粘性账号排队。
+	if selection, ok, err := stickyEscapeWaitPlan(); err != nil {
+		return nil, err
+	} else if ok {
+		return selection, nil
+	}
 	s.sortCandidatesForFallback(candidates, preferOAuth, cfg.FallbackSelectionMode)
 	for _, acc := range candidates {
 		// 会话数量限制检查（等待计划也需要占用会话配额）
@@ -909,6 +970,30 @@ func (s *GatewayService) schedulingConfig() config.GatewaySchedulingConfig {
 		LoadBatchEnabled:           true,
 		SlotCleanupInterval:        30 * time.Second,
 		StickyPreferHigherPriority: true,
+		StickyEscapeOnFull:         true,
+	}
+}
+
+// stickyAlternativeScope 限定粘性账号替代候选的优先级范围。
+type stickyAlternativeScope int
+
+const (
+	// stickyAlternativeHigherPriority 仅统计优先级更高（数值更小）的账号。
+	stickyAlternativeHigherPriority stickyAlternativeScope = iota
+	// stickyAlternativeSameOrHigherPriority 统计优先级不低于粘性账号的账号。
+	stickyAlternativeSameOrHigherPriority
+	// stickyAlternativeAnyPriority 不限优先级。
+	stickyAlternativeAnyPriority
+)
+
+func (scope stickyAlternativeScope) allows(candidate, sticky *Account) bool {
+	switch scope {
+	case stickyAlternativeHigherPriority:
+		return candidate.Priority < sticky.Priority
+	case stickyAlternativeSameOrHigherPriority:
+		return candidate.Priority <= sticky.Priority
+	default:
+		return true
 	}
 }
 
@@ -924,13 +1009,40 @@ func (s *GatewayService) hasHigherPriorityCandidate(
 	requestedModel string,
 	isExcluded func(int64) bool,
 ) bool {
+	return s.hasStickyAlternativeWithCapacity(ctx, accounts, sticky, platform, useMixed, requestedModel, isExcluded, nil, stickyAlternativeHigherPriority, true)
+}
+
+// stickyEscapeScope 返回粘性账号满载逃逸时允许的替代候选范围：
+// priority_tier_wait 开启时管理员要求在高优先级层排队，不能借逃逸下沉到更低优先级层。
+func stickyEscapeScope(cfg config.GatewaySchedulingConfig) stickyAlternativeScope {
+	if cfg.PriorityTierWait {
+		return stickyAlternativeSameOrHigherPriority
+	}
+	return stickyAlternativeAnyPriority
+}
+
+// hasStickyAlternativeWithCapacity 报告 accounts 中是否存在 sticky 以外、处于 scope 优先级
+// 范围内、通过全部非粘性门检查且负载率低于 100 的可调度账号。
+// isChannelRestricted 可为 nil。failOpen 决定负载未知（无并发服务 / 查询失败）时的返回值。
+func (s *GatewayService) hasStickyAlternativeWithCapacity(
+	ctx context.Context,
+	accounts []Account,
+	sticky *Account,
+	platform string,
+	useMixed bool,
+	requestedModel string,
+	isExcluded func(int64) bool,
+	isChannelRestricted func(*Account) bool,
+	scope stickyAlternativeScope,
+	failOpen bool,
+) bool {
 	if sticky == nil {
 		return false
 	}
-	var higher []*Account
+	var alternatives []*Account
 	for i := range accounts {
 		acc := &accounts[i]
-		if acc.ID == sticky.ID || acc.Priority >= sticky.Priority {
+		if acc.ID == sticky.ID || !scope.allows(acc, sticky) {
 			continue
 		}
 		if isExcluded != nil && isExcluded(acc.ID) {
@@ -948,6 +1060,9 @@ func (s *GatewayService) hasHigherPriorityCandidate(
 		if requestedModel != "" && !s.isModelSupportedByAccountWithContext(ctx, acc, requestedModel) {
 			continue
 		}
+		if isChannelRestricted != nil && isChannelRestricted(acc) {
+			continue
+		}
 		if !s.isAccountSchedulableForModelSelection(ctx, acc, requestedModel) {
 			continue
 		}
@@ -960,23 +1075,45 @@ func (s *GatewayService) hasHigherPriorityCandidate(
 		if !s.isAccountSchedulableForRPM(ctx, acc, false) {
 			continue
 		}
-		higher = append(higher, acc)
+		alternatives = append(alternatives, acc)
 	}
-	if len(higher) == 0 {
+	return s.anyAccountHasCapacity(ctx, alternatives, failOpen)
+}
+
+// hasRoutingStickyAlternativeWithCapacity 是 hasStickyAlternativeWithCapacity 的模型路由版本：
+// routingCandidates 已通过全部非粘性门检查，这里只按 scope 过滤并检查负载。负载未知时 fail-closed。
+func (s *GatewayService) hasRoutingStickyAlternativeWithCapacity(ctx context.Context, routingCandidates []*Account, sticky *Account, scope stickyAlternativeScope) bool {
+	if sticky == nil {
+		return false
+	}
+	alternatives := make([]*Account, 0, len(routingCandidates))
+	for _, acc := range routingCandidates {
+		if acc == nil || acc.ID == sticky.ID || !scope.allows(acc, sticky) {
+			continue
+		}
+		alternatives = append(alternatives, acc)
+	}
+	return s.anyAccountHasCapacity(ctx, alternatives, false)
+}
+
+// anyAccountHasCapacity 报告 candidates 中是否有账号负载率低于 100。
+// failOpen 决定负载未知（无并发服务 / 查询失败）时的返回值。
+func (s *GatewayService) anyAccountHasCapacity(ctx context.Context, candidates []*Account, failOpen bool) bool {
+	if len(candidates) == 0 {
 		return false
 	}
 	if s.concurrencyService == nil {
-		return true
+		return failOpen
 	}
-	loads := make([]AccountWithConcurrency, 0, len(higher))
-	for _, acc := range higher {
+	loads := make([]AccountWithConcurrency, 0, len(candidates))
+	for _, acc := range candidates {
 		loads = append(loads, AccountWithConcurrency{ID: acc.ID, MaxConcurrency: acc.EffectiveLoadFactor()})
 	}
 	loadMap, err := s.concurrencyService.GetAccountsLoadBatch(ctx, loads)
 	if err != nil {
-		return true
+		return failOpen
 	}
-	for _, acc := range higher {
+	for _, acc := range candidates {
 		info := loadMap[acc.ID]
 		if info == nil || info.LoadRate < 100 {
 			return true

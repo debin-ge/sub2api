@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 
@@ -49,6 +50,9 @@ const (
 	// 取值与 maxAccountSwitches 默认值一致：混合定价的大分组仍有充分重选机会，
 	// 同时把整池越线时的无谓选号开销限制在常数级。
 	maxProfitVetoAttempts = 10
+	// maxSlotWaitReselects 单次请求内因账号并发槽等待超时 / 队列已满而排除账号重选的次数上限。
+	// 首次失败后的重选只做立即抢槽（见 FailoverState.SlotWaitFailed），不会再叠加排队时长。
+	maxSlotWaitReselects = 3
 )
 
 // profitVetoExhaustedMessage 是利润否决次数耗尽时返回给客户端的文案。
@@ -140,6 +144,56 @@ type FailoverState struct {
 	// profitVetoCount 本次请求累计的利润否决次数，用于 maxProfitVetoAttempts 上限。
 	profitVetoCount  int
 	capacityRecovery *OpenAICapacityRecoveryState
+
+	// 账号并发槽获取失败（等待超时 / 队列已满）后的换号状态，LastSlotErr 经嵌入提升。
+	accountSlotReselectState
+}
+
+// accountSlotReselectState 记录单个请求内因账号并发槽获取失败而排除账号重选的状态。
+// FailoverState 嵌入它；不使用 FailoverState 的入口（OpenAI 系，各自维护 failedAccountIDs）
+// 直接持有一份，共用同一套换号规则。
+type accountSlotReselectState struct {
+	// slotWaitFailures 本次请求因账号并发槽等待超时 / 等待队列已满而排除账号重选的次数。
+	slotWaitFailures int
+	// LastSlotErr 最近一次账号并发槽获取失败的错误。排除该账号后若已无账号可选，
+	// 调用方应按它回写原有的 429 并发错误，而不是笼统的 502。
+	LastSlotErr error
+}
+
+// Record 记录一次账号并发槽获取失败（等待超时 / 等待队列已满）。
+//
+// 返回 true 表示已把该账号加入 excluded，调用方应 continue 重新选号，让请求落到其他
+// 有空闲的账号上；返回 false 表示应把 err 原样回写给客户端：错误不是并发槽类错误
+// （如客户端断开、Redis 故障），或本次请求的换号重选次数已达 maxSlotWaitReselects。
+// 并发槽失败发生在转发之前，不推进上游换号计数，也不触发缓存计费。
+func (s *accountSlotReselectState) Record(ctx context.Context, excluded map[int64]struct{}, accountID int64, err error) bool {
+	if s == nil || excluded == nil || err == nil || (ctx != nil && ctx.Err() != nil) {
+		return false
+	}
+	var concurrencyErr *ConcurrencyError
+	var queueFullErr *WaitQueueFullError
+	if !errors.As(err, &concurrencyErr) && !errors.As(err, &queueFullErr) {
+		return false
+	}
+	if s.slotWaitFailures >= maxSlotWaitReselects {
+		return false
+	}
+	s.slotWaitFailures++
+	s.LastSlotErr = err
+	excluded[accountID] = struct{}{}
+	logger.FromContext(ctx).Warn("gateway.account_slot_unavailable_reselect",
+		zap.Int64("account_id", accountID),
+		zap.Int("slot_reselect_count", s.slotWaitFailures),
+		zap.Int("slot_reselect_max", maxSlotWaitReselects),
+		zap.Error(err),
+	)
+	return true
+}
+
+// SlotWaitFailed 报告本次请求是否已因账号并发槽获取失败换过号。此后的等待计划只做一次
+// 立即抢槽、不再排队，保证单个请求的总排队时长不超过一次等待超时。
+func (s *accountSlotReselectState) SlotWaitFailed() bool {
+	return s != nil && s.slotWaitFailures > 0
 }
 
 // NewFailoverState 创建 failover 状态
@@ -170,6 +224,15 @@ func (s *FailoverState) RecordProfitVeto(accountID int64) FailoverAction {
 		return FailoverExhausted
 	}
 	return FailoverContinue
+}
+
+// RecordAccountSlotUnavailable 见 accountSlotReselectState.Record：命中时把账号加入
+// FailedAccountIDs，调用方应 continue 重新选号。
+func (s *FailoverState) RecordAccountSlotUnavailable(ctx context.Context, accountID int64, err error) bool {
+	if s == nil {
+		return false
+	}
+	return s.accountSlotReselectState.Record(ctx, s.FailedAccountIDs, accountID, err)
 }
 
 // ProfitVetoCount 返回本次请求累计的利润否决次数（供日志使用）。

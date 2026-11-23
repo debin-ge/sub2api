@@ -1604,10 +1604,12 @@ func (s *defaultOpenAIAccountScheduler) trySelectByLoadBalancePool(
 		return attempt
 	}
 
+	latestCandidates := plan.candidates
 	if s.service.concurrencyService != nil && !budget.acquireExhausted() {
 		loadReq := buildOpenAIAccountLoadRequest(filtered)
 		if freshLoadMap, loadErr := s.service.concurrencyService.GetAccountsLoadBatchFresh(ctx, loadReq); loadErr == nil {
 			freshPlan := s.buildOpenAIAccountLoadPlan(ctx, req, filtered, freshLoadMap)
+			latestCandidates = freshPlan.candidates
 			if openAICostOverflowExpanded(req, freshPlan) {
 				budget.enableLimit()
 			}
@@ -1634,7 +1636,55 @@ func (s *defaultOpenAIAccountScheduler) trySelectByLoadBalancePool(
 		}
 	}
 
+	// selectionOrder 只含得分前 K 名（lb_top_k）。优先级权重可能让满载的高优先级账号
+	// 整体排在空闲的低优先级账号之前：前 K 名全部抢不到槽位时，不应放着 TopK 之外的
+	// 空闲账号不用而去满载账号上排队，按得分顺序立即尝试它们。
+	if outside := openAICandidatesOutsideSelectionOrder(latestCandidates, attempt.selectionOrder); len(outside) > 0 {
+		outsideResult, outsideCompactBlocked, outsideErr := s.tryAcquireOpenAISelectionOrderWithBudget(ctx, req, outside, budget)
+		if outsideErr != nil {
+			attempt.err = outsideErr
+			return attempt
+		}
+		attempt.compactBlocked = attempt.compactBlocked || outsideCompactBlocked
+		if outsideResult != nil {
+			attempt.result = outsideResult
+			return attempt
+		}
+	}
+
 	return attempt
+}
+
+// openAICandidatesOutsideSelectionOrder 返回 candidates 中不在 selectionOrder 里、且负载
+// 未知或仍有空闲槽位的候选，按得分从高到低排序。
+func openAICandidatesOutsideSelectionOrder(candidates []openAIAccountCandidateScore, selectionOrder []openAIAccountCandidateScore) []openAIAccountCandidateScore {
+	if len(candidates) <= len(selectionOrder) {
+		return nil
+	}
+	ordered := make(map[int64]struct{}, len(selectionOrder))
+	for _, candidate := range selectionOrder {
+		if candidate.account != nil {
+			ordered[candidate.account.ID] = struct{}{}
+		}
+	}
+	outside := make([]openAIAccountCandidateScore, 0, len(candidates)-len(selectionOrder))
+	for _, candidate := range candidates {
+		if candidate.account == nil {
+			continue
+		}
+		if _, ok := ordered[candidate.account.ID]; ok {
+			continue
+		}
+		if candidate.loadKnown && candidate.account.Concurrency > 0 &&
+			candidate.loadInfo.CurrentConcurrency >= candidate.account.Concurrency {
+			continue
+		}
+		outside = append(outside, candidate)
+	}
+	sort.Slice(outside, func(i, j int) bool {
+		return isOpenAIAccountCandidateBetter(outside[i], outside[j])
+	})
+	return outside
 }
 
 func openAICostOverflowExpanded(req OpenAIAccountScheduleRequest, plan openAIAccountLoadPlan) bool {

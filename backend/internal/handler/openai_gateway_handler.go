@@ -707,6 +707,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	firstOutputTimeoutSwitchCount := 0
 	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})
+	slotReselect := newOpenAISlotReselect(failedAccountIDs)
 	sameAccountRetryCount := make(map[int64]int)
 	var lastFailoverErr *service.UpstreamFailoverError
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
@@ -801,7 +802,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			}
 			if lastFailoverErr != nil {
 				h.handleFailoverExhausted(c, lastFailoverErr, streamStarted)
-			} else {
+			} else if !h.writeOpenAISlotReselectExhausted(c, slotReselect, streamStarted) {
 				h.handleFailoverExhaustedSimple(c, 502, streamStarted)
 			}
 			return
@@ -873,7 +874,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		reqLog.Debug("openai.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		accountReleaseFunc, slotResult := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, reqStream, &streamStarted, reqLog)
+		accountReleaseFunc, slotResult := h.acquireResponsesAccountSlotWithReselect(c, apiKey.GroupID, sessionHash, selection, reqStream, &streamStarted, reqLog, slotReselect)
+		if slotResult == openAISlotAcquireReselect {
+			continue
+		}
 		if slotResult == openAISlotAcquireProfitVetoed {
 			// 利润终检否决：排除该账号重新选号，全池耗尽由下一轮选号报错；
 			// 否决次数达上限则直接终止，避免排队抢槽后才终检的延迟放大。
@@ -1427,6 +1431,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	switchCount := 0
 	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})
+	slotReselect := newOpenAISlotReselect(failedAccountIDs)
 	sameAccountRetryCount := make(map[int64]int)
 	var lastFailoverErr *service.UpstreamFailoverError
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
@@ -1496,7 +1501,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 				}
 				if lastFailoverErr != nil {
 					h.handleAnthropicFailoverExhausted(c, lastFailoverErr, streamStarted)
-				} else {
+				} else if !h.writeOpenAISlotReselectExhausted(c, slotReselect, streamStarted) {
 					h.anthropicStreamingAwareError(c, http.StatusBadGateway, "api_error", "Upstream request failed", streamStarted)
 				}
 				return
@@ -1534,7 +1539,10 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		_ = scheduleDecision
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
-		accountReleaseFunc, slotResult := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, reqStream, &streamStarted, reqLog)
+		accountReleaseFunc, slotResult := h.acquireResponsesAccountSlotWithReselect(c, apiKey.GroupID, sessionHash, selection, reqStream, &streamStarted, reqLog, slotReselect)
+		if slotResult == openAISlotAcquireReselect {
+			continue
+		}
 		if slotResult == openAISlotAcquireProfitVetoed {
 			// 利润终检否决：排除该账号重新选号，全池耗尽由下一轮选号报错；
 			// 否决次数达上限则直接终止，避免排队抢槽后才终检的延迟放大。
@@ -2351,7 +2359,50 @@ const (
 	// 未写任何响应；调用方应经 recordOpenAIProfitVeto 把该账号加入本请求排除集
 	// 后重新选号，全池耗尽由下一轮选号返回标准 no available accounts。
 	openAISlotAcquireProfitVetoed
+	// openAISlotAcquireReselect：等槽超时 / 等待队列已满，账号已加入排除集，未写任何
+	// 响应；调用方应 continue 重新选号。只在传入 openAISlotReselect 时返回。
+	openAISlotAcquireReselect
 )
+
+// openAISlotReselect 让 OpenAI 系入口在等槽失败时排除账号重新选号（规则见
+// accountSlotReselectState）。excluded 是调用方本次请求的 failedAccountIDs。
+type openAISlotReselect struct {
+	state    accountSlotReselectState
+	excluded map[int64]struct{}
+}
+
+func newOpenAISlotReselect(excluded map[int64]struct{}) *openAISlotReselect {
+	return &openAISlotReselect{excluded: excluded}
+}
+
+// lastSlotErr 返回最近一次触发换号的等槽错误；换号后已无账号可选时调用方据此回写 429。
+func (r *openAISlotReselect) lastSlotErr() error {
+	if r == nil {
+		return nil
+	}
+	return r.state.LastSlotErr
+}
+
+func (r *openAISlotReselect) slotWaitFailed() bool {
+	return r != nil && r.state.SlotWaitFailed()
+}
+
+func (r *openAISlotReselect) record(ctx context.Context, accountID int64, err error) bool {
+	return r != nil && r.state.Record(ctx, r.excluded, accountID, err)
+}
+
+// writeOpenAISlotReselectExhausted 在等槽失败换号后已无账号可选时回写原有的并发 429
+// （与 acquireOpenAIAccountSlot 默认错误写出口径一致）。返回 false 表示本次请求没有
+// 发生过等槽换号，调用方继续走原有的错误分支。
+func (h *OpenAIGatewayHandler) writeOpenAISlotReselectExhausted(c *gin.Context, reselect *openAISlotReselect, streamStarted bool) bool {
+	err := reselect.lastSlotErr()
+	if err == nil {
+		return false
+	}
+	status, errType, code, message := concurrencyErrorResponse(err, "account")
+	h.handleStreamingAwareErrorWithCode(c, status, errType, code, message, streamStarted, false)
+	return true
+}
 
 // openAIWSTurnPricing 持有 WebSocket 连接内「当前 turn」的计费定价时刻。
 // 由 BeforeTurn 在每个 turn 开始时冻结，AfterTurn 的用量提交读取它；turn 在
@@ -2513,7 +2564,23 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlot(
 	streamStarted *bool,
 	reqLog *zap.Logger,
 ) (func(), openAISlotAcquireResult) {
-	return h.acquireOpenAIAccountSlot(c, groupID, sessionHash, selection, reqStream, streamStarted, reqLog, nil)
+	return h.acquireOpenAIAccountSlot(c, groupID, sessionHash, selection, reqStream, streamStarted, reqLog, nil, nil)
+}
+
+// acquireResponsesAccountSlotWithReselect 同 acquireResponsesAccountSlot，但等槽超时 /
+// 等待队列已满时不写错误，而是把账号加入 reselect.excluded 并返回
+// openAISlotAcquireReselect，由调用方重新选号。
+func (h *OpenAIGatewayHandler) acquireResponsesAccountSlotWithReselect(
+	c *gin.Context,
+	groupID *int64,
+	sessionHash string,
+	selection *service.AccountSelectionResult,
+	reqStream bool,
+	streamStarted *bool,
+	reqLog *zap.Logger,
+	reselect *openAISlotReselect,
+) (func(), openAISlotAcquireResult) {
+	return h.acquireOpenAIAccountSlot(c, groupID, sessionHash, selection, reqStream, streamStarted, reqLog, nil, reselect)
 }
 
 type openAISlotErrorWriter func(status int, errType, code, message string)
@@ -2530,6 +2597,7 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 	streamStarted *bool,
 	reqLog *zap.Logger,
 	writeError openAISlotErrorWriter,
+	reselect *openAISlotReselect,
 ) (func(), openAISlotAcquireResult) {
 	if writeError == nil {
 		writeError = func(status int, errType, code, message string) {
@@ -2610,6 +2678,9 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 			zap.Int64("account_id", account.ID),
 			zap.Int("max_waiting", selection.WaitPlan.MaxWaiting),
 		)
+		if reselect.record(ctx, account.ID, &WaitQueueFullError{SlotType: "account"}) {
+			return nil, openAISlotAcquireReselect
+		}
 		writeError(http.StatusTooManyRequests, "rate_limit_error", gatewayQueueFullCode, "Too many pending requests, please retry later")
 		return nil, openAISlotAcquireFailed
 	}
@@ -2623,16 +2694,20 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 	}
 	defer releaseWait()
 
-	accountReleaseFunc, err := h.concurrencyHelper.AcquireAccountSlotWithWaitTimeout(
+	accountReleaseFunc, err := h.concurrencyHelper.AcquireAccountSlotForWaitPlan(
 		c,
+		reselect.slotWaitFailed(),
 		account.ID,
-		selection.WaitPlan.MaxConcurrency,
-		selection.WaitPlan.Timeout,
+		selection.WaitPlan,
 		reqStream,
 		streamStarted,
 	)
 	if err != nil {
 		reqLog.Warn("openai.account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+		// 等槽超时：排除该账号重新选号，让请求落到其他有空闲的账号上。
+		if reselect.record(ctx, account.ID, err) {
+			return nil, openAISlotAcquireReselect
+		}
 		status, errType, code, message := concurrencyErrorResponse(err, "account")
 		writeError(status, errType, code, message)
 		return nil, openAISlotAcquireFailed

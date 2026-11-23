@@ -413,6 +413,9 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				default: // FailoverExhausted
 					if fs.LastFailoverErr != nil {
 						h.handleFailoverExhausted(c, fs.LastFailoverErr, service.PlatformGemini, streamStarted)
+					} else if fs.LastSlotErr != nil {
+						// 等槽失败换号后已无账号可选：回写原有的并发 429，而不是 502。
+						h.handleConcurrencyError(c, fs.LastSlotErr, "account", streamStarted)
 					} else {
 						h.handleFailoverExhaustedSimple(c, 502, streamStarted)
 					}
@@ -460,7 +463,11 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 						zap.Int64("account_id", account.ID),
 						zap.Int("max_waiting", selection.WaitPlan.MaxWaiting),
 					)
-					h.handleStreamingAwareErrorWithCode(c, http.StatusTooManyRequests, "rate_limit_error", gatewayQueueFullCode, "Too many pending requests, please retry later", streamStarted)
+					queueErr := &WaitQueueFullError{SlotType: "account"}
+					if fs.RecordAccountSlotUnavailable(c.Request.Context(), account.ID, queueErr) {
+						continue
+					}
+					h.handleConcurrencyError(c, queueErr, "account", streamStarted)
 					return
 				}
 				if err == nil && canWait {
@@ -473,17 +480,21 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					}
 				}
 
-				accountReleaseFunc, err = h.concurrencyHelper.AcquireAccountSlotWithWaitTimeout(
+				accountReleaseFunc, err = h.concurrencyHelper.AcquireAccountSlotForWaitPlan(
 					c,
+					fs.SlotWaitFailed(),
 					account.ID,
-					selection.WaitPlan.MaxConcurrency,
-					selection.WaitPlan.Timeout,
+					selection.WaitPlan,
 					reqStream,
 					&streamStarted,
 				)
 				if err != nil {
 					reqLog.Warn("gateway.account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 					releaseWait()
+					// 等槽超时：排除该账号重新选号，让请求落到其他有空闲的账号上。
+					if fs.RecordAccountSlotUnavailable(c.Request.Context(), account.ID, err) {
+						continue
+					}
 					h.handleConcurrencyError(c, err, "account", streamStarted)
 					return
 				}
@@ -770,6 +781,9 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				default: // FailoverExhausted
 					if fs.LastFailoverErr != nil {
 						h.handleFailoverExhausted(c, fs.LastFailoverErr, platform, streamStarted)
+					} else if fs.LastSlotErr != nil {
+						// 等槽失败换号后已无账号可选：回写原有的并发 429，而不是 502。
+						h.handleConcurrencyError(c, fs.LastSlotErr, "account", streamStarted)
 					} else {
 						h.handleFailoverExhaustedSimple(c, 502, streamStarted)
 					}
@@ -833,7 +847,11 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 						zap.Int64("account_id", account.ID),
 						zap.Int("max_waiting", selection.WaitPlan.MaxWaiting),
 					)
-					h.handleStreamingAwareErrorWithCode(c, http.StatusTooManyRequests, "rate_limit_error", gatewayQueueFullCode, "Too many pending requests, please retry later", streamStarted)
+					queueErr := &WaitQueueFullError{SlotType: "account"}
+					if fs.RecordAccountSlotUnavailable(c.Request.Context(), account.ID, queueErr) {
+						continue
+					}
+					h.handleConcurrencyError(c, queueErr, "account", streamStarted)
 					return
 				}
 				if err == nil && canWait {
@@ -846,17 +864,21 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					}
 				}
 
-				accountReleaseFunc, err = h.concurrencyHelper.AcquireAccountSlotWithWaitTimeout(
+				accountReleaseFunc, err = h.concurrencyHelper.AcquireAccountSlotForWaitPlan(
 					c,
+					fs.SlotWaitFailed(),
 					account.ID,
-					selection.WaitPlan.MaxConcurrency,
-					selection.WaitPlan.Timeout,
+					selection.WaitPlan,
 					reqStream,
 					&streamStarted,
 				)
 				if err != nil {
 					reqLog.Warn("gateway.account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 					releaseWait()
+					// 等槽超时：排除该账号重新选号，让请求落到其他有空闲的账号上。
+					if fs.RecordAccountSlotUnavailable(c.Request.Context(), account.ID, err) {
+						continue
+					}
 					h.handleConcurrencyError(c, err, "account", streamStarted)
 					return
 				}
