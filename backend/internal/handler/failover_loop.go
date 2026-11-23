@@ -232,7 +232,7 @@ func (s *FailoverState) RecordAccountSlotUnavailable(ctx context.Context, accoun
 	if s == nil {
 		return false
 	}
-	return s.accountSlotReselectState.Record(ctx, s.FailedAccountIDs, accountID, err)
+	return s.Record(ctx, s.FailedAccountIDs, accountID, err)
 }
 
 // ProfitVetoCount 返回本次请求累计的利润否决次数（供日志使用）。
