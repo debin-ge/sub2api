@@ -719,7 +719,7 @@ export default {
       },
       buildInfo: {
         title: 'Version',
-        description: 'Running project version and the upstream Sub2API release it is based on',
+        description: 'Running project version and the upstream version it has merged',
         projectVersion: 'Project version',
         upstreamVersion: 'Upstream version',
         commit: 'Commit',

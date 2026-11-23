@@ -711,7 +711,7 @@ export default {
       },
       buildInfo: {
         title: '版本信息',
-        description: '当前运行的项目版本及其合并的上游 Sub2API 版本',
+        description: '当前运行的项目版本及其合并的上游版本',
         projectVersion: '项目版本',
         upstreamVersion: '上游版本',
         commit: '提交',
