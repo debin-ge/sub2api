@@ -100,6 +100,9 @@ COPY --from=frontend-builder /app/backend/internal/web/dist ./internal/web/dist
 #   VERSION:          highest merged fork tag > cmd/server/VERSION (upstream's)
 #   UPSTREAM_VERSION: highest merged upstream v-tag > empty
 #   COMMIT:           git HEAD > "docker"
+# -buildvcs=false: the gitmeta mount puts a .git (empty in CI, foreign-owned
+# locally) above the module, and Go's VCS stamping would fail on it. Version
+# and commit are injected via -ldflags instead.
 RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod \
     --mount=type=cache,id=sub2api-gobuild,target=/root/.cache/go-build \
     --mount=type=bind,from=gitmeta,target=/app/.git \
@@ -112,6 +115,7 @@ RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod \
     echo "Building version=${VERSION_VALUE} upstream=${UPSTREAM_VALUE} commit=${COMMIT_VALUE}" && \
     DATE_VALUE="${DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}" && \
     CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build \
+    -buildvcs=false \
     -tags embed \
     -ldflags="-s -w -X main.Version=${VERSION_VALUE} -X main.UpstreamVersion=${UPSTREAM_VALUE} -X main.Commit=${COMMIT_VALUE} -X main.Date=${DATE_VALUE} -X main.BuildType=release" \
     -trimpath \
