@@ -503,7 +503,7 @@ func (h *OpenAIGatewayHandler) checkImagesBatchBalance(
 			c,
 			http.StatusPaymentRequired,
 			"insufficient_balance",
-			fmt.Sprintf("insufficient balance: generating %d images requires an estimated $%.4f", parsed.N, estimated),
+			fmt.Sprintf("insufficient balance: generating %d images requires an estimated %s%.4f", parsed.N, h.gatewayService.BalanceCurrencySymbol(c.Request.Context()), estimated),
 			streamStarted,
 		)
 		return false

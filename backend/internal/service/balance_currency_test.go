@@ -55,3 +55,18 @@ func TestBalanceCurrencyNotificationEmails(t *testing.T) {
 		}
 	}
 }
+
+func TestBalanceCurrencySymbol(t *testing.T) {
+	for _, tc := range []struct{ stored, want string }{
+		{"", "$"}, {"USD", "$"}, {"CNY", "¥"}, {"EUR", "$"},
+	} {
+		repo := &settingPublicRepoStub{values: map[string]string{SettingKeyBalanceCurrency: tc.stored}}
+		require.Equal(t, tc.want, NewSettingService(repo, &config.Config{}).BalanceCurrencySymbol(context.Background()))
+		require.Equal(t, tc.want, (&OpenAIGatewayService{settingService: NewSettingService(repo, &config.Config{})}).BalanceCurrencySymbol(context.Background()))
+	}
+	// Missing services keep the legacy USD label instead of panicking.
+	require.Equal(t, "$", (*SettingService)(nil).BalanceCurrencySymbol(context.Background()))
+	require.Equal(t, "$", (*OpenAIGatewayService)(nil).BalanceCurrencySymbol(context.Background()))
+	require.Equal(t, "$", (&OpenAIGatewayService{}).BalanceCurrencySymbol(context.Background()))
+	require.Equal(t, "$", balanceCurrencySymbolFromRepo(context.Background(), nil))
+}

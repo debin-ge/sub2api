@@ -146,7 +146,7 @@ func buildNotifyVerifyEmailHTML(code, siteName string) string {
 	})
 }
 
-func buildBalanceLowEmailHTML(userName string, balance, threshold float64, siteName, rechargeURL string) string {
+func buildBalanceLowEmailHTML(userName string, balance, threshold float64, siteName, rechargeURL, currencySymbol string) string {
 	rechargeBlock := ""
 	if strings.TrimSpace(rechargeURL) != "" {
 		rechargeBlock = fmt.Sprintf(`<a href="%s" class="button">立即充值 / Top Up Now</a>`, html.EscapeString(rechargeURL))
@@ -154,19 +154,19 @@ func buildBalanceLowEmailHTML(userName string, balance, threshold float64, siteN
 	body := fmt.Sprintf(`
             <p><strong>%s</strong>，您的账户余额已低于提醒阈值。</p>
             <p>Dear %s, your account balance has fallen below the alert threshold.</p>
-            <div class="code" style="letter-spacing:0;">$%.2f</div>
+            <div class="code" style="letter-spacing:0;">%s%.2f</div>
             <div class="notice">
-                <div class="metric"><span class="metric-label">当前余额 / Current Balance</span><span class="metric-value">$%.2f</span></div>
-                <div class="metric"><span class="metric-label">提醒阈值 / Alert Threshold</span><span class="metric-value">$%.2f</span></div>
+                <div class="metric"><span class="metric-label">当前余额 / Current Balance</span><span class="metric-value">%s%.2f</span></div>
+                <div class="metric"><span class="metric-label">提醒阈值 / Alert Threshold</span><span class="metric-value">%s%.2f</span></div>
                 <p style="margin-top:16px;">请及时充值以免服务中断。</p>
                 <p>Please top up to avoid service interruption.</p>
             </div>
             %s`,
 		html.EscapeString(userName),
 		html.EscapeString(userName),
-		balance,
-		balance,
-		threshold,
+		html.EscapeString(currencySymbol), balance,
+		html.EscapeString(currencySymbol), balance,
+		html.EscapeString(currencySymbol), threshold,
 		rechargeBlock,
 	)
 	return renderBrandedEmail(brandedEmailOptions{
@@ -178,8 +178,8 @@ func buildBalanceLowEmailHTML(userName string, balance, threshold float64, siteN
 	})
 }
 
-func buildQuotaAlertEmailHTML(accountID int64, accountName, platform, dimLabel string, used, limit, remaining float64, thresholdDisplay, siteName string) string {
-	limitStr := fmt.Sprintf("$%.2f", limit)
+func buildQuotaAlertEmailHTML(accountID int64, accountName, platform, dimLabel string, used, limit, remaining float64, thresholdDisplay, siteName, currencySymbol string) string {
+	limitStr := fmt.Sprintf("%s%.2f", currencySymbol, limit)
 	if limit <= 0 {
 		limitStr = "无限制 / Unlimited"
 	}
@@ -191,18 +191,18 @@ func buildQuotaAlertEmailHTML(accountID int64, accountName, platform, dimLabel s
                 <div class="metric"><span class="metric-label">账号 / Account</span><span class="metric-value">%s</span></div>
                 <div class="metric"><span class="metric-label">平台 / Platform</span><span class="metric-value">%s</span></div>
                 <div class="metric"><span class="metric-label">维度 / Dimension</span><span class="metric-value">%s</span></div>
-                <div class="metric"><span class="metric-label">已使用 / Used</span><span class="metric-value">$%.2f</span></div>
+                <div class="metric"><span class="metric-label">已使用 / Used</span><span class="metric-value">%s%.2f</span></div>
                 <div class="metric"><span class="metric-label">限额 / Limit</span><span class="metric-value">%s</span></div>
-                <div class="metric"><span class="metric-label">剩余额度 / Remaining</span><span class="metric-value">$%.2f</span></div>
+                <div class="metric"><span class="metric-label">剩余额度 / Remaining</span><span class="metric-value">%s%.2f</span></div>
                 <div class="metric"><span class="metric-label">提醒阈值 / Alert Threshold</span><span class="metric-value">%s</span></div>
             </div>`,
 		accountID,
 		html.EscapeString(accountName),
 		html.EscapeString(platform),
 		html.EscapeString(dimLabel),
-		used,
+		html.EscapeString(currencySymbol), used,
 		html.EscapeString(limitStr),
-		remaining,
+		html.EscapeString(currencySymbol), remaining,
 		html.EscapeString(thresholdDisplay),
 	)
 	return renderBrandedEmail(brandedEmailOptions{

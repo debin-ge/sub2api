@@ -35,7 +35,7 @@
         </template>
 
         <template #cell-balance="{ value }">
-          <span class="font-medium zt-ink">${{ Number(value ?? 0).toFixed(2) }}</span>
+          <span class="font-medium zt-ink">{{ balanceSymbol }}{{ Number(value ?? 0).toFixed(2) }}</span>
         </template>
 
         <template #cell-eligible="{ value }">
@@ -78,6 +78,7 @@ import { formatDateTime } from '@/utils/format'
 import type { AnnouncementUserReadStatus } from '@/types'
 import type { Column } from '@/components/common/types'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import DataTable from '@/components/common/DataTable.vue'
@@ -85,6 +86,7 @@ import Pagination from '@/components/common/Pagination.vue'
 import Icon from '@/components/icons/Icon.vue'
 
 const { t } = useI18n()
+const { balanceSymbol } = useBalanceCurrency()
 const appStore = useAppStore()
 
 const props = defineProps<{

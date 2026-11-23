@@ -79,7 +79,7 @@
           v-if="form.deduct_balance && balanceInsufficient"
           class="mt-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
         >
-          {{ t('payment.admin.insufficientBalance') }}
+          {{ t('payment.admin.insufficientBalance', { symbol: balanceSymbol }) }}
         </div>
 
         <!-- No deduction info -->

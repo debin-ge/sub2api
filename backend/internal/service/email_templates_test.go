@@ -68,11 +68,11 @@ func TestNotifyVerifyEmailBodyDoesNotExposeProductFallback(t *testing.T) {
 func TestBalanceEmailBodiesUseConfiguredSiteNameAndUpdatedShell(t *testing.T) {
 	s := &BalanceNotifyService{}
 
-	lowBody := s.buildBalanceLowEmailBody("Alice", 3.14, 10.0, "Acme API", "")
+	lowBody := s.buildBalanceLowEmailBody("Alice", 3.14, 10.0, "Acme API", "", "$")
 	require.Contains(t, lowBody, "Acme API")
 	requireUpdatedEmailShell(t, lowBody)
 
-	quotaBody := s.buildQuotaAlertEmailBody(42, "acc-foo", "openai", "日限额 / Daily", 750.50, 1000, 249.50, "$249.50", "Acme API")
+	quotaBody := s.buildQuotaAlertEmailBody(42, "acc-foo", "openai", "日限额 / Daily", 750.50, 1000, 249.50, "$249.50", "Acme API", "$")
 	require.Contains(t, quotaBody, "Acme API")
 	requireUpdatedEmailShell(t, quotaBody)
 }

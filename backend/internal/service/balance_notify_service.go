@@ -376,7 +376,7 @@ func (s *BalanceNotifyService) sendBalanceLowEmails(parent context.Context, reci
 		recipients = fallbackRecipients
 	}
 	subject := fmt.Sprintf("[%s] 余额不足提醒 / Balance Low Alert", EmailSubjectSiteName(siteName))
-	body := s.buildBalanceLowEmailBody(html.EscapeString(displayName), balance, threshold, html.EscapeString(siteName), rechargeURL)
+	body := s.buildBalanceLowEmailBody(html.EscapeString(displayName), balance, threshold, html.EscapeString(siteName), rechargeURL, balanceCurrencySymbolFromRepo(parent, s.settingRepo))
 	s.sendEmails(parent, recipients, subject, body, "user_email", userEmail, "balance", balance)
 }
 
@@ -388,7 +388,8 @@ func (s *BalanceNotifyService) sendQuotaAlertEmails(parent context.Context, admi
 	}
 
 	// Format the remaining-based threshold for display
-	thresholdDisplay := fmt.Sprintf("$%.2f", dim.threshold)
+	currencySymbol := balanceCurrencySymbolFromRepo(parent, s.settingRepo)
+	thresholdDisplay := fmt.Sprintf("%s%.2f", currencySymbol, dim.threshold)
 	if dim.thresholdType == thresholdTypePercentage {
 		thresholdDisplay = fmt.Sprintf("%.0f%%", dim.threshold)
 	}
@@ -440,7 +441,7 @@ func (s *BalanceNotifyService) sendQuotaAlertEmails(parent context.Context, admi
 	}
 
 	subject := fmt.Sprintf("[%s] 账号限额告警 / Account Quota Alert - %s", EmailSubjectSiteName(siteName), sanitizeEmailHeader(accountName))
-	body := s.buildQuotaAlertEmailBody(accountID, html.EscapeString(accountName), html.EscapeString(platform), html.EscapeString(dimLabel), used, dim.limit, remaining, thresholdDisplay, html.EscapeString(siteName))
+	body := s.buildQuotaAlertEmailBody(accountID, html.EscapeString(accountName), html.EscapeString(platform), html.EscapeString(dimLabel), used, dim.limit, remaining, thresholdDisplay, html.EscapeString(siteName), currencySymbol)
 	s.sendEmails(parent, adminEmails, subject, body, "account", accountName, "dimension", dim.name)
 }
 
@@ -450,11 +451,11 @@ func sanitizeEmailHeader(s string) string {
 }
 
 // buildBalanceLowEmailBody builds HTML email for balance low notification.
-func (s *BalanceNotifyService) buildBalanceLowEmailBody(userName string, balance, threshold float64, siteName, rechargeURL string) string {
-	return buildBalanceLowEmailHTML(userName, balance, threshold, siteName, rechargeURL)
+func (s *BalanceNotifyService) buildBalanceLowEmailBody(userName string, balance, threshold float64, siteName, rechargeURL, currencySymbol string) string {
+	return buildBalanceLowEmailHTML(userName, balance, threshold, siteName, rechargeURL, currencySymbol)
 }
 
 // buildQuotaAlertEmailBody builds HTML email for account quota alert.
-func (s *BalanceNotifyService) buildQuotaAlertEmailBody(accountID int64, accountName, platform, dimLabel string, used, limit, remaining float64, thresholdDisplay, siteName string) string {
-	return buildQuotaAlertEmailHTML(accountID, accountName, platform, dimLabel, used, limit, remaining, thresholdDisplay, siteName)
+func (s *BalanceNotifyService) buildQuotaAlertEmailBody(accountID int64, accountName, platform, dimLabel string, used, limit, remaining float64, thresholdDisplay, siteName, currencySymbol string) string {
+	return buildQuotaAlertEmailHTML(accountID, accountName, platform, dimLabel, used, limit, remaining, thresholdDisplay, siteName, currencySymbol)
 }

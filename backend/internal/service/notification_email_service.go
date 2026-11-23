@@ -523,11 +523,8 @@ func (s *NotificationEmailService) sampleVariables(ctx context.Context, event, l
 	variables["site_name"] = s.siteName(ctx)
 	if event == NotificationEmailEventBalanceLow || event == NotificationEmailEventBalanceRechargeSuccess {
 		variables["balance_currency_symbol"] = "$"
-		if s != nil && s.settingRepo != nil {
-			currency, err := s.settingRepo.GetValue(ctx, SettingKeyBalanceCurrency)
-			if err == nil && normalizeBalanceCurrency(currency) == "CNY" {
-				variables["balance_currency_symbol"] = "¥"
-			}
+		if s != nil {
+			variables["balance_currency_symbol"] = balanceCurrencySymbolFromRepo(ctx, s.settingRepo)
 		}
 	}
 	if variables["unsubscribe_url"] == "" && info.Optional {
