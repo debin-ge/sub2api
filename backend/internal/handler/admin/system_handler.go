@@ -20,6 +20,21 @@ import (
 type SystemHandler struct {
 	updateSvc systemUpdateService
 	lockSvc   *service.SystemOperationLockService
+	buildInfo SystemBuildInfo
+}
+
+// SystemBuildInfo is the build metadata reported by GET /admin/system/version.
+type SystemBuildInfo struct {
+	Version         string `json:"version"`          // this project's release tag
+	UpstreamVersion string `json:"upstream_version"` // merged Wei-Shaw/sub2api release
+	Commit          string `json:"commit"`
+	BuildDate       string `json:"build_date"`
+	BuildType       string `json:"build_type"`
+}
+
+// SetBuildInfo records the build metadata served by GetVersion.
+func (h *SystemHandler) SetBuildInfo(info SystemBuildInfo) {
+	h.buildInfo = info
 }
 
 // systemUpdateTimeout bounds a full in-place update or rollback: the release
@@ -59,13 +74,11 @@ func NewSystemHandler(updateSvc systemUpdateService, lockSvc *service.SystemOper
 	}
 }
 
-// GetVersion returns the current version
+// GetVersion returns the current build's version metadata. It reads only
+// build-time values and never contacts GitHub.
 // GET /api/v1/admin/system/version
 func (h *SystemHandler) GetVersion(c *gin.Context) {
-	info, _ := h.updateSvc.CheckUpdate(c.Request.Context(), false)
-	response.Success(c, gin.H{
-		"version": info.CurrentVersion,
-	})
+	response.Success(c, h.buildInfo)
 }
 
 // CheckUpdates checks for available updates

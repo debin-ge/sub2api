@@ -195,8 +195,16 @@ func ProvideBatchImageHandler(
 }
 
 // ProvideSystemHandler creates admin.SystemHandler with UpdateService
-func ProvideSystemHandler(updateService *service.UpdateService, lockService *service.SystemOperationLockService) *admin.SystemHandler {
-	return admin.NewSystemHandler(updateService, lockService)
+func ProvideSystemHandler(updateService *service.UpdateService, lockService *service.SystemOperationLockService, buildInfo BuildInfo) *admin.SystemHandler {
+	h := admin.NewSystemHandler(updateService, lockService)
+	h.SetBuildInfo(admin.SystemBuildInfo{
+		Version:         buildInfo.Version,
+		UpstreamVersion: buildInfo.UpstreamVersion,
+		Commit:          buildInfo.Commit,
+		BuildDate:       buildInfo.Date,
+		BuildType:       buildInfo.BuildType,
+	})
+	return h
 }
 
 // ProvidePublicModelStatsProvider provides publicModelStatsProvider for plaza feature

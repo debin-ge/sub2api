@@ -709,6 +709,15 @@ export default {
         testResultProvider: '服务商',
         testNoResults: '无搜索结果',
       },
+      buildInfo: {
+        title: '版本信息',
+        description: '当前运行的项目版本及其合并的上游 Sub2API 版本',
+        projectVersion: '项目版本',
+        upstreamVersion: '上游版本',
+        commit: '提交',
+        buildDate: '构建时间',
+        loadFailed: '版本信息加载失败',
+      },
       site: {
         title: '站点设置',
         description: '自定义站点品牌',

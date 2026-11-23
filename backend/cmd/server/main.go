@@ -30,15 +30,28 @@ import (
 //go:embed VERSION
 var embeddedVersion string
 
+// UPSTREAM_VERSION records the Wei-Shaw/sub2api release last merged into this
+// fork. Refresh it with scripts/sync-upstream-version.sh after each upstream merge.
+//
+//go:embed UPSTREAM_VERSION
+var embeddedUpstreamVersion string
+
 // Build-time variables (can be set by ldflags)
 var (
 	Version   = ""
 	Commit    = "unknown"
 	Date      = "unknown"
 	BuildType = "source" // "source" for manual builds, "release" for CI builds (set by ldflags)
+	// UpstreamVersion is the merged upstream release; ldflags may override the embedded file.
+	UpstreamVersion = ""
 )
 
 func init() {
+	if strings.TrimSpace(UpstreamVersion) == "" {
+		UpstreamVersion = strings.TrimSpace(embeddedUpstreamVersion)
+	}
+	UpstreamVersion = strings.TrimPrefix(strings.TrimSpace(UpstreamVersion), "v")
+
 	// 如果 Version 已通过 ldflags 注入（例如 -X main.Version=...），则不要覆盖。
 	if strings.TrimSpace(Version) != "" {
 		return
@@ -145,8 +158,11 @@ func runMainServer() {
 	}
 
 	buildInfo := handler.BuildInfo{
-		Version:   Version,
-		BuildType: BuildType,
+		Version:         Version,
+		BuildType:       BuildType,
+		UpstreamVersion: UpstreamVersion,
+		Commit:          Commit,
+		Date:            Date,
 	}
 
 	app, err := initializeApplication(buildInfo)

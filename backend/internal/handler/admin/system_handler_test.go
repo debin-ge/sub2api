@@ -322,3 +322,39 @@ func TestSystemHandlerGetRollbackVersionsError(t *testing.T) {
 
 	require.Equal(t, http.StatusInternalServerError, rec.Code)
 }
+
+func TestSystemHandlerGetVersionReturnsBuildInfoWithoutCheckingUpdates(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	updateSvc := &systemHandlerUpdateServiceStub{checkErr: errors.New("must not be called")}
+	handler := NewSystemHandler(updateSvc, nil)
+	handler.SetBuildInfo(SystemBuildInfo{
+		Version:         "2.1.12",
+		UpstreamVersion: "0.2.23",
+		Commit:          "0a4531326",
+		BuildDate:       "2026-11-23T00:00:00Z",
+		BuildType:       "release",
+	})
+
+	router := gin.New()
+	router.GET("/api/v1/admin/system/version", handler.GetVersion)
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/admin/system/version", nil))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Empty(t, updateSvc.checkForces, "GetVersion must not hit the update service")
+
+	var resp struct {
+		Code int             `json:"code"`
+		Data SystemBuildInfo `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, 0, resp.Code)
+	require.Equal(t, SystemBuildInfo{
+		Version:         "2.1.12",
+		UpstreamVersion: "0.2.23",
+		Commit:          "0a4531326",
+		BuildDate:       "2026-11-23T00:00:00Z",
+		BuildType:       "release",
+	}, resp.Data)
+}

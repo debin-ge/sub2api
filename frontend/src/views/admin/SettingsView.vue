@@ -6608,6 +6608,9 @@
 
         <!-- Tab: General -->
         <div v-show="activeTab === 'general'" class="space-y-6">
+          <!-- Build / Version Info -->
+          <BuildVersionCard />
+
           <!-- Site Settings -->
           <div class="card">
             <div
@@ -9434,6 +9437,7 @@ import BackupSettings from "@/views/admin/BackupView.vue";
 import EmailTemplateEditor from "@/views/admin/settings/EmailTemplateEditor.vue";
 import RadarSettingsCard from "@/components/admin/radar/RadarSettingsCard.vue";
 import RechargeBonusTierEditor from "@/components/admin/settings/RechargeBonusTierEditor.vue";
+import BuildVersionCard from "@/components/admin/settings/BuildVersionCard.vue";
 import {
   normalizeRechargeBonusMode,
   normalizeRechargeBonusTiers,

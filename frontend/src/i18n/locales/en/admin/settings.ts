@@ -717,6 +717,15 @@ export default {
         testResultProvider: 'Provider',
         testNoResults: 'No results found',
       },
+      buildInfo: {
+        title: 'Version',
+        description: 'Running project version and the upstream Sub2API release it is based on',
+        projectVersion: 'Project version',
+        upstreamVersion: 'Upstream version',
+        commit: 'Commit',
+        buildDate: 'Build date',
+        loadFailed: 'Failed to load version info',
+      },
       site: {
         title: 'Site Settings',
         description: 'Customize site branding',

@@ -88,6 +88,9 @@ type Handlers struct {
 
 // BuildInfo contains build-time information
 type BuildInfo struct {
-	Version   string
-	BuildType string // "source" for manual builds, "release" for CI builds
+	Version         string
+	BuildType       string // "source" for manual builds, "release" for CI builds
+	UpstreamVersion string // upstream (Wei-Shaw/sub2api) release merged into this build
+	Commit          string
+	Date            string
 }
