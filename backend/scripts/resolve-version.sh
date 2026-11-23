@@ -1,33 +1,22 @@
 #!/bin/sh
+# Print this project's version: the highest fork release tag ("X.Y.Z") merged
+# into HEAD, else upstream's cmd/server/VERSION when no git metadata is present.
+# Only tags reachable from HEAD count, so tags on other branches are ignored.
 set -eu
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 BACKEND_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
 REPO_DIR="$(CDPATH= cd -- "$BACKEND_DIR/.." && pwd)"
-PROJECT_VERSION_FILE="$BACKEND_DIR/cmd/server/PROJECT_VERSION"
 VERSION_FILE="$BACKEND_DIR/cmd/server/VERSION"
 
-# Prefer the exact release tag when building from a tagged checkout so source
-# builds don't inherit a stale version file. Fork "X.Y.Z" tags win over
-# upstream "vX.Y.Z" tags.
 if command -v git >/dev/null 2>&1; then
+  # safe.directory: inside Docker the mounted .git belongs to another user.
   TAG="$(
-    git -C "$REPO_DIR" describe --tags --exact-match --match '[0-9]*' 2>/dev/null || \
-    git -C "$REPO_DIR" describe --tags --exact-match --match 'v[0-9]*' 2>/dev/null || \
-    true
+    git -c safe.directory="$REPO_DIR" -C "$REPO_DIR" \
+      tag --merged HEAD --list '[0-9]*' --sort=-v:refname 2>/dev/null | head -n 1
   )"
   if [ -n "$TAG" ]; then
-    printf '%s\n' "${TAG#v}"
-    exit 0
-  fi
-fi
-
-# Fork-owned PROJECT_VERSION wins over upstream's VERSION file, which tracks
-# Wei-Shaw/sub2api releases rather than this fork's tags.
-if [ -f "$PROJECT_VERSION_FILE" ]; then
-  PROJECT_VERSION="$(tr -d '\r\n' < "$PROJECT_VERSION_FILE")"
-  if [ -n "$PROJECT_VERSION" ]; then
-    printf '%s\n' "$PROJECT_VERSION"
+    printf '%s\n' "$TAG"
     exit 0
   fi
 fi

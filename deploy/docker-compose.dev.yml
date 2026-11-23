@@ -13,6 +13,11 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
+      # Expose the repo's .git to the build (it is excluded from the main
+      # context) so the image reports the latest fork tag, the merged upstream
+      # version and the real commit without any manual sync step.
+      additional_contexts:
+        gitmeta: ../.git
       args:
         NPM_CONFIG_REGISTRY: ${NPM_CONFIG_REGISTRY:-https://registry.npmmirror.com}
     container_name: sub2api-dev

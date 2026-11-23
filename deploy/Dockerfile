@@ -46,6 +46,7 @@ FROM ${GOLANG_IMAGE} AS backend-builder
 
 # Build arguments for version info (set by CI)
 ARG VERSION=
+ARG UPSTREAM_VERSION=
 ARG COMMIT=docker
 ARG DATE
 ARG GOPROXY
@@ -70,13 +71,16 @@ COPY backend/ ./
 COPY --from=frontend-builder /app/backend/internal/web/dist ./internal/web/dist
 
 # Build the binary (BuildType=release for CI builds, embed frontend)
-# Version precedence: build arg VERSION > exact git tag > cmd/server/PROJECT_VERSION > cmd/server/VERSION
+# No .git in this build context: pass VERSION / UPSTREAM_VERSION build args,
+# otherwise VERSION falls back to cmd/server/VERSION and upstream is empty.
 RUN VERSION_VALUE="${VERSION}" && \
     if [ -z "${VERSION_VALUE}" ]; then VERSION_VALUE="$(./scripts/resolve-version.sh)"; fi && \
+    UPSTREAM_VALUE="${UPSTREAM_VERSION}" && \
+    if [ -z "${UPSTREAM_VALUE}" ]; then UPSTREAM_VALUE="$(./scripts/resolve-upstream-version.sh)"; fi && \
     DATE_VALUE="${DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}" && \
     CGO_ENABLED=0 GOOS=linux go build \
     -tags embed \
-    -ldflags="-s -w -X main.Version=${VERSION_VALUE} -X main.Commit=${COMMIT} -X main.Date=${DATE_VALUE} -X main.BuildType=release" \
+    -ldflags="-s -w -X main.Version=${VERSION_VALUE} -X main.UpstreamVersion=${UPSTREAM_VALUE} -X main.Commit=${COMMIT} -X main.Date=${DATE_VALUE} -X main.BuildType=release" \
     -o /app/sub2api \
     ./cmd/server
 

@@ -47,6 +47,14 @@ COPY docs/legal/ /app/docs/legal/
 RUN pnpm run build
 
 # -----------------------------------------------------------------------------
+# Git metadata (optional)
+# -----------------------------------------------------------------------------
+# Empty by default (.git is in .dockerignore). docker-compose.dev.yml replaces
+# this stage with the repo's .git via additional_contexts so local builds can
+# resolve the project tag, merged upstream version and commit from git.
+FROM scratch AS gitmeta
+
+# -----------------------------------------------------------------------------
 # Stage 2: Backend Builder
 # -----------------------------------------------------------------------------
 # --platform=$BUILDPLATFORM: run the Go toolchain on the native host arch and
@@ -57,7 +65,8 @@ FROM --platform=${BUILDPLATFORM} ${GOLANG_IMAGE} AS backend-builder
 
 # Build arguments for version info (set by CI)
 ARG VERSION=
-ARG COMMIT=docker
+ARG UPSTREAM_VERSION=
+ARG COMMIT=
 ARG DATE
 ARG GOPROXY
 ARG GOSUMDB
@@ -87,15 +96,24 @@ COPY backend/ ./
 COPY --from=frontend-builder /app/backend/internal/web/dist ./internal/web/dist
 
 # Build the binary (BuildType=release for CI builds, embed frontend)
-# Version precedence: build arg VERSION > exact git tag > cmd/server/PROJECT_VERSION > cmd/server/VERSION
+# Each value: build arg > git metadata (gitmeta mount) > fallback.
+#   VERSION:          highest merged fork tag > cmd/server/VERSION (upstream's)
+#   UPSTREAM_VERSION: highest merged upstream v-tag > empty
+#   COMMIT:           git HEAD > "docker"
 RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod \
     --mount=type=cache,id=sub2api-gobuild,target=/root/.cache/go-build \
+    --mount=type=bind,from=gitmeta,target=/app/.git \
     VERSION_VALUE="${VERSION}" && \
     if [ -z "${VERSION_VALUE}" ]; then VERSION_VALUE="$(./scripts/resolve-version.sh)"; fi && \
+    UPSTREAM_VALUE="${UPSTREAM_VERSION}" && \
+    if [ -z "${UPSTREAM_VALUE}" ]; then UPSTREAM_VALUE="$(./scripts/resolve-upstream-version.sh)"; fi && \
+    COMMIT_VALUE="${COMMIT}" && \
+    if [ -z "${COMMIT_VALUE}" ]; then COMMIT_VALUE="$(git -c safe.directory=/app -C /app rev-parse HEAD 2>/dev/null || echo docker)"; fi && \
+    echo "Building version=${VERSION_VALUE} upstream=${UPSTREAM_VALUE} commit=${COMMIT_VALUE}" && \
     DATE_VALUE="${DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}" && \
     CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build \
     -tags embed \
-    -ldflags="-s -w -X main.Version=${VERSION_VALUE} -X main.Commit=${COMMIT} -X main.Date=${DATE_VALUE} -X main.BuildType=release" \
+    -ldflags="-s -w -X main.Version=${VERSION_VALUE} -X main.UpstreamVersion=${UPSTREAM_VALUE} -X main.Commit=${COMMIT_VALUE} -X main.Date=${DATE_VALUE} -X main.BuildType=release" \
     -trimpath \
     -o /app/sub2api \
     ./cmd/server

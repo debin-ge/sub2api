@@ -30,32 +30,18 @@ import (
 //go:embed VERSION
 var embeddedVersion string
 
-// PROJECT_VERSION is this fork's release tag; it takes precedence over the
-// upstream-owned VERSION file. UPSTREAM_VERSION records the Wei-Shaw/sub2api
-// release last merged into this fork. Refresh both with
-// scripts/sync-version-files.sh after tagging or merging upstream.
-//
-//go:embed PROJECT_VERSION
-var embeddedProjectVersion string
-
-//
-//go:embed UPSTREAM_VERSION
-var embeddedUpstreamVersion string
-
 // Build-time variables (can be set by ldflags)
 var (
 	Version   = ""
 	Commit    = "unknown"
 	Date      = "unknown"
 	BuildType = "source" // "source" for manual builds, "release" for CI builds (set by ldflags)
-	// UpstreamVersion is the merged upstream release; ldflags may override the embedded file.
+	// UpstreamVersion is the Wei-Shaw/sub2api release merged into this build,
+	// resolved from git tags at build time (scripts/resolve-upstream-version.sh).
 	UpstreamVersion = ""
 )
 
 func init() {
-	if strings.TrimSpace(UpstreamVersion) == "" {
-		UpstreamVersion = strings.TrimSpace(embeddedUpstreamVersion)
-	}
 	UpstreamVersion = strings.TrimPrefix(strings.TrimSpace(UpstreamVersion), "v")
 
 	// 如果 Version 已通过 ldflags 注入（例如 -X main.Version=...），则不要覆盖。
@@ -63,12 +49,9 @@ func init() {
 		return
 	}
 
-	// 默认读取编译期打包的版本文件：fork 自有的 PROJECT_VERSION 优先，
-	// 其次是上游维护的 VERSION。
-	Version = strings.TrimSpace(embeddedProjectVersion)
-	if Version == "" {
-		Version = strings.TrimSpace(embeddedVersion)
-	}
+	// 默认从 embedded VERSION 文件读取版本号（编译期打包进二进制）。
+	// 构建时通常已通过 scripts/resolve-version.sh 注入 fork 的 tag。
+	Version = strings.TrimSpace(embeddedVersion)
 	if Version == "" {
 		Version = "0.0.0-dev"
 	}

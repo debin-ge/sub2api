@@ -27,6 +27,20 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Resolve build versions
+        id: versions
+        # Upstream v-tags are not pushed to this fork; fetch them so the merged
+        # upstream release can be resolved. Only tags reachable from HEAD count,
+        # so newer, unmerged upstream releases are ignored.
+        run: |
+          git fetch --quiet --no-tags https://github.com/Wei-Shaw/sub2api.git '+refs/tags/v*:refs/tags/v*' \
+            || echo "::warning::Could not fetch upstream tags; upstream version will be empty"
+          project="$(backend/scripts/resolve-version.sh)"
+          upstream="$(backend/scripts/resolve-upstream-version.sh)"
+          echo "project=${project}" >> "$GITHUB_OUTPUT"
+          echo "upstream=${upstream}" >> "$GITHUB_OUTPUT"
+          echo "Project version: ${project}, upstream version: ${upstream}"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
@@ -60,6 +74,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             VERSION=${{ github.ref_name }}
+            UPSTREAM_VERSION=${{ steps.versions.outputs.upstream }}
             COMMIT=${{ github.sha }}
             DATE=${{ github.event.head_commit.timestamp }}
           cache-from: type=gha

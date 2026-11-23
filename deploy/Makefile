@@ -1,7 +1,8 @@
 .PHONY: wire build build-embed test-unit test-integration test-e2e test-cover-integration
 
 VERSION ?= $(shell ./scripts/resolve-version.sh)
-LDFLAGS ?= -s -w -X main.Version=$(VERSION)
+UPSTREAM_VERSION ?= $(shell ./scripts/resolve-upstream-version.sh)
+LDFLAGS ?= -s -w -X main.Version=$(VERSION) -X main.UpstreamVersion=$(UPSTREAM_VERSION)
 
 wire:
 	@echo "生成 Wire 代码..."

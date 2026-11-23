@@ -1,7 +1,8 @@
 .PHONY: build generate test test-unit test-integration test-e2e
 
 VERSION ?= $(shell ./scripts/resolve-version.sh)
-LDFLAGS ?= -s -w -X main.Version=$(VERSION)
+UPSTREAM_VERSION ?= $(shell ./scripts/resolve-upstream-version.sh)
+LDFLAGS ?= -s -w -X main.Version=$(VERSION) -X main.UpstreamVersion=$(UPSTREAM_VERSION)
 
 build:
 	CGO_ENABLED=0 go build -ldflags="$(LDFLAGS)" -trimpath -o bin/server ./cmd/server

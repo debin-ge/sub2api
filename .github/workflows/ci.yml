@@ -238,6 +238,20 @@ jobs:
           flavor: |
             latest=false
 
+      - name: Resolve build versions
+        id: versions
+        # Upstream v-tags are not pushed to this fork; fetch them so the merged
+        # upstream release can be resolved. Only tags reachable from HEAD count,
+        # so newer, unmerged upstream releases are ignored.
+        run: |
+          git fetch --quiet --no-tags https://github.com/Wei-Shaw/sub2api.git '+refs/tags/v*:refs/tags/v*' \
+            || echo "::warning::Could not fetch upstream tags; upstream version will be empty"
+          project="$(backend/scripts/resolve-version.sh)"
+          upstream="$(backend/scripts/resolve-upstream-version.sh)"
+          echo "project=${project}" >> "$GITHUB_OUTPUT"
+          echo "upstream=${upstream}" >> "$GITHUB_OUTPUT"
+          echo "Project version: ${project}, upstream version: ${upstream}"
+
       - name: Resolve build date
         id: build-info
         run: echo "date=$(git show -s --format=%cI HEAD)" >> "$GITHUB_OUTPUT"
@@ -252,7 +266,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            VERSION=${{ steps.meta.outputs.version }}
+            VERSION=${{ steps.versions.outputs.project }}
+            UPSTREAM_VERSION=${{ steps.versions.outputs.upstream }}
             COMMIT=${{ github.sha }}
             DATE=${{ steps.build-info.outputs.date }}
           cache-from: type=gha,scope=test-image
