@@ -672,6 +672,11 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 				failoverClientGone(c)
 				return
 			default: // FailoverExhausted
+				if fs.LastFailoverErr == nil && fs.LastSlotErr != nil {
+					// 等槽失败换号后已无账号可选：回写原有的并发 429。
+					googleConcurrencyError(c, fs.LastSlotErr, "account")
+					return
+				}
 				h.handleGeminiFailoverExhausted(c, fs.LastFailoverErr)
 				return
 			}
@@ -724,6 +729,10 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 					zap.Int64("account_id", account.ID),
 					zap.Int("max_waiting", selection.WaitPlan.MaxWaiting),
 				)
+				// cachedContent 强绑定账号时换号必然失败，保持原 429。
+				if cachedContentBinding == nil && fs.RecordAccountSlotUnavailable(c.Request.Context(), account.ID, &WaitQueueFullError{SlotType: "account"}) {
+					continue
+				}
 				googleError(c, http.StatusTooManyRequests, "Too many pending requests, please retry later")
 				return
 			}
@@ -736,16 +745,24 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 				}
 			}()
 
-			accountReleaseFunc, err = geminiConcurrency.AcquireAccountSlotWithWaitTimeout(
+			accountReleaseFunc, err = geminiConcurrency.AcquireAccountSlotForWaitPlan(
 				c,
+				fs.SlotWaitFailed(),
 				account.ID,
-				selection.WaitPlan.MaxConcurrency,
-				selection.WaitPlan.Timeout,
+				selection.WaitPlan,
 				stream,
 				&streamStarted,
 			)
 			if err != nil {
 				reqLog.Warn("gemini.account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+				// 等槽超时：排除该账号重新选号（cachedContent 强绑定账号时换号必然失败，保持原错误）。
+				if cachedContentBinding == nil && fs.RecordAccountSlotUnavailable(c.Request.Context(), account.ID, err) {
+					if accountWaitCounted {
+						geminiConcurrency.DecrementAccountWaitCount(c.Request.Context(), account.ID)
+						accountWaitCounted = false
+					}
+					continue
+				}
 				googleConcurrencyError(c, err, "account")
 				return
 			}

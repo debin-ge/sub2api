@@ -750,6 +750,15 @@ gateway:
     # 粘性会话命中前，若存在优先级更高且有空余容量的可调度账号，则把会话迁回该账号。
     # 粘性绑定只升不降：短暂限流期间落到低优先级兜底账号不会改写绑定。
     sticky_prefer_higher_priority: true
+    # When the sticky account's concurrency slots are full and another schedulable
+    # account (any priority) still has capacity, schedule this request onto that
+    # account immediately instead of queueing on the sticky account. The sticky
+    # binding itself is not rewritten. Disable to always queue on the sticky account
+    # (trades latency / timeouts for prompt cache hits).
+    # 粘性账号并发已满且存在其他有空余容量的可调度账号（不论优先级）时，本次请求直接调度
+    # 到空闲账号，不在粘性账号上排队；粘性绑定不改写。关闭则始终在粘性账号上排队
+    # （以等待/超时换取 prompt cache 命中）。
+    sticky_escape_on_full: true
     # When every account in the highest-priority tier is saturated (load >= 100%)
     # but still schedulable, queue on that tier instead of falling through to the
     # next priority tier immediately (uses fallback_wait_timeout / fallback_max_waiting).

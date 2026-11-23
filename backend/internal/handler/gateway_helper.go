@@ -451,6 +451,23 @@ func (h *ConcurrencyHelper) AcquireAccountSlotWithWaitTimeout(c *gin.Context, ac
 	return h.waitForSlotWithPingTimeout(c, "account", accountID, maxConcurrency, timeout, isStream, streamStarted, true)
 }
 
+// AcquireAccountSlotForWaitPlan 按调度器给出的等待计划获取账号并发槽位。
+// immediateOnly 为 true（本次请求此前已因等槽失败换过号，见 SlotWaitFailed）时只立即
+// 尝试一次，抢不到直接返回 ConcurrencyError 交给调用方继续换号，避免多次排队把总等待时长叠加。
+func (h *ConcurrencyHelper) AcquireAccountSlotForWaitPlan(c *gin.Context, immediateOnly bool, accountID int64, plan *service.AccountWaitPlan, isStream bool, streamStarted *bool) (func(), error) {
+	if immediateOnly {
+		release, acquired, err := h.TryAcquireAccountSlot(c.Request.Context(), accountID, plan.MaxConcurrency)
+		if err != nil {
+			return nil, err
+		}
+		if !acquired {
+			return nil, &ConcurrencyError{SlotType: "account"}
+		}
+		return release, nil
+	}
+	return h.AcquireAccountSlotWithWaitTimeout(c, accountID, plan.MaxConcurrency, plan.Timeout, isStream, streamStarted)
+}
+
 // nextBackoff 计算下一次退避时间
 // 性能优化：使用指数退避 + 随机抖动，避免惊群效应
 // current: 当前退避时间
