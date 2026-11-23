@@ -269,6 +269,10 @@ export default {
     }
   },
   "plaza": {
+    "balanceCurrency": {
+      "USD": "USD",
+      "CNY": "CNY"
+    },
     "title": "Model Plaza",
     "header": {
       "label": "Model Plaza",
@@ -281,7 +285,7 @@ export default {
       "eyebrow": "Public model catalog",
       "title": "Model Plaza",
       "titleAccent": "Text · Image · Video",
-      "subtitle": "Token prices are displayed per 1M tokens unless otherwise noted. Images are billed per token or per image and videos per second. Final prices use the platform balance convention in CNY and do not apply exchange rates.",
+      "subtitle": "Token prices are displayed per 1M tokens unless otherwise noted. Images are billed per token or per image and videos per second. Final prices use the platform balance convention in {currency} and do not apply exchange rates.",
       "rateTag": "Recharge multiplier {rate}x",
       "boostValue": "¥1 recharge gives {multiplier} balance"
     },
@@ -343,7 +347,7 @@ export default {
       "filtered": "{visible}/{total} models"
     },
     "infoBanner": {
-      "text": "Each model shows the lowest usable base price for standard public groups and VIP groups separately. Original prices come from the model-price catalog first; final prices apply the group multiplier and are always shown in the platform's CNY balance convention without exchange-rate conversion. Image models bill by tokens first and fall back to the 1K/2K/4K per-image tiers when usage is missing; video models bill per second by resolution; groups with independent image/video multipliers use those multipliers."
+      "text": "Each model shows the lowest usable base price for standard public groups and VIP groups separately. Original prices come from the model-price catalog first; final prices apply the group multiplier and are always shown in the platform's {currency} balance convention without exchange-rate conversion. Image models bill by tokens first and fall back to the 1K/2K/4K per-image tiers when usage is missing; video models bill per second by resolution; groups with independent image/video multipliers use those multipliers."
     },
     "modal": {
       "close": "Close",

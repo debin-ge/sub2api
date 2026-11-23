@@ -4,6 +4,8 @@ import ModelDetailModal from '@/components/plaza/ModelDetailModal.vue'
 import type { AggregatedModel } from '@/composables/useModelAggregation'
 import type { VueWrapper } from '@vue/test-utils'
 
+vi.mock('@/stores', () => ({ useAppStore: () => ({ cachedPublicSettings: { balance_currency: 'CNY' } }) }))
+
 const messages: Record<string, string> = {
   'plaza.modal.close': 'Close',
   'plaza.modal.availableGroups': 'Available groups',

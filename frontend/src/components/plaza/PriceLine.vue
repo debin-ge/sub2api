@@ -7,7 +7,7 @@
     <div class="min-w-0">
       <div class="flex items-baseline gap-1">
         <span class="text-base font-semibold text-gray-900 dark:text-white">
-          {{ formatCNYEffective(value, scale, billingRateMultiplier) }}
+          {{ formatEffectivePrice(value, balanceCurrency, scale, billingRateMultiplier) }}
         </span>
         <span v-if="value != null" class="text-xs text-gray-400 dark:text-gray-500">
           {{ unitLabel }}
@@ -27,9 +27,10 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   PER_REQUEST_SCALE,
-  formatCNYEffective,
+  formatEffectivePrice,
   formatMoney
 } from '@/utils/pricing'
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 
 const props = defineProps<{
   label: string
@@ -40,6 +41,7 @@ const props = defineProps<{
 }>()
 
 const { t } = useI18n()
+const { balanceCurrency } = useBalanceCurrency()
 
 const unitLabel = computed(() =>
   props.scale === PER_REQUEST_SCALE

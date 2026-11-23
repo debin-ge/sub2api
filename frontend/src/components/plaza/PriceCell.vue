@@ -57,11 +57,12 @@ import { useI18n } from 'vue-i18n'
 import type { ModelPriceTimeSchedule } from '@/api/channels'
 import {
   PER_REQUEST_SCALE,
-  formatCNYEffective,
+  formatEffectivePrice,
   formatMoney,
   scheduledScaledPrice
 } from '@/utils/pricing'
 import { plazaUnitLabel, type PlazaPriceUnit } from './plazaPricingRows'
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 
 const props = defineProps<{
   label: string
@@ -80,6 +81,7 @@ const props = defineProps<{
 }>()
 
 const { t } = useI18n()
+const { balanceCurrency } = useBalanceCurrency()
 
 const hasBothPricingTypes = computed(() => props.standardAvailable && props.vipAvailable)
 const gridClass = computed(() =>
@@ -149,7 +151,7 @@ const columns = computed(() => {
 
 const originalDisplay = (value: number | null, currency?: string) => formatMoney(value, currency, props.scale)
 const rechargedDisplay = (value: number | null, billingRateMultiplier?: number) =>
-  formatCNYEffective(value, props.scale, billingRateMultiplier)
+  formatEffectivePrice(value, balanceCurrency.value, props.scale, billingRateMultiplier)
 
 const unitLabel = computed(() => plazaUnitLabel(t, resolvedUnit.value))
 </script>

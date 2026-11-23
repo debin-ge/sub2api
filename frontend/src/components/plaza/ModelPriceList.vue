@@ -84,7 +84,8 @@ import PlazaGroupTags from './PlazaGroupTags.vue'
 import { listRowsFor, plazaUnitLabel, rowLabel, unitScale } from './plazaPricingRows'
 import { PLAZA_BILLING_KIND_STYLES, formatCallCount } from './plazaBillingKind'
 import { platformBadgeLightClass, platformLabel } from '@/utils/platformColors'
-import { formatCNYEffective, scheduledScaledPrice } from '@/utils/pricing'
+import { formatEffectivePrice, scheduledScaledPrice } from '@/utils/pricing'
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 import type { AggregatedModel, PlazaPricingSummary } from '@/composables/useModelAggregation'
 import type { GroupPlatform } from '@/types'
 
@@ -106,6 +107,7 @@ defineEmits<{
 }>()
 
 const { t } = useI18n()
+const { balanceCurrency } = useBalanceCurrency()
 
 const kindStyle = (model: AggregatedModel) => PLAZA_BILLING_KIND_STYLES[model.billingKind]
 
@@ -122,7 +124,7 @@ function priceLines(model: AggregatedModel, summary: PlazaPricingSummary | null)
       const raw = summary.minPricing[item.key] ?? null
       const scale = unitScale(item.unit)
       const rate = summary.minPricingRateMultipliers[item.key]
-      const format = (value: number | null) => formatCNYEffective(value, scale, rate)
+      const format = (value: number | null) => formatEffectivePrice(value, balanceCurrency.value, scale, rate)
       // 分时价与卡片口径一致：高峰 / 空闲两档都由倍率换算。
       const value =
         scheduled && item.unit === 'million'

@@ -19,7 +19,7 @@
             <span class="text-gradient">{{ t('plaza.hero.titleAccent') }}</span>
           </h1>
           <p class="mt-4 max-w-xl text-base leading-7 text-gray-300">
-            {{ t('plaza.hero.subtitle') }}
+            {{ t('plaza.hero.subtitle', { currency: t(`plaza.balanceCurrency.${balanceCurrency}`) }) }}
           </p>
           <div class="mt-5 flex flex-wrap items-center gap-2 font-mono text-xs">
             <span class="inline-flex items-center rounded-lg border border-amber-400/30 bg-amber-500/10 px-3 py-1.5 text-amber-300">
@@ -56,6 +56,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { normalizePlazaMultiplier } from '@/utils/pricing'
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 
 const props = defineProps<{
   modelCount: number
@@ -66,6 +67,7 @@ const props = defineProps<{
 }>()
 
 const { t } = useI18n()
+const { balanceCurrency } = useBalanceCurrency()
 
 const hasBoost = computed(() => normalizePlazaMultiplier(props.multiplier) !== 1)
 

@@ -30,7 +30,8 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { rowLabel, unitScale, type PlazaPricingRow } from './plazaPricingRows'
-import { formatCNYEffective, formatMoney } from '@/utils/pricing'
+import { formatEffectivePrice, formatMoney } from '@/utils/pricing'
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 import type { AggregatedModel, PlazaPricingSummary } from '@/composables/useModelAggregation'
 
 defineProps<{
@@ -39,10 +40,12 @@ defineProps<{
 }>()
 
 const { t } = useI18n()
+const { balanceCurrency } = useBalanceCurrency()
 
 function effective(summary: PlazaPricingSummary, item: PlazaPricingRow): string {
-  return formatCNYEffective(
+  return formatEffectivePrice(
     summary.minPricing[item.key],
+    balanceCurrency.value,
     unitScale(item.unit),
     summary.minPricingRateMultipliers[item.key]
   )

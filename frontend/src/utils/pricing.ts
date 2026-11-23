@@ -68,16 +68,17 @@ export function formatMoney(
 }
 
 /**
- * Final plaza price, always rendered with the CNY balance symbol.
- * Currency metadata does not alter the numeric value and no exchange rate is applied.
+ * Final plaza price, rendered with the site balance currency symbol.
+ * The currency only changes the label: the numeric value is kept and no exchange rate is applied.
  */
-export function formatCNYEffective(
+export function formatEffectivePrice(
   value: number | null,
+  balanceCurrency: ModelPriceCurrency | string | null | undefined,
   scale: number,
   billingRateMultiplier?: number | null
 ): string {
   if (value == null) return '-'
-  return formatMoney(value * normalizeBillingRateMultiplier(billingRateMultiplier), 'CNY', scale)
+  return formatMoney(value * normalizeBillingRateMultiplier(billingRateMultiplier), balanceCurrency, scale)
 }
 
 export function computeDiscountFold(

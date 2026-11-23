@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { createPinia, setActivePinia } from 'pinia'
 
 import PlazaView from '../PlazaView.vue'
+import { useAppStore } from '@/stores'
 
 const fetchAll = vi.fn()
 const open = vi.fn()
@@ -206,6 +207,7 @@ function createManyModelChannel(count: number) {
 async function mountPlaza() {
   const pinia = createPinia()
   setActivePinia(pinia)
+  useAppStore().cachedPublicSettings = { ...(useAppStore().cachedPublicSettings ?? {}), balance_currency: 'CNY' } as any
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [

@@ -145,7 +145,8 @@ import {
 } from './plazaPricingRows'
 import { PLAZA_BILLING_KIND_STYLES, formatCallCount } from './plazaBillingKind'
 import { platformBadgeLightClass, platformLabel } from '@/utils/platformColors'
-import { PER_REQUEST_SCALE, formatCNYEffective } from '@/utils/pricing'
+import { PER_REQUEST_SCALE, formatEffectivePrice } from '@/utils/pricing'
+import { useBalanceCurrency } from '@/composables/useBalanceCurrency'
 import { hasPeakRate } from '@/utils/peak-rate'
 import type { AggregatedModel, PlazaPricingSummary } from '@/composables/useModelAggregation'
 import type { GroupPlatform } from '@/types'
@@ -161,6 +162,7 @@ defineEmits<{
 }>()
 
 const { t } = useI18n()
+const { balanceCurrency } = useBalanceCurrency()
 
 const kindStyle = computed(() => PLAZA_BILLING_KIND_STYLES[props.model.billingKind])
 
@@ -195,8 +197,9 @@ const videoExample = computed(() => {
   const price = summary.minPricing[picked.key]
   return {
     tier: picked.label,
-    total: formatCNYEffective(
+    total: formatEffectivePrice(
       price == null ? null : price * VIDEO_EXAMPLE_SECONDS,
+      balanceCurrency.value,
       PER_REQUEST_SCALE,
       summary.minPricingRateMultipliers[picked.key]
     )
@@ -204,8 +207,9 @@ const videoExample = computed(() => {
 })
 
 function perRequestPrice(summary: PlazaPricingSummary): string {
-  return formatCNYEffective(
+  return formatEffectivePrice(
     summary.minPricing.perRequest,
+    balanceCurrency.value,
     PER_REQUEST_SCALE,
     summary.minPricingRateMultipliers.perRequest
   )

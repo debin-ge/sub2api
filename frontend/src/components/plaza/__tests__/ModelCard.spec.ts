@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import ModelCard from '@/components/plaza/ModelCard.vue'
 import {
   PLAZA_PRICING_DIMENSIONS,
@@ -7,6 +7,11 @@ import {
   type PlazaMinPricing,
   type PlazaPricingRateMultipliers
 } from '@/composables/useModelAggregation'
+
+const appStoreState = vi.hoisted(() => ({
+  cachedPublicSettings: { balance_currency: 'CNY' } as { balance_currency: string } | null,
+}))
+vi.mock('@/stores', () => ({ useAppStore: () => appStoreState }))
 
 const messages: Record<string, string> = {
   'plaza.card.input': 'Input',
@@ -104,6 +109,10 @@ const model: AggregatedModel = {
 }
 
 describe('ModelCard', () => {
+  afterEach(() => {
+    appStoreState.cachedPublicSettings = { balance_currency: 'CNY' }
+  })
+
   it('renders four core pricing rows and emits open-detail', async () => {
     const wrapper = mount(ModelCard, {
       props: { model }
@@ -206,6 +215,26 @@ describe('ModelCard', () => {
     expect(wrapper.text()).toContain('¥1.4')
     expect(wrapper.text()).toContain('¥0.84')
     expect(wrapper.text()).not.toContain('¥5.712')
+  })
+
+  it('labels the final price with the site balance currency without converting the number', () => {
+    appStoreState.cachedPublicSettings = { balance_currency: 'USD' }
+    const glmModel: AggregatedModel = {
+      ...model,
+      standardPricing: {
+        minPricing: { input: 0.0000014, output: null, cacheWrite: null, cacheRead: null, imageOutput: null, perRequest: null },
+        minPricingRateMultipliers: { input: 0.6, output: 0.6, cacheWrite: 0.6, cacheRead: 0.6, imageOutput: 0.6, perRequest: 0.6 },
+        minPricingCurrencies: { input: 'CNY', output: 'CNY', cacheWrite: 'CNY', cacheRead: 'CNY', imageOutput: 'CNY', perRequest: 'CNY' },
+        displayRateMultiplier: 0.6
+      }
+    }
+
+    const wrapper = mount(ModelCard, { props: { model: glmModel } })
+
+    // Original keeps its catalog currency; the final price only swaps the symbol.
+    expect(wrapper.text()).toContain('¥1.4')
+    expect(wrapper.text()).toContain('$0.84')
+    expect(wrapper.text()).not.toContain('¥0.84')
   })
 
   it('warns when a supported public group has peak token pricing', () => {
