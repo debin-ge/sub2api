@@ -29,10 +29,25 @@ describe('BuildVersionCard', () => {
 
     expect(wrapper.text()).toContain('版本信息')
     expect(wrapper.get('[data-test="build-version"]').text()).toContain('项目版本')
-    expect(wrapper.get('[data-test="build-version"] dd').text()).toBe('v2.1.12')
+    expect(wrapper.get('[data-test="build-version"] dd').text()).toBe('2.1.12')
     expect(wrapper.get('[data-test="build-upstream"] dd').text()).toBe('v0.2.23')
     expect(wrapper.get('[data-test="build-commit"] dd').text()).toBe('0a4531326')
     expect(wrapper.get('[data-test="build-date"] dd').text()).toBe('—')
+  })
+
+  it('never prefixes the project version with v, even if the build passed one', async () => {
+    mocks.getBuildInfo.mockResolvedValue({
+      version: 'v2.1.12',
+      upstream_version: 'v0.2.23',
+      commit: 'docker',
+      build_date: '',
+      build_type: 'release'
+    })
+    const wrapper = setup('en')
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="build-version"] dd').text()).toBe('2.1.12')
+    expect(wrapper.get('[data-test="build-upstream"] dd').text()).toBe('v0.2.23')
   })
 
   it('keeps non-numeric versions such as test builds as-is', async () => {

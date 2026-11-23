@@ -87,7 +87,7 @@ COPY backend/ ./
 COPY --from=frontend-builder /app/backend/internal/web/dist ./internal/web/dist
 
 # Build the binary (BuildType=release for CI builds, embed frontend)
-# Version precedence: build arg VERSION > exact git tag > cmd/server/VERSION
+# Version precedence: build arg VERSION > exact git tag > cmd/server/PROJECT_VERSION > cmd/server/VERSION
 RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod \
     --mount=type=cache,id=sub2api-gobuild,target=/root/.cache/go-build \
     VERSION_VALUE="${VERSION}" && \

@@ -36,7 +36,13 @@ const info = ref<SystemBuildInfo | null>(null)
 const loading = ref(true)
 const error = ref(false)
 
-function withV(version: string | undefined): string {
+// Tags follow each repo's convention: this fork tags bare "X.Y.Z",
+// upstream Wei-Shaw/sub2api tags "vX.Y.Z".
+function projectVersion(version: string | undefined): string {
+  return (version || '').trim().replace(/^v(?=\d)/, '')
+}
+
+function upstreamVersion(version: string | undefined): string {
   const v = (version || '').trim()
   if (!v) return ''
   return /^\d/.test(v) ? `v${v}` : v
@@ -58,12 +64,12 @@ const items = computed(() => [
   {
     key: 'version',
     label: t('admin.settings.buildInfo.projectVersion'),
-    value: withV(info.value?.version)
+    value: projectVersion(info.value?.version)
   },
   {
     key: 'upstream',
     label: t('admin.settings.buildInfo.upstreamVersion'),
-    value: withV(info.value?.upstream_version)
+    value: upstreamVersion(info.value?.upstream_version)
   },
   {
     key: 'commit',
